@@ -1,0 +1,285 @@
+@import "tailwindcss";
+
+/* ---------------------------------------------------------------------------
+   ChatJudge Aesthetic & Design Tokens
+   - Palette: Paper (#fcfcfe), Ink (#232331), Line (#dedee8), Muted (#7b7b8e)
+   - Accents: Lime (#d9ff57), Purple (#c5b3f5), Purple Dark (#7958d8), Orange (#ffb16f)
+   - Typography: Manrope + DM Mono
+   - Graphic: Solid drop-shadows (4px/6px ink), crisp 1.5px/2px borders, 3D floating cards
+--------------------------------------------------------------------------- */
+
+:root {
+  color-scheme: light;
+
+  --paper: #fcfcfe;
+  --ink: #232331;
+  --muted: #7b7b8e;
+  --line: #dedee8;
+  --line-strong: #232331;
+
+  --purple: #c5b3f5;
+  --purple-dark: #7958d8;
+  --purple-soft: #f0edff;
+  --lime: #d9ff57;
+  --orange: #ffb16f;
+  --blue: #8bc9ff;
+  --pink: #ffc2bf;
+
+  /* Semantic Aliases */
+  --bg: var(--paper);
+  --fg: var(--ink);
+  --fg-muted: var(--muted);
+}
+
+@theme inline {
+  --color-paper: var(--paper);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+
+  --color-purple: var(--purple);
+  --color-purple-dark: var(--purple-dark);
+  --color-purple-soft: var(--purple-soft);
+  --color-lime: var(--lime);
+  --color-orange: var(--orange);
+  --color-blue: var(--blue);
+  --color-pink: var(--pink);
+
+  --font-sans: var(--font-manrope), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: var(--font-dm-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+/* ---------------------------------------------------------------------------
+   Base
+--------------------------------------------------------------------------- */
+
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: 5.5rem;
+  overflow-x: hidden;
+  max-width: 100vw;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
+
+body {
+  background-color: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-weight: 400;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow-x: hidden;
+  max-width: 100vw;
+  width: 100%;
+}
+
+::selection {
+  background-color: var(--lime);
+  color: var(--ink);
+}
+
+:focus-visible {
+  outline: 2px solid var(--purple-dark);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
+/* ---------------------------------------------------------------------------
+   ChatJudge Tactile Shadows & Interactive Buttons
+--------------------------------------------------------------------------- */
+
+.shadow-ink-xs {
+  box-shadow: 2px 2px 0 var(--ink);
+}
+
+.shadow-ink-sm {
+  box-shadow: 3px 3px 0 var(--ink);
+}
+
+.shadow-ink-md {
+  box-shadow: 4px 4px 0 var(--ink);
+}
+
+.shadow-ink-lg {
+  box-shadow: 6px 6px 0 var(--ink);
+}
+
+.shadow-ink-xl {
+  box-shadow: 8px 8px 0 var(--ink);
+}
+
+.shadow-purple-lg {
+  box-shadow: 6px 6px 0 var(--purple-dark);
+}
+
+.btn-tactile {
+  border: 1.5px solid var(--ink);
+  box-shadow: 3px 3px 0 var(--ink);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.btn-tactile:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: 5px 5px 0 var(--ink);
+}
+
+.btn-tactile:active {
+  transform: translate(0, 0);
+  box-shadow: 2px 2px 0 var(--ink);
+}
+
+.card-tactile {
+  border: 1.5px solid var(--ink);
+  box-shadow: 4px 4px 0 var(--ink);
+  transition: transform 0.16s ease, box-shadow 0.16s ease;
+}
+
+.card-tactile:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: 6px 6px 0 var(--ink);
+}
+
+/* ---------------------------------------------------------------------------
+   Eyebrow & Monospace Helpers
+--------------------------------------------------------------------------- */
+
+.eyebrow {
+  font-family: var(--font-dm-mono), monospace;
+  letter-spacing: 1.3px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+/* ---------------------------------------------------------------------------
+   ChatJudge Floating 3D Keyframes & Animations
+--------------------------------------------------------------------------- */
+
+@keyframes hero-float-a {
+  0%, 100% {
+    transform: rotate(-5deg) translateY(0);
+  }
+  50% {
+    transform: rotate(-5deg) translateY(-10px);
+  }
+}
+
+@keyframes hero-float-b {
+  0%, 100% {
+    transform: rotate(5deg) translateY(0);
+  }
+  50% {
+    transform: rotate(5deg) translateY(-12px);
+  }
+}
+
+@keyframes hero-float-c {
+  0%, 100% {
+    transform: translate(-50%) rotate(3deg) translateY(0);
+  }
+  50% {
+    transform: translate(-50%) rotate(3deg) translateY(-8px);
+  }
+}
+
+@keyframes hero-breathe {
+  0%, 100% {
+    transform: translate(-50%) scale(1);
+  }
+  50% {
+    transform: translate(-50%) scale(1.04);
+  }
+}
+
+@keyframes hero-twinkle {
+  0%, 100% {
+    opacity: 0.45;
+    transform: scale(0.85) rotate(0deg);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.2) rotate(15deg);
+  }
+}
+
+@keyframes hero-bar-grow {
+  0% {
+    transform: scaleX(0);
+  }
+  100% {
+    transform: scaleX(1);
+  }
+}
+
+@keyframes court-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes court-pulse {
+  0%, 100% {
+    opacity: 0.4;
+    transform: scale(0.85);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+}
+
+.animate-hero-float-a {
+  animation: hero-float-a 5s ease-in-out infinite;
+}
+
+.animate-hero-float-b {
+  animation: hero-float-b 5.7s ease-in-out infinite;
+}
+
+.animate-hero-float-c {
+  animation: hero-float-c 4.6s ease-in-out infinite;
+}
+
+.animate-hero-breathe {
+  animation: hero-breathe 7s ease-in-out infinite;
+}
+
+.animate-hero-twinkle {
+  animation: hero-twinkle 2.6s ease-in-out infinite;
+}
+
+.animate-court-pulse {
+  animation: court-pulse 1.8s ease-in-out infinite;
+}
+
+/* ---------------------------------------------------------------------------
+   Marquee
+--------------------------------------------------------------------------- */
+
+@keyframes kael-marquee {
+  from {
+    transform: translate3d(0, 0, 0);
+  }
+  to {
+    transform: translate3d(-50%, 0, 0);
+  }
+}
+
+.kael-marquee-track {
+  width: max-content;
+  animation: kael-marquee 36s linear infinite;
+  will-change: transform;
+}
+
+.kael-marquee:hover .kael-marquee-track,
+.kael-marquee:focus-within .kael-marquee-track {
+  animation-play-state: paused;
+}
+
+

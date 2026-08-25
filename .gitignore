@@ -1,0 +1,28 @@
+# Dependencies
+node_modules
+web/node_modules
+.pnpm-store
+
+# Next.js build output
+.next
+web/.next
+out
+web/out
+build
+dist
+
+# Environment variables
+.env
+.env*.local
+!.env.example
+
+# IDE / System
+.DS_Store
+*.pem
+.vercel
+next-env.d.ts
+tsconfig.tsbuildinfo
+.claude
+.idea
+.vscode
+Thumbs.db
