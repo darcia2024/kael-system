@@ -29,21 +29,47 @@ export function RoiCalculator() {
   const [dailyCustomers, setDailyCustomers] = useState(50);
   const [avgTicket, setAvgTicket] = useState(35000);
 
-  // Perhitungan Realistis Berdasarkan Data UMKM
+  // ---------------------------------------------------------------------
+  // ASUMSI SIMULASI
+  //
+  // Angka di bawah ini sengaja dipasang di sisi konservatif. Kalkulator yang
+  // menjanjikan balik modal dalam hitungan hari bukan alat jualan, itu alat
+  // bikin komplain refund. Kalau ada data lapangan dari customer sendiri,
+  // ganti angka ini dengan data itu dan cantumkan sumbernya.
+  //
+  // Semua rasio dikumpulkan di satu tempat supaya gampang direvisi.
+  // ---------------------------------------------------------------------
+  const ASSUMPTIONS = {
+    /** Porsi pembeli yang benar-benar menyelesaikan ulasan setelah tap. */
+    reviewConversion: 0.03,
+    /** Porsi omzet yang terselamatkan setelah HPP dan nota tercatat rapi. */
+    hppRecovery: 0.015,
+    /** Porsi pembeli yang datang lagi karena program poin. */
+    repeatRate: 0.08,
+    /** Margin kotor yang dipakai untuk menghitung laba dari kunjungan ulang. */
+    grossMargin: 0.35,
+  };
+
   const monthlyTransactions = dailyCustomers * 30;
   const currentGrossRevenue = monthlyTransactions * avgTicket;
 
-  // 1. Review Google Maps: Rata-rata 12% pembeli bersedia tap NFC di kasir
-  const estimatedReviewsPerMonth = Math.round(monthlyTransactions * 0.12);
+  // 1. Ulasan Google Maps baru per bulan.
+  const estimatedReviewsPerMonth = Math.round(
+    monthlyTransactions * ASSUMPTIONS.reviewConversion,
+  );
 
-  // 2. Hemat Bahan & Anti Selisih Kasir: Rata-rata 4.5% dari omzet terselamatkan dari pemborosan resep & salah catat nota
-  const hppSavings = Math.round(currentGrossRevenue * 0.045);
+  // 2. Kebocoran yang tertahan setelah HPP dan pencatatan rapi.
+  const hppSavings = Math.round(currentGrossRevenue * ASSUMPTIONS.hppRecovery);
 
-  // 3. Omzet Tambahan Repeat Order: 18% pelanggan aktif kembali lagi berkat stamp point WA (dihitung laba kotor 60%)
-  const repeatVisits = Math.round(monthlyTransactions * 0.18);
-  const extraRevenue = Math.round(repeatVisits * avgTicket * 0.6);
+  // 3. Laba dari kunjungan ulang yang dipicu program poin.
+  const repeatVisits = Math.round(
+    monthlyTransactions * ASSUMPTIONS.repeatRate,
+  );
+  const extraRevenue = Math.round(
+    repeatVisits * avgTicket * ASSUMPTIONS.grossMargin,
+  );
 
-  // Total Tambahan Cuan Bersih per Bulan
+  // Total tambahan laba bersih per bulan.
   const totalExtraNetProfit = hppSavings + extraRevenue;
 
   return (
@@ -55,13 +81,13 @@ export function RoiCalculator() {
           <Reveal>
             <div className="eyebrow inline-flex items-center gap-1.5">
               <span>✦</span>
-              <span>SIMULASI DAMPAK NYATA UNTUK PEMILIK USAHA</span>
+              <span>SIMULASI PERKIRAAN UNTUK PEMILIK USAHA</span>
             </div>
             <h2 className="mt-3 text-2xl sm:text-5xl font-extrabold tracking-tight text-[#232331] leading-tight">
               Berapa banyak cuan & ulasan <i className="font-serif italic font-normal text-[#7958d8]">yang bakal masuk ke tokomu?</i>
             </h2>
             <p className="mt-2.5 text-xs sm:text-sm font-normal leading-relaxed text-[#7b7b8e]">
-              Gak perlu hitungan rumit. Masukkan kondisi tokomu saat ini, dan lihat 3 hal nyata yang langsung dirasakan kas tokomu setelah pasang KAEL.
+              Masukkan kondisi tokomu saat ini untuk melihat perkiraan 3 dampak yang paling sering dirasakan setelah pasang KAEL.
             </p>
           </Reveal>
         </div>
@@ -228,7 +254,7 @@ export function RoiCalculator() {
                           <div className="min-w-0 flex-1">
                             <p className="text-xs font-bold text-[#232331]">3. Omzet dari Pelanggan Balik Lagi (Loyalitas)</p>
                             <p className="text-[11px] text-[#7b7b8e] mt-1 leading-relaxed">
-                              Berkat kartu tap NFC member (auto Nama &amp; WA) dan laporan poin real-time di WA, pelanggan lama jajan kembali ~{repeatVisits}x lebih sering.
+                              Berkat kartu tap NFC member (auto Nama &amp; WA) dan laporan poin real-time di WA, diperkirakan ada ~{repeatVisits.toLocaleString("id-ID")} kunjungan ulang tambahan per bulan.
                             </p>
                           </div>
                         </div>
@@ -252,7 +278,7 @@ export function RoiCalculator() {
                       <span className="font-mono text-[9px] font-bold uppercase tracking-wider text-[#232331]">
                         TOTAL PERKIRAAN CUAN TAMBAHAN BERSIH
                       </span>
-                      <p className="text-xs font-bold text-[#232331]/80">Masuk langsung ke kantong pemilik usaha</p>
+                      <p className="text-xs font-bold text-[#232331]/80">Perkiraan, bukan angka yang dijanjikan</p>
                     </div>
                     <div className="text-left sm:text-right">
                       <span className="font-mono text-xl sm:text-2xl font-extrabold text-[#232331]">
@@ -271,6 +297,23 @@ export function RoiCalculator() {
                     <span>Pasang Sistem Ini di Tokomu Sekarang</span>
                     <ArrowRight size={13} strokeWidth={2.5} />
                   </a>
+
+                  {/* Asumsi ditulis terbuka dan tampil di semua ukuran layar.
+                      Angka simulasi tanpa asumsi yang bisa dicek adalah janji,
+                      dan janji yang meleset jauh lebih mahal daripada satu
+                      penjualan. */}
+                  <p className="mt-3 text-[10px] leading-relaxed text-[#7b7b8e]">
+                    Asumsi simulasi:{" "}
+                    {Math.round(ASSUMPTIONS.reviewConversion * 100)}% pembeli
+                    menyelesaikan ulasan setelah tap,{" "}
+                    {(ASSUMPTIONS.hppRecovery * 100).toLocaleString("id-ID")}%
+                    omzet terselamatkan dari pencatatan yang rapi, dan{" "}
+                    {Math.round(ASSUMPTIONS.repeatRate * 100)}% pembeli datang
+                    lagi karena program poin (dihitung pada margin kotor{" "}
+                    {Math.round(ASSUMPTIONS.grossMargin * 100)}%). Angka ini
+                    perkiraan untuk gambaran, bukan hasil yang dijanjikan.
+                    Hasil tiap usaha berbeda.
+                  </p>
                 </div>
 
               </div>

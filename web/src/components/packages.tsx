@@ -7,6 +7,58 @@ import { Reveal } from "@/components/ui/reveal";
 import { site, waLink } from "@/lib/site";
 
 // =========================================================================
+// 0. SUMBER ANGKA HARGA
+//
+// Semua harga hidup di sini sebagai angka, bukan string yang diketik ulang di
+// beberapa tempat. Harga coret dan label hemat pada paket DIHITUNG dari angka
+// ini, jadi tidak mungkin lagi ada satu kartu yang menampilkan dua klaim hemat
+// berbeda.
+//
+// Aturannya: harga coret pada paket adalah total harga modul kalau dibeli
+// satuan hari ini. Bukan "harga sebelum diskon" yang tidak pernah ditagih.
+// Kalau pembeli menjumlahkan sendiri harga satuan di halaman ini, angkanya
+// harus ketemu.
+// =========================================================================
+type ModuleKey = "review" | "finance" | "loyalty" | "pos";
+
+const MODULE_PRICE: Record<ModuleKey, number> = {
+  review: 149_000,
+  finance: 249_000,
+  loyalty: 399_000,
+  pos: 549_000,
+};
+
+const MODULE_RENEWAL: Record<ModuleKey, number> = {
+  review: 49_000,
+  finance: 99_000,
+  loyalty: 149_000,
+  pos: 199_000,
+};
+
+/** Renewal paket lebih murah daripada menjumlahkan renewal tiap modul. */
+const BUNDLE_RENEWAL = {
+  starter: 49_000,
+  growth: 199_000,
+  ultimate: 299_000,
+};
+
+const rupiah = (value: number) => `Rp ${value.toLocaleString("id-ID")}`;
+
+const sumModules = (keys: ModuleKey[]) =>
+  keys.reduce((total, key) => total + MODULE_PRICE[key], 0);
+
+function bundlePricing(modules: ModuleKey[], price: number) {
+  const separate = sumModules(modules);
+  const saving = separate - price;
+  const isBundle = modules.length > 1;
+  return {
+    price: rupiah(price),
+    separatePrice: isBundle ? rupiah(separate) : null,
+    savings: isBundle && saving > 0 ? `Hemat ${rupiah(saving)}` : null,
+  };
+}
+
+// =========================================================================
 // 1. DATA 3 PILIHAN BUNDLING (STARTER, GROWTH, ULTIMATE)
 // =========================================================================
 const bundles = [
@@ -15,10 +67,8 @@ const bundles = [
     name: "KAEL Starter",
     badge: "MODUL REVIEW",
     tagline: "Untuk usaha yang mau mulai digital dari hal paling simpel. Google Review cukup tap.",
-    originalPrice: "Rp 199.000",
-    launchPrice: "Rp 149.000",
-    savings: null,
-    renewal: "Rp 49.000 / tahun",
+    ...bundlePricing(["review"], MODULE_PRICE.review),
+    renewal: `${rupiah(BUNDLE_RENEWAL.starter)} / tahun`,
     includes: [
       "1x KAEL NFC Review Card / Standee",
       "QR Code backup untuk HP non-NFC",
@@ -38,10 +88,8 @@ const bundles = [
     name: "KAEL Growth",
     badge: "3 MODUL + 2 NFC",
     tagline: "Cocok buat bisnis yang ingin reputasi naik, customer balik, dan margin lebih jelas.",
-    originalPrice: "Rp 947.000",
-    launchPrice: "Rp 699.000",
-    savings: "Hemat Rp 248.000",
-    renewal: "Rp 199.000 / tahun",
+    ...bundlePricing(["review", "finance", "loyalty"], 699_000),
+    renewal: `${rupiah(BUNDLE_RENEWAL.growth)} / tahun`,
     includes: [
       "KAEL Review (1x NFC Review Card / Standee)",
       "KAEL Finance (Kalkulator HPP & Simulasi Profit)",
@@ -61,11 +109,8 @@ const bundles = [
     name: "KAEL Ultimate Ecosystem",
     badge: "4 MODUL LENGKAP + 2 NFC",
     tagline: "Review, loyalty, keuangan, menu digital, dan kasir dalam satu ekosistem yang siap digunakan.",
-    originalPrice: "Rp 1.099.000",
-    totalModulePrice: "Rp 1.596.000",
-    launchPrice: "Rp 999.000",
-    savings: "Hemat Rp 597.000",
-    renewal: "Rp 299.000 / tahun (~Rp 25rb/bln)",
+    ...bundlePricing(["review", "finance", "loyalty", "pos"], 999_000),
+    renewal: `${rupiah(BUNDLE_RENEWAL.ultimate)} / tahun (~Rp 25rb/bln)`,
     includes: [
       "KAEL Review (1x NFC Review Card / Standee)",
       "KAEL Finance (Engine HPP Resep & Kulakan Supplier)",
@@ -91,9 +136,8 @@ const alaCarteModules = [
   {
     id: "review",
     name: "1. KAEL Review",
-    originalPrice: "Rp 199.000",
-    launchPrice: "Rp 149.000",
-    renewal: "Rp 49.000/tahun",
+    price: rupiah(MODULE_PRICE.review),
+    renewal: `${rupiah(MODULE_RENEWAL.review)}/tahun`,
     forWho: "Bisnis yang pengen nambah Google Review dengan cara paling gampang.",
     features: [
       "1x KAEL NFC Review Card / Standee + QR Code backup",
@@ -109,9 +153,8 @@ const alaCarteModules = [
   {
     id: "finance",
     name: "2. KAEL Finance",
-    originalPrice: "Rp 299.000",
-    launchPrice: "Rp 249.000",
-    renewal: "Rp 99.000/tahun",
+    price: rupiah(MODULE_PRICE.finance),
+    renewal: `${rupiah(MODULE_RENEWAL.finance)}/tahun`,
     forWho: "Cafe, resto, bakery, toko kulakan, dan bisnis F&B/retail.",
     features: [
       "Kalkulator HPP per produk (Bahan baku, qty, unit gr/ml/pcs)",
@@ -127,9 +170,8 @@ const alaCarteModules = [
   {
     id: "loyalty",
     name: "3. KAEL Loyalty",
-    originalPrice: "Rp 449.000",
-    launchPrice: "Rp 399.000",
-    renewal: "Rp 149.000/tahun",
+    price: rupiah(MODULE_PRICE.loyalty),
+    renewal: `${rupiah(MODULE_RENEWAL.loyalty)}/tahun`,
     forWho: "Bikin Pelanggan Punya Alasan untuk Balik Lagi.",
     features: [
       "1x KAEL NFC Member Card / Standee + QR membership",
@@ -145,9 +187,8 @@ const alaCarteModules = [
   {
     id: "pos",
     name: "4. KAEL POS & Ordering",
-    originalPrice: "Rp 649.000",
-    launchPrice: "Rp 549.000",
-    renewal: "Rp 199.000/tahun",
+    price: rupiah(MODULE_PRICE.pos),
+    renewal: `${rupiah(MODULE_RENEWAL.pos)}/tahun`,
     forWho: "Digitalisasi kasir & self-order meja tanpa ribet.",
     features: [
       "Kasir berbasis web: Buka di laptop, tablet, dan HP",
@@ -166,12 +207,15 @@ const alaCarteModules = [
 // =========================================================================
 // 3. TABEL RENEWAL CLOUD & SUPPORT TAHUNAN
 // =========================================================================
+// Tahun pertama ditulis "termasuk harga beli", bukan "gratis". Menyebutnya
+// gratis melatih pembeli menganggapnya bonus, lalu tagihan tahun kedua terasa
+// seperti biaya yang tiba-tiba muncul.
 const renewalList = [
-  { product: "KAEL Review", yearOne: "Included (Gratis)", nextYear: "Rp 49.000 / tahun" },
-  { product: "KAEL Finance", yearOne: "Included (Gratis)", nextYear: "Rp 99.000 / tahun" },
-  { product: "KAEL Loyalty", yearOne: "Included (Gratis)", nextYear: "Rp 149.000 / tahun" },
-  { product: "KAEL POS & Ordering", yearOne: "Included (Gratis)", nextYear: "Rp 199.000 / tahun" },
-  { product: "KAEL Ultimate Ecosystem (4 Modul)", yearOne: "Included (Gratis)", nextYear: "Rp 299.000 / tahun (~Rp 25rb/bulan)" },
+  { product: "KAEL Review", yearOne: "Termasuk harga beli", nextYear: `${rupiah(MODULE_RENEWAL.review)} / tahun` },
+  { product: "KAEL Finance", yearOne: "Termasuk harga beli", nextYear: `${rupiah(MODULE_RENEWAL.finance)} / tahun` },
+  { product: "KAEL Loyalty", yearOne: "Termasuk harga beli", nextYear: `${rupiah(MODULE_RENEWAL.loyalty)} / tahun` },
+  { product: "KAEL POS & Ordering", yearOne: "Termasuk harga beli", nextYear: `${rupiah(MODULE_RENEWAL.pos)} / tahun` },
+  { product: "KAEL Ultimate Ecosystem (4 Modul)", yearOne: "Termasuk harga beli", nextYear: `${rupiah(BUNDLE_RENEWAL.ultimate)} / tahun (~Rp 25rb/bulan)` },
 ];
 
 // =========================================================================
@@ -292,19 +336,22 @@ export function Packages() {
                         : "bg-[#fcfcfe] border-[#dedee8]"
                     }`}
                   >
-                    <div className="flex items-center gap-2 font-mono">
-                      <span className="text-xs text-[#7b7b8e] line-through">{b.originalPrice}</span>
-                      {b.totalModulePrice && (
+                    {/* Pembanding harga hanya muncul untuk paket berisi lebih
+                        dari satu modul, dan yang dicoret adalah total harga
+                        satuan yang benar-benar berlaku di halaman ini. */}
+                    {b.separatePrice && (
+                      <div className="flex flex-wrap items-center gap-2 font-mono">
                         <span className="text-[10px] text-[#7b7b8e]">
-                          (Satuan: {b.totalModulePrice})
+                          Beli satuan{" "}
+                          <span className="line-through">{b.separatePrice}</span>
                         </span>
-                      )}
-                      {b.savings && (
-                        <span className="rounded bg-[#ef4444] px-1.5 py-0.2 text-[9.5px] font-bold text-white">
-                          {b.savings}
-                        </span>
-                      )}
-                    </div>
+                        {b.savings && (
+                          <span className="rounded bg-[#ef4444] px-1.5 py-0.5 text-[9.5px] font-bold text-white">
+                            {b.savings}
+                          </span>
+                        )}
+                      </div>
+                    )}
 
                     <div className="mt-1">
                       <span
@@ -312,15 +359,18 @@ export function Packages() {
                           b.isFeatured ? "text-[#d9ff57]" : "text-[#232331]"
                         }`}
                       >
-                        {b.launchPrice}
+                        {b.price}
                       </span>
                       <span className="text-[10px] font-mono block text-[#7b7b8e] mt-0.5">
-                        Harga Launching · Cloud &amp; Support 1 Tahun
+                        Sekali bayar · sudah termasuk 1 tahun cloud &amp; support
                       </span>
                     </div>
 
+                    {/* Renewal ditulis sebagai biaya lanjutan, bukan sebagai
+                        bonus gratis. Menyebutnya "gratis" di tahun pertama
+                        bikin penagihan tahun kedua jadi kejutan. */}
                     <p className="mt-2 text-[10px] text-[#7958d8] font-bold border-t pt-2" style={{ borderColor: b.isFeatured ? "#3d3d4e" : "#dedee8" }}>
-                      Renewal: <span className={b.isFeatured ? "text-white font-normal" : "text-[#232331] font-normal"}>{b.renewal}</span>
+                      Setelah 1 tahun: <span className={b.isFeatured ? "text-white font-normal" : "text-[#232331] font-normal"}>{b.renewal}</span> untuk perpanjangan
                     </p>
                   </div>
 
@@ -431,15 +481,14 @@ export function Packages() {
 
                     {/* Price */}
                     <div className="mt-3 rounded-xl bg-[#fcfcfe] border border-[#dedee8] p-3 text-left">
-                      <div className="flex items-center gap-1.5 font-mono">
-                        <span className="text-[10px] text-[#7b7b8e] line-through">{m.originalPrice}</span>
-                        <span className="text-[9px] font-bold text-[#ef4444] bg-[#feebee] px-1.5 py-0.2 rounded">LAUNCHING</span>
-                      </div>
-                      <p className="text-xl font-mono font-extrabold text-[#232331] mt-0.5">
-                        {m.launchPrice}
+                      <p className="text-xl font-mono font-extrabold text-[#232331]">
+                        {m.price}
                       </p>
                       <span className="text-[9.5px] font-mono text-[#7b7b8e] block mt-0.5">
-                        Renewal: <strong className="text-[#7958d8]">{m.renewal}</strong>
+                        Sekali bayar · termasuk 1 tahun
+                      </span>
+                      <span className="text-[9.5px] font-mono text-[#7b7b8e] block mt-0.5">
+                        Setelah itu <strong className="text-[#7958d8]">{m.renewal}</strong>
                       </span>
                     </div>
 
@@ -562,11 +611,11 @@ export function Packages() {
                     Cloud &amp; Support Tahunan (Renewal)
                   </h4>
                   <p className="text-xs text-[#7b7b8e] mt-0.5">
-                    Bukan biaya langganan bulanan mahal. Cukup biaya perawatan server &amp; support tahunan yang sangat terjangkau.
+                    Tahun pertama sudah termasuk dalam harga beli. Mulai tahun kedua ada biaya perawatan server dan support yang ditagih setahun sekali.
                   </p>
                 </div>
                 <div className="rounded-xl bg-[#f0edff] border border-[#7958d8]/30 px-3.5 py-2 font-mono text-xs text-[#7958d8] font-bold shrink-0 self-start sm:self-auto">
-                  💡 Bebas Biaya Bulanan
+                  Ditagih per tahun, bukan per bulan
                 </div>
               </div>
 
@@ -599,7 +648,7 @@ export function Packages() {
               </div>
 
               <div className="mt-4 rounded-xl bg-[#fcfcfe] border border-[#dedee8] p-3 text-[11px] text-[#7b7b8e] leading-relaxed">
-                ℹ️ <strong>Catatan:</strong> Pemilik paket <strong>KAEL Ultimate</strong> di tahun kedua hanya membayar <strong>Rp 299.000 / tahun</strong> (setara ~Rp 25.000 / bulan) untuk perawatan server, backup database, dan customer priority support.
+ℹ️ <strong>Catatan:</strong> Pemilik paket <strong>KAEL Ultimate</strong> membayar <strong>{rupiah(BUNDLE_RENEWAL.ultimate)} / tahun</strong> (setara ~Rp 25.000 / bulan) mulai tahun kedua, untuk perawatan server, backup database, dan customer priority support.
               </div>
             </div>
           </Reveal>
