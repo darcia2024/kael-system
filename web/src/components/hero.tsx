@@ -126,68 +126,65 @@ export function Hero() {
                     </span>
                   </div>
 
-                  {/* Interactive Acrylic Smart Card Centerpiece (Clickable Light Mode Card) */}
+                  {/* Interactive Acrylic Smart Card Centerpiece (Ultra-Crisp Sharp Edition) */}
                   <div className="relative z-10 my-4">
                     <div
                       onClick={handleTapSimulation}
-                      className="group cursor-pointer rounded-2xl border-2 border-[#232331] bg-white p-4 text-[#232331] shadow-ink-md transition-all duration-300 hover:border-[#7958d8] hover:shadow-purple-lg active:scale-[0.98]"
+                      className="group cursor-pointer rounded-2xl border-2 border-[#232331] bg-white p-4 text-[#232331] shadow-ink-md transition-all duration-300 hover:border-[#7958d8] hover:shadow-purple-lg active:scale-[0.98] relative overflow-hidden"
                     >
-                      {/* Card Gloss Glare */}
-                      <div className="pointer-events-none absolute inset-0 rounded-2xl bg-gradient-to-tr from-transparent via-[#f0edff]/30 to-white/60" />
-
                       {/* Card Top: Brand Lockup & NFC Wave */}
-                      <div className="flex items-center justify-between border-b border-[#dedee8] pb-2.5">
+                      <div className="flex items-center justify-between border-b-2 border-[#dedee8] pb-2.5">
                         <div className="flex items-center gap-2">
                           <Image
                             src="/kael-logo-fix.png"
                             alt="KAEL Logo"
-                            width={24}
-                            height={24}
-                            className="h-5 w-auto object-contain"
+                            width={26}
+                            height={26}
+                            className="h-6 w-auto object-contain shrink-0"
                           />
                           <div className="flex flex-col text-left leading-none">
-                            <span className="font-extrabold text-xs tracking-tight text-[#232331]">KAEL</span>
-                            <span className="font-sans text-[7px] font-bold text-[#7958d8] mt-0.5">
+                            <span className="font-extrabold text-sm tracking-tight text-[#232331]">KAEL</span>
+                            <span className="font-sans text-[8px] font-bold text-[#7958d8] mt-0.5">
                               Kemudahan Akses, Efisiensi, Layanan
                             </span>
                           </div>
                         </div>
 
-                        <span className="flex items-center gap-1 rounded-full border-[1.5px] border-[#232331] bg-[#d9ff57] px-2 py-0.5 font-mono text-[8px] font-bold text-[#232331] shadow-ink-xs">
-                          <Nfc size={10} strokeWidth={2.6} />
+                        <span className="flex items-center gap-1 rounded-full border-2 border-[#232331] bg-[#d9ff57] px-2.5 py-0.5 font-mono text-[8.5px] font-extrabold text-[#232331] shadow-ink-xs">
+                          <Nfc size={11} strokeWidth={2.8} />
                           <span>NFC TAP</span>
                         </span>
                       </div>
 
                       {/* Card Body: Interactive Tap Target */}
-                      <div className="my-3 flex items-center justify-between gap-3">
+                      <div className="my-3.5 flex items-center justify-between gap-3">
                         <div className="flex-1 space-y-1">
-                          <div className="inline-flex items-center gap-1 rounded-md bg-[#232331] px-1.5 py-0.5 font-mono text-[8.5px] font-bold text-[#d9ff57]">
-                            <Star size={9} fill="#d9ff57" strokeWidth={0} />
+                          <div className="inline-flex items-center gap-1 rounded-md bg-[#232331] px-2 py-0.5 font-mono text-[9px] font-extrabold text-[#d9ff57]">
+                            <Star size={10} fill="#d9ff57" strokeWidth={0} />
                             <span>GOOGLE REVIEW 5★</span>
                           </div>
-                          <p className="text-[11px] font-extrabold text-[#232331] tracking-tight leading-snug">
+                          <p className="text-sm font-extrabold text-[#232331] tracking-tight leading-snug mt-1">
                             {tapSuccess ? "✨ HP TERDETEKSI (0.8s)!" : "Tempelkan HP di Sini"}
                           </p>
-                          <p className="text-[8.5px] text-[#7b7b8e]">
+                          <p className="text-[10px] font-semibold text-[#4b4b5e] leading-tight">
                             Buka form ulasan instan tanpa ketik nama toko
                           </p>
                         </div>
 
-                        {/* QR Code Target */}
-                        <div className="flex h-14 w-14 shrink-0 flex-col items-center justify-center rounded-xl border-[1.5px] border-[#232331] bg-[#fcfcfe] p-1 text-[#232331] shadow-ink-xs">
-                          <QrCode size={34} strokeWidth={2.4} />
-                          <span className="font-mono text-[6.5px] font-bold text-[#7958d8]">SCAN QR</span>
+                        {/* QR Code Target (Sharp & High Contrast) */}
+                        <div className="flex h-16 w-16 shrink-0 flex-col items-center justify-center rounded-xl border-2 border-[#232331] bg-white p-1 text-[#232331] shadow-ink-xs">
+                          <QrCode size={36} strokeWidth={2.8} className="text-[#232331]" />
+                          <span className="font-mono text-[7px] font-extrabold text-[#7958d8] mt-0.5">SCAN QR</span>
                         </div>
                       </div>
 
                       {/* Card Bottom: Status */}
-                      <div className="flex items-center justify-between border-t border-[#dedee8] pt-2 font-mono text-[8px]">
-                        <span className="flex items-center gap-1 font-bold text-[#7958d8]">
-                          <Zap size={10} strokeWidth={2.6} />
+                      <div className="flex items-center justify-between border-t-2 border-[#dedee8] pt-2.5 font-mono text-[8.5px]">
+                        <span className="flex items-center gap-1 font-extrabold text-[#7958d8] bg-[#f0edff] px-2 py-0.5 rounded-md border border-[#7958d8]/30">
+                          <Zap size={11} strokeWidth={2.8} fill="#7958d8" />
                           <span>CHIP NTAG213 INDUSTRIAL</span>
                         </span>
-                        <span className="rounded border border-[#dedee8] bg-[#f0edff] px-1.5 py-0.5 font-bold text-[#232331]">
+                        <span className="rounded-md border-2 border-[#232331] bg-[#232331] text-[#d9ff57] px-2 py-0.5 font-extrabold shadow-ink-xs">
                           100% WATERPROOF
                         </span>
                       </div>
@@ -195,13 +192,13 @@ export function Hero() {
                     </div>
 
                     {/* Interactive Prompt Button */}
-                    <div className="mt-2.5 text-center">
+                    <div className="mt-3 text-center">
                       <button
                         type="button"
                         onClick={handleTapSimulation}
-                        className="inline-flex items-center gap-1.5 rounded-full border-[1.5px] border-[#232331] bg-white px-3 py-1 font-mono text-[9.5px] font-bold text-[#7958d8] shadow-ink-xs transition-all hover:bg-[#d9ff57] hover:text-[#232331]"
+                        className="inline-flex items-center gap-1.5 rounded-full border-2 border-[#232331] bg-white px-3.5 py-1.5 font-mono text-[10px] font-extrabold text-[#7958d8] shadow-ink-xs transition-all hover:bg-[#d9ff57] hover:text-[#232331]"
                       >
-                        <Zap size={11} strokeWidth={2.4} />
+                        <Zap size={12} strokeWidth={2.6} />
                         <span>{tapSuccess ? "⚡ 1 Detik Tap Berhasil!" : "Klik kartu di atas untuk coba simulasi Tap"}</span>
                       </button>
                     </div>
