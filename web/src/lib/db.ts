@@ -378,6 +378,24 @@ export const db = {
     `) as unknown as Customer[];
   },
 
+  /**
+   * Pelanggan beserta saldo poinnya dalam satu query.
+   *
+   * Versi lama memanggil getCustomerPointBalance di dalam render, satu kali per
+   * baris. Dengan database sungguhan itu berarti satu query per pelanggan tiap
+   * kali halaman digambar ulang.
+   */
+  async getCustomersWithBalance(businessId = DEFAULT_BUSINESS_ID) {
+    return (await sql`
+      SELECT c.*, COALESCE(SUM(l.delta), 0)::int AS balance
+      FROM customers c
+      LEFT JOIN point_ledger l ON l.customer_id = c.id
+      WHERE c.business_id = ${businessId}
+      GROUP BY c.id
+      ORDER BY c.created_at DESC
+    `) as unknown as (Customer & { balance: number })[];
+  },
+
   async getCustomerById(id: string, businessId: string): Promise<Customer | null> {
     return one<Customer>(await sql`
       SELECT * FROM customers WHERE id = ${id} AND business_id = ${businessId}

@@ -176,6 +176,41 @@ export async function registerCustomerAction(
   return done({ token: result.customer.token, alreadyMember: result.alreadyMember });
 }
 
+/** Pencarian pelanggan untuk dashboard kasir. */
+export async function searchCustomersAction(query: string) {
+  const { businessId } = await requireStaff();
+  if (!query.trim()) return [];
+  return db.searchCustomers(businessId, query);
+}
+
+/** Detail satu pelanggan beserta riwayat poinnya, untuk modal di dashboard. */
+export async function customerDetailAction(customerId: string) {
+  const { businessId } = await requireStaff();
+  const customer = await db.getCustomerById(customerId, businessId);
+  if (!customer) return null;
+  const [balance, ledger, redemptions] = await Promise.all([
+    db.getCustomerPointBalance(customerId),
+    db.getCustomerLedger(customerId),
+    db.getRedemptions(customerId),
+  ]);
+  return { customer, balance, ledger, redemptions };
+}
+
+export async function updateLoyaltyProgramAction(updates: {
+  mode?: "point" | "stamp";
+  earn_rate?: number;
+  stamp_per_visit?: number;
+  point_expiry_months?: number | null;
+}): Promise<ActionResult<null>> {
+  const { businessId } = await requireOwner();
+  if (updates.earn_rate !== undefined && updates.earn_rate <= 0) {
+    return fail("Kurs poin harus lebih dari nol.");
+  }
+  await db.updateLoyaltyProgram(businessId, updates);
+  revalidatePath("/app/loyalty");
+  return done(null);
+}
+
 export async function addPointsAction(
   customerId: string,
   amountSpent: number,
@@ -468,6 +503,11 @@ export async function updateIngredientPriceAction(
   if (!updated) return fail("Bahan tidak ditemukan pada bisnis ini.");
   revalidatePath("/app/finance");
   return done(null);
+}
+
+export async function getIngredientPriceHistoryAction(ingredientId: string) {
+  await requireOwner();
+  return db.getIngredientPriceHistory(ingredientId);
 }
 
 export async function saveRecipeAction(data: {
