@@ -80,6 +80,8 @@ export default function LoginClient({
   const [adminEmail, setAdminEmail] = useState("");
   const [adminPassword, setAdminPassword] = useState("");
   const [adminError, setAdminError] = useState("");
+  const [adminLoading, setAdminLoading] = useState(false);
+
 
   /**
    * Membuka toko dari kode. Kode yang berhasil disimpan di perangkat, sehingga
@@ -145,10 +147,9 @@ export default function LoginClient({
         setOwnerError(res.error);
         return;
       }
-      router.push(nextPath !== "/app" ? nextPath : res.data.next);
-      router.refresh();
+      const target = nextPath !== "/app" ? nextPath : res.data.next;
+      window.location.href = target;
     } catch {
-      // Tanpa ini, action yang melempar membuat layar diam tanpa penjelasan.
       setOwnerError("Sistem sedang bermasalah. Coba lagi sebentar lagi.");
     } finally {
       setOwnerLoading(false);
@@ -185,27 +186,38 @@ export default function LoginClient({
       return;
     }
     setStaffLoading(true);
-    const res = await loginStaff(selectedBusiness.id, staffId, pin);
-    setStaffLoading(false);
-
-    if (res.ok) {
-      router.push(res.data.next);
-      router.refresh();
-    } else {
-      setStaffError(res.error);
+    try {
+      const res = await loginStaff(selectedBusiness.id, staffId, pin);
+      if (res.ok) {
+        window.location.href = res.data.next;
+      } else {
+        setStaffError(res.error);
+        setStaffPin("");
+      }
+    } catch {
+      setStaffError("Sistem sedang bermasalah. Coba lagi sebentar lagi.");
       setStaffPin("");
+    } finally {
+      setStaffLoading(false);
     }
   };
 
   const handleAdminLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    const res = await loginOwner(adminEmail, adminPassword);
-    if (!res.ok) {
-      setAdminError(res.error);
-      return;
+    setAdminLoading(true);
+    setAdminError("");
+    try {
+      const res = await loginOwner(adminEmail, adminPassword);
+      if (!res.ok) {
+        setAdminError(res.error);
+        return;
+      }
+      window.location.href = res.data.next;
+    } catch {
+      setAdminError("Sistem sedang bermasalah. Coba lagi sebentar lagi.");
+    } finally {
+      setAdminLoading(false);
     }
-    router.push(res.data.next);
-    router.refresh();
   };
 
   return (
@@ -583,9 +595,17 @@ export default function LoginClient({
 
               <button
                 type="submit"
-                className="btn-tactile flex w-full items-center justify-center gap-2 rounded-2xl border-2 border-[#232331] bg-[#7958d8] py-3.5 text-xs font-extrabold text-white shadow-ink-md"
+                disabled={adminLoading}
+                className="btn-tactile flex w-full items-center justify-center gap-2 rounded-2xl border-2 border-[#232331] bg-[#7958d8] py-3.5 text-xs font-extrabold text-white shadow-ink-md disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                <span>Buka Panel KAEL ➔</span>
+                {adminLoading ? (
+                  <>
+                    <RefreshCw className="animate-spin" size={16} />
+                    <span>Membuka Panel...</span>
+                  </>
+                ) : (
+                  <span>Buka Panel KAEL ➔</span>
+                )}
               </button>
             </form>
           )}
