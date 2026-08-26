@@ -62,6 +62,185 @@ export const db = {
    * terbaca oleh siapa pun tanpa login. Untuk membuka satu toko, pakai
    * getBusinessByStoreCode().
    */
+  /**
+   * Ringkasan seluruh bisnis untuk panel tim KAEL.
+   *
+   * Hanya dipanggil dari halaman yang dijaga requireKaelAdmin. Tidak ada jalur
+   * lain di aplikasi ini yang mengembalikan daftar seluruh pelanggan KAEL:
+   * membocorkannya berarti tiap UMKM tahu siapa saja pesaingnya yang memakai
+   * sistem yang sama.
+   */
+  async getAdminBusinessOverview(): Promise<
+    (Business & {
+      owner_name: string | null;
+      owner_email: string | null;
+      staff_count: number;
+      modules: BusinessModule[];
+    })[]
+  > {
+    const [businesses, owners, staffCounts, modules] = await Promise.all([
+      sql`SELECT * FROM businesses ORDER BY name ASC`,
+      sql`
+        SELECT DISTINCT ON (business_id) business_id, name, email
+          FROM users WHERE role = 'owner' AND business_id IS NOT NULL
+         ORDER BY business_id, created_at ASC
+      `,
+      sql`
+        SELECT business_id, COUNT(*)::int AS n
+          FROM users WHERE role = 'staff' AND is_active = TRUE
+         GROUP BY business_id
+      `,
+      sql`SELECT * FROM business_modules ORDER BY module`,
+    ]);
+
+    const ownerBy = new Map(
+      (owners as unknown as { business_id: string; name: string; email: string }[]).map((o) => [
+        o.business_id,
+        o,
+      ]),
+    );
+    const staffBy = new Map(
+      (staffCounts as unknown as { business_id: string; n: number }[]).map((s) => [
+        s.business_id,
+        s.n,
+      ]),
+    );
+    const modsBy = new Map<string, BusinessModule[]>();
+    for (const m of modules as unknown as BusinessModule[]) {
+      const list = modsBy.get(m.business_id) ?? [];
+      list.push(m);
+      modsBy.set(m.business_id, list);
+    }
+
+    return (businesses as unknown as Business[]).map((b) => ({
+      ...b,
+      owner_name: ownerBy.get(b.id)?.name ?? null,
+      owner_email: ownerBy.get(b.id)?.email ?? null,
+      staff_count: staffBy.get(b.id) ?? 0,
+      modules: modsBy.get(b.id) ?? [],
+    }));
+  },
+
+  /**
+   * Membuat bisnis baru beserta akun pemiliknya dan modul yang dibelinya.
+   *
+   * Satu transaksi. Sebelum ini, menambah pelanggan berarti menjalankan skrip
+   * secara manual, yang berarti setiap penjualan baru menyita waktu orang.
+   *
+   * Kata sandi owner di-hash dengan scrypt lewat hashPin, sama seperti PIN
+   * staf: kata sandi mentah tidak pernah masuk ke database.
+   */
+  async createBusinessWithOwner(input: {
+    name: string;
+    businessType: "kuliner" | "jasa" | "retail";
+    category: string;
+    phone: string;
+    address: string;
+    timezone: string;
+    storeCode: string;
+    ownerName: string;
+    ownerEmail: string;
+    ownerPassword: string;
+    modules: { module: string; expiresAt: string }[];
+  }): Promise<{ success: true; business: Business } | { success: false; error: string }> {
+    const storeCode = input.storeCode.trim().toUpperCase();
+    const email = input.ownerEmail.trim().toLowerCase();
+
+    const codeTaken = await sql`
+      SELECT 1 FROM businesses WHERE upper(store_code) = ${storeCode} LIMIT 1
+    `;
+    if (codeTaken.length) {
+      return { success: false, error: `Kode toko ${storeCode} sudah dipakai usaha lain.` };
+    }
+
+    const emailTaken = await sql`SELECT 1 FROM users WHERE lower(email) = ${email} LIMIT 1`;
+    if (emailTaken.length) {
+      return { success: false, error: `Email ${email} sudah terdaftar.` };
+    }
+
+    try {
+      const business = await sql.begin(async (tx) => {
+        const rows = await tx`
+          INSERT INTO businesses ${tx({
+            name: input.name.trim(),
+            business_type: input.businessType,
+            category: input.category.trim(),
+            phone: input.phone.trim(),
+            address: input.address.trim(),
+            timezone: input.timezone,
+            store_code: storeCode,
+          })} RETURNING *
+        `;
+        const created = rows[0] as unknown as Business;
+
+        await tx`
+          INSERT INTO users ${tx({
+            business_id: created.id,
+            role: "owner",
+            name: input.ownerName.trim(),
+            email,
+            password_hash: hashPin(input.ownerPassword),
+            is_active: true,
+          })}
+        `;
+
+        for (const m of input.modules) {
+          await tx`
+            INSERT INTO business_modules ${tx({
+              business_id: created.id,
+              module: m.module,
+              status: "active",
+              activated_at: new Date().toISOString().slice(0, 10),
+              expires_at: m.expiresAt,
+            })}
+          `;
+        }
+
+        return created;
+      });
+
+      return { success: true, business: business as Business };
+    } catch (e) {
+      return { success: false, error: (e as Error).message };
+    }
+  },
+
+  /**
+   * Menyalakan, memperpanjang, menangguhkan, atau mencabut satu modul.
+   *
+   * status "none" MENGHAPUS barisnya, dan itu berbeda dari "expired": modul
+   * yang dihapus dianggap tidak pernah dibeli, jadi layarnya tidak bisa dibuka
+   * sama sekali. Modul yang kedaluwarsa tetap bisa dibaca dan diekspor.
+   */
+  async setBusinessModule(
+    businessId: string,
+    module: string,
+    status: "active" | "suspended" | "expired" | "none",
+    expiresAt: string | null,
+  ): Promise<void> {
+    if (status === "none") {
+      await sql`
+        DELETE FROM business_modules
+         WHERE business_id = ${businessId} AND module = ${module}
+      `;
+      return;
+    }
+
+    const today = new Date().toISOString().slice(0, 10);
+    await sql`
+      INSERT INTO business_modules ${sql({
+        business_id: businessId,
+        module,
+        status,
+        activated_at: today,
+        expires_at: expiresAt ?? today,
+      })}
+      ON CONFLICT (business_id, module) DO UPDATE
+        SET status = EXCLUDED.status,
+            expires_at = EXCLUDED.expires_at
+    `;
+  },
+
   async getAllBusinessesForAdmin(): Promise<Business[]> {
     return (await sql`SELECT * FROM businesses ORDER BY name ASC`) as unknown as Business[];
   },
@@ -113,6 +292,59 @@ export const db = {
         inGrace: today > expires && today <= graceEnd,
       };
     });
+  },
+
+  /**
+   * Angka nyata milik satu usaha, dipakai untuk kartu modul yang belum dibeli.
+   *
+   * Kartu terkunci yang cuma menampilkan gembok terbaca "aplikasi ini belum
+   * jadi" oleh pemilik warung, bukan "beli lagi dong". Angka dari tokonya
+   * sendiri jauh lebih kuat: dia sudah tahu Kopi Susu-nya laku, yang belum dia
+   * tahu adalah untung bersihnya.
+   *
+   * Hanya dipanggil kalau memang ada modul terkunci yang relevan, supaya
+   * beranda usaha yang sudah membeli semuanya tidak membayar biaya kueri ini.
+   */
+  async getUpsellSignals(businessId: string): Promise<{
+    paidOrders30d: number;
+    customers: number;
+    taps30d: number;
+    topItem: { name: string; qty: number } | null;
+  }> {
+    const [counts, top] = await Promise.all([
+      sql`
+        SELECT
+          (SELECT COUNT(*) FROM orders
+             WHERE business_id = ${businessId} AND status = 'paid'
+               AND created_at >= now() - interval '30 days')::int AS paid_orders,
+          (SELECT COUNT(*) FROM customers
+             WHERE business_id = ${businessId})::int AS customers,
+          (SELECT COUNT(*) FROM card_taps t
+             JOIN cards c ON c.id = t.card_id
+             WHERE c.business_id = ${businessId}
+               AND t.tapped_at >= now() - interval '30 days')::int AS taps
+      `,
+      sql`
+        SELECT oi.name_snapshot AS name, SUM(oi.qty)::int AS qty
+          FROM order_items oi
+          JOIN orders o ON o.id = oi.order_id
+         WHERE o.business_id = ${businessId} AND o.status = 'paid'
+           AND o.created_at >= now() - interval '30 days'
+         GROUP BY oi.name_snapshot
+         ORDER BY qty DESC
+         LIMIT 1
+      `,
+    ]);
+
+    const row = counts[0] as { paid_orders: number; customers: number; taps: number };
+    const best = top[0] as { name: string; qty: number } | undefined;
+
+    return {
+      paidOrders30d: row?.paid_orders ?? 0,
+      customers: row?.customers ?? 0,
+      taps30d: row?.taps ?? 0,
+      topItem: best ? { name: best.name, qty: best.qty } : null,
+    };
   },
 
   async getUsers(businessId = DEFAULT_BUSINESS_ID): Promise<User[]> {
@@ -774,10 +1006,23 @@ export const db = {
     });
   },
 
-  async getIngredientPriceHistory(ingredientId: string): Promise<IngredientPriceHistory[]> {
+  /**
+   * Riwayat harga beli satu bahan.
+   *
+   * businessId WAJIB. Versi sebelumnya menyaring hanya dengan ingredient_id,
+   * sehingga pemilik usaha mana pun yang tahu UUID sebuah bahan bisa membaca
+   * riwayat harga beli usaha lain. Itu justru data paling sensitif untuk
+   * pesaing: berapa mereka menebus bahan bakunya.
+   */
+  async getIngredientPriceHistory(
+    ingredientId: string,
+    businessId: string,
+  ): Promise<IngredientPriceHistory[]> {
     return (await sql`
-      SELECT * FROM ingredient_price_history
-      WHERE ingredient_id = ${ingredientId} ORDER BY changed_at DESC LIMIT 50
+      SELECT h.* FROM ingredient_price_history h
+      JOIN ingredients i ON i.id = h.ingredient_id
+      WHERE h.ingredient_id = ${ingredientId} AND i.business_id = ${businessId}
+      ORDER BY h.changed_at DESC LIMIT 50
     `) as unknown as IngredientPriceHistory[];
   },
 

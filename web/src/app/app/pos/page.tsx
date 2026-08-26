@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
-import { redirect } from "next/navigation";
 
 import { db } from "@/lib/db";
-import { getSession } from "@/lib/auth";
+import { guardModulePage } from "@/lib/licensing";
 import PosClient from "./pos-client";
 
 export const metadata: Metadata = {
@@ -11,17 +10,7 @@ export const metadata: Metadata = {
 };
 
 export default async function PosPage() {
-  const session = await getSession();
-  if (!session) redirect("/app/login?next=/app/pos");
-  if (!session.businessId) redirect("/app/login");
-  /**
-   * Karyawan hanya boleh membuka modul yang diberikan owner. Cek yang sama
-   * diulang di dalam server action, karena action bisa dipanggil lewat POST
-   * tanpa membuka halaman ini.
-   */
-  if (session.role === "staff" && !session.permissions?.includes("pos")) {
-    redirect("/app?ditolak=pos");
-  }
+  const { session } = await guardModulePage("pos", "/app/pos");
 
   const [business, categories, menuItems, activeShift, pendingQrOrders, users, orders] = await Promise.all([
     db.getBusiness(session.businessId),

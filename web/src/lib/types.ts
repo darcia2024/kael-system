@@ -35,13 +35,23 @@ export const STAFF_PERMISSIONS: {
 export interface Business {
   id: string;
   name: string;
+  /** Label bebas yang diketik manusia, mis. "Coffee Shop & Bakery". */
   category: string;
+  /**
+   * Kunci jenis usaha: kuliner | jasa | retail.
+   *
+   * Terpisah dari `category` karena category berupa teks bebas dan tidak bisa
+   * dipakai memetakan modul mana yang masuk akal ditawarkan.
+   */
+  business_type: "kuliner" | "jasa" | "retail";
   phone: string;
   address: string;
   google_place_id: string;
   logo_url: string;
   brand_color: string;
   timezone: string;
+  /** Kode yang diketik karyawan saat masuk. Unik, tanpa memandang huruf besar/kecil. */
+  store_code: string | null;
   created_at: string;
 }
 

@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
-import { redirect } from "next/navigation";
 
 import { db } from "@/lib/db";
-import { getSession } from "@/lib/auth";
+import { guardModulePage } from "@/lib/licensing";
 import LoyaltyClient from "./loyalty-client";
 
 /**
@@ -18,17 +17,7 @@ export const metadata: Metadata = {
 };
 
 export default async function LoyaltyPage() {
-  const session = await getSession();
-  if (!session) redirect("/app/login?next=/app/loyalty");
-  if (!session.businessId) redirect("/app/login");
-  /**
-   * Karyawan hanya boleh membuka modul yang diberikan owner. Cek yang sama
-   * diulang di dalam server action, karena action bisa dipanggil lewat POST
-   * tanpa membuka halaman ini.
-   */
-  if (session.role === "staff" && !session.permissions?.includes("loyalty")) {
-    redirect("/app?ditolak=loyalty");
-  }
+  const { session } = await guardModulePage("loyalty", "/app/loyalty");
 
   const [business, program, customers, rewards, users, staffAudit] = await Promise.all([
     db.getBusiness(session.businessId),

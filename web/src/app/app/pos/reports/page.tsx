@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
 import { db } from "@/lib/db";
-import { getSession } from "@/lib/auth";
+import { guardModulePage } from "@/lib/licensing";
 import ReportsClient from "./reports-client";
 
 /**
@@ -16,10 +16,10 @@ export const metadata: Metadata = {
 };
 
 export default async function PosReportsPage() {
-  const session = await getSession();
-  if (!session) redirect("/app/login?next=/app/pos/reports");
+  const { session } = await guardModulePage("pos", "/app/pos/reports");
+  // Laporan laba dan rekap shift tetap hanya untuk pemilik, walaupun
+  // kasir punya izin POS. Angka margin bukan urusan yang mencatatnya.
   if (session.role !== "owner") redirect("/app/pos");
-  if (!session.businessId) redirect("/app/login");
 
   const [business, reports, orders, shifts] = await Promise.all([
     db.getBusiness(session.businessId),

@@ -22,12 +22,37 @@ import {
   CheckCircle2,
   Lock
 } from "lucide-react";
-import type { Business, BusinessModule, User } from "@/lib/types";
+import type { Business, User } from "@/lib/types";
+import type { LicenseState } from "@/lib/licensing";
+import { rupiah, type ModuleKey } from "@/lib/modules-catalog";
+import { waLink } from "@/lib/site";
 import {
   createStaffAction, deactivateStaffAction, setStaffPermissionsAction, logout,
 } from "@/lib/actions";
 import { STAFF_PERMISSIONS, type StaffPermission } from "@/lib/types";
 import { formatBusinessDate } from "@/lib/formatters";
+
+/**
+ * Satu modul sebagaimana ditampilkan di beranda.
+ *
+ * Seluruh keputusan lisensi sudah diambil di server (app/page.tsx). Klien ini
+ * tidak tahu aturannya, hanya menerima keadaan akhirnya. Itu disengaja: aturan
+ * siapa boleh apa tidak pernah dikirim ke browser.
+ */
+export interface PortalModule {
+  key: ModuleKey;
+  name: string;
+  tagline: string;
+  /** Null berarti tidak bisa dibuka: belum dibeli, atau ditangguhkan. */
+  href: string | null;
+  state: LicenseState;
+  expiresAt: string | null;
+  daysLeft: number;
+  price: number;
+  renewal: number;
+  /** Kalimat pemicu dari data toko sendiri. Hanya diisi untuk modul terkunci. */
+  hook: string | null;
+}
 
 export default function AppPortalHub({
   business,
@@ -36,14 +61,17 @@ export default function AppPortalHub({
   sessionName,
   sessionRole,
   sessionPermissions,
+  notice,
 }: {
   business: Business | null;
-  modules: BusinessModule[];
+  modules: PortalModule[];
   users: User[];
   sessionName: string;
   sessionRole: User["role"];
   /** Modul yang boleh dibuka. Kosong untuk owner, yang tidak dibatasi. */
   sessionPermissions: StaffPermission[];
+  /** Alasan pengguna dilempar balik ke sini, kalau ada. */
+  notice: { kind: "terkunci" | "ditolak"; module: string } | null;
 }) {
   const router = useRouter();
 
@@ -110,48 +138,45 @@ export default function AppPortalHub({
     router.refresh();
   };
 
-  const moduleCards = [
-    {
-      id: "review",
-      title: "KAEL Review",
-      description: "Smart NFC Card & Standee Google Maps direct 302 booster, tap analytics & Place ID lock.",
-      href: "/app/review",
-      icon: Nfc,
-      color: "#7958d8",
-      bgColor: "#f0edff",
-      badge: "Modul Aktif",
-    },
-    {
-      id: "pos",
-      title: "KAEL POS & Ordering",
-      description: "Kasir layar sentuh tablet, pesanan meja QR realtime, print bluetooth thermal, shift kasir.",
-      href: "/app/pos",
-      icon: Receipt,
-      color: "#16a34a",
-      bgColor: "#dcfce7",
-      badge: "Modul Aktif",
-    },
-    {
-      id: "finance",
-      title: "KAEL Finance & HPP",
-      description: "Kalkulator resep & food cost, margin otomatis, laporan laba rugi bersih & HPP terstandar.",
-      href: "/app/finance",
-      icon: Calculator,
-      color: "#c2410c",
-      bgColor: "#ffedd5",
-      badge: "Modul Aktif",
-    },
-    {
-      id: "loyalty",
-      title: "KAEL Loyalty CRM",
-      description: "Paspor stempel digital, poin WhatsApp otomatis, UU PDP compliant, repeat order booster.",
-      href: "/app/loyalty",
-      icon: HeartHandshake,
-      color: "#d97706",
-      bgColor: "#fef3c7",
-      badge: "Modul Aktif",
-    },
-  ];
+  /**
+   * Tampilan per modul. Ikon dan warna urusan layar, jadi tinggal di sini dan
+   * tidak ikut dikirim server bersama data lisensi.
+   */
+  const LOOK: Record<string, { icon: typeof Nfc; color: string; bg: string }> = {
+    review: { icon: Nfc, color: "#7958d8", bg: "#f0edff" },
+    pos: { icon: Receipt, color: "#16a34a", bg: "#dcfce7" },
+    loyalty: { icon: HeartHandshake, color: "#d97706", bg: "#fef3c7" },
+    finance: { icon: Calculator, color: "#c2410c", bg: "#ffedd5" },
+  };
+
+  const aktif = modules.filter((m) => m.state !== "tidak_dimiliki");
+  const ditawarkan = modules.filter((m) => m.state === "tidak_dimiliki");
+
+  /** Modul berlangganan yang paling dekat jatuh temponya. */
+  const terdekat = aktif
+    .filter((m) => m.expiresAt)
+    .sort((a, b) => a.daysLeft - b.daysLeft)[0];
+
+  const perluDiperhatikan = aktif.filter(
+    (m) => m.state === "tenggang" || m.state === "kedaluwarsa" || m.state === "ditangguhkan",
+  );
+  /** Pengingat H-30. Diam saja kalau masih jauh. */
+  const segeraJatuhTempo = aktif.filter((m) => m.state === "aktif" && m.daysLeft <= 30);
+
+  const BADGE: Record<LicenseState, { teks: string; warna: string; bg: string; garis: string }> = {
+    aktif: { teks: "Aktif", warna: "#16a34a", bg: "#dcfce7", garis: "#16a34a" },
+    tenggang: { teks: "Masa tenggang", warna: "#b45309", bg: "#fef3c7", garis: "#b45309" },
+    kedaluwarsa: { teks: "Baca-saja", warna: "#b91c1c", bg: "#fee2e2", garis: "#b91c1c" },
+    ditangguhkan: { teks: "Ditangguhkan", warna: "#b91c1c", bg: "#fee2e2", garis: "#b91c1c" },
+    tidak_dimiliki: { teks: "Belum aktif", warna: "#7b7b8e", bg: "#f2f2f7", garis: "#c9c9d4" },
+  };
+
+  const pesanNotice =
+    notice?.kind === "terkunci"
+      ? "Modul itu belum aktif untuk usaha ini."
+      : notice?.kind === "ditolak"
+        ? "Kamu belum diberi akses ke bagian itu oleh pemilik usaha."
+        : null;
 
   return (
     <div className="min-h-screen bg-[#f7f6fc] text-[#232331] font-sans flex flex-col">
@@ -168,9 +193,6 @@ export default function AppPortalHub({
                 <span className="font-extrabold text-sm sm:text-base text-[#232331]">
                   {business?.name || "KAEL Merchant"}
                 </span>
-                <span className="rounded-md bg-[#dcfce7] px-2 py-0.5 font-mono text-[9px] font-bold text-[#16a34a] border border-[#16a34a]">
-                  Multi-Tenant Live
-                </span>
               </div>
               <span className="text-[11px] text-[#7b7b8e] font-mono block">
                 {business?.category} · Timezone: {business?.timezone} (WIB)
@@ -179,12 +201,20 @@ export default function AppPortalHub({
           </div>
 
           <div className="flex items-center gap-2">
-            <Link
-              href="/app/login"
+            {/*
+              Harus memanggil logout(), bukan sekadar menautkan ke /app/login.
+              Versi sebelumnya hanya berpindah halaman dan meninggalkan cookie
+              sesi utuh, jadi di tablet kasir yang dipakai bergantian, orang
+              berikutnya tinggal mengetik /app dan masih menjadi pengguna
+              sebelumnya.
+            */}
+            <button
+              type="button"
+              onClick={() => logout()}
               className="btn-tactile rounded-xl border border-[#232331] bg-[#fcfcfe] px-3 py-1.5 font-mono text-xs font-bold text-[#232331] shadow-ink-xs"
             >
               Ganti Pengguna / Logout
-            </Link>
+            </button>
           </div>
         </div>
       </header>
@@ -193,88 +223,270 @@ export default function AppPortalHub({
       <main className="flex-1 mx-auto w-full max-w-6xl p-4 sm:p-8 space-y-8">
         
         {/* Banner Renewal Info (Fondasi Bersama 2.1) */}
-        <div className="rounded-3xl border-2 border-[#232331] bg-white p-5 sm:p-6 shadow-ink-md flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-          <div className="flex items-start gap-3.5">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#f0edff] text-[#7958d8] border border-[#7958d8]">
-              <Calendar size={22} />
-            </div>
-            <div>
-              <h3 className="font-extrabold text-base text-[#232331]">
-                Status Langganan Cloud &amp; Support KAEL
-              </h3>
-              <p className="text-xs text-[#7b7b8e] mt-0.5">
-                Paket Anda aktif dengan garansi redirect kartu 100% online dan masa tenggang 14 hari saat jatuh tempo renewal tahunan.
-              </p>
-            </div>
+        {/* Alasan pengguna dilempar balik ke beranda */}
+        {pesanNotice && (
+          <div className="rounded-2xl border-2 border-[#b45309] bg-[#fef3c7] px-4 py-3 flex items-start gap-2.5">
+            <AlertTriangle size={18} className="text-[#b45309] shrink-0 mt-0.5" />
+            <p className="text-sm text-[#78350f]">{pesanNotice}</p>
           </div>
-          <div className="font-mono text-xs text-right shrink-0 bg-[#fcfcfe] p-3 rounded-2xl border border-[#dedee8]">
-            <span className="text-[#7b7b8e] block">Jatuh Tempo Perpanjangan:</span>
-            <span className="font-extrabold text-[#16a34a] text-sm">
-              {formatBusinessDate(modules[0]?.expires_at || "2027-01-15")}
-            </span>
-          </div>
-        </div>
+        )}
 
-        {/* Modules Navigation Grid */}
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-xl font-black text-[#232331]">
-                Modul Bisnis Terintegrasi
-              </h2>
-              <p className="text-xs text-[#7b7b8e]">
-                Satu database Postgres terpusat melayani seluruh kebutuhan operasional tokomu.
-              </p>
-            </div>
-          </div>
+        {/*
+          Status masa aktif langganan.
 
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {moduleCards
-              .filter((mod) => {
-                // Owner melihat semuanya. Karyawan hanya modul yang diizinkan.
-                if (sessionRole !== "staff") return true;
-                const slug = (mod.href || "").split("/").filter(Boolean).pop();
-                return slug ? (sessionPermissions ?? []).includes(slug as StaffPermission) : false;
-              })
-              .map((mod) => {
-              const Icon = mod.icon;
-              return (
-                <Link
-                  key={mod.id}
-                  href={mod.href}
-                  className="card-tactile group flex flex-col justify-between rounded-3xl border-2 border-[#232331] bg-white p-5 shadow-ink-md transition-all hover:translate-y-[-2px]"
+          Tidak ditampilkan sama sekali kalau belum ada modul apa pun, karena
+          "Langganan berjalan normal" di atas daftar yang kosong itu saling
+          bertentangan. Keadaan ini nyata: admin bisa mematikan semua modul
+          sebuah usaha dari panel.
+        */}
+        {aktif.length === 0 ? null : perluDiperhatikan.length > 0 ? (
+          <div className="rounded-3xl border-2 border-[#b91c1c] bg-[#fee2e2] p-5 sm:p-6 space-y-3">
+            <div className="flex items-start gap-3">
+              <AlertTriangle size={22} className="text-[#b91c1c] shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <h3 className="font-extrabold text-base text-[#7f1d1d]">
+                  Ada modul yang masa aktifnya sudah lewat
+                </h3>
+                <p className="text-xs text-[#7f1d1d] leading-relaxed">
+                  Data lama tetap bisa dilihat dan diekspor. Yang berhenti hanya penyimpanan
+                  data baru, sampai langganannya diperpanjang.
+                </p>
+              </div>
+            </div>
+            <ul className="space-y-1.5">
+              {perluDiperhatikan.map((m) => (
+                <li key={m.key} className="flex flex-wrap items-center gap-2 text-xs">
+                  <span className="font-extrabold text-[#7f1d1d]">{m.name}</span>
+                  <span className="font-mono text-[#991b1b]">
+                    {m.state === "ditangguhkan"
+                      ? "ditangguhkan"
+                      : m.state === "tenggang"
+                        ? `jatuh tempo ${formatBusinessDate(m.expiresAt!)} — sisa tenggang ${14 + m.daysLeft} hari`
+                        : `berakhir ${formatBusinessDate(m.expiresAt!)} — sekarang baca-saja`}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            {sessionRole === "owner" && (
+              <a
+                href={waLink(
+                  `Halo KAEL, saya ${business?.name ?? "pemilik usaha"} mau memperpanjang langganan: ${perluDiperhatikan
+                    .map((m) => m.name)
+                    .join(", ")}.`,
+                )}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn-tactile inline-flex items-center gap-1.5 rounded-2xl border-2 border-[#232331] bg-[#d9ff57] px-4 py-2 font-mono text-xs font-extrabold text-[#232331] shadow-ink-xs"
+              >
+                <span>Perpanjang lewat WhatsApp</span>
+                <ExternalLink size={13} />
+              </a>
+            )}
+          </div>
+        ) : (
+          <div className="rounded-3xl border-2 border-[#232331] bg-white p-5 sm:p-6 shadow-ink-md flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+            <div className="flex items-start gap-3.5">
+              <div
+                className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border ${
+                  segeraJatuhTempo.length
+                    ? "bg-[#fef3c7] text-[#b45309] border-[#b45309]"
+                    : "bg-[#f0edff] text-[#7958d8] border-[#7958d8]"
+                }`}
+              >
+                <Calendar size={22} />
+              </div>
+              <div>
+                <h3 className="font-extrabold text-base text-[#232331]">
+                  {segeraJatuhTempo.length
+                    ? "Perpanjangan sudah dekat"
+                    : "Langganan berjalan normal"}
+                </h3>
+                <p className="text-xs text-[#7b7b8e] mt-0.5 leading-relaxed">
+                  {segeraJatuhTempo.length
+                    ? `${segeraJatuhTempo.map((m) => m.name).join(", ")} jatuh tempo dalam ${
+                        segeraJatuhTempo[0].daysLeft
+                      } hari. Ada masa tenggang 14 hari setelahnya, jadi kasir tidak berhenti mendadak.`
+                    : "Semua modul aktif. Saat jatuh tempo nanti masih ada masa tenggang 14 hari sebelum berpindah ke mode baca-saja."}
+                </p>
+              </div>
+            </div>
+            {terdekat?.expiresAt && (
+              <div className="font-mono text-xs md:text-right shrink-0 bg-[#fcfcfe] p-3 rounded-2xl border border-[#dedee8]">
+                <span className="text-[#7b7b8e] block">Jatuh tempo terdekat:</span>
+                <span
+                  className={`font-extrabold text-sm ${
+                    segeraJatuhTempo.length ? "text-[#b45309]" : "text-[#16a34a]"
+                  }`}
                 >
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span
-                        className="flex h-10 w-10 items-center justify-center rounded-2xl border border-[#232331] shadow-ink-xs"
-                        style={{ backgroundColor: mod.bgColor, color: mod.color }}
-                      >
-                        <Icon size={20} />
-                      </span>
-                      <span className="rounded-md bg-[#dcfce7] px-2 py-0.5 font-mono text-[9px] font-bold text-[#16a34a] border border-[#16a34a]">
-                        {mod.badge}
-                      </span>
-                    </div>
-                    <div>
-                      <h3 className="font-extrabold text-base text-[#232331] group-hover:text-[#7958d8] transition-colors">
-                        {mod.title}
-                      </h3>
-                      <p className="text-xs text-[#7b7b8e] mt-1 line-clamp-2 leading-relaxed">
-                        {mod.description}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="mt-4 pt-3 border-t border-[#dedee8] flex items-center justify-between text-xs font-mono font-bold text-[#7958d8]">
-                    <span>Buka Modul</span>
-                    <ArrowRight size={14} className="group-hover:translate-x-1 transition-transform" />
-                  </div>
-                </Link>
-              );
-            })}
+                  {formatBusinessDate(terdekat.expiresAt)}
+                </span>
+              </div>
+            )}
           </div>
+        )}
+
+        {/* Modul yang dimiliki */}
+        <div className="space-y-4">
+          <div>
+            <h2 className="text-xl font-black text-[#232331]">Modul Bisnis Kamu</h2>
+            <p className="text-xs text-[#7b7b8e]">
+              {sessionRole === "owner"
+                ? "Semua data tersimpan di satu tempat dan hanya bisa dibuka oleh akun tokomu."
+                : "Bagian yang diberikan pemilik usaha untuk kamu kerjakan."}
+            </p>
+          </div>
+
+          {aktif.length === 0 ? (
+            <div className="rounded-3xl border-2 border-dashed border-[#c9c9d4] bg-white p-8 text-center">
+              <p className="text-sm text-[#7b7b8e]">
+                Belum ada modul yang bisa dibuka dari akun ini.
+              </p>
+            </div>
+          ) : (
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              {aktif.map((mod) => {
+                const look = LOOK[mod.key] ?? LOOK.review;
+                const Icon = look.icon;
+                const badge = BADGE[mod.state];
+                const bisaDibuka = Boolean(mod.href);
+
+                const isi = (
+                  <>
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <span
+                          className="flex h-10 w-10 items-center justify-center rounded-2xl border border-[#232331] shadow-ink-xs"
+                          style={{ backgroundColor: look.bg, color: look.color }}
+                        >
+                          <Icon size={20} />
+                        </span>
+                        <span
+                          className="rounded-md px-2 py-0.5 font-mono text-[9px] font-bold border"
+                          style={{
+                            backgroundColor: badge.bg,
+                            color: badge.warna,
+                            borderColor: badge.garis,
+                          }}
+                        >
+                          {badge.teks}
+                        </span>
+                      </div>
+                      <div>
+                        <h3 className="font-extrabold text-base text-[#232331] group-hover:text-[#7958d8] transition-colors">
+                          {mod.name}
+                        </h3>
+                        <p className="text-xs text-[#7b7b8e] mt-1 line-clamp-2 leading-relaxed">
+                          {mod.tagline}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="mt-4 pt-3 border-t border-[#dedee8] flex items-center justify-between text-xs font-mono font-bold text-[#7958d8]">
+                      <span>{bisaDibuka ? "Buka Modul" : "Tidak bisa dibuka"}</span>
+                      {bisaDibuka && (
+                        <ArrowRight size={14} className="group-hover:translate-x-1 transition-transform" />
+                      )}
+                    </div>
+                  </>
+                );
+
+                return bisaDibuka ? (
+                  <Link
+                    key={mod.key}
+                    href={mod.href!}
+                    className="card-tactile group flex flex-col justify-between rounded-3xl border-2 border-[#232331] bg-white p-5 shadow-ink-md transition-all hover:translate-y-[-2px]"
+                  >
+                    {isi}
+                  </Link>
+                ) : (
+                  <div
+                    key={mod.key}
+                    className="flex flex-col justify-between rounded-3xl border-2 border-[#c9c9d4] bg-[#fcfcfe] p-5 opacity-70"
+                  >
+                    {isi}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
+
+        {/*
+          Modul yang belum dibeli.
+
+          Hanya tampil untuk owner, dan hanya yang masuk akal untuk jenis
+          usahanya: barbershop tidak pernah melihat kalkulator resep. Kartu
+          memakai angka dari tokonya sendiri kalau angkanya sudah cukup
+          berarti, karena gembok kosong terbaca "aplikasi ini belum jadi",
+          bukan "menarik, saya mau".
+        */}
+        {sessionRole === "owner" && ditawarkan.length > 0 && (
+          <div className="space-y-4">
+            <div>
+              <h2 className="text-xl font-black text-[#232331]">Bisa ditambahkan ke tokomu</h2>
+              <p className="text-xs text-[#7b7b8e]">
+                Belum aktif di akun ini. Yang ditampilkan hanya yang cocok untuk jenis usahamu.
+              </p>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              {ditawarkan.map((mod) => {
+                const look = LOOK[mod.key] ?? LOOK.review;
+                const Icon = look.icon;
+                return (
+                  <div
+                    key={mod.key}
+                    className="flex flex-col justify-between gap-4 rounded-3xl border-2 border-dashed border-[#c9c9d4] bg-white p-5"
+                  >
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <span
+                          className="flex h-10 w-10 items-center justify-center rounded-2xl border border-[#c9c9d4]"
+                          style={{ backgroundColor: look.bg, color: look.color }}
+                        >
+                          <Icon size={20} />
+                        </span>
+                        <span className="inline-flex items-center gap-1 rounded-md border border-[#c9c9d4] bg-[#f2f2f7] px-2 py-0.5 font-mono text-[9px] font-bold text-[#7b7b8e]">
+                          <Lock size={9} />
+                          Belum aktif
+                        </span>
+                      </div>
+
+                      <h3 className="font-extrabold text-base text-[#232331]">{mod.name}</h3>
+
+                      {mod.hook ? (
+                        <p className="text-sm text-[#232331] leading-relaxed font-medium">
+                          {mod.hook}
+                        </p>
+                      ) : (
+                        <p className="text-xs text-[#7b7b8e] leading-relaxed">{mod.tagline}</p>
+                      )}
+                    </div>
+
+                    <div className="space-y-3 border-t border-[#dedee8] pt-3">
+                      <div className="font-mono text-xs text-[#7b7b8e]">
+                        <span className="font-extrabold text-sm text-[#232331]">
+                          {rupiah(mod.price)}
+                        </span>
+                        <span> tahun pertama, lalu {rupiah(mod.renewal)} / tahun</span>
+                      </div>
+                      <a
+                        href={waLink(
+                          `Halo KAEL, saya ${business?.name ?? "pemilik usaha"} mau menambahkan modul ${mod.name} (${rupiah(mod.price)}).`,
+                        )}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="btn-tactile inline-flex w-full items-center justify-center gap-1.5 rounded-2xl border-2 border-[#232331] bg-[#d9ff57] px-4 py-2 font-mono text-xs font-extrabold text-[#232331] shadow-ink-xs"
+                      >
+                        <span>Tanya cara menambahkan</span>
+                        <ExternalLink size={13} />
+                      </a>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Staff & Shift Keypad PIN Management (Fondasi Bersama 1.4) */}
         <div className="rounded-3xl border-2 border-[#232331] bg-white p-6 shadow-ink-md space-y-5">
@@ -434,7 +646,7 @@ export default function AppPortalHub({
       </main>
 
       <footer className="border-t border-[#dedee8] bg-white py-4 text-center text-xs font-mono text-[#7b7b8e]">
-        KAEL System v1.0 · Fondasi Bersama &amp; Multi-Tenant Database
+        KAEL System · Data tokomu tersimpan terpisah dan hanya bisa dibuka dari akun ini
       </footer>
     </div>
   );

@@ -10,6 +10,8 @@ import {
   isPlacesSearchConfigured,
   type GooglePlaceResult,
 } from "./google-places";
+import { moduleLock, requireModuleRead } from "./licensing";
+import { MODULE_CATALOG } from "./modules-catalog";
 import {
   requireStaff, requireOwner, requireKaelAdmin, requirePermission,
   createSession, destroySession, getSession, verifyPin, isLegacyPinHash,
@@ -50,7 +52,7 @@ export async function loginOwner(
     role: user.role,
     name: user.name,
   });
-  return done({ next: user.role === "kael_admin" ? "/admin/cards" : "/app" });
+  return done({ next: user.role === "kael_admin" ? "/admin/businesses" : "/app" });
 }
 
 export async function loginStaff(
@@ -153,6 +155,8 @@ export async function activateCardAction(
   if (!businessId) {
     return fail("Masuk sebagai pemilik usaha dulu sebelum mengaktifkan kartu.");
   }
+  const locked = await moduleLock(businessId, "review", "write");
+  if (locked) return fail(locked);
 
   let url: URL;
   try {
@@ -204,6 +208,8 @@ export async function updateCardAction(
   updates: { destination_url?: string; label?: string; status?: "active" | "suspended" },
 ): Promise<ActionResult<null>> {
   const { businessId } = await requireOwner();
+  const locked = await moduleLock(businessId, "review", "write");
+  if (locked) return fail(locked);
 
   if (updates.destination_url) {
     try {
@@ -248,6 +254,16 @@ export async function registerCustomerAction(
   if (!consent) return fail("Persetujuan penyimpanan data diperlukan untuk mendaftar.");
   if (!name.trim()) return fail("Nama belum diisi.");
 
+  /**
+   * Jalur publik: yang memanggil ini pelanggan, bukan staf. Kalau modul
+   * Loyalty toko ini belum aktif atau sudah lewat masa aktifnya, pendaftaran
+   * ditolak — tapi alasannya TIDAK disebutkan. Pelanggan tidak perlu, dan
+   * tidak pantas, tahu bahwa tokonya telat memperpanjang langganan.
+   */
+  if (await moduleLock(businessId, "loyalty", "write")) {
+    return fail("Pendaftaran member sedang tidak tersedia di toko ini.");
+  }
+
   const result = await db.registerCustomer(businessId, name.trim(), phone, birthday);
   if (!result.success) return fail(result.error);
   return done({ token: result.customer.token, alreadyMember: result.alreadyMember });
@@ -255,14 +271,14 @@ export async function registerCustomerAction(
 
 /** Pencarian pelanggan untuk dashboard kasir. */
 export async function searchCustomersAction(query: string) {
-  const { businessId } = await requirePermission("loyalty");
+  const { businessId } = await requireModuleRead("loyalty");
   if (!query.trim()) return [];
   return db.searchCustomers(businessId, query);
 }
 
 /** Detail satu pelanggan beserta riwayat poinnya, untuk modal di dashboard. */
 export async function customerDetailAction(customerId: string) {
-  const { businessId } = await requirePermission("loyalty");
+  const { businessId } = await requireModuleRead("loyalty");
   const customer = await db.getCustomerById(customerId, businessId);
   if (!customer) return null;
   const [balance, ledger, redemptions] = await Promise.all([
@@ -280,6 +296,8 @@ export async function updateLoyaltyProgramAction(updates: {
   point_expiry_months?: number | null;
 }): Promise<ActionResult<null>> {
   const { businessId } = await requireOwner();
+  const locked = await moduleLock(businessId, "loyalty", "write");
+  if (locked) return fail(locked);
   if (updates.earn_rate !== undefined && updates.earn_rate <= 0) {
     return fail("Kurs poin harus lebih dari nol.");
   }
@@ -295,6 +313,8 @@ export async function addPointsAction(
   amountSpent: number,
 ): Promise<ActionResult<{ earned: number; balance: number }>> {
   const { businessId, userId } = await requirePermission("loyalty");
+  const locked = await moduleLock(businessId, "loyalty", "write");
+  if (locked) return fail(locked);
   if (amountSpent <= 0) return fail("Nominal belanja harus lebih dari nol.");
   // Batas kewajaran. Nominal di luar ini hampir pasti salah ketik.
   if (amountSpent > 50_000_000) return fail("Nominal terlalu besar. Periksa kembali.");
@@ -318,6 +338,8 @@ export async function addManualPointsAction(
   note: string,
 ): Promise<ActionResult<{ balance: number }>> {
   const { businessId, userId } = await requirePermission("loyalty");
+  const locked = await moduleLock(businessId, "loyalty", "write");
+  if (locked) return fail(locked);
   if (!Number.isInteger(delta) || delta === 0) return fail("Jumlah poin tidak valid.");
   if (Math.abs(delta) > 1000) return fail("Penyesuaian manual dibatasi 1000 poin.");
   if (!note.trim()) return fail("Alasan penyesuaian wajib diisi.");
@@ -336,6 +358,8 @@ export async function redeemRewardAction(
   rewardId: string,
 ): Promise<ActionResult<{ code: string; rewardName: string }>> {
   const { businessId, userId } = await requirePermission("loyalty");
+  const locked = await moduleLock(businessId, "loyalty", "write");
+  if (locked) return fail(locked);
   const customer = await db.getCustomerById(customerId, businessId);
   if (!customer) return fail("Pelanggan tidak ditemukan pada bisnis ini.");
 
@@ -349,6 +373,8 @@ export async function saveRewardAction(data: {
   id?: string; name: string; point_cost: number; stock: number | null; is_active: boolean;
 }): Promise<ActionResult<null>> {
   const { businessId } = await requireOwner();
+  const locked = await moduleLock(businessId, "loyalty", "write");
+  if (locked) return fail(locked);
   if (!data.name.trim()) return fail("Nama reward belum diisi.");
   if (data.point_cost <= 0) return fail("Biaya poin harus lebih dari nol.");
   await db.saveReward(businessId, data);
@@ -358,6 +384,8 @@ export async function saveRewardAction(data: {
 
 export async function deleteRewardAction(id: string): Promise<ActionResult<null>> {
   const { businessId } = await requireOwner();
+  const locked = await moduleLock(businessId, "loyalty", "write");
+  if (locked) return fail(locked);
   const ok = await db.deleteReward(id, businessId);
   if (!ok) return fail("Reward tidak ditemukan.");
   revalidatePath("/app/loyalty");
@@ -367,6 +395,8 @@ export async function deleteRewardAction(id: string): Promise<ActionResult<null>
 /** Hak penghapusan data menurut UU PDP. Hanya owner. */
 export async function anonymizeCustomerAction(customerId: string): Promise<ActionResult<null>> {
   const { businessId } = await requireOwner();
+  const locked = await moduleLock(businessId, "loyalty", "write");
+  if (locked) return fail(locked);
   const ok = await db.anonymizeCustomer(customerId, businessId);
   if (!ok) return fail("Pelanggan tidak ditemukan.");
   revalidatePath("/app/loyalty");
@@ -379,6 +409,8 @@ export async function anonymizeCustomerAction(customerId: string): Promise<Actio
 
 export async function openShiftAction(openingCash: number, notes?: string): Promise<ActionResult<null>> {
   const { businessId, userId } = await requirePermission("pos");
+  const locked = await moduleLock(businessId, "pos", "write");
+  if (locked) return fail(locked);
   if (openingCash < 0) return fail("Modal awal tidak boleh negatif.");
   const result = await db.openShift(businessId, userId, openingCash, notes);
   if (!result.success) return fail(result.error);
@@ -392,6 +424,8 @@ export async function closeShiftAction(
   notes?: string,
 ): Promise<ActionResult<{ variance: number }>> {
   const { businessId } = await requirePermission("pos");
+  const locked = await moduleLock(businessId, "pos", "write");
+  if (locked) return fail(locked);
   if (physicalCash < 0) return fail("Uang laci tidak boleh negatif.");
   const shift = await db.closeShift(shiftId, businessId, physicalCash, notes);
   if (!shift) return fail("Shift tidak ditemukan atau sudah ditutup.");
@@ -411,6 +445,8 @@ export async function createOrderAction(input: {
   items: { menu_item_id: string; qty: number; note?: string }[];
 }): Promise<ActionResult<{ orderId: string; orderNo: string; total: number; change: number }>> {
   const { businessId, userId } = await requirePermission("pos");
+  const locked = await moduleLock(businessId, "pos", "write");
+  if (locked) return fail(locked);
   if (!input.items.length) return fail("Keranjang masih kosong.");
 
   /**
@@ -483,6 +519,16 @@ export async function createQrOrderAction(
 ): Promise<ActionResult<{ orderId: string; orderNo: string }>> {
   if (!items.length) return fail("Keranjang masih kosong.");
 
+  /**
+   * Sama seperti pendaftaran member: ini dipanggil pelanggan yang memindai QR
+   * di meja, tanpa sesi. Tanpa pemeriksaan ini, usaha yang modul POS-nya sudah
+   * lewat masa aktif akan tetap menerima pesanan QR selamanya dan tidak ada
+   * satu pun layar yang menghentikannya.
+   */
+  if (await moduleLock(businessId, "pos", "write")) {
+    return fail("Pemesanan lewat QR sedang tidak tersedia. Silakan pesan langsung ke kasir.");
+  }
+
   const menu = await db.getMenuItems(businessId);
   const byId = new Map(menu.map((m) => [m.id, m]));
 
@@ -520,6 +566,8 @@ export async function updateOrderStatusAction(
   status: "open" | "paid" | "cancelled",
 ): Promise<ActionResult<null>> {
   const { businessId } = await requirePermission("pos");
+  const locked = await moduleLock(businessId, "pos", "write");
+  if (locked) return fail(locked);
   const order = await db.updateOrderStatus(orderId, businessId, status);
   if (!order) return fail("Transaksi tidak ditemukan.");
   revalidatePath("/app/pos");
@@ -533,6 +581,8 @@ export async function refundOrderAction(
   reason: string,
 ): Promise<ActionResult<null>> {
   const { businessId, userId } = await requireOwner();
+  const locked = await moduleLock(businessId, "pos", "write");
+  if (locked) return fail(locked);
   if (!reason.trim()) return fail("Alasan refund wajib diisi.");
   const result = await db.refundOrder(orderId, businessId, amount, reason.trim(), userId);
   if (!result.success) return fail(result.error);
@@ -545,6 +595,8 @@ export async function setMenuAvailabilityAction(
   isAvailable: boolean,
 ): Promise<ActionResult<null>> {
   const { businessId } = await requirePermission("pos");
+  const locked = await moduleLock(businessId, "pos", "write");
+  if (locked) return fail(locked);
   const ok = await db.updateMenuItemAvailability(menuItemId, businessId, isAvailable);
   if (!ok) return fail("Menu tidak ditemukan.");
   revalidatePath("/app/pos");
@@ -559,6 +611,8 @@ export async function createIngredientAction(
   name: string, packPrice: number, packSize: number, baseUnit: "gr" | "ml" | "pcs",
 ): Promise<ActionResult<{ id: string }>> {
   const { businessId } = await requireOwner();
+  const locked = await moduleLock(businessId, "finance", "write");
+  if (locked) return fail(locked);
   if (!name.trim()) return fail("Nama bahan belum diisi.");
   if (packPrice <= 0) return fail("Harga kemasan harus lebih dari nol.");
   if (packSize <= 0) return fail("Isi kemasan harus lebih dari nol.");
@@ -577,6 +631,8 @@ export async function updateIngredientPriceAction(
   ingredientId: string, newPackPrice: number,
 ): Promise<ActionResult<null>> {
   const { businessId } = await requireOwner();
+  const locked = await moduleLock(businessId, "finance", "write");
+  if (locked) return fail(locked);
   if (newPackPrice <= 0) return fail("Harga harus lebih dari nol.");
   const updated = await db.updateIngredientPrice(ingredientId, businessId, newPackPrice);
   if (!updated) return fail("Bahan tidak ditemukan pada bisnis ini.");
@@ -585,8 +641,8 @@ export async function updateIngredientPriceAction(
 }
 
 export async function getIngredientPriceHistoryAction(ingredientId: string) {
-  await requireOwner();
-  return db.getIngredientPriceHistory(ingredientId);
+  const { businessId } = await requireModuleRead("finance", { ownerOnly: true });
+  return db.getIngredientPriceHistory(ingredientId, businessId);
 }
 
 export async function saveRecipeAction(data: {
@@ -602,6 +658,8 @@ export async function saveRecipeAction(data: {
   packaging: { name: string; cost: number }[];
 }): Promise<ActionResult<{ id: string }>> {
   const { businessId } = await requireOwner();
+  const locked = await moduleLock(businessId, "finance", "write");
+  if (locked) return fail(locked);
   if (!data.name.trim()) return fail("Nama produk belum diisi.");
   if (data.output_qty < 1) return fail("Jumlah hasil produksi minimal 1.");
 
@@ -620,6 +678,8 @@ export async function saveRecipeAction(data: {
 
 export async function deleteRecipeAction(id: string): Promise<ActionResult<null>> {
   const { businessId } = await requireOwner();
+  const locked = await moduleLock(businessId, "finance", "write");
+  if (locked) return fail(locked);
   const ok = await db.deleteRecipe(id, businessId);
   if (!ok) return fail("Produk tidak ditemukan.");
   revalidatePath("/app/finance");
@@ -676,5 +736,105 @@ export async function deactivateStaffAction(userId: string): Promise<ActionResul
   const ok = await db.deactivateStaff(userId, businessId);
   if (!ok) return fail("Staf tidak ditemukan.");
   revalidatePath("/app");
+  return done(null);
+}
+
+// ===========================================================================
+// Panel tim KAEL: pelanggan dan modulnya
+// ===========================================================================
+
+/** Modul yang benar-benar bisa dijual. Modul rencana tidak pernah lolos. */
+const MODUL_TERSEDIA = new Set(
+  MODULE_CATALOG.filter((m) => m.available).map((m) => m.key as string),
+);
+
+const JENIS_USAHA = new Set(["kuliner", "jasa", "retail"]);
+
+/**
+ * Mendaftarkan pelanggan baru: bisnisnya, akun pemiliknya, dan modul yang
+ * dibelinya, sekaligus.
+ *
+ * Ini menggantikan menjalankan skrip secara manual tiap ada penjualan. Yang
+ * pertama jebol saat penjualan menumpuk biasanya bukan kodenya, tapi waktu
+ * orang yang harus mengetik ulang data pelanggan satu per satu.
+ */
+export async function createBusinessAction(input: {
+  name: string;
+  businessType: string;
+  category: string;
+  phone: string;
+  address: string;
+  storeCode: string;
+  ownerName: string;
+  ownerEmail: string;
+  ownerPassword: string;
+  modules: { module: string; expiresAt: string }[];
+}): Promise<ActionResult<{ businessId: string; storeCode: string }>> {
+  await requireKaelAdmin();
+
+  if (!input.name.trim()) return fail("Nama usaha belum diisi.");
+  if (!input.ownerName.trim()) return fail("Nama pemilik belum diisi.");
+  if (!JENIS_USAHA.has(input.businessType)) return fail("Jenis usaha tidak dikenali.");
+
+  const storeCode = input.storeCode.trim().toUpperCase();
+  if (!/^[A-Z0-9]{3,10}$/.test(storeCode)) {
+    return fail("Kode toko harus 3 sampai 10 huruf atau angka, tanpa spasi.");
+  }
+
+  const email = input.ownerEmail.trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return fail("Email pemilik tidak valid.");
+
+  // Kata sandi owner boleh angka pendek, dan yang menahan tebakan adalah
+  // penguncian 5 percobaan di authenticateOwner, bukan panjangnya. Enam tetap
+  // batas bawah yang wajar.
+  if (input.ownerPassword.length < 6) return fail("Kata sandi pemilik minimal 6 karakter.");
+
+  const modules = input.modules.filter((m) => MODUL_TERSEDIA.has(m.module));
+  if (!modules.length) return fail("Pilih minimal satu modul yang dibeli.");
+  for (const m of modules) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(m.expiresAt)) {
+      return fail("Tanggal jatuh tempo harus lengkap untuk tiap modul.");
+    }
+  }
+
+  const result = await db.createBusinessWithOwner({
+    name: input.name,
+    businessType: input.businessType as "kuliner" | "jasa" | "retail",
+    category: input.category,
+    phone: input.phone,
+    address: input.address,
+    timezone: "Asia/Jakarta",
+    storeCode,
+    ownerName: input.ownerName,
+    ownerEmail: email,
+    ownerPassword: input.ownerPassword,
+    modules,
+  });
+
+  if (!result.success) return fail(result.error);
+
+  revalidatePath("/admin/businesses");
+  return done({ businessId: result.business.id, storeCode });
+}
+
+/** Menyalakan, memperpanjang, menangguhkan, atau mencabut satu modul. */
+export async function setBusinessModuleAction(
+  businessId: string,
+  module: string,
+  status: "active" | "suspended" | "expired" | "none",
+  expiresAt: string | null,
+): Promise<ActionResult<null>> {
+  await requireKaelAdmin();
+
+  if (!MODUL_TERSEDIA.has(module)) return fail("Modul tidak dikenali.");
+  if (!["active", "suspended", "expired", "none"].includes(status)) {
+    return fail("Status tidak dikenali.");
+  }
+  if (status !== "none" && (!expiresAt || !/^\d{4}-\d{2}-\d{2}$/.test(expiresAt))) {
+    return fail("Tanggal jatuh tempo belum diisi.");
+  }
+
+  await db.setBusinessModule(businessId, module, status, expiresAt);
+  revalidatePath("/admin/businesses");
   return done(null);
 }

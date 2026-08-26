@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
-import { redirect } from "next/navigation";
 
 import { db } from "@/lib/db";
-import { getSession } from "@/lib/auth";
+import { guardModulePage } from "@/lib/licensing";
 import ReviewClient from "./review-client";
 
 /**
@@ -19,17 +18,7 @@ export const metadata: Metadata = {
 };
 
 export default async function ReviewDashboardPage() {
-  const session = await getSession();
-  if (!session) redirect("/app/login?next=/app/review");
-  if (!session.businessId) redirect("/app/login");
-  /**
-   * Karyawan hanya boleh membuka modul yang diberikan owner. Cek yang sama
-   * diulang di dalam server action, karena action bisa dipanggil lewat POST
-   * tanpa membuka halaman ini.
-   */
-  if (session.role === "staff" && !session.permissions?.includes("review")) {
-    redirect("/app?ditolak=review");
-  }
+  const { session } = await guardModulePage("review", "/app/review");
 
   const [business, cards, rawTaps] = await Promise.all([
     db.getBusiness(session.businessId),

@@ -21,10 +21,10 @@ export const metadata: Metadata = {
 export default async function AdminEntryPage() {
   const session = await getSession();
 
-  // Sudah masuk sebagai tim KAEL, langsung ke panel kartu.
-  if (session?.role === "kael_admin") redirect("/admin/cards");
+  // Sudah masuk sebagai tim KAEL, langsung ke panel pelanggan.
+  if (session?.role === "kael_admin") redirect("/admin/businesses");
   // Sudah masuk sebagai pemilik atau staf, tidak ada urusan di sini.
   if (session) redirect("/app");
 
-  return <LoginClient nextPath="/admin/cards" adminMode />;
+  return <LoginClient nextPath="/admin/businesses" adminMode />;
 }

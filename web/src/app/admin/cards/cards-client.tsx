@@ -20,7 +20,7 @@ import {
   AlertCircle
 } from "lucide-react";
 import type { Card } from "@/lib/types";
-import { issueCardsAction } from "@/lib/actions";
+import { issueCardsAction, logout } from "@/lib/actions";
 import { formatCardCodeDisplay } from "@/lib/card-code";
 import { formatBusinessDateTime } from "@/lib/formatters";
 
@@ -87,7 +87,8 @@ export default function KaelAdminCardsPage({ initialCards }: { initialCards: Car
         <div className="mx-auto flex max-w-6xl items-center justify-between">
           <div className="flex items-center gap-3">
             <Link
-              href="/app"
+              href="/admin/businesses"
+              title="Panel pelanggan"
               className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#232331] bg-[#fcfcfe] text-[#232331] shadow-ink-xs hover:bg-[#f0edff]"
             >
               <ArrowLeft size={16} />
@@ -109,11 +110,20 @@ export default function KaelAdminCardsPage({ initialCards }: { initialCards: Car
 
           <div className="flex items-center gap-2 font-mono text-xs">
             <Link
-              href="/app/login"
+              href="/admin/businesses"
+              className="btn-tactile rounded-xl border-2 border-[#232331] bg-[#d9ff57] px-3 py-1.5 font-extrabold text-[#232331]"
+            >
+              Pelanggan
+            </Link>
+            {/* Sama seperti di portal: harus memanggil logout(), karena
+                menautkan ke /app/login saja meninggalkan cookie sesi utuh. */}
+            <button
+              type="button"
+              onClick={() => logout()}
               className="btn-tactile rounded-xl border border-[#232331] bg-white px-3 py-1.5 font-bold text-[#7b7b8e] hover:text-[#232331]"
             >
               Keluar Admin
-            </Link>
+            </button>
           </div>
         </div>
       </header>

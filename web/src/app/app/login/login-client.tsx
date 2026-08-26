@@ -540,7 +540,7 @@ export default function LoginClient({
             <form onSubmit={handleAdminLogin} className="space-y-4">
               <div className="rounded-2xl border border-[#dedee8] bg-[#fcfcfe] p-3 text-[11px] font-mono text-[#7b7b8e] space-y-1">
                 <span className="font-bold text-[#232331] block">Otoritas Tim KAEL:</span>
-                <p>Panel khusus penerbitan batch kartu NFC &amp; audit aktivasi.</p>
+                <p>Panel pendaftaran pelanggan, pengaturan modul, dan penerbitan kartu NFC.</p>
               </div>
 
               <div className="space-y-1.5">
@@ -585,7 +585,7 @@ export default function LoginClient({
                 type="submit"
                 className="btn-tactile flex w-full items-center justify-center gap-2 rounded-2xl border-2 border-[#232331] bg-[#7958d8] py-3.5 text-xs font-extrabold text-white shadow-ink-md"
               >
-                <span>Buka Admin Batch Kartu ➔</span>
+                <span>Buka Panel KAEL ➔</span>
               </button>
             </form>
           )}
@@ -595,7 +595,7 @@ export default function LoginClient({
 
       {/* Footer */}
       <footer className="mx-auto w-full max-w-4xl text-center py-2 font-mono text-[11px] text-[#7b7b8e]">
-        KAEL System Security · End-to-End Encryption &amp; RLS Multi-Tenant Protection
+        KAEL System · Kata sandi dan PIN disimpan terenkripsi
       </footer>
 
     </div>
