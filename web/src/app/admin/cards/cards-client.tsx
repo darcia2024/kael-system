@@ -243,13 +243,27 @@ export default function KaelAdminCardsPage({ initialCards }: { initialCards: Car
                           <td className="p-2.5 font-extrabold text-[#232331]">
                             {formatCardCodeDisplay(card.card_code)}
                           </td>
-                          <td className="p-2.5 text-[#16a34a] font-bold">
-                            https://r.kael.id/{card.card_code}
+                          <td className="p-2.5 font-bold">
+                            <Link
+                              href={`/r/${card.card_code}`}
+                              target="_blank"
+                              className="inline-flex items-center gap-1 text-[#16a34a] hover:underline"
+                            >
+                              <span>/r/{card.card_code}</span>
+                              <ExternalLink size={12} />
+                            </Link>
                           </td>
                           <td className="p-2.5 font-black text-sm text-[#7958d8] bg-[#f0edff]/50">
                             {pin}
                           </td>
-                          <td className="p-2.5 text-right">
+                          <td className="p-2.5 text-right space-x-2">
+                            <Link
+                              href={`/activate/${card.card_code}`}
+                              target="_blank"
+                              className="text-[11px] font-bold text-[#16a34a] hover:underline"
+                            >
+                              Aktivasi ➔
+                            </Link>
                             <button
                               type="button"
                               onClick={() => handleCopyText(`Card: ${card.card_code} | PIN: ${pin}`, card.card_code)}
