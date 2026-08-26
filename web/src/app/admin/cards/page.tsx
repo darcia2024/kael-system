@@ -20,7 +20,7 @@ export const metadata: Metadata = {
 
 export default async function AdminCardsPage() {
   const session = await getSession();
-  if (!session) redirect("/app/login?next=/admin/cards");
+  if (!session) redirect("/admin");
   if (session.role !== "kael_admin") redirect("/app");
 
   const cards = await db.getAllCards();

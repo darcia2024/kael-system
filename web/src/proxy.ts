@@ -27,8 +27,17 @@ export function proxy(request: NextRequest) {
   const hasSession = request.cookies.has("kael_session");
   if (hasSession) return NextResponse.next();
 
+  /**
+   * Area admin dilempar ke /admin, bukan ke login publik. Login publik sudah
+   * tidak punya tab admin, jadi mengarahkan tim ke sana berarti mendaratkan
+   * mereka di layar yang tidak bisa dipakai masuk.
+   */
+  if (path.startsWith("/admin")) {
+    return NextResponse.redirect(new URL("/admin", request.url));
+  }
+
   const login = new URL("/app/login", request.url);
-  login.searchParams.set("next", request.nextUrl.pathname);
+  login.searchParams.set("next", path);
   return NextResponse.redirect(login);
 }
 
