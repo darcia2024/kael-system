@@ -48,8 +48,8 @@ export default function AppPortalHub({
 
   const handleAddStaff = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newStaffName || newStaffPin.length !== 6) {
-      alert("Nama staf dan PIN 6-digit harus diisi lengkap.");
+    if (!newStaffName || newStaffPin.length < 4 || newStaffPin.length > 6) {
+      alert("Nama staf wajib diisi, dan PIN antara 4 sampai 6 angka.");
       return;
     }
     const res = await createStaffAction(newStaffName, newStaffPin);
@@ -253,7 +253,7 @@ export default function AppPortalHub({
                 </h3>
               </div>
               <p className="text-xs text-[#7b7b8e] mt-0.5">
-                Staf login menggunakan PIN 6-digit (hash terenkripsi). Akun yang dinonaktifkan tetap menjaga riwayat transaksi lama.
+                Staf login menggunakan PIN 4 sampai 6 angka (hash scrypt). Akun yang dinonaktifkan tetap menjaga riwayat transaksi lama.
               </p>
             </div>
 

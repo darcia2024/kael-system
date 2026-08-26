@@ -611,7 +611,7 @@ export async function deleteRecipeAction(id: string): Promise<ActionResult<null>
 export async function createStaffAction(name: string, pin: string): Promise<ActionResult<null>> {
   const { businessId } = await requireOwner();
   if (!name.trim()) return fail("Nama staf belum diisi.");
-  if (!/^\d{6}$/.test(pin)) return fail("PIN harus 6 angka.");
+  if (!/^\d{4,6}$/.test(pin)) return fail("PIN harus 4 sampai 6 angka.");
   await db.createStaff(businessId, name.trim(), pin);
   revalidatePath("/app");
   return done(null);
@@ -619,7 +619,7 @@ export async function createStaffAction(name: string, pin: string): Promise<Acti
 
 export async function resetStaffPinAction(userId: string, pin: string): Promise<ActionResult<null>> {
   const { businessId } = await requireOwner();
-  if (!/^\d{6}$/.test(pin)) return fail("PIN harus 6 angka.");
+  if (!/^\d{4,6}$/.test(pin)) return fail("PIN harus 4 sampai 6 angka.");
   const ok = await db.setStaffPin(userId, businessId, pin);
   if (!ok) return fail("Staf tidak ditemukan.");
   revalidatePath("/app");

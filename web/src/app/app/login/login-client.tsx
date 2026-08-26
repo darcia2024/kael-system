@@ -134,16 +134,17 @@ export default function LoginClient({
     }
   };
 
+  /**
+   * PIN staf boleh 4 sampai 6 angka, jadi panjangnya tidak bisa dipakai sebagai
+   * penanda "sudah selesai mengetik". Yang 6 angka tetap terkirim otomatis
+   * seperti sebelumnya; yang lebih pendek dikirim lewat tombol konfirmasi.
+   */
   const handleStaffPinInput = (num: string) => {
-    if (staffPin.length < 6) {
-      const nextPin = staffPin + num;
-      setStaffPin(nextPin);
-      setStaffError("");
-
-      if (nextPin.length === 6) {
-        verifyStaffPin(nextPin);
-      }
-    }
+    if (staffPin.length >= 6) return;
+    const nextPin = staffPin + num;
+    setStaffPin(nextPin);
+    setStaffError("");
+    if (nextPin.length === 6) verifyStaffPin(nextPin);
   };
 
   const handleStaffBackspace = () => {
@@ -504,6 +505,18 @@ export default function LoginClient({
                   <Delete size={16} />
                 </button>
               </div>
+
+              {/* PIN 6 angka terkirim otomatis. Yang lebih pendek butuh tombol
+                  ini, karena panjangnya tidak bisa dipakai sebagai penanda
+                  selesai mengetik. */}
+              <button
+                type="button"
+                disabled={staffPin.length < 4 || staffLoading}
+                onClick={() => verifyStaffPin(staffPin)}
+                className="btn-tactile flex w-full items-center justify-center gap-2 rounded-2xl border-2 border-[#232331] bg-[#d9ff57] py-3 text-xs font-extrabold text-[#232331] shadow-ink-sm disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {staffLoading ? "Memeriksa..." : "Masuk"}
+              </button>
 
             </div>
           )}

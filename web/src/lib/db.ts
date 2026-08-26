@@ -184,10 +184,43 @@ export const db = {
         error: "Akun ini belum menyetel kata sandi. Hubungi tim KAEL untuk mengaturnya.",
       };
     }
+
+    /**
+     * Penguncian setelah 5 percobaan, memakai kolom yang sama dengan PIN staf.
+     *
+     * Ini bukan pelengkap. Kata sandi owner boleh berupa angka pendek, dan
+     * angka pendek tanpa pembatas percobaan bisa ditebak habis oleh skrip dalam
+     * hitungan menit. Yang menahan bukan panjangnya, tapi batas percobaannya.
+     */
+    const lockout = checkStaffLockout(user.failed_pin_attempts, user.locked_until);
+    if (lockout.isLocked) {
+      return {
+        success: false as const,
+        error: `Terlalu banyak percobaan. Coba lagi dalam ${lockout.remainingMinutes} menit.`,
+      };
+    }
+
     if (!verifyPin(password, user.password_hash)) {
+      const attempts = (user.failed_pin_attempts ?? 0) + 1;
+      const lockedUntil = attempts >= 5 ? calculateLockoutExpiry().toISOString() : null;
+      await sql`
+        UPDATE users SET failed_pin_attempts = ${attempts}, locked_until = ${lockedUntil}
+        WHERE id = ${user.id}
+      `;
       // Pesan sengaja sama dengan kasus email tidak ada, supaya tidak
       // membocorkan email mana yang terdaftar.
-      return { success: false as const, error: "Email atau kata sandi salah." };
+      return {
+        success: false as const,
+        error: lockedUntil
+          ? "Terlalu banyak percobaan. Akun dikunci 15 menit."
+          : "Email atau kata sandi salah.",
+      };
+    }
+
+    if (user.failed_pin_attempts) {
+      await sql`
+        UPDATE users SET failed_pin_attempts = 0, locked_until = NULL WHERE id = ${user.id}
+      `;
     }
     return { success: true as const, user };
   },

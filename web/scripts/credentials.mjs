@@ -7,7 +7,7 @@ import postgres from "postgres";
  *
  *   node scripts/credentials.mjs list
  *   node scripts/credentials.mjs password <email> <kata-sandi>
- *   node scripts/credentials.mjs pin <nama-staf> <6-digit>
+ *   node scripts/credentials.mjs pin <nama-staf> <4-6 digit>
  *
  * Format hash sama persis dengan src/lib/auth.ts: scrypt$<salt>$<hash>, salt
  * berbeda tiap pengguna. Dipakai untuk onboarding bisnis baru dan untuk
@@ -62,7 +62,7 @@ try {
     }
   } else if (cmd === "password") {
     if (!a || !b) throw new Error("Pakai: password <email> <kata-sandi>");
-    if (b.length < 8) throw new Error("Kata sandi minimal 8 karakter.");
+    if (b.length < 6) throw new Error("Kata sandi minimal 6 karakter.");
     const rows = await sql`
       UPDATE users SET password_hash = ${hash(b)}
       WHERE email = ${a.toLowerCase()} AND role IN ('owner', 'kael_admin')
@@ -71,8 +71,8 @@ try {
     if (!rows.length) throw new Error("Akun owner/admin dengan email itu tidak ditemukan.");
     console.log(`Kata sandi disetel untuk ${rows[0].name} (${rows[0].role}).`);
   } else if (cmd === "pin") {
-    if (!a || !b) throw new Error("Pakai: pin <nama-staf> <6-digit>");
-    if (!/^\d{6}$/.test(b)) throw new Error("PIN harus tepat 6 angka.");
+    if (!a || !b) throw new Error("Pakai: pin <nama-staf> <4-6 digit>");
+    if (!/^\d{4,6}$/.test(b)) throw new Error("PIN harus 4 sampai 6 angka.");
     const rows = await sql`
       UPDATE users SET pin_hash = ${hash(b)}, failed_pin_attempts = 0, locked_until = NULL
       WHERE name = ${a} AND role = 'staff'
