@@ -1048,48 +1048,109 @@ export const db = {
     const biz = await this.getBusiness(businessId);
     const tz = biz?.timezone || "Asia/Jakarta";
 
-    const [today, month, top, byMethod] = await Promise.all([
+    const [today, month, allTime, top, byMethod] = await Promise.all([
       sql`
         SELECT COUNT(*)::int AS orders, COALESCE(SUM(total), 0) AS revenue
-        FROM orders
-        WHERE business_id = ${businessId} AND status = 'paid'
+        FROM orders WHERE business_id = ${businessId} AND status = 'paid'
           AND (created_at AT TIME ZONE ${tz})::date = (NOW() AT TIME ZONE ${tz})::date
       `,
       sql`
         SELECT COUNT(*)::int AS orders, COALESCE(SUM(total), 0) AS revenue
-        FROM orders
-        WHERE business_id = ${businessId} AND status = 'paid'
+        FROM orders WHERE business_id = ${businessId} AND status = 'paid'
           AND date_trunc('month', created_at AT TIME ZONE ${tz})
               = date_trunc('month', NOW() AT TIME ZONE ${tz})
       `,
       sql`
-        SELECT i.name_snapshot AS name, SUM(i.qty)::int AS qty,
-               COALESCE(SUM(i.subtotal), 0) AS revenue
+        SELECT COUNT(*)::int AS orders, COALESCE(SUM(total), 0) AS revenue
+        FROM orders WHERE business_id = ${businessId} AND status = 'paid'
+      `,
+      sql`
+        SELECT i.menu_item_id, i.name_snapshot AS name,
+               SUM(i.qty)::int AS qty, COALESCE(SUM(i.subtotal), 0) AS revenue
         FROM order_items i
         JOIN orders o ON o.id = i.order_id
         WHERE o.business_id = ${businessId} AND o.status = 'paid'
-        GROUP BY i.name_snapshot
+        GROUP BY i.menu_item_id, i.name_snapshot
         ORDER BY qty DESC
-        LIMIT 5
       `,
       sql`
         SELECT payment_method, COUNT(*)::int AS orders, COALESCE(SUM(total), 0) AS revenue
-        FROM orders
-        WHERE business_id = ${businessId} AND status = 'paid'
-        GROUP BY payment_method
-        ORDER BY revenue DESC
+        FROM orders WHERE business_id = ${businessId} AND status = 'paid'
+        GROUP BY payment_method ORDER BY revenue DESC
       `,
     ]);
+
+    /**
+     * Laba kotor perkiraan. Inilah sambungan POS ke Finance: menu yang sudah
+     * dipetakan ke resep memakai HPP hasil hitungan, dan yang belum dipetakan
+     * tidak dihitung sama sekali.
+     *
+     * Karena itu angka ini selalu perkiraan, dan hanya seakurat pemetaan resep
+     * yang sudah dibuat owner. Jangan ditampilkan sebagai laba final.
+     */
+    const menuItems = await this.getMenuItems(businessId);
+    const recipeByMenu = new Map(
+      menuItems.filter((m) => m.recipe_id).map((m) => [m.id, m.recipe_id as string]),
+    );
+
+    let hppByRecipe = new Map<string, number>();
+    if (recipeByMenu.size) {
+      const calcs = await this.getAllRecipesWithCalculations(businessId);
+      hppByRecipe = new Map(calcs.map((c) => [c.recipe.id, c.calc.hpp_per_unit ?? 0]));
+    }
+
+    /** HPP per item terjual. 0 kalau menunya belum dipetakan ke resep. */
+    const hppForMenuItem = (menuItemId: string): number => {
+      const recipeId = recipeByMenu.get(menuItemId);
+      if (!recipeId) return 0;
+      return hppByRecipe.get(recipeId) ?? 0;
+    };
+
+    let totalEstimatedHpp = 0;
+    let mappedRevenue = 0;
+    for (const row of top) {
+      const hpp = hppForMenuItem(row.menu_item_id as string);
+      if (!hpp) continue;
+      totalEstimatedHpp += hpp * num(row.qty);
+      mappedRevenue += num(row.revenue);
+    }
+
+    const totalNetRevenue = num(allTime[0]?.revenue);
+    const topSellingItems = top.slice(0, 5).map((r) => {
+      const revenue = num(r.revenue);
+      const hpp = hppForMenuItem(r.menu_item_id as string) * num(r.qty);
+      return {
+        name: r.name as string,
+        qty: num(r.qty),
+        revenue,
+        hpp,
+        // Nol kalau menu belum punya resep. Ditampilkan apa adanya, tidak ditebak.
+        grossProfit: hpp > 0 ? Math.max(0, revenue - hpp) : 0,
+      };
+    });
+
+    // Dipakai kartu ringkasan yang mengakses per metode, misal .qris dan .cash.
+    const paymentBreakdown: Record<string, number> = { cash: 0, qris: 0, transfer: 0 };
+    for (const r of byMethod) {
+      paymentBreakdown[r.payment_method as string] = num(r.revenue);
+    }
+    const byPaymentMethod = byMethod.map((r) => ({
+      method: r.payment_method as string, orders: num(r.orders), revenue: num(r.revenue),
+    }));
 
     return {
       today: { orders: num(today[0]?.orders), revenue: num(today[0]?.revenue) },
       month: { orders: num(month[0]?.orders), revenue: num(month[0]?.revenue) },
-      bestSellers: top.map((r) => ({
-        name: r.name as string, qty: num(r.qty), revenue: num(r.revenue),
-      })),
-      byPaymentMethod: byMethod.map((r) => ({
-        method: r.payment_method as string, orders: num(r.orders), revenue: num(r.revenue),
-      })),
+      totalNetRevenue,
+      totalTransactions: num(allTime[0]?.orders),
+      totalEstimatedHpp,
+      totalEstimatedGrossProfit: Math.max(0, mappedRevenue - totalEstimatedHpp),
+      /** Porsi omzet yang menunya sudah dipetakan ke resep. */
+      hppCoverageRevenue: mappedRevenue,
+      topSellingItems,
+      bestSellers: topSellingItems,
+      paymentBreakdown,
+      byPaymentMethod,
       timezone: tz,
     };
   },
