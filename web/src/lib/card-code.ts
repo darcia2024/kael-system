@@ -56,9 +56,19 @@ export function generateActivationPin(): string {
  */
 export function normalizeCardCode(input: string): string {
   if (!input) return "";
+  /**
+   * Hanya membuang pemisah yang biasa diketik orang: spasi, tanda hubung,
+   * garis bawah, titik.
+   *
+   * Versi sebelumnya membuang SEMUA karakter di luar alfabet anti-ambigu,
+   * termasuk angka 0 dan 1. Akibatnya kode yang mengandung karakter itu diam
+   * diam berubah menjadi kode lain yang lebih pendek, lalu gagal dicari tanpa
+   * petunjuk apa pun. Lebih baik pencariannya yang gagal secara jujur daripada
+   * kodenya yang diubah tanpa sepengetahuan siapa pun.
+   */
   return input
     .toUpperCase()
-    .replace(/[^23456789ABCDEFGHJKLMNPQRSTUVWXYZ]/g, "")
+    .replace(/[\s\-_.]/g, "")
     .slice(0, 8);
 }
 

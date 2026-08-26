@@ -53,6 +53,10 @@ export const db = {
     return one<Business>(await sql`SELECT * FROM businesses WHERE id = ${id}`);
   },
 
+  async getBusinesses(): Promise<Business[]> {
+    return (await sql`SELECT * FROM businesses ORDER BY name ASC`) as unknown as Business[];
+  },
+
   async updateBusiness(id: string, updates: Partial<Business>): Promise<Business | null> {
     const allowed = ["name", "category", "phone", "address", "google_place_id", "logo_url", "brand_color", "timezone"] as const;
     const patch = Object.fromEntries(
@@ -939,9 +943,20 @@ export const db = {
       const service = orderData.service_charge ?? 0;
       const total = subtotal - discount + tax + service;
 
+      /**
+       * Nomor urut harian mengikuti zona waktu bisnis, bukan UTC.
+       *
+       * Dengan CURRENT_DATE (UTC), transaksi jam 07:00 WIB dihitung sebagai
+       * hari sebelumnya, sehingga penomoran mengulang dari 001 di tengah hari
+       * kerja dan tidak cocok dengan laporan harian yang memang sudah memakai
+       * AT TIME ZONE. Itu jenis selisih yang berakhir jadi tuduhan ke kasir.
+       */
+      const biz = await tx`SELECT timezone FROM businesses WHERE id = ${businessId}`;
+      const tz = (biz[0]?.timezone as string) || "Asia/Jakarta";
       const seq = await tx`
         SELECT COUNT(*)::int AS n FROM orders
-        WHERE business_id = ${businessId} AND created_at::date = CURRENT_DATE
+        WHERE business_id = ${businessId}
+          AND (created_at AT TIME ZONE ${tz})::date = (NOW() AT TIME ZONE ${tz})::date
       `;
       const orderNo = generateDailyOrderNo(num(seq[0]?.n) + 1);
 

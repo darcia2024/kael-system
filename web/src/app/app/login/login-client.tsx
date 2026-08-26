@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { 
@@ -15,35 +15,58 @@ import {
   AlertCircle, 
   Check, 
   Delete,
-  Store
+  Store,
+  RefreshCw,
+  Search,
+  Building2,
+  ChevronRight
 } from "lucide-react";
-import type { User } from "@/lib/types";
-import { loginOwner, loginStaff } from "@/lib/actions";
-import { formatCardCodeDisplay } from "@/lib/card-code";
+import type { Business, User } from "@/lib/types";
+import { loginOwner, loginStaff, getStoreStaffAction } from "@/lib/actions";
 
-export default function AppLoginPage({
-  businessId,
-  staffList,
+interface StoreOption {
+  id: string;
+  name: string;
+  category: string;
+  brand_color: string;
+}
+
+export default function LoginClient({
+  initialBusiness,
+  availableStores,
+  initialStaffList,
   nextPath,
 }: {
-  businessId: string;
-  staffList: Pick<User, "id" | "name">[];
+  initialBusiness: Business | null;
+  availableStores: StoreOption[];
+  initialStaffList: Pick<User, "id" | "name">[];
   nextPath: string;
 }) {
   const router = useRouter();
-  const [roleTab, setRoleTab] = useState<"owner" | "staff" | "admin">("owner");
+  const [roleTab, setRoleTab] = useState<"owner" | "staff" | "admin">("staff");
 
-  /**
-   * Staf memilih namanya sebelum memasukkan PIN. Ini bukan sekadar kenyamanan:
-   * tanpa tahu siapa yang mencoba, kegagalan PIN tidak bisa dihitung ke akun
-   * yang benar, dan versi sebelumnya mengunci staf pertama di daftar walaupun
-   * dia tidak melakukan apa-apa.
-   */
-  const [staffId, setStaffId] = useState<string>(staffList[0]?.id ?? "");
+  // Selected Store State (for Multi-Tenant Staff Selection)
+  const [selectedBusiness, setSelectedBusiness] = useState<StoreOption | null>(() => {
+    if (initialBusiness) {
+      return {
+        id: initialBusiness.id,
+        name: initialBusiness.name,
+        category: initialBusiness.category,
+        brand_color: initialBusiness.brand_color,
+      };
+    }
+    return availableStores[0] || null;
+  });
+
+  const [staffList, setStaffList] = useState<Pick<User, "id" | "name">[]>(initialStaffList);
+  const [staffId, setStaffId] = useState<string>(initialStaffList[0]?.id ?? "");
+  const [showStorePicker, setShowStorePicker] = useState(false);
+  const [storeSearchQuery, setStoreSearchQuery] = useState("");
+  const [isLoadingStore, setIsLoadingStore] = useState(false);
 
   // Owner form state
   const [ownerEmail, setOwnerEmail] = useState("owner@senjacoffee.id");
-  const [ownerPassword, setOwnerPassword] = useState("");
+  const [ownerPassword, setOwnerPassword] = useState("owner123");
   const [ownerLoading, setOwnerLoading] = useState(false);
   const [ownerError, setOwnerError] = useState("");
 
@@ -54,20 +77,61 @@ export default function AppLoginPage({
 
   // Admin state
   const [adminEmail, setAdminEmail] = useState("admin@kael.id");
-  const [adminPassword, setAdminPassword] = useState("");
+  const [adminPassword, setAdminPassword] = useState("admin123");
   const [adminError, setAdminError] = useState("");
+
+  // Load store preference from localStorage on mount
+  useEffect(() => {
+    try {
+      const savedStoreId = localStorage.getItem("kael_selected_store_id");
+      if (savedStoreId && savedStoreId !== selectedBusiness?.id) {
+        const found = availableStores.find((s) => s.id === savedStoreId);
+        if (found) {
+          handleSelectStore(found);
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const handleSelectStore = async (store: StoreOption) => {
+    setSelectedBusiness(store);
+    setShowStorePicker(false);
+    setIsLoadingStore(true);
+    setStaffPin("");
+    setStaffError("");
+
+    try {
+      localStorage.setItem("kael_selected_store_id", store.id);
+    } catch {
+      // ignore
+    }
+
+    const res = await getStoreStaffAction(store.id);
+    setStaffList(res.staffList);
+    setStaffId(res.staffList[0]?.id || "");
+    setIsLoadingStore(false);
+  };
 
   const handleOwnerLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setOwnerLoading(true);
-    const res = await loginOwner(ownerEmail, ownerPassword);
-    setOwnerLoading(false);
-    if (!res.ok) {
-      setOwnerError(res.error);
-      return;
+    setOwnerError("");
+    try {
+      const res = await loginOwner(ownerEmail, ownerPassword);
+      if (!res.ok) {
+        setOwnerError(res.error);
+        return;
+      }
+      router.push(nextPath !== "/app" ? nextPath : res.data.next);
+      router.refresh();
+    } catch {
+      // Tanpa ini, action yang melempar membuat layar diam tanpa penjelasan.
+      setOwnerError("Sistem sedang bermasalah. Coba lagi sebentar lagi.");
+    } finally {
+      setOwnerLoading(false);
     }
-    router.push(nextPath !== "/app" ? nextPath : res.data.next);
-    router.refresh();
   };
 
   const handleStaffPinInput = (num: string) => {
@@ -77,7 +141,6 @@ export default function AppLoginPage({
       setStaffError("");
 
       if (nextPin.length === 6) {
-        // Otomatis verifikasi saat 6 digit lengkap
         verifyStaffPin(nextPin);
       }
     }
@@ -89,13 +152,18 @@ export default function AppLoginPage({
   };
 
   const verifyStaffPin = async (pin: string) => {
+    if (!selectedBusiness) {
+      setStaffError("Pilih toko terlebih dahulu.");
+      setStaffPin("");
+      return;
+    }
     if (!staffId) {
-      setStaffError("Pilih nama staf dulu.");
+      setStaffError("Pilih nama staf terlebih dahulu.");
       setStaffPin("");
       return;
     }
     setStaffLoading(true);
-    const res = await loginStaff(businessId, staffId, pin);
+    const res = await loginStaff(selectedBusiness.id, staffId, pin);
     setStaffLoading(false);
 
     if (res.ok) {
@@ -117,6 +185,12 @@ export default function AppLoginPage({
     router.push(res.data.next);
     router.refresh();
   };
+
+  const filteredStores = availableStores.filter((s) => {
+    if (!storeSearchQuery.trim()) return true;
+    const q = storeSearchQuery.toLowerCase();
+    return s.name.toLowerCase().includes(q) || s.category.toLowerCase().includes(q);
+  });
 
   return (
     <div className="min-h-screen bg-[#f7f6fc] text-[#232331] flex flex-col justify-between font-sans p-4 sm:p-6">
@@ -141,10 +215,10 @@ export default function AppLoginPage({
 
       {/* Main Login Box */}
       <main className="mx-auto w-full max-w-md my-auto">
-        <div className="rounded-3xl border-2 border-[#232331] bg-white p-6 sm:p-8 shadow-ink-lg space-y-6">
+        <div className="rounded-3xl border-2 border-[#232331] bg-white p-6 sm:p-8 shadow-ink-lg space-y-5">
           
           {/* Header Title */}
-          <div className="text-center space-y-1.5">
+          <div className="text-center space-y-1">
             <h1 className="text-xl sm:text-2xl font-black text-[#232331]">
               Login Portal KAEL
             </h1>
@@ -201,7 +275,7 @@ export default function AppLoginPage({
           </div>
 
           {/* ========================================================= */}
-          {/* TAB 1: OWNER LOGIN (EMAIL) */}
+          {/* TAB 1: OWNER LOGIN (EMAIL & PASSWORD) */}
           {/* ========================================================= */}
           {roleTab === "owner" && (
             <form onSubmit={handleOwnerLogin} className="space-y-4">
@@ -216,6 +290,26 @@ export default function AppLoginPage({
                     required
                     value={ownerEmail}
                     onChange={(e) => setOwnerEmail(e.target.value)}
+                    placeholder="nama@bisnisanda.id"
+                    className="w-full rounded-2xl border-2 border-[#232331] pl-10 pr-4 py-3 text-xs font-bold text-[#232331] focus:outline-none focus:ring-2 focus:ring-[#7958d8]"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <div className="flex justify-between items-center">
+                  <label className="block font-mono text-xs font-bold text-[#232331]">
+                    Kata Sandi:
+                  </label>
+                </div>
+                <div className="relative">
+                  <Lock className="absolute left-3.5 top-3.5 text-[#7b7b8e]" size={16} />
+                  <input
+                    type="password"
+                    required
+                    value={ownerPassword}
+                    onChange={(e) => setOwnerPassword(e.target.value)}
+                    placeholder="••••••••"
                     className="w-full rounded-2xl border-2 border-[#232331] pl-10 pr-4 py-3 text-xs font-bold text-[#232331] focus:outline-none focus:ring-2 focus:ring-[#7958d8]"
                   />
                 </div>
@@ -227,24 +321,20 @@ export default function AppLoginPage({
                 </p>
               )}
 
-              <div className="space-y-1.5">
-                <div className="flex justify-between items-center">
-                  <label className="block font-mono text-xs font-bold text-[#232331]">
-                    Kata Sandi:
-                  </label>
-                  <a href="#" className="text-[11px] font-mono text-[#7958d8] hover:underline">
-                    Lupa sandi?
-                  </a>
-                </div>
-                <div className="relative">
-                  <Lock className="absolute left-3.5 top-3.5 text-[#7b7b8e]" size={16} />
-                  <input
-                    type="password"
-                    required
-                    value={ownerPassword}
-                    onChange={(e) => setOwnerPassword(e.target.value)}
-                    className="w-full rounded-2xl border-2 border-[#232331] pl-10 pr-4 py-3 text-xs font-bold text-[#232331] focus:outline-none focus:ring-2 focus:ring-[#7958d8]"
-                  />
+              {/* Quick Demo Fill for Presentation */}
+              <div className="rounded-2xl border border-dashed border-[#7958d8]/40 bg-[#f0edff]/60 p-2.5 font-mono text-[11px] space-y-1.5">
+                <span className="text-[#7958d8] font-bold block">✨ Akun Demo Presentasi:</span>
+                <div className="flex flex-wrap gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOwnerEmail("owner@senjacoffee.id");
+                      setOwnerPassword("owner123");
+                    }}
+                    className="px-2 py-1 rounded-lg border border-[#7958d8] bg-white text-[#7958d8] font-bold hover:bg-[#7958d8] hover:text-white transition-all text-[10px]"
+                  >
+                    ☕ Senja Coffee (Owner)
+                  </button>
                 </div>
               </div>
 
@@ -253,63 +343,134 @@ export default function AppLoginPage({
                 disabled={ownerLoading}
                 className="btn-tactile flex w-full items-center justify-center gap-2 rounded-2xl border-2 border-[#232331] bg-[#232331] py-3.5 text-xs font-extrabold text-[#d9ff57] shadow-ink-md"
               >
-                <span>{ownerLoading ? "Memverifikasi..." : "Masuk ke Dashboard Owner"}</span>
-                <ArrowRight size={15} />
+                <span>{ownerLoading ? "Memverifikasi..." : "Masuk ke Dashboard Owner ➔"}</span>
               </button>
             </form>
           )}
 
           {/* ========================================================= */}
-          {/* TAB 2: STAFF PIN LOGIN KEYPAD */}
+          {/* TAB 2: STAFF PIN LOGIN KEYPAD (MULTI-TENANT DYNAMIC) */}
           {/* ========================================================= */}
           {roleTab === "staff" && (
-            <div className="space-y-5">
-              <div className="text-center space-y-1">
-                <span className="font-mono text-[10px] font-bold text-[#7958d8] uppercase">
-                  Shift Operasional Kasir / Barista
-                </span>
-                <h3 className="font-extrabold text-sm text-[#232331]">
-                  Pilih nama, lalu masukkan PIN
-                </h3>
+            <div className="space-y-4">
+              
+              {/* STORE SELECTOR BADGE (DYNAMIC PERSONALISED PER UMKM) */}
+              <div className="rounded-2xl border-2 border-[#232331] bg-[#fcfcfe] p-3 space-y-2 font-mono text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] text-[#7b7b8e] font-bold uppercase tracking-wider">
+                    LOKASI / TOKO AKTIF:
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowStorePicker(!showStorePicker)}
+                    className="btn-tactile inline-flex items-center gap-1 rounded-lg border border-[#7958d8] bg-[#f0edff] px-2 py-0.5 text-[10.5px] font-bold text-[#7958d8] hover:bg-[#e1dbff]"
+                  >
+                    <RefreshCw size={11} />
+                    <span>Ganti Toko</span>
+                  </button>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#232331] text-[#d9ff57]">
+                    <Store size={14} />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <h3 className="font-extrabold text-xs sm:text-sm text-[#232331] truncate font-sans">
+                      {selectedBusiness?.name || "Pilih Toko UMKM"}
+                    </h3>
+                    <span className="text-[10px] text-[#7b7b8e] block">
+                      {selectedBusiness?.category || "Belum dipilih"}
+                    </span>
+                  </div>
+                </div>
+
+                {/* STORE PICKER MODAL / DROPDOWN */}
+                {showStorePicker && (
+                  <div className="pt-2 border-t border-[#dedee8] space-y-2 animate-in fade-in-50">
+                    <div className="relative">
+                      <Search className="absolute left-2.5 top-2 text-[#7b7b8e]" size={13} />
+                      <input
+                        type="text"
+                        placeholder="Ketik nama toko / kode toko..."
+                        value={storeSearchQuery}
+                        onChange={(e) => setStoreSearchQuery(e.target.value)}
+                        className="w-full rounded-xl border border-[#dedee8] pl-7 pr-2 py-1 text-xs text-[#232331] font-sans"
+                        autoFocus
+                      />
+                    </div>
+
+                    <div className="space-y-1 max-h-36 overflow-y-auto">
+                      {filteredStores.map((store) => (
+                        <button
+                          key={store.id}
+                          type="button"
+                          onClick={() => handleSelectStore(store)}
+                          className={`w-full flex items-center justify-between p-2 rounded-xl text-left transition-all ${
+                            selectedBusiness?.id === store.id
+                              ? "bg-[#232331] text-[#d9ff57]"
+                              : "bg-white border border-[#dedee8] hover:bg-[#f0edff] text-[#232331]"
+                          }`}
+                        >
+                          <div>
+                            <span className="font-bold text-xs font-sans block">{store.name}</span>
+                            <span className="text-[9.5px] opacity-75">{store.category}</span>
+                          </div>
+                          <ChevronRight size={13} />
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
-              {/* Pemilih staf. Kegagalan PIN dihitung ke akun yang dipilih di
-                  sini, bukan ke staf pertama di daftar. */}
-              {staffList.length === 0 ? (
-                <p className="rounded-xl border-2 border-[#ef4444] bg-[#feebee] p-3 text-center text-[11px] font-bold text-[#ef4444]">
-                  Belum ada akun staf. Pemilik usaha perlu membuatnya lebih dulu.
-                </p>
-              ) : (
-                <div className="flex flex-wrap justify-center gap-2">
-                  {staffList.map((s) => (
-                    <button
-                      key={s.id}
-                      type="button"
-                      onClick={() => {
-                        setStaffId(s.id);
-                        setStaffPin("");
-                        setStaffError("");
-                      }}
-                      className={`btn-tactile rounded-xl px-3.5 py-2 text-[11px] font-black transition-colors ${
-                        staffId === s.id
-                          ? "bg-[#d9ff57] text-[#232331]"
-                          : "bg-white text-[#7b7b8e]"
-                      }`}
-                    >
-                      {s.name}
-                    </button>
-                  ))}
+              {/* STAFF NAME SELECTOR */}
+              <div className="space-y-2">
+                <div className="text-center space-y-0.5">
+                  <h4 className="font-extrabold text-xs text-[#232331]">
+                    Pilih nama staf toko, lalu ketik PIN:
+                  </h4>
                 </div>
-              )}
+
+                {isLoadingStore ? (
+                  <div className="py-4 text-center text-xs font-mono text-[#7b7b8e]">
+                    Memuat daftar staf toko...
+                  </div>
+                ) : staffList.length === 0 ? (
+                  <div className="rounded-xl border-2 border-[#ef4444] bg-[#feebee] p-3 text-center text-[11px] font-bold text-[#ef4444]">
+                    Belum ada akun kasir di toko ini. Owner perlu menambahkannya di portal.
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap justify-center gap-1.5">
+                    {staffList.map((s) => (
+                      <button
+                        key={s.id}
+                        type="button"
+                        onClick={() => {
+                          setStaffId(s.id);
+                          setStaffPin("");
+                          setStaffError("");
+                        }}
+                        className={`btn-tactile rounded-xl px-3 py-1.5 text-xs font-bold border transition-all ${
+                          staffId === s.id
+                            ? "bg-[#232331] text-[#d9ff57] border-[#232331] shadow-ink-xs"
+                            : "bg-white text-[#7b7b8e] border-[#dedee8] hover:border-[#232331]"
+                        }`}
+                      >
+                        {s.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
 
               {/* PIN Bubbles Display */}
-              <div className="flex justify-center gap-2.5 my-2">
+              <div className="flex justify-center gap-2.5 my-1">
                 {Array.from({ length: 6 }).map((_, i) => {
                   const isFilled = i < staffPin.length;
                   return (
                     <div
                       key={i}
-                      className={`h-4 w-4 rounded-full border-2 transition-all ${
+                      className={`h-3.5 w-3.5 rounded-full border-2 transition-all ${
                         isFilled
                           ? "border-[#232331] bg-[#7958d8] scale-110"
                           : "border-[#dedee8] bg-[#fcfcfe]"
@@ -320,20 +481,20 @@ export default function AppLoginPage({
               </div>
 
               {staffError && (
-                <div className="rounded-xl bg-[#feebee] p-2.5 text-center text-xs font-bold text-[#ef4444] flex items-center justify-center gap-1.5 border border-[#ef4444]/30">
-                  <AlertCircle size={14} />
+                <div className="rounded-xl bg-[#feebee] p-2 text-center text-xs font-bold text-[#ef4444] flex items-center justify-center gap-1.5 border border-[#ef4444]/30 font-mono">
+                  <AlertCircle size={13} />
                   <span>{staffError}</span>
                 </div>
               )}
 
               {/* 3x4 Number Keypad */}
-              <div className="grid grid-cols-3 gap-2 max-w-[280px] mx-auto">
+              <div className="grid grid-cols-3 gap-2 max-w-[260px] mx-auto">
                 {["1", "2", "3", "4", "5", "6", "7", "8", "9"].map((num) => (
                   <button
                     key={num}
                     type="button"
                     onClick={() => handleStaffPinInput(num)}
-                    className="btn-tactile flex h-12 items-center justify-center rounded-2xl border-2 border-[#232331] bg-white font-mono text-lg font-black text-[#232331] shadow-ink-xs hover:bg-[#f0edff]"
+                    className="btn-tactile flex h-11 items-center justify-center rounded-2xl border-2 border-[#232331] bg-white font-mono text-base font-black text-[#232331] shadow-ink-xs hover:bg-[#f0edff]"
                   >
                     {num}
                   </button>
@@ -341,68 +502,74 @@ export default function AppLoginPage({
                 <button
                   type="button"
                   onClick={() => setStaffPin("")}
-                  className="flex h-12 items-center justify-center rounded-2xl border border-[#dedee8] bg-[#fcfcfe] font-mono text-xs font-bold text-[#7b7b8e]"
+                  className="flex h-11 items-center justify-center rounded-2xl border border-[#dedee8] bg-[#fcfcfe] font-mono text-xs font-bold text-[#7b7b8e]"
                 >
                   C
                 </button>
                 <button
                   type="button"
                   onClick={() => handleStaffPinInput("0")}
-                  className="btn-tactile flex h-12 items-center justify-center rounded-2xl border-2 border-[#232331] bg-white font-mono text-lg font-black text-[#232331] shadow-ink-xs hover:bg-[#f0edff]"
+                  className="btn-tactile flex h-11 items-center justify-center rounded-2xl border-2 border-[#232331] bg-white font-mono text-base font-black text-[#232331] shadow-ink-xs hover:bg-[#f0edff]"
                 >
                   0
                 </button>
                 <button
                   type="button"
                   onClick={handleStaffBackspace}
-                  className="btn-tactile flex h-12 items-center justify-center rounded-2xl border-2 border-[#232331] bg-[#fcfcfe] text-[#232331] shadow-ink-xs"
+                  className="btn-tactile flex h-11 items-center justify-center rounded-2xl border-2 border-[#232331] bg-[#fcfcfe] text-[#232331] shadow-ink-xs"
                 >
-                  <Delete size={18} />
+                  <Delete size={16} />
                 </button>
               </div>
 
-              {/* Hint Demo PIN */}
-              <div className="rounded-xl border border-dashed border-[#7958d8]/40 bg-[#f0edff]/50 p-2.5 text-center text-[10.5px] font-mono text-[#7958d8]">
-                <span>Demo PIN Barista: </span>
-                <span className="font-extrabold font-mono bg-white px-1.5 py-0.5 rounded border border-[#7958d8]">123456</span>
+              {/* Helper Presentation Hint */}
+              <div className="text-center font-mono text-[10.5px] text-[#7b7b8e] pt-1">
+                Demo PIN Barista: <code className="font-bold text-[#7958d8] bg-[#f0edff] px-1.5 py-0.5 rounded">123456</code>
               </div>
+
             </div>
           )}
 
           {/* ========================================================= */}
-          {/* TAB 3: KAEL ADMIN */}
+          {/* TAB 3: ADMIN KAEL LOGIN */}
           {/* ========================================================= */}
           {roleTab === "admin" && (
             <form onSubmit={handleAdminLogin} className="space-y-4">
-              <div className="rounded-2xl border border-[#dedee8] bg-[#fcfcfe] p-3 text-xs text-[#7b7b8e] font-mono">
-                <span className="font-bold text-[#232331] block mb-0.5">Otoritas Tim KAEL:</span>
-                Panel khusus penerbitan batch kartu NFC &amp; audit aktivasi. Sesuai UU PDP, peran ini tidak dapat melihat data pelanggan bisnis.
+              <div className="rounded-2xl border border-[#dedee8] bg-[#fcfcfe] p-3 text-[11px] font-mono text-[#7b7b8e] space-y-1">
+                <span className="font-bold text-[#232331] block">Otoritas Tim KAEL:</span>
+                <p>Panel khusus penerbitan batch kartu NFC &amp; audit aktivasi.</p>
               </div>
 
               <div className="space-y-1.5">
                 <label className="block font-mono text-xs font-bold text-[#232331]">
                   Email KAEL Staff / Admin:
                 </label>
-                <input
-                  type="email"
-                  required
-                  value={adminEmail}
-                  onChange={(e) => setAdminEmail(e.target.value)}
-                  className="w-full rounded-2xl border-2 border-[#232331] p-3 text-xs font-bold text-[#232331] focus:outline-none"
-                />
+                <div className="relative">
+                  <Mail className="absolute left-3.5 top-3.5 text-[#7b7b8e]" size={16} />
+                  <input
+                    type="email"
+                    required
+                    value={adminEmail}
+                    onChange={(e) => setAdminEmail(e.target.value)}
+                    className="w-full rounded-2xl border-2 border-[#232331] pl-10 pr-4 py-3 text-xs font-bold text-[#232331]"
+                  />
+                </div>
               </div>
 
               <div className="space-y-1.5">
                 <label className="block font-mono text-xs font-bold text-[#232331]">
                   Kata Sandi:
                 </label>
-                <input
-                  type="password"
-                  required
-                  value={adminPassword}
-                  onChange={(e) => setAdminPassword(e.target.value)}
-                  className="w-full rounded-2xl border-2 border-[#232331] p-3 text-xs font-bold text-[#232331] focus:outline-none"
-                />
+                <div className="relative">
+                  <Lock className="absolute left-3.5 top-3.5 text-[#7b7b8e]" size={16} />
+                  <input
+                    type="password"
+                    required
+                    value={adminPassword}
+                    onChange={(e) => setAdminPassword(e.target.value)}
+                    className="w-full rounded-2xl border-2 border-[#232331] pl-10 pr-4 py-3 text-xs font-bold text-[#232331]"
+                  />
+                </div>
               </div>
 
               {adminError && (
@@ -415,8 +582,7 @@ export default function AppLoginPage({
                 type="submit"
                 className="btn-tactile flex w-full items-center justify-center gap-2 rounded-2xl border-2 border-[#232331] bg-[#7958d8] py-3.5 text-xs font-extrabold text-white shadow-ink-md"
               >
-                <span>Buka Admin Batch Kartu</span>
-                <ArrowRight size={15} />
+                <span>Buka Admin Batch Kartu ➔</span>
               </button>
             </form>
           )}
@@ -425,9 +591,10 @@ export default function AppLoginPage({
       </main>
 
       {/* Footer */}
-      <footer className="text-center py-2 text-xs font-mono text-[#7b7b8e]">
-        KAEL System Security · End-to-End Encryption &amp; RLS Protection
+      <footer className="mx-auto w-full max-w-4xl text-center py-2 font-mono text-[11px] text-[#7b7b8e]">
+        KAEL System Security · End-to-End Encryption &amp; RLS Multi-Tenant Protection
       </footer>
+
     </div>
   );
 }

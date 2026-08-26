@@ -73,6 +73,40 @@ export async function currentSession() {
   return getSession();
 }
 
+export async function getStoreStaffAction(businessId: string): Promise<{
+  business: { id: string; name: string; category: string; brand_color: string } | null;
+  staffList: { id: string; name: string }[];
+}> {
+  const [business, users] = await Promise.all([
+    db.getBusiness(businessId),
+    db.getUsers(businessId),
+  ]);
+  const staffList = users
+    .filter((u) => u.role === "staff" && u.is_active)
+    .map((u) => ({ id: u.id, name: u.name }));
+  return {
+    business: business ? {
+      id: business.id,
+      name: business.name,
+      category: business.category,
+      brand_color: business.brand_color,
+    } : null,
+    staffList,
+  };
+}
+
+export async function getAvailableBusinessesAction(): Promise<
+  { id: string; name: string; category: string; brand_color: string }[]
+> {
+  const businesses = await db.getBusinesses();
+  return businesses.map((b) => ({
+    id: b.id,
+    name: b.name,
+    category: b.category,
+    brand_color: b.brand_color,
+  }));
+}
+
 // ===========================================================================
 // Kartu (KAEL Review)
 // ===========================================================================
@@ -208,6 +242,8 @@ export async function updateLoyaltyProgramAction(updates: {
   }
   await db.updateLoyaltyProgram(businessId, updates);
   revalidatePath("/app/loyalty");
+  // Halaman pendaftaran menampilkan kurs poin, jadi ikut disegarkan.
+  revalidatePath("/loyalty/register");
   return done(null);
 }
 
