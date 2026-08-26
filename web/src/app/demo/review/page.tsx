@@ -80,6 +80,14 @@ export default function DemoReviewPage() {
           </div>
 
           <div className="flex items-center gap-2">
+            <Link
+              href="/app/review"
+              className="btn-tactile flex items-center gap-1.5 rounded-xl border border-[#7958d8] bg-[#f0edff] px-3.5 py-2 text-xs font-bold text-[#7958d8] shadow-ink-xs hover:bg-[#e4deff]"
+            >
+              <Nfc size={14} />
+              <span>Owner Review Dashboard ➔</span>
+            </Link>
+
             <button
               type="button"
               onClick={handleSimulateTap}

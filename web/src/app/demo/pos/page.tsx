@@ -16,6 +16,7 @@ import {
   Plus, 
   Printer, 
   QrCode, 
+  Receipt,
   Search, 
   ShoppingBag, 
   Smartphone,
@@ -140,44 +141,54 @@ export default function DemoPosPage() {
             </p>
           </div>
 
-          {/* Role Switcher Pill */}
-          <div className="flex items-center rounded-2xl border-2 border-[#232331] bg-white p-1 shadow-ink-xs font-mono text-xs">
-            <button
-              type="button"
-              onClick={() => setAppMode("customer")}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold transition-all ${
-                appMode === "customer"
-                  ? "bg-[#232331] text-[#d9ff57] shadow-ink-xs"
-                  : "text-[#7b7b8e] hover:text-[#232331]"
-              }`}
+          {/* Actions & Role Switcher Pill */}
+          <div className="flex flex-wrap items-center gap-2">
+            <Link
+              href="/app/pos"
+              className="btn-tactile flex items-center gap-1.5 rounded-xl border border-[#16a34a] bg-[#dcfce7] px-3 py-1.5 text-xs font-bold text-[#16a34a] shadow-ink-xs hover:bg-[#bbf7d0]"
             >
-              <Smartphone size={13} />
-              <span>1. Menu QR Tamu</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setAppMode("cashier")}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold transition-all ${
-                appMode === "cashier"
-                  ? "bg-[#232331] text-[#d9ff57] shadow-ink-xs"
-                  : "text-[#7b7b8e] hover:text-[#232331]"
-              }`}
-            >
-              <Table size={13} />
-              <span>2. POS Kasir Web</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setAppMode("receipt")}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold transition-all ${
-                appMode === "receipt"
-                  ? "bg-[#232331] text-[#d9ff57] shadow-ink-xs"
-                  : "text-[#7b7b8e] hover:text-[#232331]"
-              }`}
-            >
-              <Printer size={13} />
-              <span>3. Struk Thermal</span>
-            </button>
+              <Receipt size={13} />
+              <span>Owner Terminal POS ➔</span>
+            </Link>
+
+            <div className="flex items-center rounded-2xl border-2 border-[#232331] bg-white p-1 shadow-ink-xs font-mono text-xs">
+              <button
+                type="button"
+                onClick={() => setAppMode("customer")}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold transition-all ${
+                  appMode === "customer"
+                    ? "bg-[#232331] text-[#d9ff57] shadow-ink-xs"
+                    : "text-[#7b7b8e] hover:text-[#232331]"
+                }`}
+              >
+                <Smartphone size={13} />
+                <span>1. Menu QR Tamu</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setAppMode("cashier")}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold transition-all ${
+                  appMode === "cashier"
+                    ? "bg-[#232331] text-[#d9ff57] shadow-ink-xs"
+                    : "text-[#7b7b8e] hover:text-[#232331]"
+                }`}
+              >
+                <Table size={13} />
+                <span>2. POS Kasir Web</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setAppMode("receipt")}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold transition-all ${
+                  appMode === "receipt"
+                    ? "bg-[#232331] text-[#d9ff57] shadow-ink-xs"
+                    : "text-[#7b7b8e] hover:text-[#232331]"
+                }`}
+              >
+                <Printer size={13} />
+                <span>3. Struk Thermal</span>
+              </button>
+            </div>
           </div>
         </div>
 

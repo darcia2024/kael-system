@@ -67,7 +67,14 @@ export function Nav() {
           </nav>
 
           {/* Right Action Buttons */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <Link
+              href="/app/login"
+              className="hidden sm:inline-flex items-center gap-1.5 rounded-[9px] border border-[#232331] bg-white px-3 py-2 text-xs font-bold text-[#232331] shadow-ink-xs hover:bg-[#f0edff]"
+            >
+              <span>Portal Login</span>
+            </Link>
+
             <a
               href={cta.consult.href}
               target="_blank"
@@ -95,6 +102,11 @@ export function Nav() {
         {open && (
           <div className="border-b-2 border-[#232331] bg-[#fcfcfe] p-6 md:hidden animate-fadeIn">
             <ul className="space-y-3 font-semibold text-sm text-[#232331]">
+              <li>
+                <Link href="/app/login" onClick={() => setOpen(false)} className="block py-1.5 px-3 rounded-xl bg-[#232331] text-[#d9ff57] font-bold shadow-ink-xs">
+                  ➔ Masuk Portal KAEL (Owner / Staf)
+                </Link>
+              </li>
               <li>
                 <Link href="/demo" onClick={() => setOpen(false)} className="block py-1.5 px-3 rounded-xl bg-[#f0edff] text-[#7958d8] font-bold border border-[#7958d8]/30">
                   ✦ Buka Live App Demo (Hub)

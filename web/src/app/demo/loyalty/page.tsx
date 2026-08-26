@@ -278,44 +278,54 @@ export default function DemoLoyaltyPage() {
             </p>
           </div>
 
-          {/* Role Navigation Pills */}
-          <div className="flex items-center rounded-2xl border-2 border-[#232331] bg-white p-1 shadow-ink-xs font-mono text-xs">
-            <button
-              type="button"
-              onClick={() => setActiveTab("customer")}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold transition-all ${
-                activeTab === "customer"
-                  ? "bg-[#232331] text-[#d9ff57] shadow-ink-xs"
-                  : "text-[#7b7b8e] hover:text-[#232331]"
-              }`}
+                    {/* Actions & Role Navigation Pills */}
+          <div className="flex flex-wrap items-center gap-2">
+            <Link
+              href="/app/loyalty"
+              className="btn-tactile flex items-center gap-1.5 rounded-xl border border-[#d97706] bg-[#fef3c7] px-3 py-1.5 text-xs font-bold text-[#d97706] shadow-ink-xs hover:bg-[#fde68a]"
             >
-              <Smartphone size={13} />
-              <span>1. Layar HP Member</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab("cashier")}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold transition-all ${
-                activeTab === "cashier"
-                  ? "bg-[#232331] text-[#d9ff57] shadow-ink-xs"
-                  : "text-[#7b7b8e] hover:text-[#232331]"
-              }`}
-            >
-              <UserCheck size={13} />
-              <span>2. Terminal Kasir</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab("settings")}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold transition-all ${
-                activeTab === "settings"
-                  ? "bg-[#232331] text-[#d9ff57] shadow-ink-xs"
-                  : "text-[#7b7b8e] hover:text-[#232331]"
-              }`}
-            >
-              <Settings size={13} />
-              <span>3. Aturan Program</span>
-            </button>
+              <HeartHandshake size={13} />
+              <span>Owner Command Center ➔</span>
+            </Link>
+
+            <div className="flex items-center rounded-2xl border-2 border-[#232331] bg-white p-1 shadow-ink-xs font-mono text-xs">
+              <button
+                type="button"
+                onClick={() => setActiveTab("customer")}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold transition-all ${
+                  activeTab === "customer"
+                    ? "bg-[#232331] text-[#d9ff57] shadow-ink-xs"
+                    : "text-[#7b7b8e] hover:text-[#232331]"
+                }`}
+              >
+                <Smartphone size={13} />
+                <span>1. Layar HP Member</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab("cashier")}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold transition-all ${
+                  activeTab === "cashier"
+                    ? "bg-[#232331] text-[#d9ff57] shadow-ink-xs"
+                    : "text-[#7b7b8e] hover:text-[#232331]"
+                }`}
+              >
+                <UserCheck size={13} />
+                <span>2. Terminal Kasir</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab("settings")}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-bold transition-all ${
+                  activeTab === "settings"
+                    ? "bg-[#232331] text-[#d9ff57] shadow-ink-xs"
+                    : "text-[#7b7b8e] hover:text-[#232331]"
+                }`}
+              >
+                <Settings size={13} />
+                <span>3. Setup Hadiah</span>
+              </button>
+            </div>
           </div>
         </div>
 

@@ -252,32 +252,42 @@ export default function DemoFinancePage() {
             </p>
           </div>
 
-          {/* Mode Selector */}
-          <div className="flex items-center rounded-2xl border-2 border-[#232331] bg-white p-1 shadow-ink-xs font-mono text-xs">
-            <button
-              type="button"
-              onClick={() => setCalcMode("recipe")}
-              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl font-bold transition-all ${
-                calcMode === "recipe"
-                  ? "bg-[#232331] text-[#d9ff57] shadow-ink-xs"
-                  : "text-[#7b7b8e] hover:text-[#232331]"
-              }`}
+          {/* Actions & Mode Selector */}
+          <div className="flex flex-wrap items-center gap-2">
+            <Link
+              href="/app/finance"
+              className="btn-tactile flex items-center gap-1.5 rounded-xl border border-[#c2410c] bg-[#ffedd5] px-3 py-1.5 text-xs font-bold text-[#c2410c] shadow-ink-xs hover:bg-[#fed7aa]"
             >
-              <PieChart size={13} />
-              <span>1. Resep Produksi Sendiri</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setCalcMode("supplier")}
-              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl font-bold transition-all ${
-                calcMode === "supplier"
-                  ? "bg-[#232331] text-[#d9ff57] shadow-ink-xs"
-                  : "text-[#7b7b8e] hover:text-[#232331]"
-              }`}
-            >
-              <Coins size={13} />
-              <span>2. Kulakan Reseller / Supplier</span>
-            </button>
+              <Calculator size={13} />
+              <span>Owner Command Center ➔</span>
+            </Link>
+
+            <div className="flex items-center rounded-2xl border-2 border-[#232331] bg-white p-1 shadow-ink-xs font-mono text-xs">
+              <button
+                type="button"
+                onClick={() => setCalcMode("recipe")}
+                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl font-bold transition-all ${
+                  calcMode === "recipe"
+                    ? "bg-[#232331] text-[#d9ff57] shadow-ink-xs"
+                    : "text-[#7b7b8e] hover:text-[#232331]"
+                }`}
+              >
+                <Calculator size={14} />
+                <span>1. Resep Olahan</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setCalcMode("supplier")}
+                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl font-bold transition-all ${
+                  calcMode === "supplier"
+                    ? "bg-[#232331] text-[#d9ff57] shadow-ink-xs"
+                    : "text-[#7b7b8e] hover:text-[#232331]"
+                }`}
+              >
+                <Layers size={14} />
+                <span>2. Kulakan / Supplier</span>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -794,11 +804,37 @@ export default function DemoFinancePage() {
           </div>
         )}
 
+      {/* Mobile Floating Sticky Quick Bar */}
+      <div className="fixed bottom-0 inset-x-0 z-40 bg-[#232331] text-white border-t-2 border-[#232331] p-3 shadow-ink-xl lg:hidden">
+        <div className="max-w-6xl mx-auto flex items-center justify-between gap-2 font-mono text-xs">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="text-[#d9ff57] font-black text-sm">
+                HPP: Rp {calcMode === "recipe" ? totalHppRecipe.toLocaleString("id-ID") : totalHppSupplier.toLocaleString("id-ID")}
+              </span>
+              <span className="text-[10px] px-1.5 py-0.2 rounded font-bold bg-[#16a34a] text-white">
+                {calcMode === "recipe" ? marginPercent : marginSupplierPercent}% Margin
+              </span>
+            </div>
+            <span className="text-[10px] text-[#dedee8] block truncate">
+              Laba: +Rp {calcMode === "recipe" ? Math.round(profitPerPortion).toLocaleString("id-ID") : profitSupplier.toLocaleString("id-ID")} / porsi
+            </span>
+          </div>
+
+          <Link
+            href="/app/finance"
+            className="btn-tactile rounded-xl bg-[#d9ff57] px-3.5 py-2 text-xs font-extrabold text-[#232331] shadow-ink-xs shrink-0"
+          >
+            Dashboard ➔
+          </Link>
+        </div>
+      </div>
+
       </main>
 
       {/* Footer */}
       {showWhiteLabelBadge && (
-        <footer className="border-t border-[#dedee8] py-4 text-center text-xs text-[#7b7b8e] bg-white">
+        <footer className="border-t border-[#dedee8] py-4 text-center text-xs text-[#7b7b8e] bg-white pb-20 lg:pb-4">
           <p>⚡ Powered by <strong>KAEL Finance</strong> · Live Production-Grade HPP Engine</p>
         </footer>
       )}
