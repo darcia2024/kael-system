@@ -12,6 +12,26 @@
 
 import type { RecipeIngredientItem, RecipePackagingItem } from "./finance-engine";
 
+/**
+ * Modul yang bisa diberikan owner ke karyawannya.
+ *
+ * Sengaja hanya tiga. Finance, laporan laba, refund, dan pengelolaan staf
+ * tidak ada di daftar ini dan tidak akan pernah bisa diberikan ke staf:
+ * batasnya ditegakkan requireOwner di kode, bukan lewat kolom yang bisa
+ * diubah dari layar.
+ */
+export type StaffPermission = "pos" | "loyalty" | "review";
+
+export const STAFF_PERMISSIONS: {
+  key: StaffPermission;
+  label: string;
+  hint: string;
+}[] = [
+  { key: "pos", label: "Kasir & Pesanan", hint: "Menerima transaksi, buka dan tutup shift" },
+  { key: "loyalty", label: "Poin Pelanggan", hint: "Tambah poin dan tukar reward" },
+  { key: "review", label: "Kartu Ulasan", hint: "Lihat jumlah tap kartu Google Review" },
+];
+
 export interface Business {
   id: string;
   name: string;
@@ -41,6 +61,8 @@ export interface User {
   name: string;
   email: string | null;
   pin_hash: string | null;
+  /** Modul yang boleh dibuka staf. Diabaikan untuk owner dan kael_admin. */
+  permissions?: StaffPermission[];
   /** Hash scrypt kata sandi owner/kael_admin. Staf memakai pin_hash. */
   password_hash?: string | null;
   failed_pin_attempts: number;

@@ -4,13 +4,14 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { db } from "./db";
+import type { StaffPermission } from "./types";
 import {
   searchPlaces,
   isPlacesSearchConfigured,
   type GooglePlaceResult,
 } from "./google-places";
 import {
-  requireStaff, requireOwner, requireKaelAdmin,
+  requireStaff, requireOwner, requireKaelAdmin, requirePermission,
   createSession, destroySession, getSession, verifyPin, isLegacyPinHash,
 } from "./auth";
 
@@ -60,13 +61,29 @@ export async function loginStaff(
   const result = await db.authenticateStaffPin(businessId, userId, pin);
   if (!result.success) return fail(result.error);
 
+  const permissions = (result.user.permissions ?? []) as StaffPermission[];
+  if (permissions.length === 0) {
+    return fail("Akun ini belum diberi akses apa pun oleh pemilik usaha.");
+  }
+
   await createSession({
     userId: result.user.id,
     businessId: result.user.business_id,
     role: "staff",
     name: result.user.name,
+    permissions,
   });
-  return done({ next: "/app/pos" });
+
+  // Mendarat di modul pertama yang boleh dibuka, bukan selalu kasir.
+  const landing: Record<StaffPermission, string> = {
+    pos: "/app/pos",
+    loyalty: "/app/loyalty",
+    review: "/app/review",
+  };
+  const first = (["pos", "loyalty", "review"] as StaffPermission[]).find((m) =>
+    permissions.includes(m),
+  );
+  return done({ next: first ? landing[first] : "/app" });
 }
 
 export async function logout() {
@@ -238,14 +255,14 @@ export async function registerCustomerAction(
 
 /** Pencarian pelanggan untuk dashboard kasir. */
 export async function searchCustomersAction(query: string) {
-  const { businessId } = await requireStaff();
+  const { businessId } = await requirePermission("loyalty");
   if (!query.trim()) return [];
   return db.searchCustomers(businessId, query);
 }
 
 /** Detail satu pelanggan beserta riwayat poinnya, untuk modal di dashboard. */
 export async function customerDetailAction(customerId: string) {
-  const { businessId } = await requireStaff();
+  const { businessId } = await requirePermission("loyalty");
   const customer = await db.getCustomerById(customerId, businessId);
   if (!customer) return null;
   const [balance, ledger, redemptions] = await Promise.all([
@@ -277,7 +294,7 @@ export async function addPointsAction(
   customerId: string,
   amountSpent: number,
 ): Promise<ActionResult<{ earned: number; balance: number }>> {
-  const { businessId, userId } = await requireStaff();
+  const { businessId, userId } = await requirePermission("loyalty");
   if (amountSpent <= 0) return fail("Nominal belanja harus lebih dari nol.");
   // Batas kewajaran. Nominal di luar ini hampir pasti salah ketik.
   if (amountSpent > 50_000_000) return fail("Nominal terlalu besar. Periksa kembali.");
@@ -300,7 +317,7 @@ export async function addManualPointsAction(
   delta: number,
   note: string,
 ): Promise<ActionResult<{ balance: number }>> {
-  const { businessId, userId } = await requireStaff();
+  const { businessId, userId } = await requirePermission("loyalty");
   if (!Number.isInteger(delta) || delta === 0) return fail("Jumlah poin tidak valid.");
   if (Math.abs(delta) > 1000) return fail("Penyesuaian manual dibatasi 1000 poin.");
   if (!note.trim()) return fail("Alasan penyesuaian wajib diisi.");
@@ -318,7 +335,7 @@ export async function redeemRewardAction(
   customerId: string,
   rewardId: string,
 ): Promise<ActionResult<{ code: string; rewardName: string }>> {
-  const { businessId, userId } = await requireStaff();
+  const { businessId, userId } = await requirePermission("loyalty");
   const customer = await db.getCustomerById(customerId, businessId);
   if (!customer) return fail("Pelanggan tidak ditemukan pada bisnis ini.");
 
@@ -361,7 +378,7 @@ export async function anonymizeCustomerAction(customerId: string): Promise<Actio
 // ===========================================================================
 
 export async function openShiftAction(openingCash: number, notes?: string): Promise<ActionResult<null>> {
-  const { businessId, userId } = await requireStaff();
+  const { businessId, userId } = await requirePermission("pos");
   if (openingCash < 0) return fail("Modal awal tidak boleh negatif.");
   const result = await db.openShift(businessId, userId, openingCash, notes);
   if (!result.success) return fail(result.error);
@@ -374,7 +391,7 @@ export async function closeShiftAction(
   physicalCash: number,
   notes?: string,
 ): Promise<ActionResult<{ variance: number }>> {
-  const { businessId } = await requireStaff();
+  const { businessId } = await requirePermission("pos");
   if (physicalCash < 0) return fail("Uang laci tidak boleh negatif.");
   const shift = await db.closeShift(shiftId, businessId, physicalCash, notes);
   if (!shift) return fail("Shift tidak ditemukan atau sudah ditutup.");
@@ -393,7 +410,7 @@ export async function createOrderAction(input: {
   customer_id?: string | null;
   items: { menu_item_id: string; qty: number; note?: string }[];
 }): Promise<ActionResult<{ orderId: string; orderNo: string; total: number; change: number }>> {
-  const { businessId, userId } = await requireStaff();
+  const { businessId, userId } = await requirePermission("pos");
   if (!input.items.length) return fail("Keranjang masih kosong.");
 
   /**
@@ -502,7 +519,7 @@ export async function updateOrderStatusAction(
   orderId: string,
   status: "open" | "paid" | "cancelled",
 ): Promise<ActionResult<null>> {
-  const { businessId } = await requireStaff();
+  const { businessId } = await requirePermission("pos");
   const order = await db.updateOrderStatus(orderId, businessId, status);
   if (!order) return fail("Transaksi tidak ditemukan.");
   revalidatePath("/app/pos");
@@ -527,7 +544,7 @@ export async function setMenuAvailabilityAction(
   menuItemId: string,
   isAvailable: boolean,
 ): Promise<ActionResult<null>> {
-  const { businessId } = await requireStaff();
+  const { businessId } = await requirePermission("pos");
   const ok = await db.updateMenuItemAvailability(menuItemId, businessId, isAvailable);
   if (!ok) return fail("Menu tidak ditemukan.");
   revalidatePath("/app/pos");
@@ -632,6 +649,28 @@ export async function resetStaffPinAction(userId: string, pin: string): Promise<
 }
 
 /** Staf yang resign dinonaktifkan, tidak dihapus: transaksi lama menunjuk ke sini. */
+/**
+ * Owner menentukan modul apa saja yang boleh dibuka seorang karyawan.
+ *
+ * Daftar yang diterima disaring ke tiga nilai yang sah. Finance, laporan laba,
+ * refund, dan pengelolaan staf tidak ada di sini dan tidak bisa diberikan lewat
+ * jalur mana pun: itu dijaga requireOwner, bukan oleh kolom izin.
+ */
+export async function setStaffPermissionsAction(
+  userId: string,
+  permissions: string[],
+): Promise<ActionResult<null>> {
+  const { businessId } = await requireOwner();
+
+  const allowed: StaffPermission[] = ["pos", "loyalty", "review"];
+  const clean = allowed.filter((p) => permissions.includes(p));
+
+  const ok = await db.setStaffPermissions(userId, businessId, clean);
+  if (!ok) return fail("Staf tidak ditemukan.");
+  revalidatePath("/app");
+  return done(null);
+}
+
 export async function deactivateStaffAction(userId: string): Promise<ActionResult<null>> {
   const { businessId } = await requireOwner();
   const ok = await db.deactivateStaff(userId, businessId);

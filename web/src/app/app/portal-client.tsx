@@ -23,7 +23,10 @@ import {
   Lock
 } from "lucide-react";
 import type { Business, BusinessModule, User } from "@/lib/types";
-import { createStaffAction, deactivateStaffAction, logout } from "@/lib/actions";
+import {
+  createStaffAction, deactivateStaffAction, setStaffPermissionsAction, logout,
+} from "@/lib/actions";
+import { STAFF_PERMISSIONS, type StaffPermission } from "@/lib/types";
 import { formatBusinessDate } from "@/lib/formatters";
 
 export default function AppPortalHub({
@@ -32,12 +35,15 @@ export default function AppPortalHub({
   users,
   sessionName,
   sessionRole,
+  sessionPermissions,
 }: {
   business: Business | null;
   modules: BusinessModule[];
   users: User[];
   sessionName: string;
   sessionRole: User["role"];
+  /** Modul yang boleh dibuka. Kosong untuk owner, yang tidak dibatasi. */
+  sessionPermissions: StaffPermission[];
 }) {
   const router = useRouter();
 
@@ -70,6 +76,27 @@ export default function AppPortalHub({
    * user_id staf, dan menghapusnya membuat riwayat kehilangan jejak siapa
    * yang melayani. Mengaktifkan kembali belum tersedia.
    */
+  /**
+   * Owner mencentang modul yang boleh dibuka karyawannya. Perubahan langsung
+   * dikirim ke server; daftar yang sah disaring lagi di sana, jadi mencentang
+   * lewat devtools tidak menambah akses.
+   */
+  const togglePermission = async (
+    userId: string,
+    current: StaffPermission[],
+    key: StaffPermission,
+  ) => {
+    const next = current.includes(key)
+      ? current.filter((p) => p !== key)
+      : [...current, key];
+    const res = await setStaffPermissionsAction(userId, next);
+    if (!res.ok) {
+      alert(res.error);
+      return;
+    }
+    router.refresh();
+  };
+
   const toggleStaffActive = async (userId: string, currentStatus: boolean) => {
     if (!currentStatus) {
       alert("Mengaktifkan kembali staf belum tersedia. Buat akun baru untuk sementara.");
@@ -202,7 +229,14 @@ export default function AppPortalHub({
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {moduleCards.map((mod) => {
+            {moduleCards
+              .filter((mod) => {
+                // Owner melihat semuanya. Karyawan hanya modul yang diizinkan.
+                if (sessionRole !== "staff") return true;
+                const slug = (mod.href || "").split("/").filter(Boolean).pop();
+                return slug ? (sessionPermissions ?? []).includes(slug as StaffPermission) : false;
+              })
+              .map((mod) => {
               const Icon = mod.icon;
               return (
                 <Link
@@ -338,7 +372,37 @@ export default function AppPortalHub({
                       </span>
                     </td>
                     <td className="py-3 px-3 text-[#7b7b8e]">
-                      {u.email ? `Email: ${u.email}` : "6-Digit SHA-256 PIN"}
+                      {u.role !== "staff" ? (
+                        <span>{u.email ? `Email: ${u.email}` : "-"}</span>
+                      ) : (
+                        <div className="flex flex-wrap gap-1">
+                          {STAFF_PERMISSIONS.map((p) => {
+                            const punya = (u.permissions ?? []).includes(p.key);
+                            return (
+                              <button
+                                key={p.key}
+                                type="button"
+                                title={p.hint}
+                                onClick={() =>
+                                  togglePermission(
+                                    u.id,
+                                    (u.permissions ?? []) as StaffPermission[],
+                                    p.key,
+                                  )
+                                }
+                                className={`rounded-lg border px-2 py-0.5 text-[10px] font-bold transition-colors ${
+                                  punya
+                                    ? "border-[#16a34a] bg-[#dcfce7] text-[#16a34a]"
+                                    : "border-[#dedee8] bg-white text-[#b8b8c4]"
+                                }`}
+                              >
+                                {punya ? "✓ " : ""}
+                                {p.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
                     </td>
                     <td className="py-3 px-3">
                       <span className={`inline-flex items-center gap-1 font-bold text-[10px] ${

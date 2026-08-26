@@ -38,6 +38,7 @@ export default async function AppPortalPage() {
       users={users}
       sessionName={session.name}
       sessionRole={session.role}
+      sessionPermissions={session.permissions ?? []}
     />
   );
 }

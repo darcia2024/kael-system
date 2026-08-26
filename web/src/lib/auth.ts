@@ -7,7 +7,7 @@ import {
   timingSafeEqual,
 } from "node:crypto";
 
-import type { User } from "./types";
+import type { StaffPermission, User } from "./types";
 
 /**
  * Sesi dan verifikasi PIN.
@@ -87,6 +87,8 @@ export interface Session {
   businessId: string | null;
   role: User["role"];
   name: string;
+  /** Hanya diisi untuk staf. Owner tidak dibatasi daftar ini. */
+  permissions?: StaffPermission[];
 }
 
 function sign(payload: string): string {
@@ -167,6 +169,26 @@ export async function requireOwner(): Promise<Session & { businessId: string }> 
     throw new AuthError("Hanya pemilik usaha yang bisa membuka bagian ini.");
   }
   return s as Session & { businessId: string };
+}
+
+/**
+ * Staf dengan izin modul tertentu.
+ *
+ * Owner selalu lolos: dia yang memberi izin, jadi tidak masuk akal kalau dia
+ * sendiri terhalang. Staf harus punya modulnya di daftar izinnya.
+ *
+ * Ini dipanggil di halaman DAN di dalam action, karena Server Action bisa
+ * dijangkau lewat POST langsung tanpa pernah membuka layarnya.
+ */
+export async function requirePermission(
+  module: StaffPermission,
+): Promise<Session & { businessId: string }> {
+  const s = await requireStaff();
+  if (s.role === "owner") return s;
+  if (!s.permissions?.includes(module)) {
+    throw new AuthError("Akses ini belum diberikan oleh pemilik usaha.");
+  }
+  return s;
 }
 
 /** Hanya tim KAEL. Tidak pernah diberi akses ke data pelanggan sebuah bisnis. */

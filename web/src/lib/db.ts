@@ -253,7 +253,12 @@ export const db = {
     return rows.length > 0;
   },
 
-  async createStaff(businessId: string, name: string, pin: string): Promise<User> {
+  async createStaff(
+    businessId: string,
+    name: string,
+    pin: string,
+    permissions: string[] = ["pos"],
+  ): Promise<User> {
     return one<User>(await sql`
       INSERT INTO users ${sql({
         business_id: businessId,
@@ -262,6 +267,7 @@ export const db = {
         pin_hash: hashPin(pin),
         failed_pin_attempts: 0,
         is_active: true,
+        permissions,
       })} RETURNING *
     `)!;
   },
@@ -269,6 +275,19 @@ export const db = {
   async setStaffPin(userId: string, businessId: string, pin: string): Promise<boolean> {
     const rows = await sql`
       UPDATE users SET pin_hash = ${hashPin(pin)}, failed_pin_attempts = 0, locked_until = NULL
+      WHERE id = ${userId} AND business_id = ${businessId} AND role = 'staff'
+      RETURNING id
+    `;
+    return rows.length > 0;
+  },
+
+  async setStaffPermissions(
+    userId: string,
+    businessId: string,
+    permissions: string[],
+  ): Promise<boolean> {
+    const rows = await sql`
+      UPDATE users SET permissions = ${permissions as unknown as string[]}
       WHERE id = ${userId} AND business_id = ${businessId} AND role = 'staff'
       RETURNING id
     `;
