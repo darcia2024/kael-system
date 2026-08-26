@@ -77,7 +77,7 @@ export default function LoginClient({
 
   // Admin state
   const [adminEmail, setAdminEmail] = useState("");
-  const [adminPassword, setAdminPassword] = useState("admin123");
+  const [adminPassword, setAdminPassword] = useState("");
   const [adminError, setAdminError] = useState("");
 
   // Load store preference from localStorage on mount
