@@ -27,11 +27,13 @@ function createClient() {
     );
   }
 
+  const isProd = process.env.NODE_ENV === "production";
+
   return postgres(url, {
     prepare: false,
     ssl: "require",
-    max: 5,
-    idle_timeout: 20,
+    max: isProd ? 2 : 5,
+    idle_timeout: 10,
     connect_timeout: 10,
     transform: { undefined: null },
   });

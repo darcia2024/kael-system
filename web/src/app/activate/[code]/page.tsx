@@ -43,14 +43,21 @@ export default function CardActivationPage({ params }: { params: Promise<{ code:
   const [isActivating, setIsActivating] = useState<boolean>(false);
   const [activationSuccess, setActivationSuccess] = useState<boolean>(false);
 
-  // Cari places saat search query berubah
+  // Cari places saat search query berubah dengan debounce 350ms
   useEffect(() => {
-    if (searchQuery.trim().length >= 2) {
-      searchPlacesAction(searchQuery).then((r) => {
+    const q = searchQuery.trim();
+    if (q.length < 2) {
+      setSearchResults([]);
+      return;
+    }
+    const timer = setTimeout(() => {
+      searchPlacesAction(q).then((r) => {
         setSearchResults(r.results);
         setPlacesConfigured(r.configured);
       });
-    }
+    }, 350);
+
+    return () => clearTimeout(timer);
   }, [searchQuery]);
 
   // Handle Step 1: PIN Validation

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -82,23 +82,32 @@ export default function BusinessesClient({ initial }: { initial: Row[] }) {
     setShowPlacesDropdown(false);
   };
 
-  const handleSearchPlaces = async (query: string) => {
+  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const handleSearchPlaces = (query: string) => {
     setNama(query);
+    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+
     if (!query || query.trim().length < 2) {
       setPlacesResults([]);
       setShowPlacesDropdown(false);
+      setIsSearchingPlaces(false);
       return;
     }
+
     setIsSearchingPlaces(true);
     setShowPlacesDropdown(true);
-    try {
-      const res = await searchPlacesAction(query);
-      setPlacesResults(res.results);
-    } catch {
-      setPlacesResults([]);
-    } finally {
-      setIsSearchingPlaces(false);
-    }
+
+    searchTimeoutRef.current = setTimeout(async () => {
+      try {
+        const res = await searchPlacesAction(query);
+        setPlacesResults(res.results);
+      } catch {
+        setPlacesResults([]);
+      } finally {
+        setIsSearchingPlaces(false);
+      }
+    }, 350);
   };
 
   const handleSelectPlace = (place: GooglePlaceResult) => {

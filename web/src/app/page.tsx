@@ -1,3 +1,4 @@
+import dynamic from "next/dynamic";
 import { Faq } from "@/components/faq";
 import { FloatingCta } from "@/components/floating-cta";
 import { Footer } from "@/components/footer";
@@ -9,9 +10,19 @@ import { Packages } from "@/components/packages";
 import { Problems } from "@/components/problems";
 import { ProductSelector } from "@/components/product-selector";
 import { RoiCalculator } from "@/components/roi-calculator";
-import { ServiceMockups } from "@/components/service-mockups";
 import { WhoWeAre } from "@/components/who-we-are";
 import { faqs } from "@/lib/faq-data";
+
+const ServiceMockups = dynamic(
+  () => import("@/components/service-mockups").then((mod) => mod.ServiceMockups),
+  {
+    loading: () => (
+      <div className="py-20 text-center text-xs font-mono text-[#7b7b8e]">
+        Memuat simulator produk...
+      </div>
+    ),
+  },
+);
 
 const faqSchema = {
   "@context": "https://schema.org",

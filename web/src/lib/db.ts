@@ -1423,6 +1423,7 @@ export const db = {
         WHERE o.business_id = ${businessId} AND o.status = 'paid'
         GROUP BY i.menu_item_id, i.name_snapshot
         ORDER BY qty DESC
+        LIMIT 25
       `,
       sql`
         SELECT payment_method, COUNT(*)::int AS orders, COALESCE(SUM(total), 0) AS revenue

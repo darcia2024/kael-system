@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { 
@@ -50,6 +50,19 @@ export default function KaelReviewOwnerDashboard({
   const [selectedPlace, setSelectedPlace] = useState<GooglePlaceResult | null>(null);
   const [manualPlaceId, setManualPlaceId] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+
+  // Debounce search query perubahan Google Places
+  useEffect(() => {
+    const q = editSearchQuery.trim();
+    if (q.length < 2) {
+      setEditPlacesResults([]);
+      return;
+    }
+    const timer = setTimeout(() => {
+      searchPlacesAction(q).then((r) => setEditPlacesResults(r.results));
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [editSearchQuery]);
 
   // Angka mentah datang dari server; pembersihannya (dedup 10 menit, kunjungan
   // otomatis, permintaan HEAD) terjadi di sini sebelum ditampilkan.
@@ -468,10 +481,7 @@ export default function KaelReviewOwnerDashboard({
                   <input
                     type="text"
                     value={editSearchQuery}
-                    onChange={(e) => {
-                      setEditSearchQuery(e.target.value);
-                      searchPlacesAction(e.target.value).then((r) => setEditPlacesResults(r.results));
-                    }}
+                    onChange={(e) => setEditSearchQuery(e.target.value)}
                     placeholder="Cari nama cafe / bisnis baru..."
                     className="w-full rounded-xl border border-[#232331] pl-9 pr-3 py-2.5 text-xs font-bold text-[#232331] focus:outline-none"
                   />
