@@ -161,6 +161,42 @@ export const db = {
     };
   },
 
+  /**
+   * Login owner dan tim KAEL. Email saja tidak cukup: sebelumnya siapa pun
+   * yang tahu alamat email pemilik usaha bisa masuk dan membuka seluruh
+   * laporan serta pengaturannya.
+   */
+  async authenticateOwner(email: string, password: string) {
+    const user = await this.getUserByEmail(email.trim().toLowerCase());
+    if (!user || !user.is_active) {
+      return { success: false as const, error: "Email atau kata sandi salah." };
+    }
+    if (user.role !== "owner" && user.role !== "kael_admin") {
+      return { success: false as const, error: "Akun ini bukan akun pemilik usaha." };
+    }
+    if (!user.password_hash) {
+      return {
+        success: false as const,
+        error: "Akun ini belum menyetel kata sandi. Hubungi tim KAEL untuk mengaturnya.",
+      };
+    }
+    if (!verifyPin(password, user.password_hash)) {
+      // Pesan sengaja sama dengan kasus email tidak ada, supaya tidak
+      // membocorkan email mana yang terdaftar.
+      return { success: false as const, error: "Email atau kata sandi salah." };
+    }
+    return { success: true as const, user };
+  },
+
+  async setOwnerPassword(userId: string, password: string): Promise<boolean> {
+    const rows = await sql`
+      UPDATE users SET password_hash = ${hashPin(password)}
+      WHERE id = ${userId} AND role IN ('owner', 'kael_admin')
+      RETURNING id
+    `;
+    return rows.length > 0;
+  },
+
   async createStaff(businessId: string, name: string, pin: string): Promise<User> {
     return one<User>(await sql`
       INSERT INTO users ${sql({

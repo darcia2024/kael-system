@@ -41,6 +41,8 @@ export interface User {
   name: string;
   email: string | null;
   pin_hash: string | null;
+  /** Hash scrypt kata sandi owner/kael_admin. Staf memakai pin_hash. */
+  password_hash?: string | null;
   failed_pin_attempts: number;
   locked_until: string | null;
   is_active: boolean;

@@ -30,12 +30,13 @@ const done = <T,>(data: T): ActionResult<T> => ({ ok: true, data });
 // Sesi
 // ===========================================================================
 
-export async function loginOwner(email: string): Promise<ActionResult<{ next: string }>> {
-  const user = await db.getUserByEmail(email.trim().toLowerCase());
-  if (!user || !user.is_active) return fail("Email tidak dikenali.");
-  if (user.role !== "owner" && user.role !== "kael_admin") {
-    return fail("Akun ini bukan akun pemilik usaha.");
-  }
+export async function loginOwner(
+  email: string,
+  password: string,
+): Promise<ActionResult<{ next: string }>> {
+  const result = await db.authenticateOwner(email, password);
+  if (!result.success) return fail(result.error);
+  const user = result.user;
 
   await createSession({
     userId: user.id,
