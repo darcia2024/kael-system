@@ -25,11 +25,11 @@ import {
   Search
 } from "lucide-react";
 import type { Business, Card, CardTap } from "@/lib/types";
-import { updateCardAction } from "@/lib/actions";
+import { updateCardAction, searchPlacesAction } from "@/lib/actions";
 import { calculateCleanTaps, generateDailyTapSeries } from "@/lib/tap-counter";
 import { formatCardCodeDisplay } from "@/lib/card-code";
 import { formatBusinessDateTime } from "@/lib/formatters";
-import { searchPlaces, buildGoogleReviewUrl, GooglePlaceResult, SAMPLE_INDONESIAN_PLACES } from "@/lib/google-places";
+import { buildGoogleReviewUrl, type GooglePlaceResult } from "@/lib/google-places";
 
 export default function KaelReviewOwnerDashboard({
   business,
@@ -46,7 +46,7 @@ export default function KaelReviewOwnerDashboard({
   // Edit card modal state
   const [editLabel, setEditLabel] = useState("");
   const [editSearchQuery, setEditSearchQuery] = useState("");
-  const [editPlacesResults, setEditPlacesResults] = useState<GooglePlaceResult[]>(SAMPLE_INDONESIAN_PLACES);
+  const [editPlacesResults, setEditPlacesResults] = useState<GooglePlaceResult[]>([]);
   const [selectedPlace, setSelectedPlace] = useState<GooglePlaceResult | null>(null);
   const [manualPlaceId, setManualPlaceId] = useState("");
   const [isSaving, setIsSaving] = useState(false);
@@ -138,14 +138,6 @@ export default function KaelReviewOwnerDashboard({
             </div>
           </div>
 
-          <div className="flex items-center gap-2 font-mono text-xs">
-            <Link
-              href="/demo/review"
-              className="btn-tactile rounded-xl border border-[#232331] bg-white px-3 py-1.5 font-bold text-[#232331] shadow-ink-xs"
-            >
-              Simulasi HP Pelanggan
-            </Link>
-          </div>
         </div>
       </header>
 
@@ -478,7 +470,7 @@ export default function KaelReviewOwnerDashboard({
                     value={editSearchQuery}
                     onChange={(e) => {
                       setEditSearchQuery(e.target.value);
-                      searchPlaces(e.target.value).then(setEditPlacesResults);
+                      searchPlacesAction(e.target.value).then((r) => setEditPlacesResults(r.results));
                     }}
                     placeholder="Cari nama cafe / bisnis baru..."
                     className="w-full rounded-xl border border-[#232331] pl-9 pr-3 py-2.5 text-xs font-bold text-[#232331] focus:outline-none"

@@ -65,8 +65,8 @@ export default function LoginClient({
   const [isLoadingStore, setIsLoadingStore] = useState(false);
 
   // Owner form state
-  const [ownerEmail, setOwnerEmail] = useState("owner@senjacoffee.id");
-  const [ownerPassword, setOwnerPassword] = useState("owner123");
+  const [ownerEmail, setOwnerEmail] = useState("");
+  const [ownerPassword, setOwnerPassword] = useState("");
   const [ownerLoading, setOwnerLoading] = useState(false);
   const [ownerError, setOwnerError] = useState("");
 
@@ -76,7 +76,7 @@ export default function LoginClient({
   const [staffLoading, setStaffLoading] = useState(false);
 
   // Admin state
-  const [adminEmail, setAdminEmail] = useState("admin@kael.id");
+  const [adminEmail, setAdminEmail] = useState("");
   const [adminPassword, setAdminPassword] = useState("admin123");
   const [adminError, setAdminError] = useState("");
 
@@ -321,23 +321,6 @@ export default function LoginClient({
                 </p>
               )}
 
-              {/* Quick Demo Fill for Presentation */}
-              <div className="rounded-2xl border border-dashed border-[#7958d8]/40 bg-[#f0edff]/60 p-2.5 font-mono text-[11px] space-y-1.5">
-                <span className="text-[#7958d8] font-bold block">✨ Akun Demo Presentasi:</span>
-                <div className="flex flex-wrap gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setOwnerEmail("owner@senjacoffee.id");
-                      setOwnerPassword("owner123");
-                    }}
-                    className="px-2 py-1 rounded-lg border border-[#7958d8] bg-white text-[#7958d8] font-bold hover:bg-[#7958d8] hover:text-white transition-all text-[10px]"
-                  >
-                    ☕ Senja Coffee (Owner)
-                  </button>
-                </div>
-              </div>
-
               <button
                 type="submit"
                 disabled={ownerLoading}
@@ -520,11 +503,6 @@ export default function LoginClient({
                 >
                   <Delete size={16} />
                 </button>
-              </div>
-
-              {/* Helper Presentation Hint */}
-              <div className="text-center font-mono text-[10.5px] text-[#7b7b8e] pt-1">
-                Demo PIN Barista: <code className="font-bold text-[#7958d8] bg-[#f0edff] px-1.5 py-0.5 rounded">123456</code>
               </div>
 
             </div>

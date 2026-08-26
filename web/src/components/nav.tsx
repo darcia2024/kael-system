@@ -55,9 +55,6 @@ export function Nav() {
 
           {/* Desktop Links */}
           <nav className="hidden md:flex items-center gap-5 text-xs font-semibold text-[#232331]">
-            <Link href="/demo" className="text-[#7958d8] font-bold hover:opacity-80 transition-opacity bg-[#f0edff] px-2.5 py-1 rounded-lg border border-[#7958d8]/30">
-              ✦ Live App Demo
-            </Link>
             <a href="#alat-tempur" className="transition-colors hover:text-[#7958d8]">Alat Tempur</a>
             <a href="#our-product" className="transition-colors hover:text-[#7958d8]">Katalog Modul</a>
             <a href="#kalkulator" className="transition-colors hover:text-[#7958d8]">Hitung Cuan</a>
@@ -105,11 +102,6 @@ export function Nav() {
               <li>
                 <Link href="/app/login" onClick={() => setOpen(false)} className="block py-1.5 px-3 rounded-xl bg-[#232331] text-[#d9ff57] font-bold shadow-ink-xs">
                   ➔ Masuk Portal KAEL (Owner / Staf)
-                </Link>
-              </li>
-              <li>
-                <Link href="/demo" onClick={() => setOpen(false)} className="block py-1.5 px-3 rounded-xl bg-[#f0edff] text-[#7958d8] font-bold border border-[#7958d8]/30">
-                  ✦ Buka Live App Demo (Hub)
                 </Link>
               </li>
               <li>

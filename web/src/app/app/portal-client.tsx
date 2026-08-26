@@ -199,13 +199,6 @@ export default function AppPortalHub({
                 Satu database Postgres terpusat melayani seluruh kebutuhan operasional tokomu.
               </p>
             </div>
-            <Link
-              href="/dashboard"
-              className="text-xs font-bold text-[#7958d8] font-mono hover:underline flex items-center gap-1"
-            >
-              <span>Command Center Eksekutif</span>
-              <ArrowRight size={13} />
-            </Link>
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

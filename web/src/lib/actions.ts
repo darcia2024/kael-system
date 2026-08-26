@@ -5,6 +5,11 @@ import { redirect } from "next/navigation";
 
 import { db } from "./db";
 import {
+  searchPlaces,
+  isPlacesSearchConfigured,
+  type GooglePlaceResult,
+} from "./google-places";
+import {
   requireStaff, requireOwner, requireKaelAdmin,
   createSession, destroySession, getSession, verifyPin, isLegacyPinHash,
 } from "./auth";
@@ -154,6 +159,22 @@ export async function checkCardAction(
   if (card.status === "active") return fail("Kartu ini sudah pernah diaktivasi.");
   if (card.status === "suspended") return fail("Kartu ini tidak aktif.");
   return done({ status: card.status });
+}
+
+/**
+ * Pencarian bisnis di Google Places, dijalankan di server supaya kunci API
+ * tidak pernah sampai ke browser.
+ *
+ * Mengembalikan `configured: false` kalau GOOGLE_PLACES_API_KEY belum diisi,
+ * sehingga layar bisa mengarahkan owner ke pengisian Place ID manual alih-alih
+ * menampilkan kotak pencarian yang tidak pernah menemukan apa pun.
+ */
+export async function searchPlacesAction(query: string): Promise<{
+  configured: boolean;
+  results: GooglePlaceResult[];
+}> {
+  if (!isPlacesSearchConfigured()) return { configured: false, results: [] };
+  return { configured: true, results: await searchPlaces(query) };
 }
 
 export async function updateCardAction(

@@ -10,7 +10,15 @@ export const site = {
   tagline: "Kemudahan Akses, Efisiensi, Layanan",
   description:
     "KAEL adalah ekosistem solusi digital untuk UMKM. Kelola pelanggan, transaksi, keuangan, dan operasional bisnis dengan sistem yang bisa dipilih sesuai kebutuhan.",
-  url: "https://kael.id",
+  /**
+   * Dipakai untuk canonical, Open Graph, dan sitemap.
+   *
+   * Diisi domain yang BENAR-BENAR melayani situs. kael.id belum menjawab, dan
+   * menunjuk canonical ke domain yang tidak hidup menyuruh Google mengindeks
+   * alamat yang tidak ada. Ganti ke https://kael.id begitu domainnya aktif,
+   * atau timpa lewat NEXT_PUBLIC_SITE_URL.
+   */
+  url: process.env.NEXT_PUBLIC_SITE_URL ?? "https://kael-system.vercel.app",
   locale: "id_ID",
   whatsapp: process.env.NEXT_PUBLIC_KAEL_WHATSAPP ?? "6281311506025",
   email: "daru.fahma@gmail.com",

@@ -18,8 +18,8 @@ import {
   Store,
   Nfc
 } from "lucide-react";
-import { checkCardAction, activateCardAction } from "@/lib/actions";
-import { searchPlaces, buildGoogleReviewUrl, GooglePlaceResult, SAMPLE_INDONESIAN_PLACES } from "@/lib/google-places";
+import { checkCardAction, activateCardAction, searchPlacesAction } from "@/lib/actions";
+import { buildGoogleReviewUrl, type GooglePlaceResult } from "@/lib/google-places";
 import { formatCardCodeDisplay, normalizeCardCode } from "@/lib/card-code";
 
 export default function CardActivationPage({ params }: { params: Promise<{ code: string }> }) {
@@ -34,18 +34,21 @@ export default function CardActivationPage({ params }: { params: Promise<{ code:
 
   // Google Places search
   const [searchQuery, setSearchQuery] = useState<string>("Senja Coffee");
-  const [searchResults, setSearchResults] = useState<GooglePlaceResult[]>(SAMPLE_INDONESIAN_PLACES);
-  const [selectedPlace, setSelectedPlace] = useState<GooglePlaceResult | null>(SAMPLE_INDONESIAN_PLACES[0]);
+  const [searchResults, setSearchResults] = useState<GooglePlaceResult[]>([]);
+  const [selectedPlace, setSelectedPlace] = useState<GooglePlaceResult | null>(null);
   const [customPlaceId, setCustomPlaceId] = useState<string>("");
   const [isManualInput, setIsManualInput] = useState<boolean>(false);
+  /** Pencarian butuh GOOGLE_PLACES_API_KEY. Tanpa itu, jalurnya isi Place ID manual. */
+  const [placesConfigured, setPlacesConfigured] = useState<boolean>(true);
   const [isActivating, setIsActivating] = useState<boolean>(false);
   const [activationSuccess, setActivationSuccess] = useState<boolean>(false);
 
   // Cari places saat search query berubah
   useEffect(() => {
     if (searchQuery.trim().length >= 2) {
-      searchPlaces(searchQuery).then((results) => {
-        setSearchResults(results);
+      searchPlacesAction(searchQuery).then((r) => {
+        setSearchResults(r.results);
+        setPlacesConfigured(r.configured);
       });
     }
   }, [searchQuery]);
@@ -189,13 +192,14 @@ export default function CardActivationPage({ params }: { params: Promise<{ code:
                 )}
               </div>
 
-              {/* Sample PIN Hint for Testing */}
-              <div className="rounded-xl border border-dashed border-[#7958d8]/40 bg-[#f0edff]/50 p-3 text-[11px] font-mono text-[#7958d8] flex justify-between items-center">
-                <span>Hint PIN Demo untuk {cardCode}:</span>
-                <span className="font-extrabold bg-white px-2 py-0.5 rounded border border-[#7958d8]">
-                  {cardCode === "KAEL9901" ? "123456" : cardCode === "KAEL9902" ? "789012" : "882341"}
-                </span>
-              </div>
+              {/* PIN aktivasi TIDAK pernah ditampilkan di sini. Kartu dikirim
+                  lewat ekspedisi, dan halaman ini terbuka untuk siapa pun yang
+                  men-tap kartu. Menampilkan PIN membuat siapa saja yang
+                  memegang paket di jalan bisa mengklaim kartunya. */}
+              <p className="rounded-xl border border-[#dedee8] bg-[#fcfcfe] p-3 text-[11px] text-[#7b7b8e] leading-relaxed">
+                PIN aktivasi 6 angka ada di kertas di dalam kemasan kartu.
+                Belum ketemu? Hubungi tim KAEL lewat WhatsApp.
+              </p>
 
               <button
                 type="button"
@@ -240,6 +244,35 @@ export default function CardActivationPage({ params }: { params: Promise<{ code:
                       className="w-full rounded-2xl border-2 border-[#232331] pl-10 pr-4 py-3 text-xs sm:text-sm font-bold text-[#232331] focus:outline-none focus:ring-2 focus:ring-[#7958d8]"
                     />
                   </div>
+
+                  {/* Pencarian mati kalau kunci Places belum diisi. Lebih baik
+                      mengarahkan ke Place ID manual daripada membiarkan owner
+                      mengetik ke kotak yang tidak pernah menemukan apa pun. */}
+                  {!placesConfigured && (
+                    <div className="rounded-2xl border-2 border-[#ffb16f] bg-[#fff7ed] p-3.5 text-[11px] leading-relaxed text-[#9a3412] space-y-2">
+                      <p className="font-bold">Pencarian nama bisnis belum aktif.</p>
+                      <p>
+                        Masukkan Place ID Google bisnis Anda secara manual. Cara
+                        menemukannya: buka Google Maps, cari bisnis Anda, lalu
+                        salin Place ID dari tautan profilnya. Tim KAEL juga bisa
+                        membantu lewat WhatsApp.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setIsManualInput(true)}
+                        className="btn-tactile rounded-lg border border-[#9a3412] bg-white px-2.5 py-1.5 font-bold text-[#9a3412]"
+                      >
+                        Isi Place ID Manual
+                      </button>
+                    </div>
+                  )}
+
+                  {placesConfigured && searchQuery.trim().length >= 3 && searchResults.length === 0 && (
+                    <p className="rounded-2xl border border-[#dedee8] bg-[#fcfcfe] p-3 text-[11px] text-[#7b7b8e]">
+                      Bisnis tidak ditemukan. Pastikan nama dan lokasinya sesuai
+                      dengan yang terdaftar di Google Maps.
+                    </p>
+                  )}
 
                   {/* Results List */}
                   <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
