@@ -75,7 +75,7 @@ export default function KaelReviewOwnerDashboard({
   const handleOpenEditModal = (card: Card) => {
     setSelectedCardForEdit(card);
     setEditLabel(card.label || "");
-    setEditSearchQuery(business?.name || "Senja Coffee");
+    setEditSearchQuery(business?.name || "");
     setManualPlaceId("");
     setSelectedPlace(null);
   };

@@ -33,7 +33,7 @@ export default function CardActivationPage({ params }: { params: Promise<{ code:
   const [label, setLabel] = useState<string>("Meja Kasir");
 
   // Google Places search
-  const [searchQuery, setSearchQuery] = useState<string>("Senja Coffee");
+  const [searchQuery, setSearchQuery] = useState<string>("");
   const [searchResults, setSearchResults] = useState<GooglePlaceResult[]>([]);
   const [selectedPlace, setSelectedPlace] = useState<GooglePlaceResult | null>(null);
   const [customPlaceId, setCustomPlaceId] = useState<string>("");

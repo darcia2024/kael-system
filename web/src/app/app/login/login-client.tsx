@@ -388,7 +388,7 @@ export default function LoginClient({
                         setStoreCodeInput(e.target.value.toUpperCase());
                         setStoreError("");
                       }}
-                      placeholder="Contoh: SENJA"
+                      placeholder="Contoh: KODETOKO"
                       autoCapitalize="characters"
                       className="w-full rounded-xl border-2 border-[#232331] px-3 py-2.5 text-center font-mono text-sm font-black tracking-[0.2em] text-[#232331] focus:outline-none focus:ring-2 focus:ring-[#7958d8]"
                     />

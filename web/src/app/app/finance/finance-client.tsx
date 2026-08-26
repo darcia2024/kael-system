@@ -394,7 +394,7 @@ export default function FinanceClient({
                 </span>
               </div>
               <span className="text-[9.5px] sm:text-[11px] text-[#7b7b8e] font-mono block truncate">
-                {business?.name || "Senja Coffee"} · Kalkulator Resep &amp; Food Cost
+                {business?.name || "Bisnis Anda"} · Kalkulator Resep &amp; Food Cost
               </span>
             </div>
           </div>

@@ -275,7 +275,7 @@ export default function BusinessesClient({ initial }: { initial: Row[] }) {
                       if (placesResults.length > 0) setShowPlacesDropdown(true);
                     }}
                     required
-                    placeholder="Ketik nama bisnis (contoh: Senja Coffee)..."
+                    placeholder="Ketik nama bisnis (contoh: Kopi Kenangan)..."
                     className="w-full rounded-2xl border-2 border-[#232331] px-3.5 py-2 text-sm pr-9"
                   />
                   <div className="absolute right-3 top-2.5 text-[#7b7b8e]">

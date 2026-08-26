@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 
-import { db, DEFAULT_BUSINESS_ID } from "@/lib/db";
+import { db } from "@/lib/db";
 import OrderClient from "./order-client";
 
 /**
@@ -22,11 +22,15 @@ export default async function QrOrderPage({
 }) {
   const { tableNo } = await params;
 
-  const [business, categories, menuItems] = await Promise.all([
-    db.getBusiness(DEFAULT_BUSINESS_ID),
-    db.getCategories(DEFAULT_BUSINESS_ID),
-    db.getMenuItems(DEFAULT_BUSINESS_ID),
-  ]);
+  const business = await db.getBusiness();
+  const businessId = business?.id;
+
+  const [categories, menuItems] = businessId
+    ? await Promise.all([
+        db.getCategories(businessId),
+        db.getMenuItems(businessId),
+      ])
+    : [[], []];
 
   return (
     <OrderClient

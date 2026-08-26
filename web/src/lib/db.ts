@@ -49,8 +49,11 @@ export const db = {
   // Bisnis, modul, pengguna
   // =========================================================================
 
-  async getBusiness(id = DEFAULT_BUSINESS_ID): Promise<Business | null> {
-    return one<Business>(await sql`SELECT * FROM businesses WHERE id = ${id}`);
+  async getBusiness(id?: string): Promise<Business | null> {
+    if (id) {
+      return one<Business>(await sql`SELECT * FROM businesses WHERE id = ${id}`);
+    }
+    return one<Business>(await sql`SELECT * FROM businesses ORDER BY created_at ASC LIMIT 1`);
   },
 
   /**

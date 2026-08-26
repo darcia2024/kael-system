@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 
-import { db, DEFAULT_BUSINESS_ID } from "@/lib/db";
+import { db } from "@/lib/db";
 import RegisterClient from "./register-client";
 
 /**
@@ -25,10 +25,8 @@ export const metadata: Metadata = {
 };
 
 export default async function RegisterPage() {
-  const [business, program] = await Promise.all([
-    db.getBusiness(DEFAULT_BUSINESS_ID),
-    db.getLoyaltyProgram(DEFAULT_BUSINESS_ID),
-  ]);
+  const business = await db.getBusiness();
+  const program = business ? await db.getLoyaltyProgram(business.id) : null;
 
   return <RegisterClient business={business} program={program} />;
 }
