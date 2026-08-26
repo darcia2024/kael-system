@@ -107,7 +107,8 @@ export interface Recipe {
   id: string;
   business_id: string;
   name: string;
-  category: string;
+  /** Nullable di database; resep tidak wajib punya kategori. */
+  category: string | null;
   type: "olahan" | "kulakan";
   output_qty: number;
   operational_cost: number;

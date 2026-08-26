@@ -1,66 +1,79 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
+
 import { db } from "@/lib/db";
 import { normalizeCardCode } from "@/lib/card-code";
 
 /**
- * KAEL System · NFC/QR Card Redirect Endpoint (Fondasi Bersama 1.5 & KAEL Review 3.1)
- * 
- * Endpoint: GET r.kael.id/{card_code} / /r/[code]
- * Target Latensi: < 500 ms
- * Kode HTTP: 302 (Temporary Redirect) - BUKAN 301 agar URL dapat diperbarui kapan saja oleh owner.
+ * Endpoint redirect kartu NFC dan QR.
+ *
+ * Sasaran waktu dari tap sampai tujuan terbuka: di bawah 500 ms. Pencatatan
+ * tap dijadwalkan lewat `after()` supaya berjalan SETELAH respons terkirim.
+ * Versi sebelumnya memakai promise tanpa await, yang di serverless bisa
+ * terpotong saat fungsi dibekukan begitu respons selesai, sehingga sebagian
+ * tap hilang diam-diam.
+ *
+ * Selalu 302, tidak pernah 301: owner harus bisa mengganti tujuan kapan saja,
+ * dan 301 akan disimpan permanen oleh peramban serta operator seluler.
  */
 export async function GET(
   request: NextRequest,
-  { params }: { params: Promise<{ code: string }> }
+  { params }: { params: Promise<{ code: string }> },
 ) {
   const { code } = await params;
-  const rawCode = normalizeCardCode(code);
-  const searchParams = request.nextUrl.searchParams;
-  const source = searchParams.get("src") === "qr" ? "qr" : "nfc";
-  const userAgent = request.headers.get("user-agent") || "";
-  const forwardedFor = request.headers.get("x-forwarded-for") || "127.0.0.1";
-  const clientIp = forwardedFor.split(",")[0].trim();
+  const cardCode = normalizeCardCode(code);
 
-  // 1. Cari kartu di database
-  const card = db.getCardByCode(rawCode);
+  const card = await db.getCardByCode(cardCode);
 
-  // Kasus A: Kartu tidak ditemukan
   if (!card) {
-    const statusUrl = new URL(`/r/status?type=not_found&code=${encodeURIComponent(rawCode)}`, request.url);
-    return NextResponse.redirect(statusUrl, 302);
+    return NextResponse.redirect(new URL("/r/status?type=not_found", request.url), 302);
   }
 
-  // Kasus B: Kartu belum diaktivasi -> Arahkan ke alur aktivasi
   if (card.status === "unactivated") {
-    const activateUrl = new URL(`/activate/${encodeURIComponent(card.card_code)}`, request.url);
-    return NextResponse.redirect(activateUrl, 302);
+    return NextResponse.redirect(
+      new URL(`/activate/${encodeURIComponent(card.card_code)}`, request.url),
+      302,
+    );
   }
 
-  // Kasus C: Kartu disuspend / dinonaktifkan
+  // Halaman suspend sengaja tidak menyebut nama bisnis: kartu yang hilang bisa
+  // ada di tangan siapa saja.
   if (card.status === "suspended") {
-    const statusUrl = new URL(`/r/status?type=suspended`, request.url);
-    return NextResponse.redirect(statusUrl, 302);
+    return NextResponse.redirect(new URL("/r/status?type=suspended", request.url), 302);
   }
 
-  // Kasus D: Kartu Aktif
-  // Catat tap secara asinkron (non-blocking agar redirect di bawah 500ms)
-  db.recordCardTap(card.id, source, clientIp, userAgent).catch((err) => {
-    console.error("[KAEL Tap Logging Error]", err);
+  const source = request.nextUrl.searchParams.get("src") === "qr" ? "qr" : "nfc";
+  const ip = (request.headers.get("x-forwarded-for") ?? "").split(",")[0].trim();
+  const userAgent = request.headers.get("user-agent") ?? "";
+
+  after(async () => {
+    try {
+      await db.recordCardTap(card.id, source, ip, userAgent);
+    } catch (err) {
+      console.error("[KAEL] gagal mencatat tap", err);
+    }
   });
 
-  // Tipe: KAEL Review
   if (card.type === "review") {
-    const destination = card.destination_url || "https://google.com";
-    return NextResponse.redirect(destination, 302);
+    if (!card.destination_url) {
+      return NextResponse.redirect(new URL("/r/status?type=no_destination", request.url), 302);
+    }
+    return NextResponse.redirect(card.destination_url, 302);
   }
 
-  // Tipe: KAEL Loyalty
   if (card.type === "loyalty") {
-    const loyaltyUrl = new URL(`/demo/loyalty?card=${encodeURIComponent(card.card_code)}`, request.url);
-    return NextResponse.redirect(loyaltyUrl, 302);
+    // Kartu member pribadi mengarah ke halaman pemiliknya. Kartu meja belum
+    // terikat ke siapa pun, jadi diarahkan ke pendaftaran.
+    if (card.customer_id) {
+      const customer = await db.getCustomerById(card.customer_id, card.business_id!);
+      if (customer?.token) {
+        return NextResponse.redirect(new URL(`/m/${customer.token}`, request.url), 302);
+      }
+    }
+    return NextResponse.redirect(
+      new URL(`/loyalty/register?card=${encodeURIComponent(card.card_code)}`, request.url),
+      302,
+    );
   }
 
-  // Tipe: HR / Attendance
-  const fallbackUrl = new URL(`/app?ref=card_${encodeURIComponent(card.card_code)}`, request.url);
-  return NextResponse.redirect(fallbackUrl, 302);
+  return NextResponse.redirect(new URL("/r/status?type=not_configured", request.url), 302);
 }
