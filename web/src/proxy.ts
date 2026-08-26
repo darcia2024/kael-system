@@ -17,8 +17,10 @@ import type { NextRequest } from "next/server";
  */
 export function proxy(request: NextRequest) {
   // Halaman login sendiri harus tetap terbuka, kalau tidak pengalihannya
-  // berputar tanpa henti.
-  if (request.nextUrl.pathname.startsWith("/app/login")) {
+  // berputar tanpa henti. /admin adalah pintu masuk tim KAEL, jadi ia juga
+  // login, bukan halaman yang dijaga. Yang dijaga adalah isinya, /admin/cards.
+  const path = request.nextUrl.pathname;
+  if (path.startsWith("/app/login") || path === "/admin" || path === "/admin/") {
     return NextResponse.next();
   }
 

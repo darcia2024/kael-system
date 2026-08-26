@@ -36,14 +36,26 @@ export default function LoginClient({
   availableStores,
   initialStaffList,
   nextPath,
+  adminMode = false,
 }: {
   initialBusiness: Business | null;
   availableStores: StoreOption[];
   initialStaffList: Pick<User, "id" | "name">[];
   nextPath: string;
+  /**
+   * Layar admin tidak muncul di login publik. Halaman /admin merender komponen
+   * yang sama dengan tanda ini, sehingga pintunya tetap ada tanpa dipajang.
+   *
+   * Ini menyembunyikan, bukan mengamankan. Yang menahan tetap kata sandi dan
+   * penguncian 5x percobaan; requireKaelAdmin di server tetap memeriksa peran
+   * pada tiap halaman dan tiap action.
+   */
+  adminMode?: boolean;
 }) {
   const router = useRouter();
-  const [roleTab, setRoleTab] = useState<"owner" | "staff" | "admin">("staff");
+  const [roleTab, setRoleTab] = useState<"owner" | "staff" | "admin">(
+    adminMode ? "admin" : "staff",
+  );
 
   // Selected Store State (for Multi-Tenant Staff Selection)
   const [selectedBusiness, setSelectedBusiness] = useState<StoreOption | null>(() => {
@@ -228,8 +240,10 @@ export default function LoginClient({
             </p>
           </div>
 
-          {/* Role Tabs */}
-          <div className="grid grid-cols-3 rounded-2xl border-2 border-[#232331] bg-[#f0edff] p-1 font-mono text-xs font-bold">
+          {/* Role Tabs. Di /admin hanya ada satu peran, jadi pemilihnya tidak
+              perlu ditampilkan sama sekali. */}
+          {!adminMode && (
+          <div className="grid grid-cols-2 rounded-2xl border-2 border-[#232331] bg-[#f0edff] p-1 font-mono text-xs font-bold">
             <button
               type="button"
               onClick={() => {
@@ -259,21 +273,8 @@ export default function LoginClient({
             >
               Staf / PIN
             </button>
-            <button
-              type="button"
-              onClick={() => {
-                setRoleTab("admin");
-                setStaffError("");
-              }}
-              className={`rounded-xl py-2 transition-all ${
-                roleTab === "admin"
-                  ? "bg-[#232331] text-[#d9ff57] shadow-ink-xs"
-                  : "text-[#7b7b8e] hover:text-[#232331]"
-              }`}
-            >
-              KAEL Admin
-            </button>
           </div>
+          )}
 
           {/* ========================================================= */}
           {/* TAB 1: OWNER LOGIN (EMAIL & PASSWORD) */}
