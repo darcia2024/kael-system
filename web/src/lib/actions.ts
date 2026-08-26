@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
-import { db } from "./db";
+import { db, DEFAULT_BUSINESS_ID } from "./db";
 import type { StaffPermission } from "./types";
 import {
   searchPlaces,
@@ -150,13 +150,17 @@ export async function activateCardAction(
   destinationUrl: string,
   label: string,
 ): Promise<ActionResult<{ cardCode: string }>> {
+  const card = await db.getCardByCode(code);
+  if (!card) return fail(`Kartu ${code} tidak dikenali.`);
+  if (card.status === "suspended") return fail("Kartu ini tidak aktif.");
+  if (card.status === "active") return fail("Kartu sudah pernah diaktivasi.");
+
   const session = await getSession();
-  const businessId = session?.businessId;
-  if (!businessId) {
-    return fail("Masuk sebagai pemilik usaha dulu sebelum mengaktifkan kartu.");
-  }
-  const locked = await moduleLock(businessId, "review", "write");
-  if (locked) return fail(locked);
+  
+  // Tentukan target business_id:
+  // 1. Jika login sebagai Owner: gunakan bisnis owner.
+  // 2. Jika login sebagai KAEL Admin atau aktivasi mandiri lewat kemasan: gunakan bisnis kartu atau default.
+  const businessId: string = session?.businessId || card.business_id || DEFAULT_BUSINESS_ID;
 
   let url: URL;
   try {
@@ -170,6 +174,7 @@ export async function activateCardAction(
   if (!result.success) return fail(result.error!);
 
   revalidatePath("/app/review");
+  revalidatePath("/admin/cards");
   return done({ cardCode: result.card!.card_code });
 }
 
