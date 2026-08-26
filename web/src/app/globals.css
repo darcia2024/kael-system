@@ -282,4 +282,31 @@ body {
   animation-play-state: paused;
 }
 
+/* ---------------------------------------------------------------------------
+   Hemat gerak
 
+   Tujuh animasi di berkas ini berjalan tanpa henti. Semuanya memakai transform
+   sehingga ditangani GPU, tapi tetap membuat compositor terjaga terus dan itu
+   memakan baterai HP kasir yang menyala sepanjang hari.
+
+   Blok ini mematikan semuanya untuk pengguna yang meminta kurangi gerak lewat
+   pengaturan perangkatnya. Marquee ikut berhenti tapi tetap bisa digeser
+   tangan, jadi tidak ada isi yang hilang.
+--------------------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-hero-float-a,
+  .animate-hero-float-b,
+  .animate-hero-float-c,
+  .animate-hero-breathe,
+  .animate-hero-twinkle,
+  .animate-court-pulse,
+  .kael-marquee-track {
+    animation: none !important;
+  }
+
+  .btn-tactile,
+  .card-tactile {
+    transition: none;
+  }
+}

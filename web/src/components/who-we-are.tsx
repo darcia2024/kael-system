@@ -1,5 +1,11 @@
-"use client";
-
+/**
+ * Komponen server. Isinya konten pemasaran yang tidak berubah, jadi tidak ada
+ * alasan mengirim kodenya ke browser dan menjalankannya ulang di sana.
+ *
+ * Jangan tambahkan useState, useEffect, atau handler onClick di sini. Kalau
+ * suatu bagian memang perlu interaktif, pisahkan bagian itu ke komponen client
+ * sendiri, bukan menandai seluruh berkas ini "use client".
+ */
 import Image from "next/image";
 import { ArrowRight, Check, Cpu, Layers, Nfc, QrCode, ShieldCheck, Sparkles, Star, Zap } from "lucide-react";
 import { Container } from "@/components/ui/section";

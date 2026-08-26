@@ -1,5 +1,11 @@
-"use client";
-
+/**
+ * Komponen server. Isinya konten pemasaran yang tidak berubah, jadi tidak ada
+ * alasan mengirim kodenya ke browser dan menjalankannya ulang di sana.
+ *
+ * Jangan tambahkan useState, useEffect, atau handler onClick di sini. Kalau
+ * suatu bagian memang perlu interaktif, pisahkan bagian itu ke komponen client
+ * sendiri, bukan menandai seluruh berkas ini "use client".
+ */
 import { Calculator, Check, Receipt, Sparkles, Star, Users2, X } from "lucide-react";
 import { Container } from "@/components/ui/section";
 import { Reveal } from "@/components/ui/reveal";
