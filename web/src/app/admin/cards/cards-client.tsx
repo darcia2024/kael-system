@@ -352,7 +352,20 @@ export default function KaelAdminCardsPage({ initialCards }: { initialCards: Car
                       </span>
                     </td>
                     <td className="py-3 px-3 font-sans text-xs text-[#232331]">
-                      {c.business_id ? "Senja Coffee & Roastery" : <span className="text-[#7b7b8e] font-mono">Belum Diaktivasi</span>}
+                      {c.status === "unactivated" ? (
+                        <span className="text-[#7b7b8e] font-mono">Belum Diaktivasi</span>
+                      ) : (
+                        <div className="space-y-0.5">
+                          <span className="font-extrabold text-[#232331] block">
+                            {c.business_name || "Merchant Mandiri"}
+                          </span>
+                          {c.label && (
+                            <span className="text-[11px] text-[#7b7b8e] font-mono block">
+                              📍 {c.label}
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </td>
                     <td className="py-3 px-3 font-bold text-[#232331]">
                       {c.tap_count} Tap

@@ -90,9 +90,23 @@ export default function CardActivationPage({ params }: { params: Promise<{ code:
       return;
     }
 
+    const placeDetails = selectedPlace
+      ? {
+          name: selectedPlace.name,
+          address: selectedPlace.address,
+          placeId: selectedPlace.placeId,
+        }
+      : customPlaceId
+        ? {
+            name: label || "Bisnis Mandiri",
+            address: "",
+            placeId: customPlaceId.trim(),
+          }
+        : undefined;
+
     const destinationUrl = buildGoogleReviewUrl(placeIdToUse);
 
-    void activateCardAction(cardCode, pin, destinationUrl, label).then((res) => {
+    void activateCardAction(cardCode, pin, destinationUrl, label, placeDetails).then((res) => {
       setIsActivating(false);
       if (res.ok) {
         setActivationSuccess(true);

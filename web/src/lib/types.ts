@@ -96,6 +96,7 @@ export interface Card {
   id: string;
   card_code: string;
   business_id: string | null;
+  business_name?: string | null;
   type: "review" | "loyalty" | "attendance";
   status: "unactivated" | "active" | "suspended";
   activation_pin_hash: string | null;

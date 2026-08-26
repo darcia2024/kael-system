@@ -553,9 +553,61 @@ export const db = {
     `) as unknown as Card[];
   },
 
+  /** Mencari bisnis berdasarkan Google Place ID */
+  async getBusinessByGooglePlaceId(placeId: string): Promise<Business | null> {
+    if (!placeId) return null;
+    return one<Business>(await sql`SELECT * FROM businesses WHERE google_place_id = ${placeId} LIMIT 1`);
+  },
+
+  /** Membuat bisnis baru otomatis dari pilihan Google Places saat aktivasi kartu */
+  async createBusinessFromPlace(data: { name: string; address: string; googlePlaceId: string }): Promise<Business> {
+    let storeCode = data.name.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8);
+    if (storeCode.length < 3) storeCode = "TOKO" + Math.floor(100 + Math.random() * 900);
+
+    const clash = await sql`SELECT 1 FROM businesses WHERE upper(store_code) = ${storeCode} LIMIT 1`;
+    if (clash.length) {
+      storeCode = storeCode.slice(0, 5) + Math.floor(100 + Math.random() * 900);
+    }
+
+    const rows = await sql`
+      INSERT INTO businesses ${sql({
+        name: data.name,
+        business_type: "kuliner",
+        category: "Bisnis Lokal / UMKM",
+        phone: "",
+        address: data.address,
+        google_place_id: data.googlePlaceId,
+        timezone: "Asia/Jakarta",
+        store_code: storeCode,
+      })}
+      RETURNING *
+    `;
+    const biz = rows[0] as unknown as Business;
+
+    const setahunLagi = new Date();
+    setahunLagi.setFullYear(setahunLagi.getFullYear() + 1);
+    await sql`
+      INSERT INTO business_modules ${sql({
+        business_id: biz.id,
+        module: "review",
+        status: "active",
+        activated_at: new Date().toISOString(),
+        expires_at: setahunLagi.toISOString().slice(0, 10),
+      })}
+      ON CONFLICT DO NOTHING
+    `;
+
+    return biz;
+  },
+
   /** Hanya untuk panel tim KAEL. Panggil di balik requireKaelAdmin(). */
   async getAllCards(): Promise<Card[]> {
-    return (await sql`SELECT * FROM cards ORDER BY created_at DESC`) as unknown as Card[];
+    return (await sql`
+      SELECT c.*, b.name AS business_name
+      FROM cards c
+      LEFT JOIN businesses b ON b.id = c.business_id
+      ORDER BY c.created_at DESC
+    `) as unknown as Card[];
   },
 
   /**

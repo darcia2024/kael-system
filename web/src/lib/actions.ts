@@ -149,6 +149,7 @@ export async function activateCardAction(
   pin: string,
   destinationUrl: string,
   label: string,
+  placeDetails?: { name: string; address?: string; placeId?: string },
 ): Promise<ActionResult<{ cardCode: string }>> {
   const card = await db.getCardByCode(code);
   if (!card) return fail(`Kartu ${code} tidak dikenali.`);
@@ -157,10 +158,25 @@ export async function activateCardAction(
 
   const session = await getSession();
   
-  // Tentukan target business_id:
-  // 1. Jika login sebagai Owner: gunakan bisnis owner.
-  // 2. Jika login sebagai KAEL Admin atau aktivasi mandiri lewat kemasan: gunakan bisnis kartu atau default.
-  const businessId: string = session?.businessId || card.business_id || DEFAULT_BUSINESS_ID;
+  let businessId: string;
+
+  if (session?.role === "owner" && session.businessId) {
+    businessId = session.businessId;
+  } else if (placeDetails?.placeId && placeDetails?.name) {
+    const existing = await db.getBusinessByGooglePlaceId(placeDetails.placeId);
+    if (existing) {
+      businessId = existing.id;
+    } else {
+      const created = await db.createBusinessFromPlace({
+        name: placeDetails.name,
+        address: placeDetails.address || "",
+        googlePlaceId: placeDetails.placeId,
+      });
+      businessId = created.id;
+    }
+  } else {
+    businessId = card.business_id || DEFAULT_BUSINESS_ID;
+  }
 
   let url: URL;
   try {
@@ -170,11 +186,13 @@ export async function activateCardAction(
   }
   if (url.protocol !== "https:") return fail("Tautan tujuan harus memakai https.");
 
-  const result = await db.activateCard(code, pin, businessId, url.toString(), label);
+  const cardLabel = label?.trim() || placeDetails?.name || "Meja Kasir";
+  const result = await db.activateCard(code, pin, businessId, url.toString(), cardLabel);
   if (!result.success) return fail(result.error!);
 
   revalidatePath("/app/review");
   revalidatePath("/admin/cards");
+  revalidatePath("/admin/businesses");
   return done({ cardCode: result.card!.card_code });
 }
 
