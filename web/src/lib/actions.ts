@@ -107,6 +107,20 @@ export async function activateCardAction(
   return done({ cardCode: result.card!.card_code });
 }
 
+/**
+ * Memeriksa kartu sebelum meminta PIN. Hanya mengembalikan status, bukan isi
+ * kartunya: tujuan dan hash PIN tidak pernah ikut ke browser.
+ */
+export async function checkCardAction(
+  code: string,
+): Promise<ActionResult<{ status: "unactivated" | "active" | "suspended" }>> {
+  const card = await db.getCardByCode(code);
+  if (!card) return fail(`Kartu ${code} tidak dikenali.`);
+  if (card.status === "active") return fail("Kartu ini sudah pernah diaktivasi.");
+  if (card.status === "suspended") return fail("Kartu ini tidak aktif.");
+  return done({ status: card.status });
+}
+
 export async function updateCardAction(
   cardId: string,
   updates: { destination_url?: string; label?: string; status?: "active" | "suspended" },

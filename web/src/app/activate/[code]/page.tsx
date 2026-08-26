@@ -18,7 +18,7 @@ import {
   Store,
   Nfc
 } from "lucide-react";
-import { db } from "@/lib/db";
+import { checkCardAction, activateCardAction } from "@/lib/actions";
 import { searchPlaces, buildGoogleReviewUrl, GooglePlaceResult, SAMPLE_INDONESIAN_PLACES } from "@/lib/google-places";
 import { formatCardCodeDisplay, normalizeCardCode } from "@/lib/card-code";
 
@@ -51,25 +51,21 @@ export default function CardActivationPage({ params }: { params: Promise<{ code:
   }, [searchQuery]);
 
   // Handle Step 1: PIN Validation
-  const handleVerifyPin = () => {
+  const handleVerifyPin = async () => {
     setPinError("");
     if (pin.length !== 6) {
       setPinError("Masukkan 6 digit PIN aktivasi dari kemasan kartu Anda.");
       return;
     }
 
-    const card = db.getCardByCode(cardCode);
-    if (!card) {
-      setPinError(`Kartu ${cardCode} tidak ditemukan di sistem KAEL.`);
+    const check = await checkCardAction(cardCode);
+    if (!check.ok) {
+      setPinError(check.error);
       return;
     }
 
-    if (card.status === "active") {
-      setPinError("Kartu ini sudah aktif sebelumnya.");
-      return;
-    }
-
-    // Step 1 lolos
+    // Step 1 lolos. PIN baru diverifikasi di server saat konfirmasi akhir,
+    // supaya tidak ada hash yang perlu dikirim ke browser.
     setStep(2);
   };
 
@@ -85,20 +81,17 @@ export default function CardActivationPage({ params }: { params: Promise<{ code:
     }
 
     const destinationUrl = buildGoogleReviewUrl(placeIdToUse);
-    const business = db.getBusiness();
-    const businessId = business ? business.id : "b0000000-0000-0000-0000-000000000001";
 
-    const res = db.activateCard(cardCode, pin, businessId, destinationUrl, label);
-
-    setTimeout(() => {
+    void activateCardAction(cardCode, pin, destinationUrl, label).then((res) => {
       setIsActivating(false);
-      if (res.success) {
+      if (res.ok) {
         setActivationSuccess(true);
         setStep(4);
       } else {
-        alert(res.error || "Gagal mengaktifkan kartu.");
+        setPinError(res.error);
+        setStep(1);
       }
-    }, 600);
+    });
   };
 
   return (
