@@ -203,9 +203,14 @@ CREATE POLICY "Owner can view and manage staff in their business"
 ON public.users FOR ALL
 USING (business_id = public.get_auth_business_id() AND public.get_auth_user_role() = 'owner');
 
-CREATE POLICY "Staff can view self profile"
+-- Staf hanya boleh membaca barisnya sendiri. Versi sebelumnya memakai
+-- business_id saja, sehingga satu staf bisa membaca pin_hash rekan kerjanya.
+CREATE POLICY "Staff can view own row only"
 ON public.users FOR SELECT
-USING (business_id = public.get_auth_business_id());
+USING (
+    business_id = public.get_auth_business_id()
+    AND id = NULLIF(current_setting('app.current_user_id', true), '')::UUID
+);
 
 -- Customers Table Policies (Protected - KAEL Admin CANNOT view customer PII)
 CREATE POLICY "Business owner and staff can view and manage customers"
@@ -213,18 +218,21 @@ ON public.customers FOR ALL
 USING (business_id = public.get_auth_business_id());
 
 -- Cards Table Policies
-CREATE POLICY "Public / Redirect service can view active card by code"
-ON public.cards FOR SELECT
-USING (true);
+-- CATATAN KEAMANAN
+-- Sebelumnya ada policy SELECT dengan USING (true) supaya endpoint redirect bisa
+-- membaca kartu tanpa login. Itu membuat SIAPA PUN yang memegang anon key bisa
+-- membaca seluruh tabel: card_code, destination_url, dan activation_pin_hash.
+-- Endpoint redirect berjalan di server memakai koneksi Postgres langsung, jadi
+-- akses anon tidak dibutuhkan dan policy itu dihapus.
 
 CREATE POLICY "Business owner can view and manage their cards"
 ON public.cards FOR ALL
 USING (business_id = public.get_auth_business_id() OR public.get_auth_user_role() = 'kael_admin');
 
 -- Card Taps Table Policies
-CREATE POLICY "Public redirect can insert taps"
-ON public.card_taps FOR INSERT
-WITH CHECK (true);
+-- CATATAN KEAMANAN
+-- INSERT publik dicabut. Dengan WITH CHECK (true) siapa pun bisa menggelembungkan
+-- penghitung tap kartu bisnis mana pun. Pencatatan tap dilakukan server-side.
 
 CREATE POLICY "Owner can view tap analytics for their cards"
 ON public.card_taps FOR SELECT
@@ -235,3 +243,20 @@ USING (
         AND (cards.business_id = public.get_auth_business_id() OR public.get_auth_user_role() = 'kael_admin')
     )
 );
+
+
+-- ------------------------------------------------------------------------------
+-- TAMBAHAN POLICY (sebelumnya hilang)
+-- ------------------------------------------------------------------------------
+
+-- review_snapshots: RLS aktif tapi tanpa policy sama sekali, sehingga tabel ini
+-- tidak bisa dibaca maupun ditulis oleh siapa pun.
+CREATE POLICY "Business can read own review snapshots"
+ON public.review_snapshots FOR SELECT
+USING (business_id = public.get_auth_business_id());
+
+-- business_modules hanya punya policy SELECT, sehingga aktivasi dan perpanjangan
+-- tidak bisa ditulis.
+CREATE POLICY "KAEL admin can manage business modules"
+ON public.business_modules FOR ALL
+USING (public.get_auth_user_role() = 'kael_admin');

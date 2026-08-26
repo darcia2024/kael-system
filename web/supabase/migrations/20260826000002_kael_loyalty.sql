@@ -116,9 +116,10 @@ ON public.point_ledger FOR ALL
 USING (business_id = public.get_auth_business_id());
 
 -- Rewards Table Policies
-CREATE POLICY "Public and Business can view active rewards"
-ON public.rewards FOR SELECT
-USING (true);
+-- CATATAN KEAMANAN
+-- Policy baca publik dicabut. Dengan USING (true) daftar reward seluruh bisnis
+-- terbaca oleh siapa pun yang memegang anon key. Halaman member dirender di
+-- server, jadi akses anon tidak dibutuhkan.
 
 CREATE POLICY "Owner can manage rewards"
 ON public.rewards FOR ALL

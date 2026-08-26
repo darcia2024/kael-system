@@ -132,9 +132,9 @@ ALTER TABLE public.order_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.refunds ENABLE ROW LEVEL SECURITY;
 
 -- Public Menu QR (Customer) can read active menu items
-CREATE POLICY "Public can view available menu items"
-ON public.menu_items FOR SELECT
-USING (true);
+-- CATATAN KEAMANAN
+-- Policy baca publik dicabut. Dengan USING (true) seluruh menu dan harga milik
+-- semua bisnis terbaca oleh siapa pun. Halaman menu QR dirender di server.
 
 -- Staff and Owner can manage categories, menu items, shifts, and orders for their business
 CREATE POLICY "Staff and Owner manage POS categories"
