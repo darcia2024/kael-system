@@ -78,38 +78,43 @@ export async function currentSession() {
   return getSession();
 }
 
-export async function getStoreStaffAction(businessId: string): Promise<{
-  business: { id: string; name: string; category: string; brand_color: string } | null;
-  staffList: { id: string; name: string }[];
+/**
+ * Membuka satu toko berdasarkan kode yang dipegang pemiliknya.
+ *
+ * Menggantikan getStoreStaffAction(businessId) dan getAvailableBusinessesAction.
+ * Yang lama bisa dipanggil siapa pun tanpa login: satu mengembalikan SELURUH
+ * daftar bisnis yang memakai KAEL, satunya lagi membuka nama staf toko mana pun.
+ * Artinya daftar pelanggan KAEL terbuka ke internet, dan tiap UMKM bisa melihat
+ * pesaingnya ikut memakai sistem yang sama.
+ *
+ * Bentuk ini tidak bisa dipakai membuat daftar. Mengetahui satu kode hanya
+ * membuka satu toko, dan kode itu hanya diberikan ke pemilik usahanya.
+ */
+export async function openStoreByCodeAction(code: string): Promise<{
+  ok: boolean;
+  error?: string;
+  business?: { id: string; name: string; category: string; brand_color: string };
+  staffList?: { id: string; name: string }[];
 }> {
-  const [business, users] = await Promise.all([
-    db.getBusiness(businessId),
-    db.getUsers(businessId),
-  ]);
-  const staffList = users
-    .filter((u) => u.role === "staff" && u.is_active)
-    .map((u) => ({ id: u.id, name: u.name }));
+  const clean = (code || "").trim().toUpperCase();
+  if (clean.length < 3) return { ok: false, error: "Kode toko terlalu pendek." };
+
+  const business = await db.getBusinessByStoreCode(clean);
+  if (!business) return { ok: false, error: "Kode toko tidak dikenali." };
+
+  const users = await db.getUsers(business.id);
   return {
-    business: business ? {
+    ok: true,
+    business: {
       id: business.id,
       name: business.name,
       category: business.category,
       brand_color: business.brand_color,
-    } : null,
-    staffList,
+    },
+    staffList: users
+      .filter((u) => u.role === "staff" && u.is_active)
+      .map((u) => ({ id: u.id, name: u.name })),
   };
-}
-
-export async function getAvailableBusinessesAction(): Promise<
-  { id: string; name: string; category: string; brand_color: string }[]
-> {
-  const businesses = await db.getBusinesses();
-  return businesses.map((b) => ({
-    id: b.id,
-    name: b.name,
-    category: b.category,
-    brand_color: b.brand_color,
-  }));
 }
 
 // ===========================================================================

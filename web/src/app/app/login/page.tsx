@@ -1,7 +1,21 @@
 import type { Metadata } from "next";
 
-import { db, DEFAULT_BUSINESS_ID } from "@/lib/db";
 import LoginClient from "./login-client";
+
+/**
+ * Layar masuk publik.
+ *
+ * TIDAK mengambil data apa pun dari database.
+ *
+ * Versi sebelumnya memanggil getBusinesses() dan menyalurkan seluruh daftar
+ * bisnis ke halaman ini, sehingga siapa pun yang membukanya bisa membaca nama
+ * setiap UMKM yang memakai KAEL, lengkap dengan nama stafnya. Itu membocorkan
+ * daftar pelanggan KAEL ke internet, dan membuat tiap UMKM tahu pesaingnya
+ * memakai sistem yang sama.
+ *
+ * Sekarang: owner masuk lewat email, dan bisnisnya diambil dari akunnya. Staf
+ * memasukkan kode toko sekali, lalu perangkat kasir mengingatnya.
+ */
 
 export const metadata: Metadata = {
   title: "Login Portal KAEL",
@@ -11,35 +25,13 @@ export const metadata: Metadata = {
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ next?: string; store?: string }>;
+  searchParams: Promise<{ next?: string; toko?: string }>;
 }) {
-  const { next, store } = await searchParams;
-  
-  const [businesses, initialBusiness, users] = await Promise.all([
-    db.getBusinesses(),
-    db.getBusiness(store || DEFAULT_BUSINESS_ID),
-    db.getUsers(store || DEFAULT_BUSINESS_ID),
-  ]);
+  const { next, toko } = await searchParams;
 
-  const staffList = users
-    .filter((u) => u.role === "staff" && u.is_active)
-    .map((u) => ({ id: u.id, name: u.name }));
-
-  const availableStores = businesses.map((b) => ({
-    id: b.id,
-    name: b.name,
-    category: b.category,
-    brand_color: b.brand_color,
-  }));
-
+  // Hanya menerima jalur internal, supaya ?next= tidak bisa dipakai
+  // mengarahkan orang ke situs lain setelah login.
   const safeNext = next && next.startsWith("/") && !next.startsWith("//") ? next : "/app";
 
-  return (
-    <LoginClient
-      initialBusiness={initialBusiness}
-      availableStores={availableStores}
-      initialStaffList={staffList}
-      nextPath={safeNext}
-    />
-  );
+  return <LoginClient nextPath={safeNext} presetStoreCode={toko ?? null} />;
 }

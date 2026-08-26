@@ -53,8 +53,27 @@ export const db = {
     return one<Business>(await sql`SELECT * FROM businesses WHERE id = ${id}`);
   },
 
-  async getBusinesses(): Promise<Business[]> {
+  /**
+   * Seluruh bisnis. HANYA untuk panel tim KAEL, dan wajib dipanggil di balik
+   * requireKaelAdmin().
+   *
+   * Namanya sengaja panjang. Versi sebelumnya bernama getBusinesses() dan
+   * dipanggil dari halaman login publik, sehingga daftar seluruh pelanggan KAEL
+   * terbaca oleh siapa pun tanpa login. Untuk membuka satu toko, pakai
+   * getBusinessByStoreCode().
+   */
+  async getAllBusinessesForAdmin(): Promise<Business[]> {
     return (await sql`SELECT * FROM businesses ORDER BY name ASC`) as unknown as Business[];
+  },
+
+  /**
+   * Mencari bisnis lewat kode toko. Tidak ada method yang mengembalikan daftar
+   * seluruh bisnis ke jalur publik: itu membocorkan daftar pelanggan KAEL.
+   */
+  async getBusinessByStoreCode(code: string): Promise<Business | null> {
+    return one<Business>(await sql`
+      SELECT * FROM businesses WHERE upper(store_code) = upper(${code}) LIMIT 1
+    `);
   },
 
   async updateBusiness(id: string, updates: Partial<Business>): Promise<Business | null> {

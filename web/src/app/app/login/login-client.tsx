@@ -22,7 +22,7 @@ import {
   ChevronRight
 } from "lucide-react";
 import type { Business, User } from "@/lib/types";
-import { loginOwner, loginStaff, getStoreStaffAction } from "@/lib/actions";
+import { loginOwner, loginStaff, openStoreByCodeAction } from "@/lib/actions";
 
 interface StoreOption {
   id: string;
@@ -32,16 +32,13 @@ interface StoreOption {
 }
 
 export default function LoginClient({
-  initialBusiness,
-  availableStores,
-  initialStaffList,
   nextPath,
+  presetStoreCode = null,
   adminMode = false,
 }: {
-  initialBusiness: Business | null;
-  availableStores: StoreOption[];
-  initialStaffList: Pick<User, "id" | "name">[];
   nextPath: string;
+  /** Kode toko dari tautan yang dibagikan ke pemilik usaha, misal ?toko=SENJA. */
+  presetStoreCode?: string | null;
   /**
    * Layar admin tidak muncul di login publik. Halaman /admin merender komponen
    * yang sama dengan tanda ini, sehingga pintunya tetap ada tanpa dipajang.
@@ -57,23 +54,15 @@ export default function LoginClient({
     adminMode ? "admin" : "staff",
   );
 
-  // Selected Store State (for Multi-Tenant Staff Selection)
-  const [selectedBusiness, setSelectedBusiness] = useState<StoreOption | null>(() => {
-    if (initialBusiness) {
-      return {
-        id: initialBusiness.id,
-        name: initialBusiness.name,
-        category: initialBusiness.category,
-        brand_color: initialBusiness.brand_color,
-      };
-    }
-    return availableStores[0] || null;
-  });
-
-  const [staffList, setStaffList] = useState<Pick<User, "id" | "name">[]>(initialStaffList);
-  const [staffId, setStaffId] = useState<string>(initialStaffList[0]?.id ?? "");
-  const [showStorePicker, setShowStorePicker] = useState(false);
-  const [storeSearchQuery, setStoreSearchQuery] = useState("");
+  /**
+   * Toko dibuka lewat kode, bukan dipilih dari daftar. Tidak ada satu pun
+   * jalur di halaman ini yang bisa menyebutkan toko mana saja yang ada.
+   */
+  const [selectedBusiness, setSelectedBusiness] = useState<StoreOption | null>(null);
+  const [staffList, setStaffList] = useState<{ id: string; name: string }[]>([]);
+  const [staffId, setStaffId] = useState<string>("");
+  const [storeCodeInput, setStoreCodeInput] = useState("");
+  const [storeError, setStoreError] = useState("");
   const [isLoadingStore, setIsLoadingStore] = useState(false);
 
   // Owner form state
@@ -92,38 +81,58 @@ export default function LoginClient({
   const [adminPassword, setAdminPassword] = useState("");
   const [adminError, setAdminError] = useState("");
 
-  // Load store preference from localStorage on mount
-  useEffect(() => {
-    try {
-      const savedStoreId = localStorage.getItem("kael_selected_store_id");
-      if (savedStoreId && savedStoreId !== selectedBusiness?.id) {
-        const found = availableStores.find((s) => s.id === savedStoreId);
-        if (found) {
-          handleSelectStore(found);
-        }
-      }
-    } catch {
-      // ignore
-    }
-  }, []);
-
-  const handleSelectStore = async (store: StoreOption) => {
-    setSelectedBusiness(store);
-    setShowStorePicker(false);
+  /**
+   * Membuka toko dari kode. Kode yang berhasil disimpan di perangkat, sehingga
+   * kasir cukup memasukkannya sekali saat tablet toko disiapkan.
+   */
+  const openStore = async (code: string) => {
     setIsLoadingStore(true);
+    setStoreError("");
+    const res = await openStoreByCodeAction(code);
+    setIsLoadingStore(false);
+
+    if (!res.ok || !res.business) {
+      setStoreError(res.error ?? "Kode toko tidak dikenali.");
+      return false;
+    }
+    setSelectedBusiness(res.business);
+    setStaffList(res.staffList ?? []);
+    setStaffId(res.staffList?.[0]?.id ?? "");
     setStaffPin("");
     setStaffError("");
-
     try {
-      localStorage.setItem("kael_selected_store_id", store.id);
+      localStorage.setItem("kael_store_code", code.trim().toUpperCase());
+    } catch {
+      // Peramban bisa menolak localStorage; kodenya tinggal diketik ulang.
+    }
+    return true;
+  };
+
+  // Kode dari tautan lebih dulu, lalu kode yang diingat perangkat.
+  useEffect(() => {
+    let code = presetStoreCode;
+    if (!code) {
+      try {
+        code = localStorage.getItem("kael_store_code");
+      } catch {
+        code = null;
+      }
+    }
+    if (code) void openStore(code);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleForgetStore = () => {
+    try {
+      localStorage.removeItem("kael_store_code");
     } catch {
       // ignore
     }
-
-    const res = await getStoreStaffAction(store.id);
-    setStaffList(res.staffList);
-    setStaffId(res.staffList[0]?.id || "");
-    setIsLoadingStore(false);
+    setSelectedBusiness(null);
+    setStaffList([]);
+    setStaffId("");
+    setStoreCodeInput("");
+    setStaffPin("");
   };
 
   const handleOwnerLogin = async (e: React.FormEvent) => {
@@ -198,12 +207,6 @@ export default function LoginClient({
     router.push(res.data.next);
     router.refresh();
   };
-
-  const filteredStores = availableStores.filter((s) => {
-    if (!storeSearchQuery.trim()) return true;
-    const q = storeSearchQuery.toLowerCase();
-    return s.name.toLowerCase().includes(q) || s.category.toLowerCase().includes(q);
-  });
 
   return (
     <div className="min-h-screen bg-[#f7f6fc] text-[#232331] flex flex-col justify-between font-sans p-4 sm:p-6">
@@ -339,74 +342,82 @@ export default function LoginClient({
           {roleTab === "staff" && (
             <div className="space-y-4">
               
-              {/* STORE SELECTOR BADGE (DYNAMIC PERSONALISED PER UMKM) */}
-              <div className="rounded-2xl border-2 border-[#232331] bg-[#fcfcfe] p-3 space-y-2 font-mono text-xs">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] text-[#7b7b8e] font-bold uppercase tracking-wider">
-                    LOKASI / TOKO AKTIF:
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setShowStorePicker(!showStorePicker)}
-                    className="btn-tactile inline-flex items-center gap-1 rounded-lg border border-[#7958d8] bg-[#f0edff] px-2 py-0.5 text-[10.5px] font-bold text-[#7958d8] hover:bg-[#e1dbff]"
+              {/*
+                Toko dibuka lewat kode, bukan dipilih dari daftar.
+
+                Daftar toko yang lama membuat setiap UMKM bisa melihat siapa
+                saja yang memakai KAEL, dan daftarnya terbaca tanpa login sama
+                sekali. Dengan kode, mengetahui satu kode hanya membuka satu
+                toko, dan tidak ada cara menyebutkan sisanya.
+              */}
+              {!selectedBusiness ? (
+                <div className="rounded-2xl border-2 border-[#232331] bg-[#fcfcfe] p-4 space-y-3">
+                  <div className="space-y-1">
+                    <h4 className="font-extrabold text-xs text-[#232331]">
+                      Masukkan Kode Toko
+                    </h4>
+                    <p className="text-[11px] text-[#7b7b8e] leading-relaxed">
+                      Kode ini diberikan tim KAEL ke pemilik usaha. Cukup diisi
+                      sekali, perangkat kasir akan mengingatnya.
+                    </p>
+                  </div>
+
+                  <form
+                    onSubmit={async (e) => {
+                      e.preventDefault();
+                      await openStore(storeCodeInput);
+                    }}
+                    className="space-y-2"
                   >
-                    <RefreshCw size={11} />
-                    <span>Ganti Toko</span>
-                  </button>
+                    <input
+                      type="text"
+                      value={storeCodeInput}
+                      onChange={(e) => {
+                        setStoreCodeInput(e.target.value.toUpperCase());
+                        setStoreError("");
+                      }}
+                      placeholder="Contoh: SENJA"
+                      autoCapitalize="characters"
+                      className="w-full rounded-xl border-2 border-[#232331] px-3 py-2.5 text-center font-mono text-sm font-black tracking-[0.2em] text-[#232331] focus:outline-none focus:ring-2 focus:ring-[#7958d8]"
+                    />
+                    {storeError && (
+                      <p className="rounded-xl border-2 border-[#ef4444] bg-[#feebee] p-2 text-center text-[11px] font-bold text-[#ef4444]">
+                        {storeError}
+                      </p>
+                    )}
+                    <button
+                      type="submit"
+                      disabled={isLoadingStore || storeCodeInput.trim().length < 3}
+                      className="btn-tactile w-full rounded-xl border-2 border-[#232331] bg-[#d9ff57] py-2.5 text-xs font-extrabold text-[#232331] shadow-ink-xs disabled:opacity-40"
+                    >
+                      {isLoadingStore ? "Memeriksa..." : "Buka Toko"}
+                    </button>
+                  </form>
                 </div>
-
-                <div className="flex items-center gap-2">
-                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#232331] text-[#d9ff57]">
-                    <Store size={14} />
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <h3 className="font-extrabold text-xs sm:text-sm text-[#232331] truncate font-sans">
-                      {selectedBusiness?.name || "Pilih Toko UMKM"}
-                    </h3>
-                    <span className="text-[10px] text-[#7b7b8e] block">
-                      {selectedBusiness?.category || "Belum dipilih"}
+              ) : (
+                <div className="rounded-2xl border-2 border-[#232331] bg-[#fcfcfe] p-3 font-mono text-xs">
+                  <div className="flex items-center gap-2">
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#232331] text-[#d9ff57]">
+                      <Store size={14} />
                     </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-sans text-xs font-extrabold text-[#232331]">
+                        {selectedBusiness.name}
+                      </p>
+                      <p className="truncate text-[10.5px] text-[#7b7b8e]">
+                        {selectedBusiness.category}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleForgetStore}
+                      className="shrink-0 text-[10.5px] font-bold text-[#7b7b8e] underline hover:text-[#232331]"
+                    >
+                      Ganti
+                    </button>
                   </div>
                 </div>
-
-                {/* STORE PICKER MODAL / DROPDOWN */}
-                {showStorePicker && (
-                  <div className="pt-2 border-t border-[#dedee8] space-y-2 animate-in fade-in-50">
-                    <div className="relative">
-                      <Search className="absolute left-2.5 top-2 text-[#7b7b8e]" size={13} />
-                      <input
-                        type="text"
-                        placeholder="Ketik nama toko / kode toko..."
-                        value={storeSearchQuery}
-                        onChange={(e) => setStoreSearchQuery(e.target.value)}
-                        className="w-full rounded-xl border border-[#dedee8] pl-7 pr-2 py-1 text-xs text-[#232331] font-sans"
-                        autoFocus
-                      />
-                    </div>
-
-                    <div className="space-y-1 max-h-36 overflow-y-auto">
-                      {filteredStores.map((store) => (
-                        <button
-                          key={store.id}
-                          type="button"
-                          onClick={() => handleSelectStore(store)}
-                          className={`w-full flex items-center justify-between p-2 rounded-xl text-left transition-all ${
-                            selectedBusiness?.id === store.id
-                              ? "bg-[#232331] text-[#d9ff57]"
-                              : "bg-white border border-[#dedee8] hover:bg-[#f0edff] text-[#232331]"
-                          }`}
-                        >
-                          <div>
-                            <span className="font-bold text-xs font-sans block">{store.name}</span>
-                            <span className="text-[9.5px] opacity-75">{store.category}</span>
-                          </div>
-                          <ChevronRight size={13} />
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
+              )}
 
               {/* STAFF NAME SELECTOR */}
               <div className="space-y-2">

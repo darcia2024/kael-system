@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
-import { db, DEFAULT_BUSINESS_ID } from "@/lib/db";
 import { getSession } from "@/lib/auth";
 import LoginClient from "@/app/app/login/login-client";
 
@@ -27,17 +26,5 @@ export default async function AdminEntryPage() {
   // Sudah masuk sebagai pemilik atau staf, tidak ada urusan di sini.
   if (session) redirect("/app");
 
-  // Pemilih toko dan daftar staf tidak dipakai di mode admin, tapi propsnya
-  // tetap wajib diisi.
-  const business = await db.getBusiness(DEFAULT_BUSINESS_ID);
-
-  return (
-    <LoginClient
-      initialBusiness={business}
-      availableStores={[]}
-      initialStaffList={[]}
-      nextPath="/admin/cards"
-      adminMode
-    />
-  );
+  return <LoginClient nextPath="/admin/cards" adminMode />;
 }
