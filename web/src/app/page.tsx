@@ -9,7 +9,7 @@ import { Packages } from "@/components/packages";
 import { Problems } from "@/components/problems";
 import { ProductSelector } from "@/components/product-selector";
 import { RoiCalculator } from "@/components/roi-calculator";
-import { ServiceMockups } from "@/components/service-mockups";
+import { ServiceMockupsLazy } from "@/components/service-mockups-lazy";
 import { WhoWeAre } from "@/components/who-we-are";
 import { faqs } from "@/lib/faq-data";
 
@@ -35,7 +35,7 @@ export default function Home() {
         <MarqueeStrip />
 
         {/* 3. Live Interactive UI/UX Mockup Playground */}
-        <ServiceMockups />
+        <ServiceMockupsLazy />
 
         {/* 4. Cara Kerja: ChatJudge Method Cards */}
         <WhoWeAre />
