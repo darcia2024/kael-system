@@ -27,7 +27,7 @@ const env = Object.fromEntries(
     }),
 );
 
-const sql = postgres(env.DATABASE_URL.replace(":6543/", ":5432/"), {
+const sql = postgres(env.DATABASE_URL, {
   prepare: false,
   ssl: "require",
   max: 1,
