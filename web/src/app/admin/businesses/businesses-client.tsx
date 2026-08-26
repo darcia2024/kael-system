@@ -12,10 +12,16 @@ import {
   KeyRound,
   Check,
   AlertTriangle,
+  Search,
+  MapPin,
+  Sparkles,
+  ExternalLink,
+  Loader2,
 } from "lucide-react";
 
-import { createBusinessAction, setBusinessModuleAction } from "@/lib/actions";
+import { createBusinessAction, setBusinessModuleAction, searchPlacesAction } from "@/lib/actions";
 import type { Business, BusinessModule } from "@/lib/types";
+import type { GooglePlaceResult } from "@/lib/google-places";
 import { MODULE_CATALOG, BUSINESS_TYPES, rupiah } from "@/lib/modules-catalog";
 
 type Row = Business & {
@@ -62,11 +68,53 @@ export default function BusinessesClient({ initial }: { initial: Row[] }) {
   const [emailOwner, setEmailOwner] = useState("");
   const [sandiOwner, setSandiOwner] = useState("");
   const [dibeli, setDibeli] = useState<Record<string, string | null>>({});
+  const [googlePlaceId, setGooglePlaceId] = useState<string>("");
+  const [placesResults, setPlacesResults] = useState<GooglePlaceResult[]>([]);
+  const [isSearchingPlaces, setIsSearchingPlaces] = useState(false);
+  const [showPlacesDropdown, setShowPlacesDropdown] = useState(false);
 
   const resetForm = () => {
     setNama(""); setKategori(""); setTelepon(""); setAlamat(""); setKodeToko("");
     setNamaOwner(""); setEmailOwner(""); setSandiOwner(""); setDibeli({});
     setJenis("kuliner");
+    setGooglePlaceId("");
+    setPlacesResults([]);
+    setShowPlacesDropdown(false);
+  };
+
+  const handleSearchPlaces = async (query: string) => {
+    setNama(query);
+    if (!query || query.trim().length < 2) {
+      setPlacesResults([]);
+      setShowPlacesDropdown(false);
+      return;
+    }
+    setIsSearchingPlaces(true);
+    setShowPlacesDropdown(true);
+    try {
+      const res = await searchPlacesAction(query);
+      setPlacesResults(res.results);
+    } catch {
+      setPlacesResults([]);
+    } finally {
+      setIsSearchingPlaces(false);
+    }
+  };
+
+  const handleSelectPlace = (place: GooglePlaceResult) => {
+    setNama(place.name);
+    setAlamat(place.address);
+    setGooglePlaceId(place.placeId);
+    setShowPlacesDropdown(false);
+
+    // Otomatis buat saran kode toko jika belum diisi
+    if (!kodeToko) {
+      const clean = place.name
+        .toUpperCase()
+        .replace(/[^A-Z0-9]/g, "")
+        .slice(0, 8);
+      if (clean.length >= 3) setKodeToko(clean);
+    }
   };
 
   const toggleModul = (key: string) => {
@@ -92,6 +140,7 @@ export default function BusinessesClient({ initial }: { initial: Row[] }) {
       ownerName: namaOwner,
       ownerEmail: emailOwner,
       ownerPassword: sandiOwner,
+      googlePlaceId: googlePlaceId || undefined,
       modules: Object.entries(dibeli).map(([module, expiresAt]) => ({
         module,
         expiresAt: expiresAt ?? setahunLagi(),
@@ -200,18 +249,83 @@ export default function BusinessesClient({ initial }: { initial: Row[] }) {
             className="rounded-3xl border-2 border-[#232331] bg-white p-5 sm:p-6 shadow-ink-md space-y-5"
           >
             <div className="grid gap-4 sm:grid-cols-2">
-              <label className="space-y-1.5">
-                <span className="font-mono text-[11px] font-bold text-[#7b7b8e] block">
-                  Nama usaha
-                </span>
-                <input
-                  value={nama}
-                  onChange={(e) => setNama(e.target.value)}
-                  required
-                  placeholder="Warung Kopi Melati"
-                  className="w-full rounded-2xl border-2 border-[#232331] px-3 py-2 text-sm"
-                />
-              </label>
+              <div className="space-y-1.5 relative">
+                <div className="flex items-center justify-between">
+                  <span className="font-mono text-[11px] font-bold text-[#7b7b8e] block">
+                    Nama usaha
+                  </span>
+                  <span className="text-[10px] font-mono text-[#7958d8] flex items-center gap-1">
+                    <Sparkles size={11} /> Auto-Search Google Maps
+                  </span>
+                </div>
+                <div className="relative">
+                  <input
+                    value={nama}
+                    onChange={(e) => handleSearchPlaces(e.target.value)}
+                    onFocus={() => {
+                      if (placesResults.length > 0) setShowPlacesDropdown(true);
+                    }}
+                    required
+                    placeholder="Ketik nama bisnis (contoh: Senja Coffee)..."
+                    className="w-full rounded-2xl border-2 border-[#232331] px-3.5 py-2 text-sm pr-9"
+                  />
+                  <div className="absolute right-3 top-2.5 text-[#7b7b8e]">
+                    {isSearchingPlaces ? (
+                      <Loader2 size={16} className="animate-spin text-[#7958d8]" />
+                    ) : (
+                      <Search size={16} />
+                    )}
+                  </div>
+                </div>
+
+                {/* Live Google Places Dropdown */}
+                {showPlacesDropdown && placesResults.length > 0 && (
+                  <div className="absolute z-20 top-full left-0 right-0 mt-1 rounded-2xl border-2 border-[#232331] bg-white shadow-ink-md max-h-60 overflow-y-auto divide-y divide-[#dedee8]">
+                    <div className="p-2 bg-[#f0edff] text-[10px] font-mono font-bold text-[#7958d8] flex items-center justify-between">
+                      <span>Pilih Lokasi Google Maps:</span>
+                      <button
+                        type="button"
+                        onClick={() => setShowPlacesDropdown(false)}
+                        className="text-[#232331] hover:underline"
+                      >
+                        Tutup
+                      </button>
+                    </div>
+                    {placesResults.map((p) => (
+                      <button
+                        key={p.placeId}
+                        type="button"
+                        onClick={() => handleSelectPlace(p)}
+                        className="w-full text-left p-3 hover:bg-[#f7f6fc] transition-colors flex items-start gap-2.5 cursor-pointer"
+                      >
+                        <MapPin size={16} className="text-[#7958d8] shrink-0 mt-0.5" />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-extrabold text-xs text-[#232331] truncate">
+                              {p.name}
+                            </span>
+                            {p.rating && (
+                              <span className="text-[10px] font-mono text-[#d97706] shrink-0 font-bold">
+                                ★ {p.rating.toFixed(1)} ({p.userRatingsTotal ?? 0})
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-[#7b7b8e] truncate mt-0.5">
+                            {p.address}
+                          </p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {googlePlaceId && (
+                  <div className="flex items-center gap-1.5 text-[11px] text-[#16a34a] font-mono font-bold bg-[#dcfce7] px-2.5 py-1 rounded-xl border border-[#16a34a]/30">
+                    <Check size={13} />
+                    <span className="truncate">Tersambung Google Place ID: {googlePlaceId}</span>
+                  </div>
+                )}
+              </div>
 
               <label className="space-y-1.5">
                 <span className="font-mono text-[11px] font-bold text-[#7b7b8e] block">

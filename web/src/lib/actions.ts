@@ -768,6 +768,7 @@ export async function createBusinessAction(input: {
   ownerName: string;
   ownerEmail: string;
   ownerPassword: string;
+  googlePlaceId?: string;
   modules: { module: string; expiresAt: string }[];
 }): Promise<ActionResult<{ businessId: string; storeCode: string }>> {
   await requireKaelAdmin();
@@ -808,6 +809,7 @@ export async function createBusinessAction(input: {
     ownerName: input.ownerName,
     ownerEmail: email,
     ownerPassword: input.ownerPassword,
+    googlePlaceId: input.googlePlaceId,
     modules,
   });
 

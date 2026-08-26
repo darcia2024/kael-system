@@ -141,6 +141,7 @@ export const db = {
     ownerName: string;
     ownerEmail: string;
     ownerPassword: string;
+    googlePlaceId?: string;
     modules: { module: string; expiresAt: string }[];
   }): Promise<{ success: true; business: Business } | { success: false; error: string }> {
     const storeCode = input.storeCode.trim().toUpperCase();
@@ -169,6 +170,7 @@ export const db = {
             address: input.address.trim(),
             timezone: input.timezone,
             store_code: storeCode,
+            google_place_id: input.googlePlaceId ? input.googlePlaceId.trim() : "",
           })} RETURNING *
         `;
         const created = rows[0] as unknown as Business;
