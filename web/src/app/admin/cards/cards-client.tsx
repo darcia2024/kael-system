@@ -17,10 +17,20 @@ import {
   Layers,
   KeyRound,
   Download,
-  AlertCircle
+  AlertCircle,
+  Trash2,
+  RotateCcw,
+  Power,
+  Loader2
 } from "lucide-react";
 import type { Card } from "@/lib/types";
-import { issueCardsAction, logout } from "@/lib/actions";
+import { 
+  issueCardsAction, 
+  logout, 
+  adminResetCardAction, 
+  adminSetCardStatusAction, 
+  adminDeleteCardAction 
+} from "@/lib/actions";
 import { formatCardCodeDisplay } from "@/lib/card-code";
 import { formatBusinessDateTime } from "@/lib/formatters";
 
@@ -63,6 +73,72 @@ export default function KaelAdminCardsPage({ initialCards }: { initialCards: Car
       })) as unknown as Card[],
       ...prev,
     ]);
+  };
+
+  const [busyCardId, setBusyCardId] = useState<string | null>(null);
+
+  const handleResetAccess = async (cardId: string, cardCode: string) => {
+    const confirm = window.confirm(
+      `Cabut akses kartu ${formatCardCodeDisplay(cardCode)}?\n\nKartu akan di-reset ke status "Belum Diaktivasi" dan tautan ulasan Google Maps merchant akan dicopot sehingga kartu bisa diaktivasi ulang.`,
+    );
+    if (!confirm) return;
+
+    setBusyCardId(cardId);
+    const res = await adminResetCardAction(cardId);
+    setBusyCardId(null);
+
+    if (!res.ok) {
+      alert(res.error);
+      return;
+    }
+
+    setCards((prev) =>
+      prev.map((c) =>
+        c.id === cardId
+          ? {
+              ...c,
+              status: "unactivated",
+              business_id: null,
+              business_name: null,
+              destination_url: null,
+              label: null,
+            }
+          : c,
+      ),
+    );
+  };
+
+  const handleToggleSuspend = async (cardId: string, newStatus: "active" | "suspended") => {
+    setBusyCardId(cardId);
+    const res = await adminSetCardStatusAction(cardId, newStatus);
+    setBusyCardId(null);
+
+    if (!res.ok) {
+      alert(res.error);
+      return;
+    }
+
+    setCards((prev) =>
+      prev.map((c) => (c.id === cardId ? { ...c, status: newStatus } : c)),
+    );
+  };
+
+  const handleDeleteCard = async (cardId: string, cardCode: string) => {
+    const confirm = window.confirm(
+      `Hapus kartu ${formatCardCodeDisplay(cardCode)} secara permanen?\n\nData kartu dan seluruh riwayat tap akan dihapus dari master database.`,
+    );
+    if (!confirm) return;
+
+    setBusyCardId(cardId);
+    const res = await adminDeleteCardAction(cardId);
+    setBusyCardId(null);
+
+    if (!res.ok) {
+      alert(res.error);
+      return;
+    }
+
+    setCards((prev) => prev.filter((c) => c.id !== cardId));
   };
 
   const handleCopyText = (text: string, id: string) => {
@@ -326,7 +402,7 @@ export default function KaelAdminCardsPage({ initialCards }: { initialCards: Car
                   <th className="py-2.5 px-3">Status Sirkulasi</th>
                   <th className="py-2.5 px-3">Merchant Terkait</th>
                   <th className="py-2.5 px-3">Total Tap</th>
-                  <th className="py-2.5 px-3 text-right">Aktivasi Link</th>
+                  <th className="py-2.5 px-3 text-right">Aksi &amp; Kontrol Akses</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#dedee8]">
@@ -371,14 +447,86 @@ export default function KaelAdminCardsPage({ initialCards }: { initialCards: Car
                       {c.tap_count} Tap
                     </td>
                     <td className="py-3 px-3 text-right">
-                      <Link
-                        href={`/r/${c.card_code}`}
-                        target="_blank"
-                        className="inline-flex items-center gap-1 text-[11px] font-bold text-[#7958d8] hover:underline"
-                      >
-                        <span>Test /r/{c.card_code}</span>
-                        <ExternalLink size={12} />
-                      </Link>
+                      <div className="inline-flex items-center justify-end gap-1.5 flex-wrap">
+                        {c.status === "active" ? (
+                          <>
+                            <Link
+                              href={`/r/${c.card_code}`}
+                              target="_blank"
+                              className="inline-flex items-center gap-1 text-[11px] font-bold text-[#7958d8] bg-[#f0edff] px-2.5 py-1 rounded-lg border border-[#7958d8]/30 hover:bg-[#e4ddff] transition-colors"
+                              title="Buka link kartu"
+                            >
+                              <span>/r/{c.card_code}</span>
+                              <ExternalLink size={11} />
+                            </Link>
+
+                            <button
+                              type="button"
+                              onClick={() => handleToggleSuspend(c.id, "suspended")}
+                              disabled={busyCardId === c.id}
+                              className="btn-tactile inline-flex items-center gap-1 text-[11px] font-bold text-[#d97706] bg-[#fffbeb] px-2.5 py-1 rounded-lg border border-[#d97706]/40 hover:bg-[#fef3c7]"
+                              title="Tangguhkan kartu sementara"
+                            >
+                              <Power size={11} />
+                              <span>Suspend</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleResetAccess(c.id, c.card_code)}
+                              disabled={busyCardId === c.id}
+                              className="btn-tactile inline-flex items-center gap-1 text-[11px] font-bold text-[#dc2626] bg-[#fef2f2] px-2.5 py-1 rounded-lg border border-[#dc2626]/40 hover:bg-[#fee2e2]"
+                              title="Cabut akses kartu dan reset ke belum aktif"
+                            >
+                              <RotateCcw size={11} />
+                              <span>Cabut Akses</span>
+                            </button>
+                          </>
+                        ) : c.status === "suspended" ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => handleToggleSuspend(c.id, "active")}
+                              disabled={busyCardId === c.id}
+                              className="btn-tactile inline-flex items-center gap-1 text-[11px] font-bold text-[#16a34a] bg-[#f0fdf4] px-2.5 py-1 rounded-lg border border-[#16a34a]/40 hover:bg-[#dcfce7]"
+                              title="Aktifkan kembali kartu"
+                            >
+                              <Power size={11} />
+                              <span>Aktifkan</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => handleResetAccess(c.id, c.card_code)}
+                              disabled={busyCardId === c.id}
+                              className="btn-tactile inline-flex items-center gap-1 text-[11px] font-bold text-[#dc2626] bg-[#fef2f2] px-2.5 py-1 rounded-lg border border-[#dc2626]/40 hover:bg-[#fee2e2]"
+                              title="Cabut akses kartu"
+                            >
+                              <RotateCcw size={11} />
+                              <span>Cabut Akses</span>
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <Link
+                              href={`/activate/${c.card_code}`}
+                              className="inline-flex items-center gap-1 text-[11px] font-bold text-[#16a34a] bg-[#dcfce7] px-2.5 py-1 rounded-lg border border-[#16a34a]/40 hover:bg-[#bbf7d0]"
+                            >
+                              <span>Aktivasi ➔</span>
+                            </Link>
+
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteCard(c.id, c.card_code)}
+                              disabled={busyCardId === c.id}
+                              className="btn-tactile inline-flex items-center gap-1 text-[11px] font-bold text-[#7b7b8e] hover:text-[#dc2626] bg-[#f7f6fc] hover:bg-[#fef2f2] px-2 py-1 rounded-lg border border-[#dedee8]"
+                              title="Hapus kartu secara permanen"
+                            >
+                              <Trash2 size={12} />
+                            </button>
+                          </>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}

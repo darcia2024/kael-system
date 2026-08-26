@@ -261,6 +261,38 @@ export async function issueCardsAction(
   return done(issued);
 }
 
+/** Cabut akses kartu dan reset ke status unactivated (hanya untuk Admin KAEL) */
+export async function adminResetCardAction(cardId: string): Promise<ActionResult<null>> {
+  await requireKaelAdmin();
+  const res = await db.adminResetCard(cardId);
+  if (!res) return fail("Kartu tidak ditemukan.");
+  revalidatePath("/admin/cards");
+  revalidatePath("/app/review");
+  return done(null);
+}
+
+/** Ubah status kartu active <-> suspended (hanya untuk Admin KAEL) */
+export async function adminSetCardStatusAction(
+  cardId: string,
+  status: "active" | "suspended",
+): Promise<ActionResult<null>> {
+  await requireKaelAdmin();
+  const res = await db.adminSetCardStatus(cardId, status);
+  if (!res) return fail("Kartu tidak ditemukan.");
+  revalidatePath("/admin/cards");
+  revalidatePath("/app/review");
+  return done(null);
+}
+
+/** Hapus kartu permanen dari master database (hanya untuk Admin KAEL) */
+export async function adminDeleteCardAction(cardId: string): Promise<ActionResult<null>> {
+  await requireKaelAdmin();
+  const ok = await db.adminDeleteCard(cardId);
+  if (!ok) return fail("Gagal menghapus kartu.");
+  revalidatePath("/admin/cards");
+  return done(null);
+}
+
 // ===========================================================================
 // Loyalty
 // ===========================================================================

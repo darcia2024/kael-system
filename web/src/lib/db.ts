@@ -679,6 +679,36 @@ export const db = {
     `);
   },
 
+  /** Mencabut akses kartu dan mengembalikannya ke status unactivated (belum aktif) */
+  async adminResetCard(cardId: string): Promise<Card | null> {
+    return one<Card>(await sql`
+      UPDATE cards SET
+        business_id = NULL,
+        status = 'unactivated',
+        destination_url = NULL,
+        label = NULL,
+        customer_id = NULL
+      WHERE id = ${cardId}
+      RETURNING *
+    `);
+  },
+
+  /** Mengubah status kartu (active <-> suspended) oleh tim admin */
+  async adminSetCardStatus(cardId: string, status: "active" | "suspended"): Promise<Card | null> {
+    return one<Card>(await sql`
+      UPDATE cards SET status = ${status}
+      WHERE id = ${cardId}
+      RETURNING *
+    `);
+  },
+
+  /** Menghapus kartu permanen dari master database */
+  async adminDeleteCard(cardId: string): Promise<boolean> {
+    await sql`DELETE FROM card_taps WHERE card_id = ${cardId}`;
+    const res = await sql`DELETE FROM cards WHERE id = ${cardId} RETURNING id`;
+    return res.length > 0;
+  },
+
   /**
    * Dipanggil tanpa await oleh endpoint redirect supaya pengalihan tidak
    * menunggu database. Trigger Postgres yang menaikkan cards.tap_count.
