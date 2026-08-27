@@ -49,6 +49,3 @@ export const sql = globalThis.__kael_sql ?? createClient();
 if (process.env.NODE_ENV !== "production") {
   globalThis.__kael_sql = sql;
 }
-
-/** Bisnis default selama sistem masih melayani satu tenant. */
-export const DEFAULT_BUSINESS_ID = "b0000000-0000-0000-0000-000000000001";

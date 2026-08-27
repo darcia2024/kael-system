@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
-import { db, DEFAULT_BUSINESS_ID } from "./db";
+import { db } from "./db";
 import type { StaffPermission } from "./types";
 import {
   searchPlaces,
@@ -175,8 +175,22 @@ export async function activateCardAction(
       });
       businessId = created.id;
     }
+  } else if (card.business_id) {
+    businessId = card.business_id;
   } else {
-    businessId = card.business_id || DEFAULT_BUSINESS_ID;
+    /**
+     * Tidak ada sesi, tidak ada pilihan usaha, dan kartunya belum terhubung ke
+     * mana pun. Di titik ini kita memang TIDAK TAHU kartu ini milik siapa.
+     *
+     * Versi sebelumnya menebak dengan sebuah UUID tetap peninggalan data demo.
+     * Baris itu sudah dihapus dari basis data, jadi tebakannya berujung galat
+     * kunci asing mentah di layar pelanggan. Bahkan seandainya baris itu masih
+     * ada, hasilnya lebih buruk: kartu menempel diam-diam ke usaha orang lain.
+     */
+    return fail(
+      "Kartu ini belum terhubung ke usaha mana pun. Pilih nama usahamu lebih dulu, " +
+        "atau masuk sebagai pemilik usaha sebelum mengaktifkan kartu.",
+    );
   }
 
   let url: URL;

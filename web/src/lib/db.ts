@@ -1,5 +1,5 @@
 import "server-only";
-import { sql, DEFAULT_BUSINESS_ID } from "./postgres";
+import { sql } from "./postgres";
 import { hashPin, verifyPin, isLegacyPinHash } from "./auth";
 import { generateCardCode, generateActivationPin } from "./card-code";
 import { hashClientIp, checkStaffLockout, calculateLockoutExpiry } from "./auth-security";
@@ -22,7 +22,6 @@ import type {
 } from "./types";
 
 export * from "./types";
-export { DEFAULT_BUSINESS_ID };
 
 /**
  * Repository KAEL di atas Postgres (Supabase).
@@ -49,11 +48,22 @@ export const db = {
   // Bisnis, modul, pengguna
   // =========================================================================
 
-  async getBusiness(id?: string): Promise<Business | null> {
-    if (id) {
-      return one<Business>(await sql`SELECT * FROM businesses WHERE id = ${id}`);
-    }
-    return one<Business>(await sql`SELECT * FROM businesses ORDER BY created_at ASC LIMIT 1`);
+  /**
+   * Satu bisnis menurut id-nya. Id WAJIB.
+   *
+   * Versi sebelumnya boleh dipanggil tanpa argumen dan menjawab dengan bisnis
+   * TERTUA di tabel. Bentuk itu tidak pernah salah selama pelanggannya baru
+   * satu, lalu mulai menjawab dengan usaha yang keliru begitu pelanggan kedua
+   * mendaftar — tanpa galat, tanpa peringatan. Dua halaman publik memakainya,
+   * dan keduanya menampilkan nama serta menu toko yang salah kepada pelanggan.
+   *
+   * Sekarang pemanggil harus menyebutkan bisnis mana yang dimaksud, dan yang
+   * tidak tahu harus mencarinya lebih dulu lewat getBusinessByStoreCode() atau
+   * dari kartu yang di-tap pelanggan.
+   */
+  async getBusiness(id: string): Promise<Business | null> {
+    if (!id) return null;
+    return one<Business>(await sql`SELECT * FROM businesses WHERE id = ${id}`);
   },
 
   /**
@@ -211,51 +221,6 @@ export const db = {
   },
 
   /**
-   * Menyimpan QRIS statis milik sebuah usaha.
-   *
-   * Payload disimpan APA ADANYA. Nominal tidak pernah ikut tersimpan: yang
-   * masuk ke sini adalah kode statis merchant, dan versi bernominal dirakit
-   * ulang tiap transaksi lalu dibuang. Menyimpan versi bernominal berarti
-   * menyimpan QR sekali-pakai yang sudah basi begitu transaksinya selesai.
-   */
-  async saveQris(
-    businessId: string,
-    data: {
-      payload: string;
-      merchantName: string;
-      merchantCity: string;
-      nmid: string | null;
-    },
-  ): Promise<boolean> {
-    const rows = await sql`
-      UPDATE businesses SET
-        qris_payload = ${data.payload},
-        qris_merchant_name = ${data.merchantName},
-        qris_merchant_city = ${data.merchantCity},
-        qris_nmid = ${data.nmid},
-        qris_uploaded_at = NOW()
-      WHERE id = ${businessId}
-      RETURNING id
-    `;
-    return rows.length > 0;
-  },
-
-  /** Melepas QRIS tersimpan. Kasir kembali ke QRIS cetak. */
-  async clearQris(businessId: string): Promise<boolean> {
-    const rows = await sql`
-      UPDATE businesses SET
-        qris_payload = NULL,
-        qris_merchant_name = NULL,
-        qris_merchant_city = NULL,
-        qris_nmid = NULL,
-        qris_uploaded_at = NULL
-      WHERE id = ${businessId}
-      RETURNING id
-    `;
-    return rows.length > 0;
-  },
-
-  /**
    * Membuat akun pemilik untuk bisnis yang sudah ada tapi belum punya.
    *
    * Bisnis yang lahir dari aktivasi kartu lewat createBusinessFromPlace hanya
@@ -307,6 +272,51 @@ export const db = {
     } catch (e) {
       return { success: false, error: (e as Error).message };
     }
+  },
+
+  /**
+   * Menyimpan QRIS statis milik sebuah usaha.
+   *
+   * Payload disimpan APA ADANYA. Nominal tidak pernah ikut tersimpan: yang
+   * masuk ke sini adalah kode statis merchant, dan versi bernominal dirakit
+   * ulang tiap transaksi lalu dibuang. Menyimpan versi bernominal berarti
+   * menyimpan QR sekali-pakai yang sudah basi begitu transaksinya selesai.
+   */
+  async saveQris(
+    businessId: string,
+    data: {
+      payload: string;
+      merchantName: string;
+      merchantCity: string;
+      nmid: string | null;
+    },
+  ): Promise<boolean> {
+    const rows = await sql`
+      UPDATE businesses SET
+        qris_payload = ${data.payload},
+        qris_merchant_name = ${data.merchantName},
+        qris_merchant_city = ${data.merchantCity},
+        qris_nmid = ${data.nmid},
+        qris_uploaded_at = NOW()
+      WHERE id = ${businessId}
+      RETURNING id
+    `;
+    return rows.length > 0;
+  },
+
+  /** Melepas QRIS tersimpan. Kasir kembali ke QRIS cetak. */
+  async clearQris(businessId: string): Promise<boolean> {
+    const rows = await sql`
+      UPDATE businesses SET
+        qris_payload = NULL,
+        qris_merchant_name = NULL,
+        qris_merchant_city = NULL,
+        qris_nmid = NULL,
+        qris_uploaded_at = NULL
+      WHERE id = ${businessId}
+      RETURNING id
+    `;
+    return rows.length > 0;
   },
 
   /**
@@ -370,7 +380,7 @@ export const db = {
     );
   },
 
-  async getModules(businessId = DEFAULT_BUSINESS_ID): Promise<BusinessModule[]> {
+  async getModules(businessId: string): Promise<BusinessModule[]> {
     return (await sql`
       SELECT * FROM business_modules WHERE business_id = ${businessId} ORDER BY module
     `) as unknown as BusinessModule[];
@@ -382,7 +392,7 @@ export const db = {
    * tidak dimatikan. Mematikan kasir sebuah warung karena telat bayar adalah
    * cara tercepat kehilangan pelanggan.
    */
-  async getModuleAccess(businessId = DEFAULT_BUSINESS_ID) {
+  async getModuleAccess(businessId: string) {
     const mods = await this.getModules(businessId);
     const today = new Date();
     return mods.map((m) => {
@@ -451,7 +461,7 @@ export const db = {
     };
   },
 
-  async getUsers(businessId = DEFAULT_BUSINESS_ID): Promise<User[]> {
+  async getUsers(businessId: string): Promise<User[]> {
     return (await sql`
       SELECT * FROM users WHERE business_id = ${businessId} ORDER BY role, name
     `) as unknown as User[];
@@ -649,7 +659,7 @@ export const db = {
     return one<Card>(await sql`SELECT * FROM cards WHERE card_code = ${code}`);
   },
 
-  async getCards(businessId = DEFAULT_BUSINESS_ID): Promise<Card[]> {
+  async getCards(businessId: string): Promise<Card[]> {
     return (await sql`
       SELECT * FROM cards WHERE business_id = ${businessId} ORDER BY created_at
     `) as unknown as Card[];
@@ -847,7 +857,7 @@ export const db = {
   // Loyalty
   // =========================================================================
 
-  async getLoyaltyProgram(businessId = DEFAULT_BUSINESS_ID): Promise<LoyaltyProgram | null> {
+  async getLoyaltyProgram(businessId: string): Promise<LoyaltyProgram | null> {
     return one<LoyaltyProgram>(await sql`
       SELECT * FROM loyalty_programs WHERE business_id = ${businessId} LIMIT 1
     `);
@@ -865,7 +875,7 @@ export const db = {
     `);
   },
 
-  async getCustomers(businessId = DEFAULT_BUSINESS_ID): Promise<Customer[]> {
+  async getCustomers(businessId: string): Promise<Customer[]> {
     return (await sql`
       SELECT * FROM customers WHERE business_id = ${businessId} ORDER BY created_at DESC
     `) as unknown as Customer[];
@@ -878,7 +888,7 @@ export const db = {
    * baris. Dengan database sungguhan itu berarti satu query per pelanggan tiap
    * kali halaman digambar ulang.
    */
-  async getCustomersWithBalance(businessId = DEFAULT_BUSINESS_ID) {
+  async getCustomersWithBalance(businessId: string) {
     return (await sql`
       SELECT c.*, COALESCE(SUM(l.delta), 0)::int AS balance
       FROM customers c
@@ -1002,7 +1012,7 @@ export const db = {
     );
   },
 
-  async getRewards(businessId = DEFAULT_BUSINESS_ID): Promise<Reward[]> {
+  async getRewards(businessId: string): Promise<Reward[]> {
     return (await sql`
       SELECT * FROM rewards WHERE business_id = ${businessId} ORDER BY point_cost
     `) as unknown as Reward[];
@@ -1114,7 +1124,7 @@ export const db = {
   },
 
   /** Poin yang diterbitkan per kasir. Ini yang membuat kecurangan terlihat. */
-  async getStaffPointsAudit(businessId = DEFAULT_BUSINESS_ID) {
+  async getStaffPointsAudit(businessId: string) {
     return (await sql`
       SELECT u.id, u.name,
              COALESCE(SUM(CASE WHEN l.delta > 0 THEN l.delta ELSE 0 END), 0)::int AS points_issued,
@@ -1136,13 +1146,13 @@ export const db = {
   // Finance
   // =========================================================================
 
-  async getIngredients(businessId = DEFAULT_BUSINESS_ID): Promise<Ingredient[]> {
+  async getIngredients(businessId: string): Promise<Ingredient[]> {
     return (await sql`
       SELECT * FROM ingredients WHERE business_id = ${businessId} ORDER BY name
     `) as unknown as Ingredient[];
   },
 
-  async getIngredientsMap(businessId = DEFAULT_BUSINESS_ID): Promise<Map<string, IngredientItem>> {
+  async getIngredientsMap(businessId: string): Promise<Map<string, IngredientItem>> {
     const rows = await this.getIngredients(businessId);
     return new Map(
       rows.map((i) => [
@@ -1212,7 +1222,7 @@ export const db = {
     `) as unknown as IngredientPriceHistory[];
   },
 
-  async getRecipes(businessId = DEFAULT_BUSINESS_ID): Promise<Recipe[]> {
+  async getRecipes(businessId: string): Promise<Recipe[]> {
     const recipes = (await sql`
       SELECT * FROM recipes WHERE business_id = ${businessId} ORDER BY name
     `) as unknown as Recipe[];
@@ -1233,7 +1243,7 @@ export const db = {
     }));
   },
 
-  async getAllRecipesWithCalculations(businessId = DEFAULT_BUSINESS_ID) {
+  async getAllRecipesWithCalculations(businessId: string) {
     const [recipes, map] = await Promise.all([
       this.getRecipes(businessId),
       this.getIngredientsMap(businessId),
@@ -1316,13 +1326,13 @@ export const db = {
   // POS dan Ordering
   // =========================================================================
 
-  async getCategories(businessId = DEFAULT_BUSINESS_ID): Promise<Category[]> {
+  async getCategories(businessId: string): Promise<Category[]> {
     return (await sql`
       SELECT * FROM categories WHERE business_id = ${businessId} ORDER BY sort_order, name
     `) as unknown as Category[];
   },
 
-  async getMenuItems(businessId = DEFAULT_BUSINESS_ID): Promise<MenuItem[]> {
+  async getMenuItems(businessId: string): Promise<MenuItem[]> {
     return (await sql`
       SELECT * FROM menu_items WHERE business_id = ${businessId} ORDER BY sort_order, name
     `) as unknown as MenuItem[];
@@ -1351,14 +1361,14 @@ export const db = {
     `)!;
   },
 
-  async getActiveShift(businessId = DEFAULT_BUSINESS_ID): Promise<Shift | null> {
+  async getActiveShift(businessId: string): Promise<Shift | null> {
     return one<Shift>(await sql`
       SELECT * FROM shifts WHERE business_id = ${businessId} AND closed_at IS NULL
       ORDER BY opened_at DESC LIMIT 1
     `);
   },
 
-  async getShifts(businessId = DEFAULT_BUSINESS_ID): Promise<Shift[]> {
+  async getShifts(businessId: string): Promise<Shift[]> {
     return (await sql`
       SELECT * FROM shifts WHERE business_id = ${businessId} ORDER BY opened_at DESC LIMIT 60
     `) as unknown as Shift[];
@@ -1503,7 +1513,7 @@ export const db = {
     });
   },
 
-  async getOrders(businessId = DEFAULT_BUSINESS_ID, limit = 50): Promise<Order[]> {
+  async getOrders(businessId: string, limit = 50): Promise<Order[]> {
     return (await sql`
       SELECT * FROM orders WHERE business_id = ${businessId}
       ORDER BY created_at DESC LIMIT ${limit}
@@ -1530,7 +1540,7 @@ export const db = {
     return { order, items, customer, business };
   },
 
-  async getPendingQrOrders(businessId = DEFAULT_BUSINESS_ID) {
+  async getPendingQrOrders(businessId: string) {
     const orders = (await sql`
       SELECT * FROM orders
       WHERE business_id = ${businessId} AND channel <> 'cashier' AND status = 'open'
@@ -1579,7 +1589,7 @@ export const db = {
    * laporan tidak cocok dengan uang di laci, dan itu keluhan support yang
    * paling menghabiskan waktu.
    */
-  async getPosReports(businessId = DEFAULT_BUSINESS_ID) {
+  async getPosReports(businessId: string) {
     const biz = await this.getBusiness(businessId);
     const tz = biz?.timezone || "Asia/Jakarta";
 
