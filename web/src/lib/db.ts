@@ -880,6 +880,72 @@ export const db = {
     `);
   },
 
+  /**
+   * Membuat program loyalty untuk usaha yang belum punya.
+   *
+   * Tanpa ini modul Loyalty punya jalan buntu yang tidak kelihatan: kolom
+   * business_modules bisa berkata "aktif", tapi updateLoyaltyProgram hanya
+   * berbentuk UPDATE, jadi usaha yang belum punya barisnya tidak akan pernah
+   * bisa membuatnya lewat aplikasi. Halamannya melempar galat, pendaftaran
+   * membernya ditolak, dan tidak ada satu pun layar yang menjelaskan kenapa.
+   *
+   * ON CONFLICT DO NOTHING supaya dua klik beruntun tidak membuat dua program.
+   */
+  async createLoyaltyProgram(
+    businessId: string,
+    input: { mode: "point" | "stamp"; earnRate: number; stampPerVisit: number },
+  ): Promise<LoyaltyProgram | null> {
+    await sql`
+      INSERT INTO loyalty_programs ${sql({
+        business_id: businessId,
+        mode: input.mode,
+        earn_rate: input.earnRate,
+        stamp_per_visit: input.stampPerVisit,
+      })}
+      ON CONFLICT (business_id) DO NOTHING
+    `;
+    return this.getLoyaltyProgram(businessId);
+  },
+
+  /**
+   * Apakah tiap modul sudah punya konfigurasi minimum untuk BENAR-BENAR dipakai.
+   *
+   * Terpisah dari lisensi dengan sengaja. Lisensi menjawab "sudah dibeli belum";
+   * ini menjawab "sudah bisa dipakai belum". Sebuah modul bisa lunas terbayar
+   * dan tetap tidak berguna, dan menampilkannya sebagai "Aktif" dalam keadaan
+   * itu membuat pemilik usaha mengira produknya rusak — persis yang terjadi
+   * pada Loyalty yang tampil Aktif tapi pendaftaran membernya selalu ditolak.
+   *
+   * Finance sengaja tidak diperiksa: dia kalkulator, dan kosong adalah keadaan
+   * awal yang wajar. Pemilik usaha mengisinya justru dari dalam modulnya.
+   */
+  async getModuleReadiness(businessId: string): Promise<{
+    loyalty: boolean;
+    pos: boolean;
+    review: boolean;
+    finance: boolean;
+  }> {
+    const rows = await sql`
+      SELECT
+        (SELECT COUNT(*) FROM loyalty_programs WHERE business_id = ${businessId})::int AS program,
+        (SELECT COUNT(*) FROM menu_items WHERE business_id = ${businessId})::int AS menu,
+        (SELECT COUNT(*) FROM cards
+          WHERE business_id = ${businessId}
+            AND status = 'active'
+            AND destination_url IS NOT NULL)::int AS kartu
+    `;
+    const r = rows[0] as { program: number; menu: number; kartu: number };
+    return {
+      // Tanpa barisnya, kurs poin tidak ada dan pendaftaran member pasti gagal.
+      loyalty: (r?.program ?? 0) > 0,
+      // Kasir tidak bisa menjual apa pun kalau menunya belum diisi.
+      pos: (r?.menu ?? 0) > 0,
+      // Kartu yang belum diaktivasi tidak mengarah ke mana pun.
+      review: (r?.kartu ?? 0) > 0,
+      finance: true,
+    };
+  },
+
   async updateLoyaltyProgram(businessId: string, updates: Partial<LoyaltyProgram>) {
     const allowed = ["mode", "earn_rate", "stamp_per_visit", "point_expiry_months"] as const;
     const patch = Object.fromEntries(

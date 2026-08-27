@@ -125,6 +125,115 @@ export async function getLicense(businessId: string, module: ModuleKey): Promise
 }
 
 // ===========================================================================
+// Kesiapan: sudah dibeli belum tentu sudah bisa dipakai
+// ===========================================================================
+
+/**
+ * Status modul yang DITAMPILKAN. Menggabungkan dua lapis yang berbeda.
+ *
+ * Lisensi menjawab "sudah dibayar belum". Kesiapan menjawab "sudah bisa dipakai
+ * belum". Sebuah modul bisa lunas terbayar dan tetap tidak berguna, dan itu
+ * bukan kasus teori: Loyalty pernah tampil "Aktif" di dasbor pemilik sementara
+ * setiap pendaftaran member ditolak, karena barisnya di loyalty_programs tidak
+ * pernah ada. Pemiliknya melihat produk yang rusak, bukan produk yang belum
+ * disetel — dan tidak ada satu pun layar yang membedakan keduanya.
+ */
+export type ModuleStatus = LicenseState | "perlu_disiapkan";
+
+export interface ModuleView extends ModuleLicense {
+  /** Untuk lencana di layar. */
+  status: ModuleStatus;
+  /** Konfigurasi minimumnya belum lengkap, apa pun keadaan lisensinya. */
+  needsSetup: boolean;
+  /** Kalimat untuk pemilik usaha. Null kalau tidak ada yang perlu disiapkan. */
+  setupHint: string | null;
+  /** Ke mana pemilik usaha harus pergi untuk membereskannya. */
+  setupHref: string | null;
+  /**
+   * Boleh dipakai sungguhan: lisensinya mengizinkan menulis DAN konfigurasinya
+   * lengkap. Inilah yang menentukan apakah pelanggan boleh mendaftar member
+   * atau memesan lewat QR.
+   */
+  usable: boolean;
+}
+
+const SETUP: Partial<Record<ModuleKey, { hint: string; href: string }>> = {
+  loyalty: {
+    hint: "Kurs poin belum disetel, jadi pelanggan belum bisa mendaftar jadi member.",
+    href: "/app/loyalty",
+  },
+  pos: {
+    hint: "Menu belum diisi, jadi kasir belum bisa mencatat transaksi.",
+    href: "/app/pos",
+  },
+  review: {
+    hint: "Belum ada kartu yang diaktivasi, jadi belum ada yang bisa di-tap pelanggan.",
+    href: "/app/review",
+  },
+};
+
+/**
+ * Pandangan lengkap seluruh modul satu usaha.
+ *
+ * Satu-satunya sumber kebenaran untuk pertanyaan "modul ini keadaannya apa".
+ * Dibungkus cache() supaya satu render yang menanyakannya di beberapa tempat
+ * hanya menembak database sekali.
+ */
+export const getModuleViews = cache(
+  async (businessId: string): Promise<Map<ModuleKey, ModuleView>> => {
+    const [licenses, readiness] = await Promise.all([
+      getLicenses(businessId),
+      db.getModuleReadiness(businessId),
+    ]);
+
+    const views = new Map<ModuleKey, ModuleView>();
+    for (const key of Object.keys(MODULE_BY_KEY) as ModuleKey[]) {
+      const license = licenses.get(key) ?? NOT_OWNED(key);
+      const siap = (readiness as Record<string, boolean>)[key] ?? true;
+
+      // Kesiapan hanya relevan untuk modul yang memang dimiliki. Menyuruh
+      // pemilik usaha menyiapkan modul yang belum dibelinya cuma membingungkan.
+      const needsSetup = license.state !== "tidak_dimiliki" && !siap;
+
+      /**
+       * Lencana: persoalan lisensi didahulukan karena menyangkut akses dan
+       * pembayaran, dan "perlu disiapkan" tidak ada gunanya dibaca oleh usaha
+       * yang modulnya sedang ditangguhkan. Kalau lisensinya sehat, barulah
+       * kesiapan yang menentukan.
+       */
+      const status: ModuleStatus =
+        license.state === "aktif" && needsSetup ? "perlu_disiapkan" : license.state;
+
+      views.set(key, {
+        ...license,
+        status,
+        needsSetup,
+        setupHint: needsSetup ? (SETUP[key]?.hint ?? null) : null,
+        setupHref: needsSetup ? (SETUP[key]?.href ?? null) : null,
+        usable: license.canWrite && !needsSetup,
+      });
+    }
+    return views;
+  },
+);
+
+export async function getModuleView(
+  businessId: string,
+  module: ModuleKey,
+): Promise<ModuleView> {
+  const view = (await getModuleViews(businessId)).get(module);
+  if (view) return view;
+  return {
+    ...NOT_OWNED(module),
+    status: "tidak_dimiliki",
+    needsSetup: false,
+    setupHint: null,
+    setupHref: null,
+    usable: false,
+  };
+}
+
+// ===========================================================================
 // Penjaga
 // ===========================================================================
 
@@ -163,7 +272,7 @@ export async function moduleLock(
   module: ModuleKey,
   mode: "read" | "write",
 ): Promise<string | null> {
-  const license = await getLicense(businessId, module);
+  const license = await getModuleView(businessId, module);
   const name = moduleName(module);
 
   if (license.state === "tidak_dimiliki") {
@@ -171,6 +280,19 @@ export async function moduleLock(
   }
   if (license.state === "ditangguhkan") {
     return `${name} sedang ditangguhkan. Hubungi tim KAEL.`;
+  }
+  /**
+   * Konfigurasi belum lengkap: menulis pasti gagal, jadi ditolak lebih awal
+   * dengan alasan yang benar. Sebelum ini, pelanggan yang mendaftar member di
+   * toko tanpa kurs poin mengisi nama dan nomor WhatsApp-nya lebih dulu, baru
+   * ditolak — dan pesannya menyalahkan ketersediaan, bukan menyebut yang
+   * sebenarnya kurang.
+   *
+   * Pesannya tetap tidak menyebut sebabnya ke pelanggan. Yang perlu tahu
+   * pemilik usahanya, dan dia melihatnya di dasbornya sendiri.
+   */
+  if (mode === "write" && license.needsSetup) {
+    return `${name} belum selesai disiapkan pemilik usaha.`;
   }
   if (mode === "write" && !license.canWrite) {
     return (
@@ -258,7 +380,7 @@ export function homeFor(role: Session["role"]): string {
 export async function guardModulePage(
   module: ModuleKey,
   path: string,
-): Promise<{ session: Session & { businessId: string }; license: ModuleLicense }> {
+): Promise<{ session: Session & { businessId: string }; license: ModuleView }> {
   const session = await getSession();
   if (!session) redirect(`/app/login?next=${path}`);
   if (session.role === "kael_admin") redirect("/admin/cards");
@@ -269,7 +391,7 @@ export async function guardModulePage(
   // mendarat di dasbor pemilik — persis tempat yang seharusnya tertutup baginya.
   const beranda = homeFor(session.role);
 
-  const license = await getLicense(session.businessId, module);
+  const license = await getModuleView(session.businessId, module);
   // Modul yang tidak dimiliki atau ditangguhkan: layarnya tidak dibuka sama
   // sekali. Modul yang lewat masa aktif tetap dibuka, dalam mode baca-saja.
   if (!license.canRead) redirect(`${beranda}?terkunci=${module}`);
@@ -280,6 +402,16 @@ export async function guardModulePage(
     }
   } else if (session.role !== "owner") {
     redirect(`${beranda}?ditolak=${module}`);
+  }
+
+  /**
+   * Belum selesai disiapkan: pemilik usaha TETAP masuk, karena dialah yang
+   * harus membereskannya dan layarnya itu sendiri tempat membereskannya.
+   * Kasir dihentikan di sini — dia tidak punya wewenang menyetel apa pun, dan
+   * membiarkannya masuk cuma menyerahkan layar yang setiap tombolnya menolak.
+   */
+  if (license.needsSetup && session.role !== "owner") {
+    redirect(`${beranda}?belumsiap=${module}`);
   }
 
   return { session: session as Session & { businessId: string }, license };

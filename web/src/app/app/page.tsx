@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 
 import { db } from "@/lib/db";
 
-import { getLicenses, guardOwnerPage } from "@/lib/licensing";
+import { getModuleViews, guardOwnerPage } from "@/lib/licensing";
 import {
   MODULE_CATALOG,
   modulesForBusinessType,
@@ -92,9 +92,9 @@ export default async function AppPortalPage({
 
   const session = await guardOwnerPage("/app");
 
-  const [business, licenses, users] = await Promise.all([
+  const [business, views, users] = await Promise.all([
     db.getBusiness(session.businessId),
-    getLicenses(session.businessId),
+    getModuleViews(session.businessId),
     // guardOwnerPage sudah memastikan yang sampai di sini pasti pemilik usaha.
     db.getUsers(session.businessId),
   ]);
@@ -112,7 +112,7 @@ export default async function AppPortalPage({
   const cocokUntukUsaha = new Set(modulesForBusinessType(businessType).map((m) => m.key));
 
   const tampil = MODULE_CATALOG.filter(
-    (m) => licenses.has(m.key) || (m.available && cocokUntukUsaha.has(m.key)),
+    (m) => views.get(m.key)?.state !== "tidak_dimiliki" || (m.available && cocokUntukUsaha.has(m.key)),
   );
 
   /**
@@ -120,7 +120,7 @@ export default async function AppPortalPage({
    * untuk pemilik usaha. Kasir punya berandanya sendiri di /app/staff yang
    * memang tidak pernah mengambil data harga maupun penawaran.
    */
-  const belumDimiliki = tampil.filter((m) => !licenses.has(m.key));
+  const belumDimiliki = tampil.filter((m) => views.get(m.key)?.state === "tidak_dimiliki");
 
   const signals = belumDimiliki.length
     ? await db.getUpsellSignals(session.businessId)
@@ -128,7 +128,8 @@ export default async function AppPortalPage({
 
   const modules: PortalModule[] = tampil
     .map((entry): PortalModule | null => {
-      const license = licenses.get(entry.key);
+      const view = views.get(entry.key);
+      const license = view && view.state !== "tidak_dimiliki" ? view : null;
 
       // Belum dibeli: kartu penawaran.
       if (!license) {
@@ -138,6 +139,9 @@ export default async function AppPortalPage({
           tagline: entry.tagline,
           href: null,
           state: "tidak_dimiliki",
+          status: "tidak_dimiliki",
+          setupHint: null,
+          setupHref: null,
           expiresAt: null,
           daysLeft: 0,
           price: entry.price,
@@ -152,6 +156,9 @@ export default async function AppPortalPage({
         tagline: entry.tagline,
         href: license.canRead ? entry.href : null,
         state: license.state,
+        status: license.status,
+        setupHint: license.setupHint,
+        setupHref: license.setupHref,
         expiresAt: license.expiresAt,
         daysLeft: license.daysLeft,
         price: entry.price,

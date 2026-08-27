@@ -10,7 +10,7 @@ import {
   isPlacesSearchConfigured,
   type GooglePlaceResult,
 } from "./google-places";
-import { moduleLock, requireModuleRead } from "./licensing";
+import { moduleLock, requireModuleRead, getModuleView } from "./licensing";
 import { MODULE_CATALOG } from "./modules-catalog";
 import { readQris, buildDynamicQris } from "./qris-engine";
 import {
@@ -1007,5 +1007,48 @@ export async function clearQrisAction(): Promise<ActionResult<null>> {
   const ok = await db.clearQris(businessId);
   if (!ok) return fail("Usaha tidak ditemukan.");
   revalidatePath("/app/pos");
+  return done(null);
+}
+
+/**
+ * Membuat program loyalty untuk usaha yang belum punya.
+ *
+ * Tanpa ini modul Loyalty punya jalan buntu: business_modules bisa berkata
+ * "aktif" sementara updateLoyaltyProgramAction hanya berbentuk UPDATE, jadi
+ * usaha yang belum punya barisnya tidak akan pernah bisa membuatnya sendiri.
+ */
+export async function createLoyaltyProgramAction(input: {
+  mode: "point" | "stamp";
+  earnRate: number;
+  stampPerVisit: number;
+}): Promise<ActionResult<null>> {
+  const { businessId } = await requireOwner();
+
+  // Sengaja TIDAK memakai moduleLock mode "write": modul yang belum disiapkan
+  // ditolak oleh penjaga itu, dan action inilah yang menyiapkannya. Yang
+  // diperiksa cukup kepemilikan dan masa aktifnya.
+  const license = await getModuleView(businessId, "loyalty");
+  if (license.state === "tidak_dimiliki") return fail("Modul Loyalty belum aktif untuk usaha ini.");
+  if (!license.canWrite) return fail("Masa aktif KAEL Loyalty sudah lewat. Perpanjang lewat tim KAEL.");
+
+  if (input.mode === "point") {
+    // Batas bawah 1 rupiah ditegakkan juga oleh CHECK di kolomnya. Diperiksa di
+    // sini supaya pesannya kalimat, bukan galat constraint dari Postgres.
+    if (!Number.isInteger(input.earnRate) || input.earnRate < 1) {
+      return fail("Kurs poin harus lebih dari nol. Contoh: Rp 10.000 untuk 1 poin.");
+    }
+    if (input.earnRate > 10_000_000) return fail("Kurs poin terlalu besar.");
+  } else {
+    if (!Number.isInteger(input.stampPerVisit) || input.stampPerVisit < 1) {
+      return fail("Stempel per kunjungan harus lebih dari nol.");
+    }
+  }
+
+  const program = await db.createLoyaltyProgram(businessId, input);
+  if (!program) return fail("Gagal membuat program loyalty.");
+
+  revalidatePath("/app/loyalty");
+  revalidatePath("/app");
+  revalidatePath("/app/settings");
   return done(null);
 }

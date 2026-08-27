@@ -23,7 +23,7 @@ import {
   Lock
 } from "lucide-react";
 import type { Business, User, SafeUser } from "@/lib/types";
-import type { LicenseState } from "@/lib/licensing";
+import type { LicenseState, ModuleStatus } from "@/lib/licensing";
 import { rupiah, type ModuleKey } from "@/lib/modules-catalog";
 import { waLink } from "@/lib/site";
 import {
@@ -46,6 +46,15 @@ export interface PortalModule {
   /** Null berarti tidak bisa dibuka: belum dibeli, atau ditangguhkan. */
   href: string | null;
   state: LicenseState;
+  /**
+   * Keadaan yang DITAMPILKAN. Berbeda dari `state` hanya pada satu hal:
+   * modul yang lisensinya sehat tapi konfigurasinya belum lengkap tampil
+   * "perlu_disiapkan", bukan "aktif". Sebelum pembedaan ini ada, Loyalty
+   * tampil Aktif sementara setiap pendaftaran membernya ditolak.
+   */
+  status: ModuleStatus;
+  setupHint: string | null;
+  setupHref: string | null;
   expiresAt: string | null;
   daysLeft: number;
   price: number;
@@ -164,8 +173,9 @@ export default function AppPortalHub({
   /** Pengingat H-30. Diam saja kalau masih jauh. */
   const segeraJatuhTempo = aktif.filter((m) => m.state === "aktif" && m.daysLeft <= 30);
 
-  const BADGE: Record<LicenseState, { teks: string; warna: string; bg: string; garis: string }> = {
+  const BADGE: Record<ModuleStatus, { teks: string; warna: string; bg: string; garis: string }> = {
     aktif: { teks: "Aktif", warna: "#16a34a", bg: "#dcfce7", garis: "#16a34a" },
+    perlu_disiapkan: { teks: "Perlu disiapkan", warna: "#b45309", bg: "#fef3c7", garis: "#b45309" },
     tenggang: { teks: "Masa tenggang", warna: "#b45309", bg: "#fef3c7", garis: "#b45309" },
     kedaluwarsa: { teks: "Baca-saja", warna: "#b91c1c", bg: "#fee2e2", garis: "#b91c1c" },
     ditangguhkan: { teks: "Ditangguhkan", warna: "#b91c1c", bg: "#fee2e2", garis: "#b91c1c" },
@@ -202,6 +212,13 @@ export default function AppPortalHub({
           </div>
 
           <div className="flex items-center gap-2">
+            <Link
+              href="/app/settings"
+              className="btn-tactile inline-flex items-center gap-1.5 rounded-xl border border-[#232331] bg-[#fcfcfe] px-3 py-1.5 font-mono text-xs font-bold shadow-ink-xs"
+            >
+              <Settings size={13} />
+              <span className="hidden sm:inline">Pengaturan</span>
+            </Link>
             {/*
               Harus memanggil logout(), bukan sekadar menautkan ke /app/login.
               Versi sebelumnya hanya berpindah halaman dan meninggalkan cookie
@@ -348,7 +365,7 @@ export default function AppPortalHub({
               {aktif.map((mod) => {
                 const look = LOOK[mod.key] ?? LOOK.review;
                 const Icon = look.icon;
-                const badge = BADGE[mod.state];
+                const badge = BADGE[mod.status];
                 const bisaDibuka = Boolean(mod.href);
 
                 const isi = (
@@ -381,8 +398,20 @@ export default function AppPortalHub({
                         </p>
                       </div>
                     </div>
+                    {/*
+                      Apa yang kurang, bukan cuma bahwa ada yang kurang.
+                      Pemilik usaha yang membaca "Perlu disiapkan" tanpa
+                      kalimat ini tetap tidak tahu harus ke mana.
+                    */}
+                    {mod.setupHint && (
+                      <p className="mt-3 rounded-xl border border-[#e5b800] bg-[#fff8e1] px-2.5 py-1.5 font-mono text-[10.5px] font-bold text-[#8a6d00]">
+                        {mod.setupHint}
+                      </p>
+                    )}
                     <div className="mt-4 pt-3 border-t border-[#dedee8] flex items-center justify-between text-xs font-mono font-bold text-[#7958d8]">
-                      <span>{bisaDibuka ? "Buka Modul" : "Tidak bisa dibuka"}</span>
+                      <span>
+                        {mod.setupHint ? "Siapkan sekarang" : bisaDibuka ? "Buka Modul" : "Tidak bisa dibuka"}
+                      </span>
                       {bisaDibuka && (
                         <ArrowRight size={14} className="group-hover:translate-x-1 transition-transform" />
                       )}

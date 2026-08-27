@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { db } from "@/lib/db";
 import { guardModulePage } from "@/lib/licensing";
 import LoyaltyClient from "./loyalty-client";
+import LoyaltySetup from "./loyalty-setup";
 
 /**
  * Dashboard KAEL Loyalty.
@@ -29,8 +30,16 @@ export default async function LoyaltyPage() {
     session.role === "owner" ? db.getStaffPointsAudit(session.businessId) : Promise.resolve([]),
   ]);
 
+  /**
+   * Belum ada programnya: tampilkan layar penyiapan, bukan melempar galat.
+   *
+   * Galat di sini naik ke app/error.tsx dan pesannya disensor Next di produksi,
+   * sehingga pemilik usaha yang modulnya sudah dibayar cuma melihat layar galat
+   * tanpa penjelasan. Kasir tidak akan pernah sampai ke titik ini —
+   * guardModulePage sudah memulangkannya lebih dulu.
+   */
   if (!program) {
-    throw new Error("Program loyalty belum dibuat untuk bisnis ini.");
+    return <LoyaltySetup businessName={business?.name ?? "Usahamu"} />;
   }
 
   return (
