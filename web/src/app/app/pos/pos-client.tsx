@@ -54,10 +54,16 @@ import {
   calculateCartTotals, 
   calculateCashChange, 
   generateEscPosReceiptText,
-  generateDailyOrderNo
+  generateDailyOrderNo,
+  SERVICE_TYPES,
+  serviceTypeLabel,
+  PAYMENT_STATUS_LABEL,
+  FULFILLMENT_FLOW,
+  type ServiceType,
 } from "@/lib/pos-engine";
 import { formatRupiah, formatBusinessDateTime } from "@/lib/formatters";
 import QrisPayment from "./qris-payment";
+import OrderQueue from "./order-queue";
 import { maskPhoneNumber, calculateEarnedPoints } from "@/lib/loyalty-engine";
 
 interface PosClientProps {
@@ -101,7 +107,19 @@ export default function PosClient({
   const [paymentMethod, setPaymentMethod] = useState<"cash" | "qris" | "transfer">("cash");
   const [cashGivenInput, setCashGivenInput] = useState<number>(0);
   const [selectedTableNo, setSelectedTableNo] = useState<string>("");
-  const [orderChannel, setOrderChannel] = useState<"cashier" | "qr_dinein" | "qr_takeaway">("cashier");
+  /**
+   * Tipe layanan, bukan lagi "channel". Channel menjawab siapa yang membuat
+   * pesanan, dan di layar ini jawabannya selalu kasir. Yang perlu dipilih
+   * kasir adalah cara penyajiannya.
+   */
+  const [serviceType, setServiceType] = useState<ServiceType>("takeaway");
+
+  // Pengantaran
+  const [kirimNama, setKirimNama] = useState("");
+  const [kirimHp, setKirimHp] = useState("");
+  const [kirimAlamat, setKirimAlamat] = useState("");
+  const [kirimOngkir, setKirimOngkir] = useState<number>(0);
+  const [kirimCatatan, setKirimCatatan] = useState("");
 
   // Loyalty Customer Integration in POS
   const [loyaltySearchQuery, setLoyaltySearchQuery] = useState("");
@@ -120,6 +138,7 @@ export default function PosClient({
   } | null>(null);
 
   // Shift Modal State
+  const [showQueue, setShowQueue] = useState(false);
   const [showShiftModal, setShowShiftModal] = useState(false);
   const [shiftOpeningCashInput, setShiftOpeningCashInput] = useState<number>(100000);
   const [shiftClosingCashInput, setShiftClosingCashInput] = useState<number>(0);
@@ -236,9 +255,19 @@ export default function PosClient({
     }));
 
     const res = await createOrderAction({
-      channel: orderChannel,
+      service_type: serviceType,
       table_no: selectedTableNo || null,
       payment_method: paymentMethod,
+      delivery:
+        serviceType === "delivery"
+          ? {
+              name: kirimNama,
+              phone: kirimHp,
+              address: kirimAlamat,
+              fee: kirimOngkir,
+              note: kirimCatatan || undefined,
+            }
+          : null,
       discount: cartTotals.discount,
       tax: cartTotals.tax,
       service_charge: cartTotals.serviceCharge,
@@ -276,15 +305,6 @@ export default function PosClient({
   };
 
   // Accept incoming QR order
-  const handleAcceptQrOrder = async (qrOrder: Order & { items: OrderItem[] }) => {
-    const res = await updateOrderStatusAction(qrOrder.id, "paid");
-    if (!res.ok) {
-      alert(res.error);
-      return;
-    }
-    refreshAll();
-    alert(`Pesanan Meja ${qrOrder.table_no || '-'} (${qrOrder.order_no}) berhasil ditandai lunas.`);
-  };
 
   // ---------------------------------------------------------------------------
   // SHIFT MANAGEMENT
@@ -330,7 +350,7 @@ export default function PosClient({
       businessPhone: business?.phone || "",
       orderNo: completedOrder.orderNo,
       tableNo: completedOrder.tableNo,
-      channel: orderChannel,
+      serviceType,
       cashierName: staff?.name || "Kasir",
       createdAt: new Date().toISOString(),
       items: completedOrder.items,
@@ -410,11 +430,11 @@ export default function PosClient({
             {pendingQrOrders.length > 0 && (
               <button
                 type="button"
-                onClick={() => alert(`Ada ${pendingQrOrders.length} pesanan QR Meja yang menunggu diproses di antrean dapur.`)}
+                onClick={() => setShowQueue(true)}
                 className="btn-tactile flex items-center gap-1 rounded-xl border border-[#d97706] bg-[#fef3c7] px-2.5 py-1.5 font-bold text-[#d97706] shadow-ink-xs animate-pulse"
               >
                 <Utensils size={13} />
-                <span>{pendingQrOrders.length} Pesanan QR</span>
+                <span>{pendingQrOrders.length} Pesanan Masuk</span>
               </button>
             )}
 
@@ -662,30 +682,65 @@ export default function PosClient({
 
             <form onSubmit={handleProcessPayment} className="space-y-4 font-sans text-xs">
               
-              {/* Order Channel Selector */}
+              {/* Tipe layanan: Dine-In / Takeaway / Delivery */}
               <div className="space-y-1 font-mono">
                 <label className="block font-bold text-[#232331]">Tipe Layanan:</label>
                 <div className="grid grid-cols-3 gap-2">
-                  {[
-                    { id: "cashier", label: "Takeaway / Kasir" },
-                    { id: "qr_dinein", label: "Dine-In (Meja)" },
-                    { id: "qr_takeaway", label: "Bungkus" },
-                  ].map((ch) => (
+                  {SERVICE_TYPES.map((st) => (
                     <button
-                      key={ch.id}
+                      key={st.key}
                       type="button"
-                      onClick={() => setOrderChannel(ch.id as any)}
+                      onClick={() => setServiceType(st.key)}
+                      title={st.hint}
                       className={`p-2 rounded-xl border font-bold text-center text-[11px] ${
-                        orderChannel === ch.id ? "bg-[#232331] text-[#d9ff57] border-[#232331]" : "bg-white text-[#7b7b8e] border-[#dedee8]"
+                        serviceType === st.key ? "bg-[#232331] text-[#d9ff57] border-[#232331]" : "bg-white text-[#7b7b8e] border-[#dedee8]"
                       }`}
                     >
-                      {ch.label}
+                      {st.label}
                     </button>
                   ))}
                 </div>
               </div>
 
-              {orderChannel === "qr_dinein" && (
+              {serviceType === "delivery" && (
+                <div className="space-y-2 rounded-2xl border border-[#dedee8] bg-[#fcfcfe] p-3 font-mono">
+                  <p className="font-bold text-[#232331]">Data pengantaran</p>
+                  <input
+                    type="text" required value={kirimNama}
+                    onChange={(e) => setKirimNama(e.target.value)}
+                    placeholder="Nama penerima"
+                    className="w-full rounded-xl border border-[#c9c9d4] p-2 text-xs"
+                  />
+                  <input
+                    type="tel" required value={kirimHp}
+                    onChange={(e) => setKirimHp(e.target.value)}
+                    placeholder="Nomor WhatsApp"
+                    className="w-full rounded-xl border border-[#c9c9d4] p-2 text-xs"
+                  />
+                  <textarea
+                    required value={kirimAlamat} rows={2}
+                    onChange={(e) => setKirimAlamat(e.target.value)}
+                    placeholder="Alamat lengkap"
+                    className="w-full rounded-xl border border-[#c9c9d4] p-2 text-xs"
+                  />
+                  <div>
+                    <label className="block text-[11px] font-bold mb-1">Ongkir (Rp)</label>
+                    <input
+                      type="number" min={0} step={1000} value={kirimOngkir}
+                      onChange={(e) => setKirimOngkir(Number(e.target.value))}
+                      className="w-full rounded-xl border border-[#c9c9d4] p-2 text-xs font-bold"
+                    />
+                  </div>
+                  <input
+                    type="text" value={kirimCatatan}
+                    onChange={(e) => setKirimCatatan(e.target.value)}
+                    placeholder="Catatan pengiriman (opsional)"
+                    className="w-full rounded-xl border border-[#c9c9d4] p-2 text-xs"
+                  />
+                </div>
+              )}
+
+              {serviceType === "dine_in" && (
                 <div className="space-y-1 font-mono">
                   <label className="block font-bold text-[#232331]">Nomor Meja:</label>
                   <input
@@ -841,6 +896,10 @@ export default function PosClient({
 
           </div>
         </div>
+      )}
+
+      {showQueue && (
+        <OrderQueue orders={pendingQrOrders} onClose={() => setShowQueue(false)} />
       )}
 
       {/* MODAL: POST-PAYMENT SUCCESS & RECEIPT ACTIONS */}

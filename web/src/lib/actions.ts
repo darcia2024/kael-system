@@ -504,9 +504,10 @@ export async function closeShiftAction(
 }
 
 export async function createOrderAction(input: {
-  channel: "cashier" | "qr_dinein" | "qr_takeaway";
+  service_type: "dine_in" | "takeaway" | "delivery";
   table_no?: string | null;
   payment_method: "cash" | "qris" | "transfer";
+  delivery?: { name: string; phone: string; address: string; fee: number; note?: string } | null;
   discount?: number;
   tax?: number;
   service_charge?: number;
@@ -546,9 +547,21 @@ export async function createOrderAction(input: {
   const { order } = await db.createOrder(
     businessId,
     {
-      channel: input.channel,
+      channel: "cashier",
+      service_type: input.service_type,
       table_no: input.table_no ?? null,
-      status: input.channel === "cashier" ? "paid" : "open",
+      /**
+       * Tunai lunas seketika: uangnya ada di tangan kasir saat itu juga.
+       *
+       * QRIS dan transfer TIDAK. QR yang muncul di layar belum berarti uangnya
+       * masuk, dan menandainya lunas di detik itu berarti kasir menutup
+       * transaksi atas sesuatu yang belum dia lihat. Keduanya menunggu
+       * konfirmasi lewat confirmPaymentAction.
+       */
+      status: input.payment_method === "cash" ? "paid" : "open",
+      payment_status: input.payment_method === "cash" ? "paid" : "pending",
+      fulfillment_status: input.payment_method === "cash" ? "completed" : "pending",
+      delivery: input.delivery ?? null,
       discount: input.discount ?? 0,
       tax: input.tax ?? 0,
       service_charge: input.service_charge ?? 0,
@@ -584,9 +597,10 @@ export async function createOrderAction(input: {
 export async function createQrOrderAction(
   businessId: string,
   tableNo: string,
-  channel: "qr_dinein" | "qr_takeaway",
+  serviceType: "dine_in" | "takeaway",
+  paymentMethod: "qris" | "cash",
   items: { menu_item_id: string; qty: number; note?: string }[],
-): Promise<ActionResult<{ orderId: string; orderNo: string }>> {
+): Promise<ActionResult<{ orderId: string; orderNo: string; total: number }>> {
   if (!items.length) return fail("Keranjang masih kosong.");
 
   /**
@@ -619,16 +633,99 @@ export async function createQrOrderAction(
   const owner = (await db.getUsers(businessId)).find((u) => u.role === "owner");
   if (!owner) return fail("Bisnis belum siap menerima pesanan.");
 
+  /**
+   * Selalu "pending", apa pun cara bayar yang dipilih pelanggan.
+   *
+   * Tidak ada gerbang pembayaran di sistem ini, jadi tidak ada satu pun cara
+   * teknis untuk mengetahui uangnya sudah masuk. QR yang muncul di layar
+   * pelanggan hanya menampilkan tujuan transfer; ia tidak pernah mengabarkan
+   * balik. Yang menyatakan pembayaran diterima adalah kasir, dan namanya ikut
+   * tersimpan di paid_confirmed_by.
+   *
+   * Dapur tidak mulai sebelum itu. Kalau mulai lebih dulu, satu orang iseng
+   * cukup memesan sepuluh porsi dari meja lalu pergi.
+   */
   const { order } = await db.createOrder(
     businessId,
     {
-      channel, table_no: tableNo, status: "open",
-      payment_method: "cash", created_by: owner.id,
+      channel: "qr",
+      service_type: serviceType,
+      table_no: tableNo,
+      status: "open",
+      payment_status: "pending",
+      fulfillment_status: "pending",
+      payment_method: paymentMethod,
+      created_by: owner.id,
     },
     lines,
   );
   revalidatePath("/app/pos");
-  return done({ orderId: order.id, orderNo: order.order_no });
+  return done({ orderId: order.id, orderNo: order.order_no, total: Number(order.total) });
+}
+
+// ---------------------------------------------------------------------------
+// Konfirmasi pembayaran oleh kasir
+// ---------------------------------------------------------------------------
+
+/**
+ * Kasir menyatakan uangnya benar-benar diterima.
+ *
+ * Inilah satu-satunya bukti bahwa pembayaran non-tunai itu terjadi: tidak ada
+ * gerbang pembayaran yang mengabarkannya. Karena itu yang menekan tombolnya
+ * ikut tercatat — konfirmasi yang tidak bisa ditelusuri ke siapa pun sama saja
+ * dengan tidak ada konfirmasi.
+ */
+export async function confirmPaymentAction(
+  orderId: string,
+): Promise<ActionResult<{ orderNo: string }>> {
+  const { businessId, userId } = await requirePermission("pos");
+  const locked = await moduleLock(businessId, "pos", "write");
+  if (locked) return fail(locked);
+
+  const order = await db.confirmOrderPayment(orderId, businessId, userId);
+  if (!order) {
+    return fail("Pesanan tidak ditemukan, atau pembayarannya sudah dikonfirmasi sebelumnya.");
+  }
+
+  // Poin loyalty baru diberikan di sini, bukan saat pesanan dibuat: sebelum
+  // pembayarannya dipastikan, belum ada belanja yang layak dihitung.
+  if (order.customer_id) {
+    try {
+      await db.earnPointsFromPurchase(businessId, order.customer_id, Number(order.total), userId);
+    } catch (err) {
+      console.error("[KAEL] gagal menambah poin setelah konfirmasi pembayaran", err);
+    }
+  }
+
+  revalidatePath("/app/pos");
+  return done({ orderNo: order.order_no });
+}
+
+/** Uangnya tidak pernah masuk. Pesanan ditutup, bukan dibiarkan menggantung. */
+export async function markPaymentFailedAction(orderId: string): Promise<ActionResult<null>> {
+  const { businessId } = await requirePermission("pos");
+  const locked = await moduleLock(businessId, "pos", "write");
+  if (locked) return fail(locked);
+
+  const order = await db.markOrderPaymentFailed(orderId, businessId);
+  if (!order) return fail("Pesanan tidak ditemukan atau sudah tidak menunggu pembayaran.");
+  revalidatePath("/app/pos");
+  return done(null);
+}
+
+/** Kemajuan dapur. Hanya untuk pesanan yang sudah lunas. */
+export async function setFulfillmentAction(
+  orderId: string,
+  status: "accepted" | "preparing" | "ready" | "completed",
+): Promise<ActionResult<null>> {
+  const { businessId } = await requirePermission("pos");
+  const locked = await moduleLock(businessId, "pos", "write");
+  if (locked) return fail(locked);
+
+  const order = await db.setOrderFulfillment(orderId, businessId, status);
+  if (!order) return fail("Pesanan tidak ditemukan, atau pembayarannya belum dikonfirmasi.");
+  revalidatePath("/app/pos");
+  return done(null);
 }
 
 export async function updateOrderStatusAction(

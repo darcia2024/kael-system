@@ -105,7 +105,8 @@ export function generateEscPosReceiptText(params: {
   businessPhone: string;
   orderNo: string;
   tableNo?: string | null;
-  channel: string;
+  /** Tipe layanan. Dulu kolom channel, yang juga menjawab siapa pembuat pesanan. */
+  serviceType: "dine_in" | "takeaway" | "delivery";
   cashierName: string;
   createdAt: string;
   items: { name: string; qty: number; price: number; note?: string }[];
@@ -140,7 +141,7 @@ export function generateEscPosReceiptText(params: {
   lines.push(doubleDivider);
 
   // Metadata Transaksi
-  lines.push(row(`No: ${params.orderNo}`, params.channel === "qr_dinein" ? `Meja ${params.tableNo || '-'}` : "Takeaway"));
+  lines.push(row(`No: ${params.orderNo}`, serviceTypeLabel(params.serviceType, params.tableNo)));
   lines.push(row(`Kasir: ${params.cashierName.slice(0, 12)}`, params.paymentMethod.toUpperCase()));
   if (params.customerName) {
     lines.push(row(`Member: ${params.customerName.slice(0, 14)}`, "LOYALTY ✓"));
@@ -195,3 +196,45 @@ export function generateDailyOrderNo(orderCountToday = 1): string {
   const num = String(orderCountToday).padStart(3, "0");
   return `${prefix}-${num}`;
 }
+
+// ===========================================================================
+// Label tipe layanan
+// ===========================================================================
+
+/**
+ * Satu tempat untuk menamai tipe layanan.
+ *
+ * Sebelumnya tiap layar menyimpulkannya sendiri dari kolom channel, dan
+ * hasilnya berbeda-beda: struk menulis "Takeaway / Kasir", laporan menulis
+ * "Takeaway", dan keduanya menganggap apa pun yang bukan dine-in adalah
+ * takeaway — sehingga pesanan antar tidak pernah punya nama.
+ */
+export const SERVICE_TYPES = [
+  { key: "dine_in" as const, label: "Dine-In", hint: "Makan di tempat" },
+  { key: "takeaway" as const, label: "Takeaway", hint: "Dibawa pulang" },
+  { key: "delivery" as const, label: "Delivery", hint: "Diantar ke alamat" },
+];
+
+export type ServiceType = (typeof SERVICE_TYPES)[number]["key"];
+
+export function serviceTypeLabel(type: ServiceType, tableNo?: string | null): string {
+  if (type === "dine_in") return tableNo ? `Dine-In · Meja ${tableNo}` : "Dine-In";
+  return type === "delivery" ? "Delivery" : "Takeaway";
+}
+
+/** Label status pembayaran untuk layar kasir. */
+export const PAYMENT_STATUS_LABEL: Record<string, string> = {
+  pending: "Menunggu pembayaran",
+  paid: "Lunas",
+  failed: "Gagal bayar",
+  expired: "Hangus",
+  cancelled: "Dibatalkan",
+};
+
+/** Urutan kerja dapur setelah pembayaran dipastikan masuk. */
+export const FULFILLMENT_FLOW = [
+  { key: "accepted" as const, label: "Diterima" },
+  { key: "preparing" as const, label: "Disiapkan" },
+  { key: "ready" as const, label: "Siap" },
+  { key: "completed" as const, label: "Selesai" },
+];

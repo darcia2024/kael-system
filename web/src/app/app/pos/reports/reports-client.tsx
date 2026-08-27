@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import type { Business, Order, Shift } from "@/lib/types";
 import { refundOrderAction } from "@/lib/actions";
+import { serviceTypeLabel } from "@/lib/pos-engine";
 import { formatRupiah, formatBusinessDateTime } from "@/lib/formatters";
 
 type SoldItem = {
@@ -292,7 +293,7 @@ export default function PosOwnerReportsPage({
                       {formatBusinessDateTime(ord.created_at)}
                     </td>
                     <td className="py-3 px-3 font-bold text-[#7958d8]">
-                      {ord.channel === "qr_dinein" ? `Meja ${ord.table_no || '-'}` : "Takeaway"}
+                      {serviceTypeLabel(ord.service_type, ord.table_no)}
                     </td>
                     <td className="py-3 px-3 font-black text-sm text-[#16a34a]">
                       {formatRupiah(ord.total)}

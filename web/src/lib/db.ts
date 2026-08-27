@@ -1512,8 +1512,18 @@ export const db = {
     businessId: string,
     orderData: {
       channel: Order["channel"];
+      service_type: Order["service_type"];
       table_no?: string | null;
       status?: Order["status"];
+      payment_status?: Order["payment_status"];
+      fulfillment_status?: Order["fulfillment_status"];
+      delivery?: {
+        name: string;
+        phone: string;
+        address: string;
+        fee: number;
+        note?: string;
+      } | null;
       discount?: number;
       tax?: number;
       service_charge?: number;
@@ -1536,7 +1546,14 @@ export const db = {
       const discount = totals.discount;
       const tax = orderData.tax ?? 0;
       const service = orderData.service_charge ?? 0;
-      const total = subtotal - discount + tax + service;
+      /**
+       * Ongkir ikut ke total, dan tersimpan juga di kolomnya sendiri.
+       * Disimpan, bukan dihitung ulang saat laporan: tarifnya bisa berubah,
+       * dan laporan bulan lalu harus tetap menjumlahkan angka yang benar-benar
+       * ditagihkan waktu itu.
+       */
+      const ongkir = Math.max(0, Math.round(orderData.delivery?.fee ?? 0));
+      const total = subtotal - discount + tax + service + ongkir;
 
       /**
        * Nomor urut harian mengikuti zona waktu bisnis, bukan UTC.
@@ -1566,8 +1583,16 @@ export const db = {
           business_id: businessId,
           order_no: orderNo,
           channel: orderData.channel,
+          service_type: orderData.service_type,
           table_no: orderData.table_no ?? null,
           status: orderData.status ?? "paid",
+          payment_status: orderData.payment_status ?? "paid",
+          fulfillment_status: orderData.fulfillment_status ?? "completed",
+          delivery_name: orderData.delivery?.name ?? null,
+          delivery_phone: orderData.delivery?.phone ?? null,
+          delivery_address: orderData.delivery?.address ?? null,
+          delivery_fee: ongkir,
+          delivery_note: orderData.delivery?.note ?? null,
           subtotal, discount, tax, service_charge: service, total,
           payment_method: orderData.payment_method,
           cash_given: cashGiven,
@@ -1623,15 +1648,116 @@ export const db = {
     return { order, items, customer, business };
   },
 
+  /** Berapa lama pesanan swalayan boleh menunggu konfirmasi sebelum hangus. */
+  PENDING_ORDER_MINUTES: 30,
+
+  /**
+   * Menghanguskan pesanan swalayan yang tidak pernah dibayar.
+   *
+   * Tanpa ini, satu orang iseng yang memesan lalu pergi meninggalkan barisnya
+   * di antrean kasir selamanya, dan antrean yang penuh sampah berhenti dibaca
+   * orang. Dijalankan saat antreannya dibuka, bukan lewat penjadwal: tidak ada
+   * proses latar di serverless, dan yang paling butuh antreannya bersih justru
+   * layar yang sedang membukanya.
+   *
+   * Hanya menyentuh pesanan dari QR. Pesanan kasir yang menunggu konfirmasi
+   * QRIS ada orangnya di depan mesin, jadi tidak boleh hangus sendiri.
+   */
+  async expireStalePendingOrders(businessId: string): Promise<number> {
+    const rows = await sql`
+      UPDATE orders SET
+        payment_status = 'expired',
+        fulfillment_status = 'cancelled',
+        status = 'cancelled'
+      WHERE business_id = ${businessId}
+        AND channel = 'qr'
+        AND payment_status = 'pending'
+        AND created_at < NOW() - (${this.PENDING_ORDER_MINUTES} * INTERVAL '1 minute')
+      RETURNING id
+    `;
+    return rows.length;
+  },
+
+  /**
+   * Antrean kasir: pesanan yang menunggu konfirmasi pembayaran, dan pesanan
+   * lunas yang belum selesai dikerjakan dapur.
+   */
   async getPendingQrOrders(businessId: string) {
+    await this.expireStalePendingOrders(businessId);
     const orders = (await sql`
       SELECT * FROM orders
-      WHERE business_id = ${businessId} AND channel <> 'cashier' AND status = 'open'
+      WHERE business_id = ${businessId}
+        AND (
+          payment_status = 'pending'
+          OR (payment_status = 'paid' AND fulfillment_status IN ('accepted', 'preparing', 'ready'))
+        )
       ORDER BY created_at
     `) as unknown as Order[];
     return Promise.all(
       orders.map(async (o) => ({ ...o, items: await this.getOrderItems(o.id) })),
     );
+  },
+
+  /**
+   * Kasir menyatakan uangnya benar-benar diterima.
+   *
+   * Menyimpan siapa dan kapan, karena inilah satu-satunya bukti bahwa
+   * pembayaran non-tunai itu terjadi: tidak ada gerbang pembayaran yang
+   * mengabarkannya, jadi yang menjaminnya adalah orang yang menekan tombolnya.
+   *
+   * Syarat payment_status = 'pending' di WHERE membuat penekanan tombol dua
+   * kali tidak menimpa penjamin pertama.
+   */
+  async confirmOrderPayment(
+    orderId: string,
+    businessId: string,
+    confirmedBy: string,
+  ): Promise<Order | null> {
+    return one<Order>(await sql`
+      UPDATE orders SET
+        payment_status = 'paid',
+        status = 'paid',
+        fulfillment_status = CASE
+          WHEN fulfillment_status = 'pending' THEN 'accepted'
+          ELSE fulfillment_status
+        END,
+        paid_confirmed_by = ${confirmedBy},
+        paid_confirmed_at = NOW()
+      WHERE id = ${orderId} AND business_id = ${businessId}
+        AND payment_status = 'pending'
+      RETURNING *
+    `);
+  },
+
+  /** Menandai pesanan gagal bayar. Dipakai kasir saat uangnya tidak pernah masuk. */
+  async markOrderPaymentFailed(orderId: string, businessId: string): Promise<Order | null> {
+    return one<Order>(await sql`
+      UPDATE orders SET
+        payment_status = 'failed',
+        fulfillment_status = 'cancelled',
+        status = 'cancelled'
+      WHERE id = ${orderId} AND business_id = ${businessId}
+        AND payment_status = 'pending'
+      RETURNING *
+    `);
+  },
+
+  /**
+   * Kemajuan dapur. Hanya untuk pesanan yang SUDAH lunas: memasak sesuatu yang
+   * belum dibayar adalah keputusan bisnis, bukan keadaan yang boleh terjadi
+   * karena kasir salah tekan.
+   */
+  async setOrderFulfillment(
+    orderId: string,
+    businessId: string,
+    status: Order["fulfillment_status"],
+  ): Promise<Order | null> {
+    return one<Order>(await sql`
+      UPDATE orders SET fulfillment_status = ${status}
+      WHERE id = ${orderId} AND business_id = ${businessId}
+        AND payment_status = 'paid'
+      RETURNING *
+    `);
   },
 
   async updateOrderStatus(orderId: string, businessId: string, status: Order["status"]) {

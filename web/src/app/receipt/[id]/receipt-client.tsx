@@ -16,6 +16,7 @@ import {
   ExternalLink 
 } from "lucide-react";
 import type { Order, OrderItem, Customer, Business } from "@/lib/types";
+import { serviceTypeLabel } from "@/lib/pos-engine";
 import { formatRupiah, formatBusinessDateTime } from "@/lib/formatters";
 import { generateEscPosReceiptText } from "@/lib/pos-engine";
 
@@ -145,7 +146,7 @@ export default function DigitalReceiptPage({ data, staffName }: ReceiptPageData)
           <div className="flex justify-between">
             <span className="text-[#7b7b8e]">Tipe Layanan:</span>
             <span className="font-bold text-[#7958d8]">
-              {order.channel === "qr_dinein" ? `Dine-In (Meja ${order.table_no || '-'})` : "Takeaway / Kasir"}
+              {serviceTypeLabel(order.service_type, order.table_no)}
             </span>
           </div>
           <div className="flex justify-between">

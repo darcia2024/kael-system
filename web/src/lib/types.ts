@@ -286,9 +286,45 @@ export interface Order {
   id: string;
   business_id: string;
   order_no: string;
-  channel: "cashier" | "qr_dinein" | "qr_takeaway";
+  /** SIAPA yang membuat pesanan. Terpisah dari cara penyajiannya. */
+  channel: "cashier" | "qr";
+  /**
+   * BAGAIMANA pesanan disajikan.
+   *
+   * Dulu bercampur dengan channel, sehingga tidak ada cara menyatakan
+   * pelanggan yang duduk di meja tapi memesan di kasir — keadaan paling biasa
+   * di warung. "Takeaway" dan "bungkus" yang dulu berdiri sendiri-sendiri
+   * memang hal yang sama, jadi menjadi satu.
+   */
+  service_type: "dine_in" | "takeaway" | "delivery";
   table_no: string | null;
+  /** Sumbu laporan. Tetap ada karena laporan, shift, dan refund memakainya. */
   status: "open" | "paid" | "cancelled" | "refunded";
+  /**
+   * Sumbu uang, terpisah dari `status`.
+   *
+   * QRIS dan transfer mulai dari "pending": QR yang muncul di layar belum
+   * berarti uangnya masuk, dan menandainya lunas saat itu juga berarti kasir
+   * menutup transaksi atas sesuatu yang belum dia lihat.
+   */
+  payment_status: "pending" | "paid" | "failed" | "expired" | "cancelled";
+  /** Siapa yang menyatakan uangnya diterima. Tanpa ini konfirmasi manual tidak bisa ditelusuri. */
+  paid_confirmed_by: string | null;
+  paid_confirmed_at: string | null;
+  /** Kemajuan dapur. */
+  fulfillment_status:
+    | "pending"
+    | "accepted"
+    | "preparing"
+    | "ready"
+    | "completed"
+    | "cancelled";
+  delivery_name: string | null;
+  delivery_phone: string | null;
+  delivery_address: string | null;
+  /** Ongkir dalam rupiah. Ikut dijumlahkan ke total. */
+  delivery_fee: number;
+  delivery_note: string | null;
   subtotal: number;
   discount: number;
   tax: number;

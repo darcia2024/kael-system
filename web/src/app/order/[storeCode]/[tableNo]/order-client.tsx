@@ -19,6 +19,8 @@ import {
 } from "lucide-react";
 import type { Business, Category, MenuItem } from "@/lib/types";
 import { createQrOrderAction } from "@/lib/actions";
+import QrCode from "@/components/qr-code";
+import { buildDynamicQris } from "@/lib/qris-engine";
 import { formatRupiah } from "@/lib/formatters";
 
 export default function CustomerQrOrderPage({
@@ -40,7 +42,14 @@ export default function CustomerQrOrderPage({
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [completedOrderNo, setCompletedOrderNo] = useState<string | null>(null);
+  /**
+   * Cara bayar dipilih pelanggan dari HP-nya, bukan lagi ditanyakan ulang di
+   * kasir. Apa pun pilihannya, pesanan tetap masuk sebagai belum dibayar:
+   * tidak ada gerbang pembayaran yang bisa mengabarkan uangnya sudah masuk,
+   * jadi yang memastikannya tetap kasir.
+   */
+  const [caraBayar, setCaraBayar] = useState<"qris" | "cash">("qris");
+  const [pesananSelesai, setPesananSelesai] = useState<{ no: string; total: number } | null>(null);
 
   // Filtered menu
   const filteredMenu = useMemo(() => {
@@ -115,7 +124,8 @@ export default function CustomerQrOrderPage({
     const res = await createQrOrderAction(
       business.id,
       tableNo,
-      "qr_dinein",
+      "dine_in",
+      caraBayar,
       cartList.map((c) => ({ menu_item_id: c.item.id, qty: c.qty, note: c.note })),
     );
 
@@ -124,44 +134,91 @@ export default function CustomerQrOrderPage({
       alert(res.error);
       return;
     }
-    setCompletedOrderNo(res.data.orderNo);
+    setPesananSelesai({ no: res.data.orderNo, total: res.data.total });
     setCart({});
   };
 
-  if (completedOrderNo) {
+  if (pesananSelesai) {
+    const qris =
+      caraBayar === "qris" && business?.qris_payload
+        ? buildDynamicQris(business.qris_payload, Math.round(pesananSelesai.total))
+        : null;
+
     return (
       <div className="min-h-screen bg-[#f7f6fc] text-[#232331] font-sans flex items-center justify-center p-4">
-        <div className="w-full max-w-md rounded-3xl border-2 border-[#232331] bg-white p-6 sm:p-8 shadow-ink-lg text-center space-y-5 animate-in zoom-in-95">
-          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-[#dcfce7] text-[#16a34a] border-2 border-[#16a34a]">
-            <CheckCircle2 size={36} />
+        <div className="w-full max-w-md rounded-3xl border-2 border-[#232331] bg-white p-6 shadow-ink-lg text-center space-y-4 animate-in zoom-in-95">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-[#dcfce7] text-[#16a34a] border-2 border-[#16a34a]">
+            <CheckCircle2 size={30} />
           </div>
 
           <div className="space-y-1">
             <span className="text-[11px] font-mono font-bold text-[#7958d8] uppercase tracking-wider block">
-              PESANAN MEJA {tableNo} BERHASIL
+              PESANAN MEJA {tableNo} MASUK
             </span>
-            <h1 className="text-3xl font-black font-mono text-[#232331]">
-              #{completedOrderNo}
-            </h1>
-            <p className="text-xs text-[#7b7b8e] font-sans">
-              Pesananmu telah masuk ke antrean barista/dapur. Mohon tunggu, makanan &amp; minuman akan diantar ke Meja {tableNo}.
+            <h1 className="text-3xl font-black font-mono">#{pesananSelesai.no}</h1>
+            <p className="text-2xl font-black text-[#232331]">
+              {formatRupiah(pesananSelesai.total)}
             </p>
           </div>
 
-          <div className="rounded-2xl border border-[#dedee8] bg-[#fcfcfe] p-3 text-xs font-mono text-[#7b7b8e] space-y-1">
-            <div className="flex justify-between">
-              <span>Status Pesanan:</span>
-              <span className="font-bold text-[#d97706]">Sedang Disiapkan ⏳</span>
+          {qris?.ok ? (
+            <div className="space-y-3">
+              <div className="mx-auto inline-block rounded-2xl border-2 border-[#232331] bg-white p-3 shadow-ink-xs">
+                <QrCode
+                  value={qris.payload}
+                  size={220}
+                  label={`QRIS pembayaran ${formatRupiah(pesananSelesai.total)}`}
+                />
+              </div>
+
+              {/*
+                QR-nya muncul di HP yang sama dengan yang dipakai memesan, jadi
+                pelanggan tidak bisa memindainya langsung. Semua dompet digital
+                di Indonesia bisa membaca QR dari galeri, dan itulah jalannya —
+                tapi hanya kalau diberitahukan. Tanpa kalimat ini, pelanggan
+                pertama akan berhenti di sini.
+              */}
+              <div className="rounded-2xl border-2 border-[#232331] bg-[#fff8e1] p-3 text-left space-y-1.5">
+                <p className="font-mono text-[11px] font-black text-[#8a6d00]">
+                  Cara bayar dari HP ini:
+                </p>
+                <ol className="font-mono text-[11px] text-[#8a6d00] space-y-0.5 list-decimal list-inside">
+                  <li>Screenshot QR di atas</li>
+                  <li>Buka GoPay / DANA / OVO / m-banking</li>
+                  <li>Pilih Scan, lalu ambil dari Galeri</li>
+                </ol>
+                <p className="font-mono text-[10px] text-[#8a6d00] pt-1 border-t border-[#e5b800]">
+                  Nominalnya sudah terisi otomatis. Tunjukkan bukti bayar ke kasir.
+                </p>
+              </div>
             </div>
-            <div className="flex justify-between">
-              <span>Pembayaran:</span>
-              <span className="font-bold text-[#232331]">Bayar di Kasir / QRIS</span>
+          ) : (
+            <div className="rounded-2xl border border-[#dedee8] bg-[#fcfcfe] p-3 font-mono text-xs space-y-1">
+              <p className="font-bold text-[#232331]">
+                {caraBayar === "qris"
+                  ? "Bayar lewat QRIS yang ada di meja."
+                  : "Bayar tunai di kasir."}
+              </p>
+              <p className="text-[11px] text-[#7b7b8e]">
+                Sebutkan nomor pesanan #{pesananSelesai.no}.
+              </p>
             </div>
-          </div>
+          )}
+
+          {/*
+            Tidak menjanjikan pesanan sedang dimasak. Dapur baru mulai setelah
+            kasir memastikan uangnya masuk, dan menuliskan "sedang disiapkan"
+            di sini membuat pelanggan menunggu sesuatu yang belum berjalan.
+          */}
+          <p className="font-mono text-[11px] text-[#7b7b8e]">
+            Pesanan mulai disiapkan setelah pembayaran dipastikan kasir.
+          </p>
 
           <button
             type="button"
-            onClick={() => setCompletedOrderNo(null)}
+            onClick={() => {
+              setPesananSelesai(null);
+            }}
             className="btn-tactile w-full py-3 rounded-2xl border-2 border-[#232331] bg-[#232331] text-white font-mono text-xs font-black"
           >
             Pesan Menu Tambahan
@@ -329,6 +386,35 @@ export default function CustomerQrOrderPage({
                 onChange={(e) => setCustomerPhone(e.target.value)}
                 className="rounded-xl border border-white/20 bg-white/10 px-2.5 py-1.5 text-white placeholder-white/50 text-xs font-sans"
               />
+            </div>
+          </div>
+
+          {/*
+            Cara bayar dipilih di sini, dari HP pelanggan sendiri. Kasir tidak
+            menanyakannya lagi: menanyakan ulang berarti meminta orang yang
+            sama membayar dua kali.
+          */}
+          <div className="space-y-1.5 font-mono text-xs">
+            <span className="text-[10px] text-[#dedee8] block">Cara bayar:</span>
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { id: "qris" as const, label: "QRIS", hint: "Scan & bayar sekarang" },
+                { id: "cash" as const, label: "Tunai", hint: "Bayar di kasir" },
+              ].map((m) => (
+                <button
+                  key={m.id}
+                  type="button"
+                  onClick={() => setCaraBayar(m.id)}
+                  className={`rounded-xl border-2 p-2 text-left ${
+                    caraBayar === m.id
+                      ? "border-[#d9ff57] bg-[#d9ff57] text-[#232331]"
+                      : "border-white/20 bg-white/10 text-white"
+                  }`}
+                >
+                  <span className="block font-black text-xs">{m.label}</span>
+                  <span className="block text-[10px] opacity-80">{m.hint}</span>
+                </button>
+              ))}
             </div>
           </div>
 
