@@ -22,11 +22,19 @@ export default async function ReceiptPage({
   const data = await db.getOrderById(id);
 
   if (!data) {
-    return <ReceiptClient data={null} staff={null} />;
+    return <ReceiptClient data={null} staffName={null} />;
   }
 
+  /**
+   * Yang diteruskan hanya NAMA kasirnya.
+   *
+   * Halaman ini terbuka tanpa login — tautannya memang diberikan ke pelanggan.
+   * Versi sebelumnya meneruskan objek pengguna utuh padahal yang dipakai cuma
+   * `name`, dan objek itu ikut terserialisasi ke HTML, membawa serta hash PIN
+   * kasir beserta salt-nya ke tangan siapa pun yang memegang tautan struk.
+   */
   const users = await db.getUsers(data.order.business_id);
-  const staff = users.find((u) => u.id === data.order.created_by) ?? null;
+  const staffName = users.find((u) => u.id === data.order.created_by)?.name ?? null;
 
-  return <ReceiptClient data={data} staff={staff} />;
+  return <ReceiptClient data={data} staffName={staffName} />;
 }

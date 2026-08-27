@@ -22,7 +22,7 @@ import {
   CheckCircle2,
   Lock
 } from "lucide-react";
-import type { Business, User } from "@/lib/types";
+import type { Business, User, SafeUser } from "@/lib/types";
 import type { LicenseState } from "@/lib/licensing";
 import { rupiah, type ModuleKey } from "@/lib/modules-catalog";
 import { waLink } from "@/lib/site";
@@ -65,7 +65,8 @@ export default function AppPortalHub({
 }: {
   business: Business | null;
   modules: PortalModule[];
-  users: User[];
+  /** Tanpa kolom kredensial: bentuk ini yang boleh sampai ke browser. */
+  users: SafeUser[];
   sessionName: string;
   sessionRole: User["role"];
   /** Modul yang boleh dibuka. Kosong untuk owner, yang tidak dibatasi. */

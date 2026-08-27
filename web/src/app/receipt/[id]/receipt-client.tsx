@@ -15,7 +15,7 @@ import {
   Check, 
   ExternalLink 
 } from "lucide-react";
-import type { Order, OrderItem, Customer, Business, User } from "@/lib/types";
+import type { Order, OrderItem, Customer, Business } from "@/lib/types";
 import { formatRupiah, formatBusinessDateTime } from "@/lib/formatters";
 import { generateEscPosReceiptText } from "@/lib/pos-engine";
 
@@ -35,10 +35,11 @@ export interface ReceiptPageData {
         business: Business | null;
       }
     | null;
-  staff: User | null;
+  /** Nama kasir saja. Objek pengguna tidak pernah menyeberang ke sini. */
+  staffName: string | null;
 }
 
-export default function DigitalReceiptPage({ data, staff }: ReceiptPageData) {
+export default function DigitalReceiptPage({ data, staffName }: ReceiptPageData) {
   const [copied, setCopied] = useState(false);
 
   if (!data || !data.order || !data.business) {
@@ -149,7 +150,7 @@ export default function DigitalReceiptPage({ data, staff }: ReceiptPageData) {
           </div>
           <div className="flex justify-between">
             <span className="text-[#7b7b8e]">Kasir:</span>
-            <span>{staff?.name || "Kasir KAEL"}</span>
+            <span>{staffName || "Kasir KAEL"}</span>
           </div>
           {customer && (
             <div className="flex justify-between pt-1 border-t border-[#dedee8]">

@@ -18,7 +18,7 @@ import {
 import type {
   Business, BusinessModule, User, Customer, Card, CardTap,
   Ingredient, IngredientPriceHistory, Recipe, LoyaltyProgram, PointLedger,
-  Reward, Redemption, Category, MenuItem, Shift, Order, OrderItem, Refund,
+  Reward, Redemption, Category, MenuItem, Shift, Order, OrderItem, Refund, SafeUser,
 } from "./types";
 
 export * from "./types";
@@ -461,10 +461,27 @@ export const db = {
     };
   },
 
-  async getUsers(businessId: string): Promise<User[]> {
+  /**
+   * Daftar pengguna sebuah usaha, TANPA kolom kredensial.
+   *
+   * Kolomnya ditulis satu per satu dengan sengaja, bukan SELECT *. Hasil fungsi
+   * ini beberapa kali diteruskan utuh ke komponen klien, dan `SELECT *` berarti
+   * pin_hash serta password_hash ikut terserialisasi ke HTML yang dikirim ke
+   * browser. Itu sudah pernah terjadi di halaman struk yang bisa dibuka tanpa
+   * login sama sekali.
+   *
+   * Tidak ada satu pun pemanggil yang membutuhkan hash-nya: verifikasi PIN dan
+   * kata sandi punya kuerinya sendiri (authenticateStaffPin, authenticateOwner)
+   * yang tidak pernah mengembalikan barisnya keluar.
+   */
+  async getUsers(businessId: string): Promise<SafeUser[]> {
     return (await sql`
-      SELECT * FROM users WHERE business_id = ${businessId} ORDER BY role, name
-    `) as unknown as User[];
+      SELECT id, business_id, role, name, email, permissions,
+             failed_pin_attempts, locked_until, is_active, created_at,
+             (pin_hash IS NOT NULL) AS has_pin,
+             (password_hash IS NOT NULL) AS has_password
+        FROM users WHERE business_id = ${businessId} ORDER BY role, name
+    `) as unknown as SafeUser[];
   },
 
   async getUserByEmail(email: string): Promise<User | null> {

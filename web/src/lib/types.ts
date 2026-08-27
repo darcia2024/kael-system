@@ -90,6 +90,29 @@ export interface User {
   created_at: string;
 }
 
+/**
+ * Pengguna TANPA kredensial. Bentuk inilah yang boleh menyeberang ke browser.
+ *
+ * Alasannya konkret. Halaman struk publik dulu menerima objek User utuh hanya
+ * untuk memakai satu bidang, `name`. Objek itu ikut terserialisasi ke dalam
+ * HTML halaman, sehingga `pin_hash` lengkap dengan salt-nya bisa dibaca siapa
+ * pun yang memegang tautan struk — tautan yang memang diberikan ke pelanggan.
+ * PIN kasir hanya 4 sampai 6 angka, jadi hash yang bocor bisa ditebak habis
+ * secara luring dalam hitungan detik.
+ *
+ * Menghapusnya di satu halaman tidak menutup jenis kesalahan ini; halaman
+ * berikutnya akan mengulanginya. Karena itu db.getUsers tidak lagi MENGAMBIL
+ * kolom kredensialnya sama sekali: yang tidak pernah dibaca tidak bisa bocor.
+ * Verifikasi PIN dan kata sandi memakai kuerinya sendiri yang tidak pernah
+ * mengembalikan barisnya ke pemanggil.
+ */
+export type SafeUser = Omit<User, "pin_hash" | "password_hash"> & {
+  /** Staf sudah menyetel PIN. Nilainya sendiri tidak pernah ikut. */
+  has_pin: boolean;
+  /** Owner sudah menyetel kata sandi. Nilainya sendiri tidak pernah ikut. */
+  has_password: boolean;
+};
+
 export interface Customer {
   id: string;
   business_id: string;
