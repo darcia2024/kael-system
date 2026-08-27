@@ -26,3 +26,7 @@ tsconfig.tsbuildinfo
 .idea
 .vscode
 Thumbs.db
+
+# Skrip scratch lokal: membaca .env.local berisi kredensial DB produksi
+web/scratch-*.mjs
+web/scratch-*.ts
