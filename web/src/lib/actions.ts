@@ -806,6 +806,10 @@ const MODUL_TERSEDIA = new Set(
 
 const JENIS_USAHA = new Set(["kuliner", "jasa", "retail"]);
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 /**
  * Mendaftarkan pelanggan baru: bisnisnya, akun pemiliknya, dan modul yang
  * dibelinya, sekaligus.
@@ -895,6 +899,42 @@ export async function setBusinessModuleAction(
   await db.setBusinessModule(businessId, module, status, expiresAt);
   revalidatePath("/admin/businesses");
   return done(null);
+}
+
+/**
+ * Membuat akun pemilik untuk usaha yang sudah ada tapi belum punya.
+ *
+ * Usaha yang lahir dari aktivasi kartu tidak pernah melewati formulir
+ * pendaftaran, jadi barisnya ada di businesses tapi tidak ada seorang pun yang
+ * bisa masuk mengelolanya. Tanpa jalur ini satu-satunya cara membetulkannya
+ * adalah menjalankan skrip ke database produksi.
+ *
+ * Kata sandinya diketik tim KAEL lalu disampaikan ke pemiliknya. Sama seperti
+ * createBusinessAction: yang menahan tebakan bukan panjang kata sandinya, tapi
+ * penguncian 5 percobaan di authenticateOwner.
+ */
+export async function createOwnerForBusinessAction(
+  businessId: string,
+  input: { name: string; email: string; password: string },
+): Promise<ActionResult<{ email: string }>> {
+  await requireKaelAdmin();
+
+  if (!UUID_RE.test(businessId)) return fail("Usaha tidak dikenali.");
+  if (!input.name.trim()) return fail("Nama pemilik belum diisi.");
+
+  const email = input.email.trim().toLowerCase();
+  if (!EMAIL_RE.test(email)) return fail("Email pemilik tidak valid.");
+  if (input.password.length < 6) return fail("Kata sandi pemilik minimal 6 karakter.");
+
+  const res = await db.createOwnerForBusiness(businessId, {
+    name: input.name,
+    email,
+    password: input.password,
+  });
+  if (!res.success) return fail(res.error);
+
+  revalidatePath("/admin/businesses");
+  return done({ email });
 }
 
 // ===========================================================================

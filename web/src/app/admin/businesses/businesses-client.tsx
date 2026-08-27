@@ -19,7 +19,12 @@ import {
   Loader2,
 } from "lucide-react";
 
-import { createBusinessAction, setBusinessModuleAction, searchPlacesAction } from "@/lib/actions";
+import {
+  createBusinessAction,
+  setBusinessModuleAction,
+  searchPlacesAction,
+  createOwnerForBusinessAction,
+} from "@/lib/actions";
 import type { Business, BusinessModule } from "@/lib/types";
 import type { GooglePlaceResult } from "@/lib/google-places";
 import { MODULE_CATALOG, BUSINESS_TYPES, rupiah } from "@/lib/modules-catalog";
@@ -167,6 +172,47 @@ export default function BusinessesClient({ initial }: { initial: Row[] }) {
     });
     resetForm();
     setShowForm(false);
+    router.refresh();
+  };
+
+  // --- Akun pemilik untuk usaha yang belum punya ---------------------------
+  //
+  // Usaha yang lahir dari aktivasi kartu tidak pernah melewati formulir
+  // pendaftaran, jadi tidak ada akun yang bisa dipakai masuk. Formulir kecil ini
+  // yang menutup celahnya, supaya betulinnya tidak perlu skrip ke database.
+  const [ownerUntuk, setOwnerUntuk] = useState<string | null>(null);
+  const [ownerNama, setOwnerNama] = useState("");
+  const [ownerEmail, setOwnerEmail] = useState("");
+  const [ownerSandi, setOwnerSandi] = useState("");
+
+  const bukaFormOwner = (businessId: string) => {
+    setOwnerUntuk(businessId);
+    setOwnerNama("");
+    setOwnerEmail("");
+    setOwnerSandi("");
+    setPesan(null);
+  };
+
+  const simpanOwner = async (e: React.FormEvent, businessId: string, namaUsaha: string) => {
+    e.preventDefault();
+    setBusy(true);
+    setPesan(null);
+    const res = await createOwnerForBusinessAction(businessId, {
+      name: ownerNama,
+      email: ownerEmail,
+      password: ownerSandi,
+    });
+    setBusy(false);
+
+    if (!res.ok) {
+      setPesan({ ok: false, teks: res.error });
+      return;
+    }
+    setPesan({
+      ok: true,
+      teks: `Akun pemilik ${namaUsaha} dibuat. Sampaikan email ${res.data.email} dan kata sandinya ke pemilik usaha.`,
+    });
+    setOwnerUntuk(null);
     router.refresh();
   };
 
@@ -547,15 +593,89 @@ export default function BusinessesClient({ initial }: { initial: Row[] }) {
                     <p className="font-mono text-[11px] text-[#7b7b8e] mt-0.5">
                       kode {b.store_code ?? "—"} · {b.business_type} · {b.category}
                     </p>
-                    <p className="font-mono text-[11px] text-[#7b7b8e]">
-                      {b.owner_email ?? "belum ada akun pemilik"}
-                    </p>
+                    {b.owner_email ? (
+                      <p className="font-mono text-[11px] text-[#7b7b8e]">{b.owner_email}</p>
+                    ) : (
+                      <p className="mt-1 inline-flex items-center gap-1.5 rounded-lg border border-[#e5b800] bg-[#fff8e1] px-2 py-0.5 font-mono text-[11px] font-bold text-[#8a6d00]">
+                        <AlertTriangle size={11} />
+                        belum ada akun pemilik
+                      </p>
+                    )}
                   </div>
                   <span className="inline-flex items-center gap-1.5 rounded-xl border border-[#dedee8] bg-[#fcfcfe] px-2.5 py-1 font-mono text-[11px] text-[#7b7b8e] shrink-0">
                     <Users size={12} />
                     {b.staff_count} karyawan
                   </span>
                 </div>
+
+                {/*
+                  Usaha tanpa akun pemilik: kartunya bisa saja sudah menyala,
+                  tapi pemiliknya tidak punya cara masuk untuk mengganti tautan
+                  tujuan atau melihat jumlah tap. Dibereskan dari sini.
+                */}
+                {!b.owner_email && ownerUntuk !== b.id && (
+                  <button
+                    type="button"
+                    onClick={() => bukaFormOwner(b.id)}
+                    disabled={busy}
+                    className="btn-tactile inline-flex items-center gap-2 rounded-xl border-2 border-[#232331] bg-[#d9ff57] px-3 py-2 font-mono text-xs font-extrabold shadow-ink-xs disabled:opacity-50"
+                  >
+                    <KeyRound size={13} />
+                    Buat akun pemilik
+                  </button>
+                )}
+
+                {ownerUntuk === b.id && (
+                  <form
+                    onSubmit={(e) => simpanOwner(e, b.id, b.name)}
+                    className="space-y-2 rounded-2xl border-2 border-[#232331] bg-[#fcfcfe] p-3"
+                  >
+                    <p className="font-mono text-[11px] text-[#7b7b8e]">
+                      Pemilik masuk dengan email. Sampaikan kata sandinya langsung ke dia.
+                    </p>
+                    <input
+                      value={ownerNama}
+                      onChange={(e) => setOwnerNama(e.target.value)}
+                      placeholder="Nama pemilik"
+                      required
+                      className="w-full rounded-xl border border-[#c9c9d4] bg-white px-3 py-2 text-sm"
+                    />
+                    <input
+                      type="email"
+                      value={ownerEmail}
+                      onChange={(e) => setOwnerEmail(e.target.value)}
+                      placeholder="email@pemilik.com"
+                      required
+                      className="w-full rounded-xl border border-[#c9c9d4] bg-white px-3 py-2 text-sm font-mono"
+                    />
+                    <input
+                      type="text"
+                      value={ownerSandi}
+                      onChange={(e) => setOwnerSandi(e.target.value)}
+                      placeholder="Kata sandi (minimal 6 karakter)"
+                      minLength={6}
+                      required
+                      className="w-full rounded-xl border border-[#c9c9d4] bg-white px-3 py-2 text-sm font-mono"
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        type="submit"
+                        disabled={busy}
+                        className="btn-tactile flex-1 rounded-xl border-2 border-[#232331] bg-[#d9ff57] px-3 py-2 font-mono text-xs font-extrabold shadow-ink-xs disabled:opacity-50"
+                      >
+                        {busy ? "Menyimpan..." : "Simpan akun pemilik"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setOwnerUntuk(null)}
+                        disabled={busy}
+                        className="rounded-xl border border-[#c9c9d4] px-3 py-2 font-mono text-xs text-[#7b7b8e] disabled:opacity-50"
+                      >
+                        Batal
+                      </button>
+                    </div>
+                  </form>
+                )}
 
                 <div className="space-y-2">
                   {TERSEDIA.map((m) => {

@@ -256,6 +256,60 @@ export const db = {
   },
 
   /**
+   * Membuat akun pemilik untuk bisnis yang sudah ada tapi belum punya.
+   *
+   * Bisnis yang lahir dari aktivasi kartu lewat createBusinessFromPlace hanya
+   * punya baris businesses dan satu modul Review. Tidak ada satu pun akun yang
+   * bisa dipakai masuk, jadi kartunya menyala tapi pemiliknya tidak pernah bisa
+   * mengganti tautan tujuan atau melihat berapa kali kartunya di-tap. Dia
+   * memegang produk yang tidak bisa dia buka.
+   *
+   * Menolak kalau bisnisnya SUDAH punya owner. Satu bisnis satu akun pemilik:
+   * owner kedua yang muncul diam-diam lewat panel admin adalah pintu masuk yang
+   * tidak pernah diminta pemilik pertama, dan dia tidak punya cara melihatnya.
+   */
+  async createOwnerForBusiness(
+    businessId: string,
+    input: { name: string; email: string; password: string },
+  ): Promise<{ success: true; user: User } | { success: false; error: string }> {
+    const email = input.email.trim().toLowerCase();
+
+    const bizRows = await sql`SELECT id, name FROM businesses WHERE id = ${businessId} LIMIT 1`;
+    if (!bizRows.length) return { success: false, error: "Usaha tidak ditemukan." };
+    const bizName = (bizRows[0] as unknown as { name: string }).name;
+
+    const existingOwner = await sql`
+      SELECT 1 FROM users WHERE business_id = ${businessId} AND role = 'owner' LIMIT 1
+    `;
+    if (existingOwner.length) {
+      return { success: false, error: `${bizName} sudah punya akun pemilik.` };
+    }
+
+    // Kolom email UNIQUE lintas seluruh tabel, bukan per bisnis. Diperiksa
+    // lebih dulu supaya pesannya menyebut emailnya, bukan galat constraint.
+    const emailTaken = await sql`SELECT 1 FROM users WHERE lower(email) = ${email} LIMIT 1`;
+    if (emailTaken.length) {
+      return { success: false, error: `Email ${email} sudah terdaftar.` };
+    }
+
+    try {
+      const rows = await sql`
+        INSERT INTO users ${sql({
+          business_id: businessId,
+          role: "owner",
+          name: input.name.trim(),
+          email,
+          password_hash: hashPin(input.password),
+          is_active: true,
+        })} RETURNING *
+      `;
+      return { success: true, user: rows[0] as unknown as User };
+    } catch (e) {
+      return { success: false, error: (e as Error).message };
+    }
+  },
+
+  /**
    * Menyalakan, memperpanjang, menangguhkan, atau mencabut satu modul.
    *
    * status "none" MENGHAPUS barisnya, dan itu berbeda dari "expired": modul
