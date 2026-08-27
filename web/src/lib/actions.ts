@@ -12,6 +12,7 @@ import {
 } from "./google-places";
 import { moduleLock, requireModuleRead } from "./licensing";
 import { MODULE_CATALOG } from "./modules-catalog";
+import { readQris, buildDynamicQris } from "./qris-engine";
 import {
   requireStaff, requireOwner, requireKaelAdmin, requirePermission,
   createSession, destroySession, getSession, verifyPin, isLegacyPinHash,
@@ -893,5 +894,64 @@ export async function setBusinessModuleAction(
 
   await db.setBusinessModule(businessId, module, status, expiresAt);
   revalidatePath("/admin/businesses");
+  return done(null);
+}
+
+// ===========================================================================
+// QRIS merchant
+// ===========================================================================
+
+/**
+ * Menyimpan QRIS statis milik usaha.
+ *
+ * Hanya owner. Ini menentukan ke rekening siapa uang pelanggan mengalir, dan
+ * itu bukan keputusan yang boleh diambil kasir yang sedang jaga shift.
+ *
+ * Payload diperiksa ULANG di server. Layar sudah memeriksanya sebelum
+ * mengirim, tapi Server Action bisa dipanggil lewat POST langsung, dan
+ * menyimpan payload yang CRC-nya tidak sah berarti kasir menemukan
+ * masalahnya di depan pelanggan pertama yang gagal bayar.
+ */
+export async function saveQrisAction(
+  rawPayload: string,
+): Promise<ActionResult<{ merchantName: string; nmid: string | null }>> {
+  const { businessId } = await requireOwner();
+
+  const locked = await moduleLock(businessId, "pos", "write");
+  if (locked) return fail(locked);
+
+  const read = readQris(rawPayload);
+  if (!read.ok) return fail(read.error);
+
+  if (!read.info.isStatic) {
+    return fail(
+      "Yang diunggah QRIS dinamis sekali pakai, bukan QRIS statis toko. " +
+        "Pakai QRIS yang biasa dipajang di meja kasir.",
+    );
+  }
+
+  // Dicoba sekali di sini supaya kegagalan perakitan ketahuan saat mengunggah,
+  // bukan saat kasir sedang menutup transaksi di depan pelanggan.
+  const uji = buildDynamicQris(read.info.payload, 10_000);
+  if (!uji.ok) return fail(`QRIS ini tidak bisa diberi nominal: ${uji.error}`);
+
+  const ok = await db.saveQris(businessId, {
+    payload: read.info.payload,
+    merchantName: read.info.merchantName,
+    merchantCity: read.info.merchantCity,
+    nmid: read.info.nmid,
+  });
+  if (!ok) return fail("Usaha tidak ditemukan.");
+
+  revalidatePath("/app/pos");
+  return done({ merchantName: read.info.merchantName, nmid: read.info.nmid });
+}
+
+/** Melepas QRIS tersimpan. Hanya owner. */
+export async function clearQrisAction(): Promise<ActionResult<null>> {
+  const { businessId } = await requireOwner();
+  const ok = await db.clearQris(businessId);
+  if (!ok) return fail("Usaha tidak ditemukan.");
+  revalidatePath("/app/pos");
   return done(null);
 }

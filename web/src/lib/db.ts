@@ -211,6 +211,51 @@ export const db = {
   },
 
   /**
+   * Menyimpan QRIS statis milik sebuah usaha.
+   *
+   * Payload disimpan APA ADANYA. Nominal tidak pernah ikut tersimpan: yang
+   * masuk ke sini adalah kode statis merchant, dan versi bernominal dirakit
+   * ulang tiap transaksi lalu dibuang. Menyimpan versi bernominal berarti
+   * menyimpan QR sekali-pakai yang sudah basi begitu transaksinya selesai.
+   */
+  async saveQris(
+    businessId: string,
+    data: {
+      payload: string;
+      merchantName: string;
+      merchantCity: string;
+      nmid: string | null;
+    },
+  ): Promise<boolean> {
+    const rows = await sql`
+      UPDATE businesses SET
+        qris_payload = ${data.payload},
+        qris_merchant_name = ${data.merchantName},
+        qris_merchant_city = ${data.merchantCity},
+        qris_nmid = ${data.nmid},
+        qris_uploaded_at = NOW()
+      WHERE id = ${businessId}
+      RETURNING id
+    `;
+    return rows.length > 0;
+  },
+
+  /** Melepas QRIS tersimpan. Kasir kembali ke QRIS cetak. */
+  async clearQris(businessId: string): Promise<boolean> {
+    const rows = await sql`
+      UPDATE businesses SET
+        qris_payload = NULL,
+        qris_merchant_name = NULL,
+        qris_merchant_city = NULL,
+        qris_nmid = NULL,
+        qris_uploaded_at = NULL
+      WHERE id = ${businessId}
+      RETURNING id
+    `;
+    return rows.length > 0;
+  },
+
+  /**
    * Menyalakan, memperpanjang, menangguhkan, atau mencabut satu modul.
    *
    * status "none" MENGHAPUS barisnya, dan itu berbeda dari "expired": modul

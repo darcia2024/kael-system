@@ -57,6 +57,7 @@ import {
   generateDailyOrderNo
 } from "@/lib/pos-engine";
 import { formatRupiah, formatBusinessDateTime } from "@/lib/formatters";
+import QrisPayment from "./qris-payment";
 import { maskPhoneNumber, calculateEarnedPoints } from "@/lib/loyalty-engine";
 
 interface PosClientProps {
@@ -68,6 +69,8 @@ interface PosClientProps {
   staffList: { id: string; name: string }[];
   currentUserId: string;
   orderCountToday: number;
+  /** Pemasangan QRIS hanya untuk pemilik usaha: ini menentukan ke rekening siapa uang masuk. */
+  userRole: "owner" | "staff";
 }
 
 export default function PosClient({
@@ -79,6 +82,7 @@ export default function PosClient({
   staffList,
   currentUserId,
   orderCountToday,
+  userRole,
 }: PosClientProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -755,7 +759,7 @@ export default function PosClient({
                 <div className="grid grid-cols-3 gap-2">
                   {[
                     { id: "cash", label: "💵 Tunai (Cash)" },
-                    { id: "qris", label: "📱 QRIS Statis" },
+                    { id: "qris", label: "📱 QRIS" },
                     { id: "transfer", label: "🏦 Transfer" },
                   ].map((m) => (
                     <button
@@ -807,6 +811,15 @@ export default function PosClient({
                     </span>
                   </div>
                 </div>
+              )}
+
+              {/* QRIS: QR bernominal, atau pemasangan kalau belum terpasang */}
+              {paymentMethod === "qris" && (
+                <QrisPayment
+                  business={business}
+                  amount={cartTotals.total}
+                  isOwner={userRole === "owner"}
+                />
               )}
 
               {/* Submit Payment */}

@@ -34,6 +34,7 @@ export default async function PosPage() {
         .map((u) => ({ id: u.id, name: u.name }))}
       currentUserId={session.userId}
       orderCountToday={orders.length}
+      userRole={session.role === "owner" ? "owner" : "staff"}
     />
   );
 }

@@ -52,6 +52,15 @@ export interface Business {
   timezone: string;
   /** Kode yang diketik karyawan saat masuk. Unik, tanpa memandang huruf besar/kecil. */
   store_code: string | null;
+  /**
+   * Payload QRIS statis milik merchant. NULL berarti belum diunggah, dan kasir
+   * jatuh kembali ke QRIS cetak yang nominalnya diketik pelanggan sendiri.
+   */
+  qris_payload: string | null;
+  qris_merchant_name: string | null;
+  qris_merchant_city: string | null;
+  qris_nmid: string | null;
+  qris_uploaded_at: string | null;
   created_at: string;
 }
 
