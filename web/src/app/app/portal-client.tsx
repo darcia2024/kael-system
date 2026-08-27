@@ -489,7 +489,13 @@ export default function AppPortalHub({
           </div>
         )}
 
-        {/* Staff & Shift Keypad PIN Management (Fondasi Bersama 1.4) */}
+        {/*
+          Kelola Akun Staf. Syarat peran di sini adalah lapis KEDUA, bukan
+          satu-satunya: /app sudah dijaga guardOwnerPage di server. Lapis ini
+          ada karena panel inilah yang dulu lolos justru karena syaratnya lupa
+          dipasang, sementara blok-blok tetangganya punya.
+        */}
+        {sessionRole === "owner" && (
         <div className="rounded-3xl border-2 border-[#232331] bg-white p-6 shadow-ink-md space-y-5">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#dedee8] pb-4">
             <div>
@@ -643,6 +649,7 @@ export default function AppPortalHub({
           </div>
 
         </div>
+        )}
 
       </main>
 

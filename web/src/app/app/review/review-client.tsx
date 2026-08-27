@@ -35,10 +35,13 @@ export default function KaelReviewOwnerDashboard({
   business,
   cards,
   rawTaps,
+  sessionRole,
 }: {
   business: Business | null;
   cards: Card[];
   rawTaps: CardTap[];
+  /** Menentukan ke beranda mana tombol kembali mengantar. */
+  sessionRole: "owner" | "staff";
 }) {
   const router = useRouter();
   const [selectedCardForEdit, setSelectedCardForEdit] = useState<Card | null>(null);
@@ -130,7 +133,7 @@ export default function KaelReviewOwnerDashboard({
         <div className="mx-auto flex max-w-6xl items-center justify-between">
           <div className="flex items-center gap-3">
             <Link
-              href="/app"
+              href={sessionRole === "owner" ? "/app" : "/app/staff"}
               className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#232331] bg-[#fcfcfe] text-[#232331] shadow-ink-xs hover:bg-[#f0edff]"
               title="Kembali ke Hub KAEL"
             >

@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
 import { db } from "@/lib/db";
-import { getSession } from "@/lib/auth";
-import { getLicenses } from "@/lib/licensing";
+
+import { getLicenses, guardOwnerPage } from "@/lib/licensing";
 import {
   MODULE_CATALOG,
   modulesForBusinessType,
@@ -90,20 +90,16 @@ export default async function AppPortalPage({
 }) {
   const { terkunci, ditolak } = await searchParams;
 
-  const session = await getSession();
-  if (!session) redirect("/app/login?next=/app");
-  if (session.role === "kael_admin") redirect("/admin/cards");
-  if (!session.businessId) redirect("/app/login");
+  const session = await guardOwnerPage("/app");
 
   const [business, licenses, users] = await Promise.all([
     db.getBusiness(session.businessId),
     getLicenses(session.businessId),
-    // Kasir tidak perlu melihat daftar akun; hanya owner yang mengelolanya.
-    session.role === "owner" ? db.getUsers(session.businessId) : Promise.resolve([]),
+    // guardOwnerPage sudah memastikan yang sampai di sini pasti pemilik usaha.
+    db.getUsers(session.businessId),
   ]);
 
   const businessType = (business?.business_type ?? "kuliner") as BusinessType;
-  const isOwner = session.role === "owner";
 
   /**
    * Penyaringan relevansi hanya menentukan apa yang DITAWARKAN.
@@ -116,13 +112,13 @@ export default async function AppPortalPage({
   const cocokUntukUsaha = new Set(modulesForBusinessType(businessType).map((m) => m.key));
 
   const tampil = MODULE_CATALOG.filter(
-    (m) => licenses.has(m.key) || (m.available && isOwner && cocokUntukUsaha.has(m.key)),
+    (m) => licenses.has(m.key) || (m.available && cocokUntukUsaha.has(m.key)),
   );
 
   /**
-   * Penawaran hanya untuk owner. Kasir yang melihat kartu "beli modul lain"
-   * cuma menambah kebisingan di layar yang dia pakai kerja, dan keputusan
-   * belanja bukan wewenangnya.
+   * Penawaran modul hanya masuk akal di halaman ini, dan halaman ini hanya
+   * untuk pemilik usaha. Kasir punya berandanya sendiri di /app/staff yang
+   * memang tidak pernah mengambil data harga maupun penawaran.
    */
   const belumDimiliki = tampil.filter((m) => !licenses.has(m.key));
 
@@ -134,9 +130,8 @@ export default async function AppPortalPage({
     .map((entry): PortalModule | null => {
       const license = licenses.get(entry.key);
 
-      // Belum dibeli: kartu penawaran, dan hanya untuk owner.
+      // Belum dibeli: kartu penawaran.
       if (!license) {
-        if (!isOwner) return null;
         return {
           key: entry.key,
           name: entry.name,
@@ -149,13 +144,6 @@ export default async function AppPortalPage({
           renewal: entry.renewal,
           hook: buildHook(entry.key, signals),
         };
-      }
-
-      // Sudah dibeli: kasir hanya melihat yang diizinkan owner-nya.
-      const grantable = entry.key === "pos" || entry.key === "loyalty" || entry.key === "review";
-      if (!isOwner) {
-        if (!grantable) return null;
-        if (!session.permissions?.includes(entry.key as "pos" | "loyalty" | "review")) return null;
       }
 
       return {

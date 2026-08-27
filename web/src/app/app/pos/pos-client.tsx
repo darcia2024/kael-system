@@ -370,7 +370,10 @@ export default function PosClient({
           
           <div className="flex items-center gap-2 sm:gap-3 min-w-0">
             <Link
-              href="/app"
+              // Kasir kembali ke berandanya sendiri. Sebelumnya tombol ini
+              // menunjuk "/app" secara tetap, jadi kasir yang menekannya
+              // mendarat di dasbor pemilik usaha.
+              href={userRole === "owner" ? "/app" : "/app/staff"}
               className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-[#232331] bg-[#fcfcfe] text-[#232331] shadow-ink-xs hover:bg-[#f0edff]"
             >
               <ArrowLeft size={16} />

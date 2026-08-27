@@ -209,6 +209,49 @@ export async function requireModuleRead(
 }
 
 /**
+ * Penjaga HALAMAN khusus pemilik usaha.
+ *
+ * Dipakai halaman yang isinya keputusan pemilik: daftar akun staf, harga modal,
+ * laporan laba, pengaturan usaha, dan langganan modul. Kasir tidak boleh
+ * membukanya walaupun dia mengetik alamatnya sendiri di bilah alamat.
+ *
+ * MENGALIHKAN, bukan menyembunyikan. Sebelum berkas ini ada, /app hanya
+ * memeriksa "sudah masuk atau belum", lalu bagian-bagian yang bukan hak kasir
+ * disembunyikan satu per satu di dalam komponen kliennya. Cara itu gagal dengan
+ * dua cara sekaligus: satu blok yang lupa diberi syarat langsung terlihat oleh
+ * kasir, dan datanya tetap dikirim ke browser walaupun tidak digambar.
+ *
+ * Karena itu penjaganya ada di server, satu pintu, dan halaman kasir dipisahkan
+ * ke alamatnya sendiri alih-alih memakai halaman yang sama dengan pemilik.
+ */
+export async function guardOwnerPage(
+  path: string,
+): Promise<Session & { businessId: string; role: "owner" }> {
+  const session = await getSession();
+  if (!session) redirect(`/app/login?next=${path}`);
+  if (session.role === "kael_admin") redirect("/admin/businesses");
+  if (!session.businessId) redirect("/app/login");
+
+  // Kasir diantar ke berandanya sendiri, bukan dilempar ke layar galat: dia
+  // tidak melakukan kesalahan apa pun, cuma membuka pintu yang bukan pintunya.
+  if (session.role !== "owner") redirect("/app/staff?ditolak=area-pemilik");
+
+  return session as Session & { businessId: string; role: "owner" };
+}
+
+/**
+ * Beranda yang benar untuk sebuah sesi.
+ *
+ * Satu tempat untuk menjawabnya, supaya tombol kembali di layar kasir tidak
+ * perlu menebak. Sebelumnya tombol itu menunjuk "/app" secara tetap, sehingga
+ * kasir yang menekannya mendarat di dasbor pemilik.
+ */
+export function homeFor(role: Session["role"]): string {
+  if (role === "kael_admin") return "/admin/businesses";
+  return role === "owner" ? "/app" : "/app/staff";
+}
+
+/**
  * Penjaga untuk HALAMAN modul. Mengalihkan, bukan melempar, supaya pengguna
  * mendarat di beranda dengan penjelasan alih-alih melihat layar galat.
  */
@@ -221,17 +264,22 @@ export async function guardModulePage(
   if (session.role === "kael_admin") redirect("/admin/cards");
   if (!session.businessId) redirect("/app/login");
 
+  // Penolakan mengantar ke beranda MASING-MASING peran. Versi sebelumnya selalu
+  // menunjuk "/app", jadi kasir yang membuka modul di luar haknya justru
+  // mendarat di dasbor pemilik — persis tempat yang seharusnya tertutup baginya.
+  const beranda = homeFor(session.role);
+
   const license = await getLicense(session.businessId, module);
   // Modul yang tidak dimiliki atau ditangguhkan: layarnya tidak dibuka sama
   // sekali. Modul yang lewat masa aktif tetap dibuka, dalam mode baca-saja.
-  if (!license.canRead) redirect(`/app?terkunci=${module}`);
+  if (!license.canRead) redirect(`${beranda}?terkunci=${module}`);
 
   if (isGrantable(module)) {
     if (session.role === "staff" && !session.permissions?.includes(module)) {
-      redirect(`/app?ditolak=${module}`);
+      redirect(`${beranda}?ditolak=${module}`);
     }
   } else if (session.role !== "owner") {
-    redirect(`/app?ditolak=${module}`);
+    redirect(`${beranda}?ditolak=${module}`);
   }
 
   return { session: session as Session & { businessId: string }, license };

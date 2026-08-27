@@ -274,7 +274,7 @@ export default function KaelLoyaltyDashboard({
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-2">
           <div className="flex items-center gap-2 sm:gap-3 min-w-0">
             <Link
-              href="/app"
+              href={sessionRole === "owner" ? "/app" : "/app/staff"}
               className="flex h-8 w-8 sm:h-9 sm:w-9 shrink-0 items-center justify-center rounded-xl border border-[#232331] bg-[#fcfcfe] text-[#232331] shadow-ink-xs hover:bg-[#f0edff]"
               title="Kembali ke Hub KAEL"
             >

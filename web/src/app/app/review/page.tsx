@@ -26,5 +26,12 @@ export default async function ReviewDashboardPage() {
     db.getCardTaps(session.businessId),
   ]);
 
-  return <ReviewClient business={business} cards={cards} rawTaps={rawTaps} />;
+  return (
+    <ReviewClient
+      business={business}
+      cards={cards}
+      rawTaps={rawTaps}
+      sessionRole={session.role === "owner" ? "owner" : "staff"}
+    />
+  );
 }
