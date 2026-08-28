@@ -30,6 +30,7 @@ import { calculateCleanTaps, generateDailyTapSeries } from "@/lib/tap-counter";
 import { formatCardCodeDisplay } from "@/lib/card-code";
 import { formatBusinessDateTime } from "@/lib/formatters";
 import { buildGoogleReviewUrl, type GooglePlaceResult } from "@/lib/google-places";
+import { siteHost } from "@/lib/site";
 
 export default function KaelReviewOwnerDashboard({
   business,
@@ -347,8 +348,8 @@ export default function KaelReviewOwnerDashboard({
                             {formatCardCodeDisplay(card.card_code)}
                           </span>
                         </div>
-                        <span className="text-[10px] text-[#7b7b8e] block">
-                          Endpoint: r.kael.id/{card.card_code}
+                        <span className="text-[10px] text-[#7b7b8e] block break-all">
+                          {siteHost}/r/{card.card_code}
                         </span>
                       </td>
 

@@ -1,0 +1,60 @@
+{
+  "slug": "kopi-contoh",
+  "demo_days": 14,
+
+  "business": {
+    "name": "Kopi Contoh Rasa",
+    "category": "Coffee Shop & Brunch",
+    "business_type": "kuliner",
+    "phone": "6281200000000",
+    "address": "Jl. Contoh No. 1, Jakarta",
+    "store_code": "CONTOH",
+    "brand_color": "#2f5d50",
+    "logo_url": "",
+    "google_place_id": "",
+    "timezone": "Asia/Jakarta"
+  },
+
+  "owner": {
+    "name": "Pemilik Kopi Contoh",
+    "email": "owner@kopicontoh.demo"
+  },
+
+  "staff": [
+    { "name": "Rina (Barista)", "pin": "112233" },
+    { "name": "Adi (Kasir Sore)", "pin": "445566" }
+  ],
+
+  "modules": ["review", "pos", "loyalty"],
+
+  "menu": [
+    {
+      "category": "Signature",
+      "items": [
+        { "name": "Kopi Susu Gula Aren", "price": 22000 },
+        { "name": "Es Kopi Pandan", "price": 25000 },
+        { "name": "Americano", "price": 18000 }
+      ]
+    },
+    {
+      "category": "Non Kopi",
+      "items": [
+        { "name": "Cokelat Panas", "price": 24000 },
+        { "name": "Matcha Latte", "price": 28000, "is_available": false }
+      ]
+    },
+    {
+      "category": "Makanan",
+      "items": [
+        { "name": "Roti Bakar Cokelat", "price": 20000 },
+        { "name": "Nasi Goreng Kampung", "price": 32000 }
+      ]
+    }
+  ],
+
+  "loyalty": {
+    "mode": "point",
+    "earn_rate": 10000,
+    "stamp_per_visit": 1
+  }
+}

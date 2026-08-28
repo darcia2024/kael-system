@@ -30,3 +30,8 @@ Thumbs.db
 # Skrip scratch lokal: membaca .env.local berisi kredensial DB produksi
 web/scratch-*.mjs
 web/scratch-*.ts
+
+# Berkas prospek: berisi nama, alamat, dan nomor usaha yang BELUM jadi pelanggan.
+# Contohnya saja yang ikut, supaya bentuk berkasnya tetap terdokumentasi.
+web/scripts/prospects/*.json
+!web/scripts/prospects/contoh.json

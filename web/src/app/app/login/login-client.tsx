@@ -15,7 +15,6 @@ import {
   AlertCircle, 
   Check, 
   Delete,
-  Store,
   RefreshCw,
   Search,
   Building2,
@@ -23,12 +22,14 @@ import {
 } from "lucide-react";
 import type { Business, User } from "@/lib/types";
 import { loginOwner, loginStaff, openStoreByCodeAction } from "@/lib/actions";
+import { BusinessMark } from "@/components/business-mark";
 
 interface StoreOption {
   id: string;
   name: string;
   category: string;
   brand_color: string;
+  logo_url: string | null;
 }
 
 export default function LoginClient({
@@ -409,9 +410,13 @@ export default function LoginClient({
               ) : (
                 <div className="rounded-2xl border-2 border-[#232331] bg-[#fcfcfe] p-3 font-mono text-xs">
                   <div className="flex items-center gap-2">
-                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#232331] text-[#d9ff57]">
-                      <Store size={14} />
-                    </span>
+                    <BusinessMark
+                      name={selectedBusiness.name}
+                      logoUrl={selectedBusiness.logo_url}
+                      brandColor={selectedBusiness.brand_color}
+                      size="sm"
+                      className="rounded-lg"
+                    />
                     <div className="min-w-0 flex-1">
                       <p className="truncate font-sans text-xs font-extrabold text-[#232331]">
                         {selectedBusiness.name}

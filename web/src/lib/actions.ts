@@ -12,6 +12,7 @@ import {
 } from "./google-places";
 import { moduleLock, requireModuleRead, getModuleView } from "./licensing";
 import { MODULE_CATALOG } from "./modules-catalog";
+import { parseBrandColor } from "./branding";
 import { readQris, buildDynamicQris } from "./qris-engine";
 import {
   requireStaff, requireOwner, requireKaelAdmin, requirePermission,
@@ -113,7 +114,13 @@ export async function currentSession() {
 export async function openStoreByCodeAction(code: string): Promise<{
   ok: boolean;
   error?: string;
-  business?: { id: string; name: string; category: string; brand_color: string };
+  business?: {
+    id: string;
+    name: string;
+    category: string;
+    brand_color: string;
+    logo_url: string | null;
+  };
   staffList?: { id: string; name: string }[];
 }> {
   const clean = (code || "").trim().toUpperCase();
@@ -130,6 +137,7 @@ export async function openStoreByCodeAction(code: string): Promise<{
       name: business.name,
       category: business.category,
       brand_color: business.brand_color,
+      logo_url: business.logo_url || null,
     },
     staffList: users
       .filter((u) => u.role === "staff" && u.is_active)
@@ -1046,6 +1054,70 @@ export async function createOwnerForBusinessAction(
 
   revalidatePath("/admin/businesses");
   return done({ email });
+}
+
+/**
+ * Logo dan warna merek satu usaha.
+ *
+ * Tim KAEL, bukan pemilik usaha. Penyiapan tenant memang dikerjakan tim
+ * KAEL sejak awal — menu, staf, modul, kode toko — dan identitas visual
+ * bagian dari penyiapan yang sama. Pemilik usaha memakainya, tidak
+ * mengaturnya.
+ *
+ * Sebelum ini satu-satunya cara mengisi kedua kolom itu adalah lewat skrip
+ * seed prospek, sehingga pelanggan yang didaftarkan lewat panel admin sama
+ * sekali tidak punya jalan untuk dipasangi logo.
+ */
+export async function setBusinessBrandingAction(
+  businessId: string,
+  input: { logoUrl: string; brandColor: string },
+): Promise<ActionResult<{ logoUrl: string | null; brandColor: string }>> {
+  await requireKaelAdmin();
+
+  if (!UUID_RE.test(businessId)) return fail("Usaha tidak dikenali.");
+
+  const brandColor = parseBrandColor(input.brandColor);
+  if (!brandColor) return fail("Warna harus hex, misal #2f5d50.");
+
+  const raw = (input.logoUrl || "").trim();
+  let logoUrl: string | null = null;
+
+  if (raw) {
+    /**
+     * Dibatasi panjangnya supaya kolomnya tidak dipakai menampung data URI
+     * gambar utuh. Nilai ini ikut terbaca di setiap halaman yang menampilkan
+     * kepala toko, termasuk struk yang dibuka pelanggan.
+     */
+    if (raw.length > 500) return fail("Tautan logo terlalu panjang, maksimal 500 karakter.");
+
+    let parsed: URL;
+    try {
+      parsed = new URL(raw);
+    } catch {
+      return fail("Tautan logo bukan URL yang sah. Tempel tautan lengkap beserta https://");
+    }
+
+    /**
+     * Hanya https. Aplikasi ini dilayani lewat https di produksi, dan
+     * peramban memblokir gambar http di halaman https tanpa memberi tahu
+     * siapa pun. Menolaknya sekarang jauh lebih baik daripada logo yang
+     * tampak tersimpan tapi tidak pernah muncul di layar pelanggan.
+     */
+    if (parsed.protocol !== "https:") {
+      return fail("Tautan logo harus diawali https, karena gambar http diblokir peramban.");
+    }
+
+    logoUrl = parsed.toString();
+  }
+
+  const updated = await db.updateBusiness(businessId, {
+    logo_url: logoUrl,
+    brand_color: brandColor,
+  });
+  if (!updated) return fail("Usaha tidak ditemukan.");
+
+  revalidatePath("/admin/businesses");
+  return done({ logoUrl, brandColor });
 }
 
 // ===========================================================================

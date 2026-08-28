@@ -2,7 +2,7 @@
  * KAEL System · Loyalty & Reward Engine (03 · KAEL Loyalty)
  * 
  * - Normalisasi Nomor WhatsApp (62...) & Pencarian 4-Digit Cepat untuk Kasir
- * - Generator Token Pelanggan 22-Karakter Unguessable untuk m.kael.id/{token}
+ * - Generator Token Pelanggan 22-Karakter Unguessable untuk /m/{token}
  * - Kalkulator Perolehan Poin / Stamp
  * - Kalkulator Proteksi Biaya Program (Estimasi % Diskon Efektif Reward)
  * - Privasi Nomor Telepon Pelanggan (UU PDP No. 27/2022)
@@ -27,7 +27,7 @@ export function normalizePhoneNumber(input: string): string {
 }
 
 /**
- * Format nomor telepon dengan sensor privasi untuk tampilan publik m.kael.id
+ * Format nomor telepon dengan sensor privasi untuk halaman member publik
  * Misal: 6281311506025 -> +62 813-****-6025
  */
 export function maskPhoneNumber(phone: string): string {
@@ -39,7 +39,7 @@ export function maskPhoneNumber(phone: string): string {
 }
 
 /**
- * Generator token unik 22-karakter untuk URL kartu member aman (m.kael.id/{token})
+ * Generator token unik 22-karakter untuk URL kartu member aman (/m/{token})
  */
 export function generateCustomerToken(length = 22): string {
   let result = "";

@@ -21,6 +21,7 @@ import {
 import { checkCardAction, activateCardAction, searchPlacesAction } from "@/lib/actions";
 import { buildGoogleReviewUrl, type GooglePlaceResult } from "@/lib/google-places";
 import { formatCardCodeDisplay, normalizeCardCode } from "@/lib/card-code";
+import { site } from "@/lib/site";
 
 export default function CardActivationPage({ params }: { params: Promise<{ code: string }> }) {
   const router = useRouter();
@@ -491,7 +492,15 @@ export default function CardActivationPage({ params }: { params: Promise<{ code:
                 </div>
                 <div className="flex justify-between">
                   <span className="text-[#7b7b8e]">Redirect URL:</span>
-                  <span className="font-bold text-[#232331]">https://r.kael.id/{cardCode}</span>
+                  {/*
+                    Alamat asli kartunya, diambil dari konfigurasi situs.
+                    Sebelumnya di sini tertulis r.kael.id, domain yang tidak
+                    pernah hidup, dan pemilik toko yang membacanya bisa saja
+                    mencoba mengetiknya.
+                  */}
+                  <span className="font-bold text-[#232331] break-all">
+                    {site.url}/r/{cardCode}
+                  </span>
                 </div>
               </div>
 

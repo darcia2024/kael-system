@@ -47,7 +47,8 @@ export interface Business {
   phone: string;
   address: string;
   google_place_id: string;
-  logo_url: string;
+  /** NULL berarti belum ada logo, dan yang tampil inisial nama tokonya. */
+  logo_url: string | null;
   brand_color: string;
   timezone: string;
   /** Kode yang diketik karyawan saat masuk. Unik, tanpa memandang huruf besar/kecil. */
@@ -61,6 +62,14 @@ export interface Business {
   qris_merchant_city: string | null;
   qris_nmid: string | null;
   qris_uploaded_at: string | null;
+  /**
+   * Tenant peragaan yang disiapkan tim KAEL atas nama calon pembeli, bukan
+   * pelanggan yang membayar. Hanya baris seperti ini yang boleh disentuh
+   * skrip pembersih.
+   */
+  is_demo: boolean;
+  /** Tanggal tenant demo boleh dihapus. Null untuk pelanggan sungguhan. */
+  demo_expires_at: string | null;
   created_at: string;
 }
 

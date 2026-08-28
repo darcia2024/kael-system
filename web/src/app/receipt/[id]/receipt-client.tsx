@@ -7,8 +7,6 @@ import {
   Share2, 
   Printer, 
   CheckCircle2, 
-  Store, 
-  Coffee, 
   ArrowLeft, 
   AlertCircle, 
   Copy, 
@@ -19,6 +17,7 @@ import type { Order, OrderItem, Customer, Business } from "@/lib/types";
 import { serviceTypeLabel } from "@/lib/pos-engine";
 import { formatRupiah, formatBusinessDateTime } from "@/lib/formatters";
 import { generateEscPosReceiptText } from "@/lib/pos-engine";
+import { BusinessMark } from "@/components/business-mark";
 
 /**
  * Tampilan struk. Datanya diambil di server oleh page.tsx.
@@ -123,9 +122,13 @@ export default function DigitalReceiptPage({ data, staffName }: ReceiptPageData)
         
         {/* Top Shop Header */}
         <div className="text-center space-y-1 border-b-2 border-dashed border-[#232331] pb-4">
-          <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-2xl bg-[#f0edff] text-[#7958d8] border border-[#232331] font-black text-sm">
-            <Coffee size={20} />
-          </div>
+          <BusinessMark
+            name={business.name}
+            logoUrl={business.logo_url}
+            brandColor={business.brand_color}
+            size="lg"
+            className="rounded-2xl border border-[#232331]"
+          />
           <h2 className="text-base font-black text-[#232331] uppercase tracking-wider font-sans mt-1">
             {business.name}
           </h2>

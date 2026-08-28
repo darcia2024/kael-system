@@ -46,6 +46,7 @@ import {
   calculateRewardDiscountRate 
 } from "@/lib/loyalty-engine";
 import { formatRupiah, formatBusinessDateTime } from "@/lib/formatters";
+import { siteHost } from "@/lib/site";
 
 /** Semua data awal datang dari komponen server; halaman ini tidak menyentuh
  *  database sama sekali. Perubahan dikirim lewat server action, lalu
@@ -632,7 +633,7 @@ export default function KaelLoyaltyDashboard({
                       target="_blank"
                       className="text-[#7958d8] font-bold inline-flex items-center gap-1 hover:underline"
                     >
-                      <span>m.kael.id/{selectedCustomer.token.slice(0, 8)}...</span>
+                      <span>{siteHost}/m/{selectedCustomer.token.slice(0, 8)}...</span>
                       <ExternalLink size={11} />
                     </Link>
                   </div>

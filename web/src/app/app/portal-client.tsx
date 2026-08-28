@@ -4,7 +4,6 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { 
-  Store, 
   Nfc, 
   Receipt, 
   Calculator, 
@@ -31,6 +30,7 @@ import {
 } from "@/lib/actions";
 import { STAFF_PERMISSIONS, type StaffPermission } from "@/lib/types";
 import { formatBusinessDate } from "@/lib/formatters";
+import { BusinessMark } from "@/components/business-mark";
 
 /**
  * Satu modul sebagaimana ditampilkan di beranda.
@@ -196,9 +196,12 @@ export default function AppPortalHub({
       <header className="sticky top-0 z-30 border-b-2 border-[#232331] bg-white px-4 sm:px-8 py-3.5">
         <div className="mx-auto flex max-w-6xl items-center justify-between">
           <div className="flex items-center gap-3">
-            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#232331] text-[#d9ff57] font-black text-sm shadow-ink-xs">
-              K
-            </span>
+            <BusinessMark
+              name={business?.name}
+              logoUrl={business?.logo_url}
+              brandColor={business?.brand_color}
+              className="rounded-xl shadow-ink-xs"
+            />
             <div>
               <div className="flex items-center gap-2">
                 <span className="font-extrabold text-sm sm:text-base text-[#232331]">

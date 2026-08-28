@@ -17,6 +17,7 @@ import {
   Sparkles,
   ExternalLink,
   Loader2,
+  Palette,
 } from "lucide-react";
 
 import {
@@ -24,10 +25,14 @@ import {
   setBusinessModuleAction,
   searchPlacesAction,
   createOwnerForBusinessAction,
+  setBusinessBrandingAction,
 } from "@/lib/actions";
 import type { Business, BusinessModule } from "@/lib/types";
 import type { GooglePlaceResult } from "@/lib/google-places";
 import { MODULE_CATALOG, BUSINESS_TYPES, rupiah } from "@/lib/modules-catalog";
+import { formatBusinessDate } from "@/lib/formatters";
+import { normalizeBrandColor } from "@/lib/branding";
+import { BusinessMark } from "@/components/business-mark";
 
 type Row = Business & {
   owner_name: string | null;
@@ -213,6 +218,42 @@ export default function BusinessesClient({ initial }: { initial: Row[] }) {
       teks: `Akun pemilik ${namaUsaha} dibuat. Sampaikan email ${res.data.email} dan kata sandinya ke pemilik usaha.`,
     });
     setOwnerUntuk(null);
+    router.refresh();
+  };
+
+  // --- Identitas visual satu pelanggan -------------------------------------
+  const [brandingUntuk, setBrandingUntuk] = useState<string | null>(null);
+  const [brandLogo, setBrandLogo] = useState("");
+  const [brandWarna, setBrandWarna] = useState("");
+
+  const bukaFormBranding = (b: Row) => {
+    setBrandingUntuk(b.id);
+    setBrandLogo(b.logo_url ?? "");
+    setBrandWarna(normalizeBrandColor(b.brand_color));
+    setPesan(null);
+  };
+
+  const simpanBranding = async (e: React.FormEvent, b: Row) => {
+    e.preventDefault();
+    setBusy(true);
+    setPesan(null);
+    const res = await setBusinessBrandingAction(b.id, {
+      logoUrl: brandLogo,
+      brandColor: brandWarna,
+    });
+    setBusy(false);
+
+    if (!res.ok) {
+      setPesan({ ok: false, teks: res.error });
+      return;
+    }
+    setPesan({
+      ok: true,
+      teks: res.data.logoUrl
+        ? `Identitas ${b.name} disimpan. Logonya tampil di dasbor, menu QR, struk, dan kartu member.`
+        : `Identitas ${b.name} disimpan. Belum ada logo, jadi yang tampil inisial namanya.`,
+    });
+    setBrandingUntuk(null);
     router.refresh();
   };
 
@@ -588,25 +629,155 @@ export default function BusinessesClient({ initial }: { initial: Row[] }) {
                 className="rounded-3xl border-2 border-[#232331] bg-white p-5 shadow-ink-md space-y-4"
               >
                 <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[#dedee8] pb-3">
-                  <div>
-                    <h3 className="font-extrabold text-base">{b.name}</h3>
+                  <div className="flex min-w-0 items-start gap-3">
+                    {/*
+                      Kotak yang sama persis dengan yang dilihat pemilik usaha di
+                      dasbornya. Tim KAEL perlu melihat hasilnya di sini, bukan
+                      menebak dari nilai heksadesimal di formulir.
+                    */}
+                    <BusinessMark
+                      name={b.name}
+                      logoUrl={b.logo_url}
+                      brandColor={b.brand_color}
+                      size="lg"
+                      className="rounded-xl border border-[#232331]"
+                    />
+                    <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="font-extrabold text-base">{b.name}</h3>
+                      {/*
+                        Tenant peragaan yang disiapkan atas nama calon pembeli.
+                        Tanpa penanda ini, daftar pelanggan bercampur dengan
+                        calon yang tidak jadi membeli, dan tidak ada cara
+                        membedakannya selain mengingat siapa yang mana.
+                      */}
+                      {b.is_demo && (
+                        <span className="inline-flex items-center gap-1 rounded-lg border border-[#7958d8] bg-[#f0edff] px-2 py-0.5 font-mono text-[10.5px] font-bold text-[#7958d8]">
+                          {/*
+                            Lewat formatBusinessDate, bukan potong teks: kolom DATE
+                            sampai ke sini sebagai objek Date, dan memotongnya
+                            sebagai teks menghasilkan "Sun Aug 30".
+                          */}
+                          demo · s/d {formatBusinessDate(b.demo_expires_at)}
+                        </span>
+                      )}
+                    </div>
                     <p className="font-mono text-[11px] text-[#7b7b8e] mt-0.5">
                       kode {b.store_code ?? "—"} · {b.business_type} · {b.category}
                     </p>
                     {b.owner_email ? (
-                      <p className="font-mono text-[11px] text-[#7b7b8e]">{b.owner_email}</p>
+                      <p className="truncate font-mono text-[11px] text-[#7b7b8e]">{b.owner_email}</p>
                     ) : (
                       <p className="mt-1 inline-flex items-center gap-1.5 rounded-lg border border-[#e5b800] bg-[#fff8e1] px-2 py-0.5 font-mono text-[11px] font-bold text-[#8a6d00]">
                         <AlertTriangle size={11} />
                         belum ada akun pemilik
                       </p>
                     )}
+                    </div>
                   </div>
                   <span className="inline-flex items-center gap-1.5 rounded-xl border border-[#dedee8] bg-[#fcfcfe] px-2.5 py-1 font-mono text-[11px] text-[#7b7b8e] shrink-0">
                     <Users size={12} />
                     {b.staff_count} karyawan
                   </span>
                 </div>
+
+                {/*
+                  Logo dan warna diatur tim KAEL, bukan pemilik usaha. Penyiapan
+                  tenant memang dikerjakan tim KAEL sejak awal, dan identitas
+                  visual bagian dari penyiapan yang sama.
+                */}
+                {brandingUntuk !== b.id ? (
+                  <button
+                    type="button"
+                    onClick={() => bukaFormBranding(b)}
+                    disabled={busy}
+                    className="inline-flex items-center gap-2 rounded-xl border border-[#c9c9d4] bg-white px-3 py-2 font-mono text-xs font-bold text-[#7b7b8e] hover:border-[#232331] hover:text-[#232331] disabled:opacity-50"
+                  >
+                    <Palette size={13} />
+                    {b.logo_url ? "Ubah logo & warna" : "Pasang logo & warna"}
+                  </button>
+                ) : (
+                  <form
+                    onSubmit={(e) => simpanBranding(e, b)}
+                    className="space-y-3 rounded-2xl border-2 border-[#232331] bg-[#fcfcfe] p-3"
+                  >
+                    <div className="flex items-center gap-3">
+                      {/* Pratinjau langsung, memakai komponen yang sama dengan halaman aslinya. */}
+                      <BusinessMark
+                        name={b.name}
+                        logoUrl={brandLogo}
+                        brandColor={brandWarna}
+                        size="lg"
+                        className="rounded-xl border border-[#232331]"
+                      />
+                      <p className="font-mono text-[11px] text-[#7b7b8e]">
+                        Beginilah tampilannya di dasbor pemilik, menu QR, struk, dan
+                        kartu member. Tanpa logo, yang tampil inisial nama usahanya.
+                      </p>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="font-mono text-[11px] font-bold text-[#232331]">
+                        Tautan logo
+                      </label>
+                      <input
+                        type="url"
+                        value={brandLogo}
+                        onChange={(e) => setBrandLogo(e.target.value)}
+                        placeholder="https://... (kosongkan untuk memakai inisial)"
+                        className="w-full rounded-xl border border-[#c9c9d4] bg-white px-3 py-2 font-mono text-sm"
+                      />
+                      <p className="font-mono text-[10.5px] text-[#7b7b8e]">
+                        Harus https. Gambar http diblokir peramban saat halaman dibuka
+                        lewat https, jadi logonya tidak akan pernah muncul.
+                      </p>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="font-mono text-[11px] font-bold text-[#232331]">
+                        Warna merek
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="color"
+                          value={normalizeBrandColor(brandWarna)}
+                          onChange={(e) => setBrandWarna(e.target.value)}
+                          className="h-9 w-12 shrink-0 cursor-pointer rounded-xl border border-[#c9c9d4] bg-white"
+                          aria-label="Pilih warna merek"
+                        />
+                        <input
+                          type="text"
+                          value={brandWarna}
+                          onChange={(e) => setBrandWarna(e.target.value)}
+                          placeholder="#2f5d50"
+                          className="w-full rounded-xl border border-[#c9c9d4] bg-white px-3 py-2 font-mono text-sm"
+                        />
+                      </div>
+                      <p className="font-mono text-[10.5px] text-[#7b7b8e]">
+                        Warna teks di atasnya dipilih sistem berdasarkan kontras, jadi
+                        warna seterang apa pun tetap terbaca.
+                      </p>
+                    </div>
+
+                    <div className="flex gap-2">
+                      <button
+                        type="submit"
+                        disabled={busy}
+                        className="btn-tactile flex-1 rounded-xl border-2 border-[#232331] bg-[#d9ff57] px-3 py-2 font-mono text-xs font-extrabold shadow-ink-xs disabled:opacity-50"
+                      >
+                        {busy ? "Menyimpan..." : "Simpan identitas"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setBrandingUntuk(null)}
+                        disabled={busy}
+                        className="rounded-xl border border-[#c9c9d4] px-3 py-2 font-mono text-xs text-[#7b7b8e] disabled:opacity-50"
+                      >
+                        Batal
+                      </button>
+                    </div>
+                  </form>
+                )}
 
                 {/*
                   Usaha tanpa akun pemilik: kartunya bisa saja sudah menyala,

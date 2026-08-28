@@ -13,16 +13,40 @@ export const site = {
   /**
    * Dipakai untuk canonical, Open Graph, dan sitemap.
    *
-   * Diisi domain yang BENAR-BENAR melayani situs. kael.id belum menjawab, dan
-   * menunjuk canonical ke domain yang tidak hidup menyuruh Google mengindeks
-   * alamat yang tidak ada. Ganti ke https://kael.id begitu domainnya aktif,
-   * atau timpa lewat NEXT_PUBLIC_SITE_URL.
+   * Diisi domain yang BENAR-BENAR melayani situs. Menunjuk canonical ke
+   * domain yang tidak hidup sama saja menyuruh Google mengindeks alamat yang
+   * tidak ada.
+   *
+   * Saat pindah ke domain sendiri, isi NEXT_PUBLIC_SITE_URL di pengaturan
+   * Vercel lalu deploy ulang. Nilai di sini cuma jaring pengaman kalau
+   * variabelnya belum diisi.
    */
   url: process.env.NEXT_PUBLIC_SITE_URL ?? "https://kael-system.vercel.app",
   locale: "id_ID",
   whatsapp: process.env.NEXT_PUBLIC_KAEL_WHATSAPP ?? "6281311506025",
   email: "daru.fahma@gmail.com",
 } as const;
+
+/**
+ * Host situs tanpa protokol, misalnya `kaels.site`.
+ *
+ * Dipakai di layar yang sempit, tempat menampilkan alamat lengkap beserta
+ * https:// cuma memakan ruang tanpa menambah keterangan.
+ */
+export const siteHost = new URL(site.url).host;
+
+/**
+ * Host lama yang masih menempel di barang fisik yang sudah beredar.
+ *
+ * Alamat yang tertulis di kartu NFC tidak bisa ditarik kembali setelah
+ * kartunya ada di meja toko orang, jadi host lama harus tetap dilayani
+ * selamanya. proxy.ts yang mengalihkannya ke `site.url`.
+ *
+ * Daftar ini SENGAJA berisi host produksi yang persis, bukan pola
+ * `*.vercel.app`. Deploy pratinjau juga berakhiran itu, dan mengalihkannya
+ * berarti tidak ada lagi cara menguji perubahan sebelum tayang.
+ */
+export const legacyHosts: readonly string[] = ["kael-system.vercel.app"];
 
 /** Builds a wa.me deep link with a prefilled message. */
 export function waLink(message: string): string {

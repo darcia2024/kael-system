@@ -4,7 +4,6 @@ import { useState, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { 
-  Coffee, 
   ShoppingBag, 
   Plus, 
   Minus, 
@@ -13,15 +12,14 @@ import {
   CheckCircle2, 
   Sparkles, 
   ArrowRight, 
-  Store, 
   Clock, 
-  Utensils 
 } from "lucide-react";
 import type { Business, Category, MenuItem } from "@/lib/types";
 import { createQrOrderAction } from "@/lib/actions";
 import QrCode from "@/components/qr-code";
 import { buildDynamicQris } from "@/lib/qris-engine";
 import { formatRupiah } from "@/lib/formatters";
+import { BusinessMark } from "@/components/business-mark";
 
 export default function CustomerQrOrderPage({
   tableNo,
@@ -235,9 +233,12 @@ export default function CustomerQrOrderPage({
       <header className="sticky top-0 z-30 border-b-2 border-[#232331] bg-white/95 backdrop-blur-md px-4 py-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#232331] bg-[#d9ff57] text-[#232331] font-black text-sm">
-              <Utensils size={18} />
-            </div>
+            <BusinessMark
+              name={business?.name}
+              logoUrl={business?.logo_url}
+              brandColor={business?.brand_color}
+              className="rounded-xl border border-[#232331]"
+            />
             <div className="min-w-0">
               <h1 className="font-black text-sm text-[#232331] truncate">
                 {business?.name || "Toko Kami"}

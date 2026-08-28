@@ -15,13 +15,13 @@ import {
   Copy, 
   Check, 
   Clock, 
-  Coffee,
   Ticket,
   ChevronRight
 } from "lucide-react";
 import type { Customer, Business, LoyaltyProgram, Reward, PointLedger, Redemption } from "@/lib/types";
 import { maskPhoneNumber } from "@/lib/loyalty-engine";
 import { formatRupiah, formatBusinessDateTime } from "@/lib/formatters";
+import { BusinessMark } from "@/components/business-mark";
 
 /**
  * Tampilan halaman member. Seluruh datanya dikirim sebagai props oleh komponen
@@ -96,9 +96,12 @@ export default function CustomerMemberProgressPage({
       <header className="sticky top-0 z-30 border-b-2 border-[#232331] bg-white/95 backdrop-blur-md px-4 py-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#232331] bg-[#f0edff] text-[#7958d8] font-black text-sm">
-              <Coffee size={18} />
-            </div>
+            <BusinessMark
+              name={business.name}
+              logoUrl={business.logo_url}
+              brandColor={business.brand_color}
+              className="rounded-xl border border-[#232331]"
+            />
             <div className="min-w-0">
               <h1 className="font-black text-sm text-[#232331] truncate">
                 {business.name}
