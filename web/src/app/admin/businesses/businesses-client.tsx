@@ -18,6 +18,7 @@ import {
   ExternalLink,
   Loader2,
   Palette,
+  Activity,
 } from "lucide-react";
 
 import {
@@ -293,13 +294,18 @@ export default function BusinessesClient({ initial }: { initial: Row[] }) {
               </span>
             </div>
           </div>
-          <Link
-            href="/admin/cards"
-            className="inline-flex items-center gap-1.5 rounded-2xl border-2 border-[#232331] bg-white px-3 py-2 font-mono text-xs font-extrabold shadow-ink-xs"
-          >
-            <Nfc size={14} />
-            <span className="hidden sm:inline">Kartu</span>
-          </Link>
+          <div className="flex gap-2">
+            <Link href="/admin/control" className="inline-flex items-center gap-1.5 rounded-2xl border-2 border-[#232331] bg-[#d9ff57] px-3 py-2 font-mono text-xs font-extrabold shadow-ink-xs">
+              <Activity size={14} /><span className="hidden sm:inline">Control</span>
+            </Link>
+            <Link
+              href="/admin/cards"
+              className="inline-flex items-center gap-1.5 rounded-2xl border-2 border-[#232331] bg-white px-3 py-2 font-mono text-xs font-extrabold shadow-ink-xs"
+            >
+              <Nfc size={14} />
+              <span className="hidden sm:inline">Kartu</span>
+            </Link>
+          </div>
         </div>
       </header>
 

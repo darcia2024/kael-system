@@ -24,10 +24,29 @@ import {
 import { Container } from "@/components/ui/section";
 import { Reveal } from "@/components/ui/reveal";
 import { cta } from "@/lib/site";
+import { MODULE_BY_KEY, rupiah } from "@/lib/modules-catalog";
 
 export function RoiCalculator() {
   const [dailyCustomers, setDailyCustomers] = useState(50);
   const [avgTicket, setAvgTicket] = useState(35000);
+
+  /**
+   * Modul yang dipilih pengunjung.
+   *
+   * Ketiga manfaat di kalkulator ini berasal dari tiga modul BERBEDA: ulasan
+   * dari KAEL Review, penghematan modal dari KAEL Finance, kunjungan ulang
+   * dari KAEL Loyalty. Dulu ketiganya langsung dijumlahkan jadi satu total
+   * tanpa pernah menyebut bahwa itu berarti membeli ketiganya — pengunjung
+   * yang cuma tertarik kartu ulasan membawa pulang angka yang tidak akan
+   * pernah dia dapat.
+   *
+   * Sekarang dia memilih sendiri, dan totalnya mengikuti. Ini juga menjual
+   * lebih baik: angkanya naik saat modul kedua dicentang, dan itu argumen
+   * yang datang dari dia sendiri.
+   */
+  const [pickedReview, setPickedReview] = useState(true);
+  const [pickedFinance, setPickedFinance] = useState(true);
+  const [pickedLoyalty, setPickedLoyalty] = useState(true);
 
   // ---------------------------------------------------------------------
   // ASUMSI SIMULASI
@@ -69,8 +88,35 @@ export function RoiCalculator() {
     repeatVisits * avgTicket * ASSUMPTIONS.grossMargin,
   );
 
-  // Total tambahan laba bersih per bulan.
-  const totalExtraNetProfit = hppSavings + extraRevenue;
+  /**
+   * Total hanya menjumlahkan modul yang benar-benar dipilih.
+   *
+   * Ulasan tidak ikut dijumlahkan karena satuannya bukan rupiah — dia manfaat
+   * nyata, tapi tidak bisa dijadikan angka cuan tanpa mengarang nilai satu
+   * ulasan.
+   */
+  const countedHppSavings = pickedFinance ? hppSavings : 0;
+  const countedExtraProfit = pickedLoyalty ? extraRevenue : 0;
+  const totalExtraNetProfit = countedHppSavings + countedExtraProfit;
+
+  /**
+   * Balik modal, dihitung dari harga modul yang dipilih.
+   *
+   * Harganya WAJIB dibaca dari modules-catalog, bukan diketik ulang di sini —
+   * kalau halaman depan menyebut harga berbeda dari yang ada di dalam
+   * aplikasi, calon pembeli melihat dua angka tepat saat dia sedang menimbang
+   * membeli.
+   *
+   * Kalkulator ini dulu tidak pernah mengurangkan biaya KAEL sama sekali,
+   * padahal pertanyaan pertama pemilik UMKM bukan "berapa tambahan untungnya"
+   * tapi "berapa lama balik modalnya".
+   */
+  const investment =
+    (pickedReview ? MODULE_BY_KEY.review.price : 0) +
+    (pickedFinance ? MODULE_BY_KEY.finance.price : 0) +
+    (pickedLoyalty ? MODULE_BY_KEY.loyalty.price : 0);
+  const paybackMonths = totalExtraNetProfit > 0 ? investment / totalExtraNetProfit : null;
+  const anyModulePicked = pickedReview || pickedFinance || pickedLoyalty;
 
   return (
     <section id="kalkulator" className="py-12 sm:py-24 bg-[#fcfcfe]">
@@ -204,7 +250,16 @@ export function RoiCalculator() {
                             <Star size={14} fill="currentColor" />
                           </span>
                           <div className="min-w-0 flex-1">
-                            <p className="text-xs font-bold text-[#232331]">1. Ulasan Organik Baru di Google Maps</p>
+                            <label className="flex cursor-pointer items-center gap-1.5">
+                              <input
+                                type="checkbox"
+                                checked={pickedReview}
+                                onChange={(e) => setPickedReview(e.target.checked)}
+                                className="h-3.5 w-3.5 rounded accent-[#232331]"
+                              />
+                              <p className="text-xs font-bold text-[#232331]">1. Ulasan Organik Baru di Google Maps</p>
+                              <span className="shrink-0 rounded-full border border-[#7958d8] bg-[#f0edff] px-1.5 py-0.5 font-mono text-[8.5px] font-bold text-[#7958d8]">KAEL Review</span>
+                            </label>
                             <p className="text-[11px] text-[#7b7b8e] mt-1 leading-relaxed">
                               Pelanggan tinggal tap HP di kasir atau saat disamperin staf (1 detik). Mengundang ulasan jujur &amp; alami dari pembeli nyata.
                             </p>
@@ -228,7 +283,16 @@ export function RoiCalculator() {
                             <ShieldCheck size={14} />
                           </span>
                           <div className="min-w-0 flex-1">
-                            <p className="text-xs font-bold text-[#232331]">2. Uang Bocor yang Berhasil Diselamatkan</p>
+                            <label className="flex cursor-pointer items-center gap-1.5">
+                              <input
+                                type="checkbox"
+                                checked={pickedFinance}
+                                onChange={(e) => setPickedFinance(e.target.checked)}
+                                className="h-3.5 w-3.5 rounded accent-[#232331]"
+                              />
+                              <p className="text-xs font-bold text-[#232331]">2. Uang Bocor yang Berhasil Diselamatkan</p>
+                              <span className="shrink-0 rounded-full border border-[#7958d8] bg-[#f0edff] px-1.5 py-0.5 font-mono text-[8.5px] font-bold text-[#7958d8]">KAEL Finance</span>
+                            </label>
                             <p className="text-[11px] text-[#7b7b8e] mt-1 leading-relaxed">
                               Takaran gramasi resep atau harga modal kulakan supplier + ongkir terkunci presisi (Anti Boncos) &amp; gak ada lagi nota hilang/salah hitung.
                             </p>
@@ -252,7 +316,16 @@ export function RoiCalculator() {
                             <TrendingUp size={14} />
                           </span>
                           <div className="min-w-0 flex-1">
-                            <p className="text-xs font-bold text-[#232331]">3. Omzet dari Pelanggan Balik Lagi (Loyalitas)</p>
+                            <label className="flex cursor-pointer items-center gap-1.5">
+                              <input
+                                type="checkbox"
+                                checked={pickedLoyalty}
+                                onChange={(e) => setPickedLoyalty(e.target.checked)}
+                                className="h-3.5 w-3.5 rounded accent-[#232331]"
+                              />
+                              <p className="text-xs font-bold text-[#232331]">3. Untung dari Pelanggan Balik Lagi</p>
+                              <span className="shrink-0 rounded-full border border-[#7958d8] bg-[#f0edff] px-1.5 py-0.5 font-mono text-[8.5px] font-bold text-[#7958d8]">KAEL Loyalty</span>
+                            </label>
                             <p className="text-[11px] text-[#7b7b8e] mt-1 leading-relaxed">
                               Berkat kartu tap NFC member (auto Nama &amp; WA) dan laporan poin real-time di WA, diperkirakan ada ~{repeatVisits.toLocaleString("id-ID")} kunjungan ulang tambahan per bulan.
                             </p>
@@ -260,9 +333,16 @@ export function RoiCalculator() {
                         </div>
 
                         <div className="flex items-center justify-between sm:justify-end sm:flex-col sm:items-end gap-1 pt-2 sm:pt-0 border-t sm:border-t-0 border-[#dedee8]/70 shrink-0">
-                          <span className="text-[10px] font-bold text-[#7b7b8e] sm:hidden font-sans">Estimasi Omzet:</span>
+                          {/*
+                            Angka ini SUDAH dikalikan margin kotor, jadi yang
+                            ditampilkan untung, bukan omzet. Dulu ditulis
+                            "omzet/bln" lalu angka yang sama dijumlahkan ke
+                            kotak "cuan tambahan bersih" beberapa sentimeter
+                            di bawahnya — satu angka, dua nama.
+                          */}
+                          <span className="text-[10px] font-bold text-[#7b7b8e] sm:hidden font-sans">Estimasi Untung:</span>
                           <span className="rounded-lg sm:rounded-none bg-[#f0edff] sm:bg-transparent px-2.5 py-1 sm:p-0 border sm:border-none border-[#7958d8]/30 font-mono text-xs sm:text-sm font-extrabold text-[#7958d8]">
-                            +Rp {extraRevenue.toLocaleString("id-ID")} <span className="text-[10px] font-normal text-[#7b7b8e]">omzet/bln</span>
+                            +Rp {extraRevenue.toLocaleString("id-ID")} <span className="text-[10px] font-normal text-[#7b7b8e]">untung/bln</span>
                           </span>
                         </div>
                       </div>
@@ -287,6 +367,51 @@ export function RoiCalculator() {
                       <span className="text-[10px] font-bold block text-[#232331]/70">/ bulan</span>
                     </div>
                   </div>
+
+                  {/*
+                    Balik modal, bukan cuma manfaat.
+                    Kalau hasilnya lebih dari setahun, tampilkan apa adanya:
+                    angka jujur yang kurang bagus masih bisa dijual dengan
+                    penjelasan; angka bagus yang meleset jadi keluhan setelah
+                    uangnya masuk.
+                  */}
+                  {anyModulePicked && (
+                    <div className="mt-3 rounded-xl border border-[#232331] bg-white p-3.5">
+                      <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="min-w-0">
+                          <span className="font-mono text-[9px] font-bold uppercase tracking-wider text-[#7958d8]">
+                            PERKIRAAN BALIK MODAL
+                          </span>
+                          <p className="mt-0.5 text-[11px] leading-relaxed text-[#5c5c70]">
+                            Biaya {[
+                              pickedReview && "Review",
+                              pickedFinance && "Finance",
+                              pickedLoyalty && "Loyalty",
+                            ].filter(Boolean).join(" + ")} tahun pertama: <strong className="text-[#232331]">{rupiah(investment)}</strong>
+                          </p>
+                        </div>
+                        <div className="shrink-0 text-left sm:text-right">
+                          {paybackMonths === null ? (
+                            <span className="font-mono text-xs font-bold text-[#7b7b8e]">
+                              Belum bisa dihitung
+                            </span>
+                          ) : (
+                            <>
+                              <span className="font-mono text-lg font-extrabold text-[#232331]">
+                                ± {Math.ceil(paybackMonths)} bulan
+                              </span>
+                              <span className="block text-[10px] text-[#7b7b8e]">sampai modalnya kembali</span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                      {paybackMonths === null && (
+                        <p className="mt-1.5 text-[10px] leading-relaxed text-[#7b7b8e]">
+                          Modul yang dipilih belum menghasilkan tambahan untung dalam rupiah. KAEL Review menambah ulasan — manfaatnya nyata, tapi tidak dihitung sebagai rupiah di sini supaya angkanya tidak dikarang.
+                        </p>
+                      )}
+                    </div>
+                  )}
 
                   <a
                     href={cta.consult.href}

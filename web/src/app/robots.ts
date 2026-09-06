@@ -13,8 +13,15 @@ export default function robots(): MetadataRoute.Robots {
        *
        * /m dan /receipt dijaga oleh tautan yang tidak bisa ditebak, bukan oleh
        * login, jadi justru itu yang paling penting tidak sampai terindeks.
+       *
+       * /order melayani pemesanan meja lewat QR, dan /penawaran1 adalah
+       * penawaran yang disusun untuk satu calon pembeli tertentu. Keduanya
+       * dibagikan lewat tautan, bukan lewat pencarian.
        */
-      disallow: ["/app/", "/admin/", "/m/", "/receipt/", "/activate/", "/r/"],
+      disallow: [
+        "/app/", "/admin/", "/m/", "/receipt/", "/activate/", "/r/",
+        "/order/", "/loyalty/register", "/penawaran1",
+      ],
     },
     sitemap: `${site.url}/sitemap.xml`,
   };

@@ -41,7 +41,9 @@ type IssuedBatch = { card_code: string; activation_pin: string }[];
 export default function KaelAdminCardsPage({ initialCards }: { initialCards: Card[] }) {
   const [cards, setCards] = useState<Card[]>(initialCards);
   const [batchCount, setBatchCount] = useState<number>(5);
-  const [batchType, setBatchType] = useState<"review" | "loyalty" | "attendance">("review");
+  const [batchType, setBatchType] = useState<"review" | "loyalty" | "attendance" | "link">(
+    "review",
+  );
   const [generatedBatchInfo, setGeneratedBatchInfo] = useState<IssuedBatch | null>(null);
 
   const [searchQuery, setSearchQuery] = useState("");
@@ -249,6 +251,7 @@ export default function KaelAdminCardsPage({ initialCards }: { initialCards: Car
                 <option value="review">KAEL Review (Google Maps Form)</option>
                 <option value="loyalty">KAEL Loyalty (Kartu Member)</option>
                 <option value="attendance">KAEL HR (Absensi Karyawan)</option>
+                <option value="link">KAEL Link (Tautan Bebas)</option>
               </select>
             </div>
 

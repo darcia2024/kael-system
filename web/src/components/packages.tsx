@@ -11,34 +11,39 @@ import { ArrowRight, Check, Flame, Gift, HelpCircle, Nfc, Palette, Printer, QrCo
 import { Container } from "@/components/ui/section";
 import { Reveal } from "@/components/ui/reveal";
 import { site, waLink } from "@/lib/site";
+import { MODULE_BY_KEY } from "@/lib/modules-catalog";
 
 // =========================================================================
 // 0. SUMBER ANGKA HARGA
 //
-// Semua harga hidup di sini sebagai angka, bukan string yang diketik ulang di
-// beberapa tempat. Harga coret dan label hemat pada paket DIHITUNG dari angka
-// ini, jadi tidak mungkin lagi ada satu kartu yang menampilkan dua klaim hemat
-// berbeda.
+// Angkanya TIDAK hidup di sini. Semuanya dibaca dari modules-catalog.ts, yang
+// juga dipakai kartu modul terkunci di dashboard dan penjaga lisensi.
 //
-// Aturannya: harga coret pada paket adalah total harga modul kalau dibeli
-// satuan hari ini. Bukan "harga sebelum diskon" yang tidak pernah ditagih.
-// Kalau pembeli menjumlahkan sendiri harga satuan di halaman ini, angkanya
-// harus ketemu.
+// Sebelumnya berkas ini menyimpan salinannya sendiri. Kebetulan angkanya masih
+// sama, tapi itu justru bentuk paling berbahaya dari duplikasi: tidak ada yang
+// memberi tahu saat salah satunya diubah. Calon pembeli akan melihat harga A di
+// halaman ini lalu harga B setelah masuk ke dashboard — tepat saat dia sedang
+// mempertimbangkan membeli.
+//
+// Harga coret dan label hemat pada paket DIHITUNG dari angka ini, jadi tidak
+// mungkin ada satu kartu yang menampilkan dua klaim hemat berbeda. Aturannya:
+// harga coret pada paket adalah total harga modul kalau dibeli satuan hari ini.
+// Bukan "harga sebelum diskon" yang tidak pernah ditagih.
 // =========================================================================
 type ModuleKey = "review" | "finance" | "loyalty" | "pos";
 
 const MODULE_PRICE: Record<ModuleKey, number> = {
-  review: 149_000,
-  finance: 249_000,
-  loyalty: 399_000,
-  pos: 549_000,
+  review: MODULE_BY_KEY.review.price,
+  finance: MODULE_BY_KEY.finance.price,
+  loyalty: MODULE_BY_KEY.loyalty.price,
+  pos: MODULE_BY_KEY.pos.price,
 };
 
 const MODULE_RENEWAL: Record<ModuleKey, number> = {
-  review: 49_000,
-  finance: 99_000,
-  loyalty: 149_000,
-  pos: 199_000,
+  review: MODULE_BY_KEY.review.renewal,
+  finance: MODULE_BY_KEY.finance.renewal,
+  loyalty: MODULE_BY_KEY.loyalty.renewal,
+  pos: MODULE_BY_KEY.pos.renewal,
 };
 
 /** Renewal paket lebih murah daripada menjumlahkan renewal tiap modul. */

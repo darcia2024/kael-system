@@ -122,23 +122,38 @@ export default function FinanceClient({
   // ---------------------------------------------------------------------------
   // RECIPE EDITOR STATE (Tab 2)
   // ---------------------------------------------------------------------------
+  /**
+   * Kalkulator dibuka KOSONG.
+   *
+   * Dulu berkas ini membuka layar dengan resep contoh lengkap — Iced Caramel
+   * Macchiato, harga jual Rp 30.000, dua kemasan bernama Cup 16oz dan Stiker
+   * Logo. Untuk penjual bakso, tidak ada satu baris pun yang berhubungan
+   * dengan dagangannya, dan kalau tidak dibersihkan sebelum menekan simpan,
+   * angka itu masuk ke katalog sebagai data sungguhan.
+   *
+   * Baris bahannya lebih buruk lagi: dia memakai kode cadangan "ing-01" kalau
+   * toko belum punya bahan sama sekali. Kode itu bukan milik siapa pun, jadi
+   * pemeriksaan server menolaknya dengan "Ada bahan yang tidak dikenali" —
+   * untuk bahan yang tidak pernah ditambahkan penggunanya. Itu berarti resep
+   * PERTAMA setiap pengguna baru selalu gagal disimpan.
+   *
+   * Yang boleh diisi bawaan hanya yang berlaku umum untuk usaha mana pun:
+   * jumlah porsi 1 dan target margin 60%. Sisanya kosong, dan contoh
+   * pengisian hidup sebagai placeholder di kolomnya — bukan sebagai data
+   * yang ikut tersimpan.
+   */
   const [editingRecipeId, setEditingRecipeId] = useState<string | null>(null);
-  const [recipeName, setRecipeName] = useState("Iced Caramel Macchiato");
-  const [recipeCategory, setRecipeCategory] = useState("Minuman Kopi");
+  const [recipeName, setRecipeName] = useState("");
+  const [recipeCategory, setRecipeCategory] = useState("");
   const [recipeType, setRecipeType] = useState<"olahan" | "kulakan">("olahan");
   const [outputQty, setOutputQty] = useState<number>(1);
-  const [operationalCost, setOperationalCost] = useState<number>(600);
-  const [sellingPrice, setSellingPrice] = useState<number>(30000);
-  const [targetMarginPct, setTargetMarginPct] = useState<number>(65);
+  const [operationalCost, setOperationalCost] = useState<number>(0);
+  const [sellingPrice, setSellingPrice] = useState<number>(0);
+  const [targetMarginPct, setTargetMarginPct] = useState<number>(60);
 
-  const [recipeIngredients, setRecipeIngredients] = useState<RecipeIngredientItem[]>([
-    { ingredient_id: ingredients[0]?.id || "ing-01", qty: 18 },
-  ]);
+  const [recipeIngredients, setRecipeIngredients] = useState<RecipeIngredientItem[]>([]);
 
-  const [recipePackaging, setRecipePackaging] = useState<RecipePackagingItem[]>([
-    { id: "pack-1", name: "Cup 16oz + Tutup & Sedotan", cost: 1100 },
-    { id: "pack-2", name: "Stiker Logo Waterproof", cost: 250 },
-  ]);
+  const [recipePackaging, setRecipePackaging] = useState<RecipePackagingItem[]>([]);
 
   // Realtime Live Calculation in Editor
   const currentEditorCalc: RecipeHppResult = useMemo(() => {
@@ -173,15 +188,19 @@ export default function FinanceClient({
     const priceFromNominal = calculatePriceFromTargetProfit(hpp, simTargetProfitNominal);
     const actualMarginFromNominal = priceFromNominal > 0 ? ((priceFromNominal - hpp) / priceFromNominal) * 100 : 0;
     
+    // Sama seperti di kalkulator resep: target >=100% tidak punya jawaban
+    // berupa angka. Jangan diam-diam mengembalikan modal sebagai "harga".
     const marginFactor = 1 - (simTargetMarginPct / 100);
-    const priceFromMargin = marginFactor > 0 ? roundUpTo500(hpp / marginFactor) : hpp;
-    const actualProfitFromMargin = priceFromMargin - hpp;
+    const marginUnreachable = marginFactor <= 0;
+    const priceFromMargin = marginUnreachable ? 0 : roundUpTo500(hpp / marginFactor);
+    const actualProfitFromMargin = marginUnreachable ? 0 : priceFromMargin - hpp;
 
     return {
       priceFromNominal,
       actualMarginFromNominal,
       priceFromMargin,
       actualProfitFromMargin,
+      marginUnreachable,
     };
   }, [activeSimRecipe, simTargetProfitNominal, simTargetMarginPct]);
 
@@ -236,14 +255,16 @@ export default function FinanceClient({
   const handleCreateNewRecipe = () => {
     setEditingRecipeId(null);
     setRecipeName("");
-    setRecipeCategory("Minuman");
+    setRecipeCategory("");
     setRecipeType("olahan");
     setOutputQty(1);
-    setOperationalCost(500);
-    setSellingPrice(25000);
+    setOperationalCost(0);
+    setSellingPrice(0);
     setTargetMarginPct(60);
-    setRecipeIngredients(ingredients[0] ? [{ ingredient_id: ingredients[0].id, qty: 15 }] : []);
-    setRecipePackaging([{ id: `p-${Date.now()}`, name: "Cup & Tutup", cost: 1000 }]);
+    // Kosong, bukan satu baris bawaan: angka bawaan yang tidak diubah akan
+    // ikut tersimpan sebagai resep sungguhan.
+    setRecipeIngredients([]);
+    setRecipePackaging([]);
     setActiveTab("editor");
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
@@ -401,6 +422,12 @@ export default function FinanceClient({
 
           {/* Top Quick Actions */}
           <div className="flex items-center gap-1.5 sm:gap-2">
+            <Link
+              href="/app/finance/operations"
+              className="hidden min-h-9 items-center rounded-xl border border-[#232331] bg-white px-3 py-2 font-mono text-[11px] font-bold text-[#232331] sm:inline-flex"
+            >
+              Keuangan Usaha
+            </Link>
             <button
               type="button"
               onClick={handleCreateNewRecipe}
@@ -707,8 +734,11 @@ export default function FinanceClient({
 
                     <div className="space-y-1">
                       <label className="block font-bold text-[#232331]">Target %:</label>
+                      {/* 1–95: di 100% modalnya harus nol rupiah, tidak mungkin. */}
                       <input
                         type="number"
+                        min={1}
+                        max={95}
                         value={targetMarginPct}
                         onChange={(e) => setTargetMarginPct(Number(e.target.value))}
                         className="w-full rounded-xl border border-[#dedee8] p-2 text-xs font-bold text-[#232331]"
@@ -727,11 +757,37 @@ export default function FinanceClient({
                       <button
                         type="button"
                         onClick={handleAddIngredientRow}
-                        className="btn-tactile text-[11px] font-bold text-[#7958d8] hover:underline"
+                        disabled={ingredients.length === 0}
+                        className="btn-tactile text-[11px] font-bold text-[#7958d8] hover:underline disabled:cursor-not-allowed disabled:text-[#7b7b8e] disabled:no-underline"
                       >
                         + Tambah Bahan
                       </button>
                     </div>
+
+                    {/*
+                      Modul ini punya urutan alami: isi Master Bahan Baku dulu,
+                      baru susun resep. Urutannya sudah benar; yang dulu kurang
+                      cuma memberitahukannya. Tanpa ini, pengguna baru menekan
+                      "+ Tambah Bahan" dan tidak terjadi apa-apa.
+                    */}
+                    {ingredients.length === 0 && (
+                      <div className="rounded-2xl border-2 border-dashed border-[#7958d8] bg-[#f0edff] p-4 text-center">
+                        <p className="text-xs font-black text-[#232331]">Master Bahan Baku masih kosong</p>
+                        <p className="mt-1 text-[11px] leading-relaxed text-[#5c5c70]">
+                          Resep dihitung dari harga bahan yang sudah tercatat. Isi dulu bahan-bahan yang kamu pakai — harga pack dan isinya — baru resepnya bisa dihitung.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setActiveTab("ingredients");
+                            window.scrollTo({ top: 0, behavior: "smooth" });
+                          }}
+                          className="btn-tactile mt-3 rounded-xl border-2 border-[#232331] bg-[#d9ff57] px-4 py-2 text-[11px] font-black text-[#232331] shadow-ink-xs"
+                        >
+                          Isi Master Bahan Baku →
+                        </button>
+                      </div>
+                    )}
 
                     <div className="space-y-2">
                       {recipeIngredients.map((row, idx) => {
@@ -927,18 +983,53 @@ export default function FinanceClient({
                     </span>
                   </div>
 
-                  {/* Recommendation Rp 500 */}
-                  <div className="p-3 rounded-2xl bg-[#dcfce7] border border-[#16a34a] space-y-1">
-                    <span className="text-[10px] font-bold text-[#16a34a] uppercase block">
-                      Rekomendasi Harga Jual (Target {targetMarginPct}%):
-                    </span>
-                    <span className="text-lg font-black text-[#16a34a] block font-mono">
-                      {formatRupiah(currentEditorCalc.recommended_price_target_margin)}
-                    </span>
-                    <span className="text-[10px] text-[#7b7b8e] block">
-                      Dibulatkan rapi ke kelipatan Rp 500 untuk kenyamanan kasir.
-                    </span>
-                  </div>
+                  {/*
+                    Rekomendasi harga hanya ditampilkan kalau targetnya memang
+                    bisa dicapai. Target >=100% berarti modalnya harus nol
+                    rupiah; jawaban jujurnya "tidak bisa dicapai", bukan sebuah
+                    angka. Dulu keadaan ini menyarankan harga = modal, alias
+                    untung nol, tanpa keterangan apa pun.
+                  */}
+                  {currentEditorCalc.target_margin_unreachable ? (
+                    <div className="p-3 rounded-2xl bg-[#fff7f7] border border-[#dc2626] space-y-1">
+                      <span className="text-[10px] font-bold text-[#dc2626] uppercase block">
+                        Target {targetMarginPct}% tidak bisa dicapai
+                      </span>
+                      <span className="text-[11px] leading-relaxed text-[#5c5c70] block">
+                        Margin {targetMarginPct}% berarti menjual dengan modal nol rupiah. Turunkan targetnya di bawah 100% — misalnya 60% — supaya KAEL bisa menghitung harga jualnya.
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="p-3 rounded-2xl bg-[#dcfce7] border border-[#16a34a] space-y-1">
+                      <span className="text-[10px] font-bold text-[#16a34a] uppercase block">
+                        Rekomendasi Harga Jual (Target {targetMarginPct}%):
+                      </span>
+                      <span className="text-lg font-black text-[#16a34a] block font-mono">
+                        {formatRupiah(currentEditorCalc.recommended_price_target_margin)}
+                      </span>
+                      <span className="text-[10px] text-[#7b7b8e] block">
+                        Dibulatkan rapi ke kelipatan Rp 500 untuk kenyamanan kasir.
+                      </span>
+                    </div>
+                  )}
+
+                  {/*
+                    Kalkulator boleh menghitung dengan data yang belum lengkap,
+                    tapi tidak pernah boleh menampilkan angka setengah jadi
+                    seolah angka itu utuh. Bahan yang dilewati membuat modal
+                    terlihat lebih murah — arah kesalahan yang paling berbahaya
+                    untuk layar yang dipakai memasang harga jual.
+                  */}
+                  {currentEditorCalc.unknown_ingredient_ids.length > 0 && (
+                    <div className="p-3 rounded-2xl bg-[#fffbeb] border border-[#d97706] space-y-1">
+                      <span className="text-[10px] font-bold text-[#b45309] uppercase block">
+                        ⚠ {currentEditorCalc.unknown_ingredient_ids.length} bahan belum dikenali
+                      </span>
+                      <span className="text-[11px] leading-relaxed text-[#5c5c70] block">
+                        Modal di atas <strong>belum lengkap</strong> — bahan yang tidak dikenali dihitung nol, jadi angkanya lebih murah dari yang sebenarnya. Jangan dipakai memasang harga sebelum bahannya dibereskan.
+                      </span>
+                    </div>
+                  )}
                 </div>
 
               </div>
@@ -993,6 +1084,8 @@ export default function FinanceClient({
                   <label className="block font-bold text-[#232331]">Target Margin Persentase (%):</label>
                   <input
                     type="number"
+                    min={1}
+                    max={95}
                     value={simTargetMarginPct}
                     onChange={(e) => setSimTargetMarginPct(Number(e.target.value))}
                     className="w-full rounded-xl border border-[#dedee8] p-2.5 text-sm font-bold text-[#232331]"
@@ -1014,17 +1107,28 @@ export default function FinanceClient({
                   </span>
                 </div>
 
-                <div className="p-4 rounded-2xl bg-[#dcfce7] border border-[#16a34a] space-y-1 text-center">
-                  <span className="text-[10.5px] text-[#16a34a] font-bold block uppercase">
-                    Harga Jual Target Margin ({simTargetMarginPct}%)
-                  </span>
-                  <div className="text-2xl font-black text-[#16a34a]">
-                    {formatRupiah(simResult.priceFromMargin)}
+                {simResult.marginUnreachable ? (
+                  <div className="p-4 rounded-2xl bg-[#fff7f7] border border-[#dc2626] space-y-1 text-center">
+                    <span className="text-[10.5px] text-[#dc2626] font-bold block uppercase">
+                      Target {simTargetMarginPct}% tidak bisa dicapai
+                    </span>
+                    <p className="text-[11px] leading-relaxed text-[#5c5c70]">
+                      Margin {simTargetMarginPct}% berarti modalnya harus nol rupiah. Isi target di bawah 100%.
+                    </p>
                   </div>
-                  <span className="text-[10px] text-[#7b7b8e]">
-                    Profit riil: +{formatRupiah(simResult.actualProfitFromMargin)}
-                  </span>
-                </div>
+                ) : (
+                  <div className="p-4 rounded-2xl bg-[#dcfce7] border border-[#16a34a] space-y-1 text-center">
+                    <span className="text-[10.5px] text-[#16a34a] font-bold block uppercase">
+                      Harga Jual Target Margin ({simTargetMarginPct}%)
+                    </span>
+                    <div className="text-2xl font-black text-[#16a34a]">
+                      {formatRupiah(simResult.priceFromMargin)}
+                    </div>
+                    <span className="text-[10px] text-[#7b7b8e]">
+                      Profit riil: +{formatRupiah(simResult.actualProfitFromMargin)}
+                    </span>
+                  </div>
+                )}
               </div>
 
             </div>

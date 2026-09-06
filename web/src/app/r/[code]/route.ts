@@ -53,7 +53,15 @@ export async function GET(
     }
   });
 
-  if (card.type === "review") {
+  /**
+   * Kartu ulasan dan kartu tautan bebas berujung sama: ke alamat yang
+   * disimpan pemiliknya. Bedanya cuma di cara mengisinya saat aktivasi,
+   * jadi tidak ada gunanya menduplikasi cabangnya di sini.
+   */
+  if (card.type === "review" || card.type === "link") {
+    if (card.type === "link" && await db.getSmartTouchByCode(card.card_code)) {
+      return NextResponse.redirect(new URL(`/touch/${card.card_code}`, request.url), 302);
+    }
     if (!card.destination_url) {
       return NextResponse.redirect(new URL("/r/status?type=no_destination", request.url), 302);
     }
@@ -71,6 +79,13 @@ export async function GET(
     }
     return NextResponse.redirect(
       new URL(`/loyalty/register?card=${encodeURIComponent(card.card_code)}`, request.url),
+      302,
+    );
+  }
+
+  if (card.type === "attendance") {
+    return NextResponse.redirect(
+      new URL(`/app/hr/attendance?card=${encodeURIComponent(card.card_code)}`, request.url),
       302,
     );
   }

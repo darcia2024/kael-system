@@ -7,7 +7,10 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "biome lint src/lib --diagnostic-level=error",
+    "lint:full": "biome lint src --diagnostic-level=error",
+    "test:engines": "node test-finance.js && node test-loyalty.js && node test-pos.js && tsx test-session-policy.ts",
+    "check": "npm run lint && npm run typecheck && npm run test:engines && npm run build",
     "typecheck": "tsc --noEmit",
     "migrate": "node scripts/migrate.mjs"
   },
@@ -22,6 +25,7 @@
     "server-only": "^0.0.1"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.4.4",
     "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^26.3.0",
     "@types/react": "^19.2.18",

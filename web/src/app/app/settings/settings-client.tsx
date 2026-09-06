@@ -4,6 +4,7 @@ import Link from "next/link";
 import { ArrowLeft, QrCode, CheckCircle2, AlertTriangle, Wrench, ArrowRight } from "lucide-react";
 
 import QrisSetup from "./qris-setup";
+import PosChargeSetup from "./pos-charge-setup";
 import type { ModuleStatus } from "@/lib/licensing";
 import type { ModuleKey } from "@/lib/modules-catalog";
 
@@ -35,6 +36,7 @@ export default function SettingsClient({
   businessName,
   storeCode,
   qris,
+  posCharges,
   modules,
 }: {
   businessName: string;
@@ -45,6 +47,7 @@ export default function SettingsClient({
     merchantCity: string | null;
     nmid: string | null;
   };
+  posCharges: { taxRate: number; serviceChargeRate: number };
   modules: ModuleRow[];
 }) {
   const perluDisiapkan = modules.filter((m) => m.setupHint);
@@ -102,6 +105,24 @@ export default function SettingsClient({
             merchantCity={qris.merchantCity}
             nmid={qris.nmid}
           />
+        </section>
+
+        <section className="rounded-3xl border-2 border-[#232331] bg-white p-6 shadow-ink-md">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div><h2 className="font-extrabold text-base">Brand, White Label & WhatsApp</h2><p className="mt-1 font-mono text-[11px] text-[#7b7b8e]">Nama aplikasi, domain tenant, dan nomor pengirim WhatsApp per usaha.</p></div>
+            <Link href="/app/settings/brand" className="btn-tactile rounded-xl border-2 border-[#232331] bg-[#d9ff57] px-3 py-2 text-xs font-bold">Atur Brand</Link>
+          </div>
+        </section>
+
+        <section className="rounded-3xl border-2 border-[#232331] bg-white p-6 shadow-ink-md space-y-4">
+          <div className="flex items-center gap-2 border-b border-[#dedee8] pb-4">
+            <Wrench size={20} className="text-[#7958d8]" />
+            <div>
+              <h2 className="font-extrabold text-base">Tarif Kasir</h2>
+              <p className="font-mono text-[11px] text-[#7b7b8e]">Pajak dan service charge dipakai otomatis di setiap struk.</p>
+            </div>
+          </div>
+          <PosChargeSetup taxRate={posCharges.taxRate} serviceChargeRate={posCharges.serviceChargeRate} />
         </section>
 
         {/* --- Kesiapan modul --- */}

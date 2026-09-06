@@ -170,6 +170,14 @@ const SETUP: Partial<Record<ModuleKey, { hint: string; href: string }>> = {
     hint: "Belum ada kartu yang diaktivasi, jadi belum ada yang bisa di-tap pelanggan.",
     href: "/app/review",
   },
+  booking: {
+    hint: "Belum ada layanan booking. Tambahkan layanan dan durasinya lebih dulu.",
+    href: "/app/booking",
+  },
+  hr: {
+    hint: "Belum ada staf aktif untuk dijadwalkan.",
+    href: "/app/hr",
+  },
 };
 
 /**

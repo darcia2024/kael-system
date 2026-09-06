@@ -33,6 +33,17 @@ export default function CardActivationPage({ params }: { params: Promise<{ code:
   const [pinError, setPinError] = useState<string>("");
   const [label, setLabel] = useState<string>("Meja Kasir");
 
+  /**
+   * Jenis kartu menentukan seluruh isi langkah dua: memilih tempat di Google,
+   * atau mengetik tautan sendiri. Diambil dari server saat PIN diperiksa,
+   * bukan ditebak dari apa pun di layar.
+   */
+  const [cardType, setCardType] = useState<"review" | "loyalty" | "attendance" | "link">(
+    "review",
+  );
+  const [customUrl, setCustomUrl] = useState<string>("");
+  const isLink = cardType === "link";
+
   // Google Places search
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [searchResults, setSearchResults] = useState<GooglePlaceResult[]>([]);
@@ -77,12 +88,55 @@ export default function CardActivationPage({ params }: { params: Promise<{ code:
 
     // Step 1 lolos. PIN baru diverifikasi di server saat konfirmasi akhir,
     // supaya tidak ada hash yang perlu dikirim ke browser.
+    setCardType(check.data.type);
+
+    // Label bawaan "Meja Kasir" tidak masuk akal untuk kartu tautan.
+    if (check.data.type === "link" && label === "Meja Kasir") {
+      setLabel("Kartu Tautan");
+    }
     setStep(2);
   };
 
   // Handle Final Activation
   const handleConfirmActivation = () => {
     setIsActivating(true);
+
+    /**
+     * Kartu tautan tidak menunjuk tempat di Google, jadi placeDetails sengaja
+     * tidak dikirim. Akibatnya kartu jenis ini hanya bisa diaktifkan sambil
+     * masuk sebagai pemilik usaha: tanpa sesi dan tanpa tempat Google, server
+     * memang tidak punya cara tahu kartunya milik siapa, dan menebaknya berarti
+     * menempelkan kartu ke usaha orang lain.
+     */
+    if (isLink) {
+      const tautan = customUrl.trim();
+      let sah: URL;
+      try {
+        sah = new URL(tautan);
+      } catch {
+        alert("Tautan tidak valid. Tulis lengkap beserta https:// di depannya.");
+        setIsActivating(false);
+        return;
+      }
+      if (sah.protocol !== "https:") {
+        alert("Tautan harus memakai https.");
+        setIsActivating(false);
+        return;
+      }
+
+      void activateCardAction(cardCode, pin, sah.toString(), label).then((res) => {
+        setIsActivating(false);
+        if (res.ok) {
+          setActivationSuccess(true);
+          setStep(4);
+        } else {
+          setPinError(res.error);
+          setStep(1);
+        }
+      });
+      return;
+    }
+
     const placeIdToUse = isManualInput && customPlaceId ? customPlaceId.trim() : selectedPlace?.placeId;
 
     if (!placeIdToUse) {
@@ -154,7 +208,7 @@ export default function CardActivationPage({ params }: { params: Promise<{ code:
             </div>
             <div className={`flex items-center gap-1.5 ${step >= 2 ? "text-[#7958d8] font-bold" : "text-[#7b7b8e]"}`}>
               <span className={`flex h-5 w-5 items-center justify-center rounded-full text-[10px] ${step >= 2 ? "bg-[#7958d8] text-white" : "bg-[#dedee8] text-[#7b7b8e]"}`}>2</span>
-              <span>Pilih Toko</span>
+              <span>{isLink ? "Isi Tautan" : "Pilih Toko"}</span>
             </div>
             <div className={`flex items-center gap-1.5 ${step >= 3 ? "text-[#7958d8] font-bold" : "text-[#7b7b8e]"}`}>
               <span className={`flex h-5 w-5 items-center justify-center rounded-full text-[10px] ${step >= 3 ? "bg-[#7958d8] text-white" : "bg-[#dedee8] text-[#7b7b8e]"}`}>3</span>
@@ -245,16 +299,43 @@ export default function CardActivationPage({ params }: { params: Promise<{ code:
                 </div>
                 <div>
                   <h2 className="text-lg sm:text-xl font-extrabold text-[#232331]">
-                    Pilih Lokasi Google Maps Usaha Anda
+                    {isLink ? "Tautan Tujuan Kartu Ini" : "Pilih Lokasi Google Maps Usaha Anda"}
                   </h2>
                   <p className="text-xs text-[#7b7b8e]">
-                    KAEL secara otomatis mengunci form ulasan resmi Google Place ID tanpa perlu salin link manual.
+                    {isLink
+                      ? "Kartu ini mengarah ke alamat mana pun yang kamu tentukan. Portofolio, katalog, Instagram, atau WhatsApp."
+                      : "KAEL secara otomatis mengunci form ulasan resmi Google Place ID tanpa perlu salin link manual."}
                   </p>
                 </div>
               </div>
 
+              {/* Kartu tautan: tidak ada tempat Google yang perlu dicari. */}
+              {isLink && (
+                <div className="space-y-2">
+                  <label className="block font-mono text-xs font-bold uppercase text-[#232331]">
+                    Alamat tujuan:
+                  </label>
+                  <input
+                    type="url"
+                    value={customUrl}
+                    onChange={(e) => setCustomUrl(e.target.value)}
+                    placeholder="https://portofolio-saya.com"
+                    className="w-full rounded-2xl border-2 border-[#232331] p-3 text-xs font-mono font-bold text-[#232331] focus:outline-none focus:ring-2 focus:ring-[#7958d8]"
+                    autoFocus
+                  />
+                  <p className="text-[11px] leading-relaxed text-[#7b7b8e]">
+                    Harus diawali https. Alamat http diblokir peramban saat halaman dibuka
+                    lewat https, jadi kartunya tidak akan pernah membuka apa pun.
+                  </p>
+                  <p className="rounded-xl border border-[#dedee8] bg-[#fcfcfe] p-3 text-[11px] leading-relaxed text-[#7b7b8e]">
+                    Tujuannya bisa diganti kapan saja lewat dasbor tanpa menulis ulang
+                    kartunya, karena yang tersimpan di kartu cuma alamat pengalihan.
+                  </p>
+                </div>
+              )}
+
               {/* Search Box */}
-              {!isManualInput ? (
+              {!isLink && (!isManualInput ? (
                 <div className="space-y-3">
                   <div className="relative">
                     <Search className="absolute left-3.5 top-3.5 text-[#7b7b8e]" size={16} />
@@ -364,7 +445,7 @@ export default function CardActivationPage({ params }: { params: Promise<{ code:
                     </button>
                   </div>
                 </div>
-              )}
+              ))}
 
               {/* Label Kartu */}
               <div className="space-y-1.5 border-t border-[#dedee8] pt-3">
@@ -392,7 +473,7 @@ export default function CardActivationPage({ params }: { params: Promise<{ code:
                 <button
                   type="button"
                   onClick={() => setStep(3)}
-                  disabled={!selectedPlace && !customPlaceId}
+                  disabled={isLink ? !customUrl.trim() : !selectedPlace && !customPlaceId}
                   className="btn-tactile flex-[2] rounded-2xl border-2 border-[#232331] bg-[#7958d8] py-3 text-xs font-extrabold text-white shadow-ink-md disabled:opacity-50"
                 >
                   Pratinjau &amp; Lanjut
@@ -430,19 +511,25 @@ export default function CardActivationPage({ params }: { params: Promise<{ code:
                   <span className="text-[#7b7b8e]">LABEL PENEMPATAN:</span>
                   <span className="font-extrabold text-[#232331]">{label}</span>
                 </div>
-                <div className="space-y-1 border-b border-[#dedee8] pb-2">
-                  <span className="text-[#7b7b8e] block">TUJUAN GOOGLE MAPS:</span>
-                  <p className="font-sans text-sm font-extrabold text-[#232331]">
-                    {selectedPlace?.name || customPlaceId}
-                  </p>
-                  <p className="font-sans text-xs text-[#7b7b8e]">
-                    {selectedPlace?.address}
-                  </p>
-                </div>
+                {!isLink && (
+                  <div className="space-y-1 border-b border-[#dedee8] pb-2">
+                    <span className="text-[#7b7b8e] block">TUJUAN GOOGLE MAPS:</span>
+                    <p className="font-sans text-sm font-extrabold text-[#232331]">
+                      {selectedPlace?.name || customPlaceId}
+                    </p>
+                    <p className="font-sans text-xs text-[#7b7b8e]">
+                      {selectedPlace?.address}
+                    </p>
+                  </div>
+                )}
                 <div className="space-y-1">
-                  <span className="text-[#7b7b8e] block">GENERATED DIRECT REVIEW URL:</span>
+                  <span className="text-[#7b7b8e] block">
+                    {isLink ? "ALAMAT TUJUAN:" : "GENERATED DIRECT REVIEW URL:"}
+                  </span>
                   <p className="text-[10.5px] text-[#16a34a] break-all bg-white p-2 rounded-lg border border-[#dedee8]">
-                    {buildGoogleReviewUrl(selectedPlace?.placeId || customPlaceId)}
+                    {isLink
+                      ? customUrl.trim()
+                      : buildGoogleReviewUrl(selectedPlace?.placeId || customPlaceId)}
                   </p>
                 </div>
               </div>

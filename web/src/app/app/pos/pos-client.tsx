@@ -38,10 +38,11 @@ import type {
   Category, 
   Business, 
   User, 
-  Customer, 
-  Shift, 
-  Order, 
-  OrderItem 
+  CustomerDirectoryEntry,
+  Shift,
+  Order,
+  OrderItem,
+  LoyaltyProgram
 } from "@/lib/types";
 import { 
   createOrderAction,
@@ -54,7 +55,6 @@ import {
   calculateCartTotals, 
   calculateCashChange, 
   generateEscPosReceiptText,
-  generateDailyOrderNo,
   SERVICE_TYPES,
   serviceTypeLabel,
   PAYMENT_STATUS_LABEL,
@@ -64,7 +64,7 @@ import {
 import { formatRupiah, formatBusinessDateTime } from "@/lib/formatters";
 import QrisPayment from "./qris-payment";
 import OrderQueue from "./order-queue";
-import { maskPhoneNumber, calculateEarnedPoints } from "@/lib/loyalty-engine";
+import { calculateEarnedPoints } from "@/lib/loyalty-engine";
 
 interface PosClientProps {
   business: Business | null;
@@ -74,9 +74,12 @@ interface PosClientProps {
   pendingQrOrders: (Order & { items: OrderItem[] })[];
   staffList: { id: string; name: string }[];
   currentUserId: string;
-  orderCountToday: number;
   /** Pemasangan QRIS hanya untuk pemilik usaha: ini menentukan ke rekening siapa uang masuk. */
   userRole: "owner" | "staff";
+  /** NULL kalau toko ini belum menyiapkan program loyalty. */
+  loyaltyProgram: LoyaltyProgram | null;
+  taxRatePct: number;
+  serviceChargePct: number;
 }
 
 export default function PosClient({
@@ -87,8 +90,10 @@ export default function PosClient({
   pendingQrOrders,
   staffList,
   currentUserId,
-  orderCountToday,
   userRole,
+  loyaltyProgram,
+  taxRatePct: configuredTaxRate,
+  serviceChargePct: configuredServiceRate,
 }: PosClientProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -99,8 +104,6 @@ export default function PosClient({
   // Cart State
   const [cart, setCart] = useState<Record<string, { item: MenuItem; qty: number; note: string }>>({});
   const [discountNominal, setDiscountNominal] = useState<number>(0);
-  const [taxRatePct, setTaxRatePct] = useState<number>(0);
-  const [serviceChargePct, setServiceChargePct] = useState<number>(0);
 
   // Payment Modal State
   const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -123,8 +126,8 @@ export default function PosClient({
 
   // Loyalty Customer Integration in POS
   const [loyaltySearchQuery, setLoyaltySearchQuery] = useState("");
-  const [loyaltySearchResults, setLoyaltySearchResults] = useState<(Customer & { balance: number })[]>([]);
-  const [attachedCustomer, setAttachedCustomer] = useState<(Customer & { balance: number }) | null>(null);
+  const [loyaltySearchResults, setLoyaltySearchResults] = useState<CustomerDirectoryEntry[]>([]);
+  const [attachedCustomer, setAttachedCustomer] = useState<CustomerDirectoryEntry | null>(null);
 
   // Post-Payment Completed Order
   const [completedOrder, setCompletedOrder] = useState<{
@@ -134,6 +137,16 @@ export default function PosClient({
     change: number;
     paymentMethod: string;
     tableNo?: string | null;
+    serviceType: ServiceType;
+    cashierName: string;
+    createdAt: string;
+    subtotal: number;
+    discount: number;
+    tax: number;
+    serviceCharge: number;
+    deliveryFee: number;
+    cashGiven?: number;
+    customerName?: string | null;
     items: { name: string; qty: number; price: number; note?: string }[];
   } | null>(null);
 
@@ -155,15 +168,17 @@ export default function PosClient({
     return calculateCartTotals(
       cartList.map((c) => ({ price: c.item.price, qty: c.qty })),
       discountNominal,
-      taxRatePct,
-      serviceChargePct
+      configuredTaxRate,
+      configuredServiceRate
     );
-  }, [cartList, discountNominal, taxRatePct, serviceChargePct]);
+  }, [cartList, discountNominal, configuredTaxRate, configuredServiceRate]);
+
+  const checkoutTotal = cartTotals.total + (serviceType === "delivery" ? Math.max(0, kirimOngkir) : 0);
 
   // Cash Change Calculation
   const cashChangeCalc = useMemo(() => {
-    return calculateCashChange(cartTotals.total, cashGivenInput);
-  }, [cartTotals.total, cashGivenInput]);
+    return calculateCashChange(checkoutTotal, cashGivenInput);
+  }, [checkoutTotal, cashGivenInput]);
 
   // Filtered Menu Items
   const filteredMenu = useMemo(() => {
@@ -181,7 +196,7 @@ export default function PosClient({
     }
     const timer = setTimeout(async () => {
       const res = await searchCustomersAction(loyaltySearchQuery);
-      setLoyaltySearchResults(res as (Customer & { balance: number })[]);
+      setLoyaltySearchResults(res);
     }, 200);
     return () => clearTimeout(timer);
   }, [loyaltySearchQuery]);
@@ -235,7 +250,7 @@ export default function PosClient({
   // ---------------------------------------------------------------------------
   const handleOpenPayment = () => {
     if (cartList.length === 0) return;
-    setCashGivenInput(cartTotals.total);
+    setCashGivenInput(checkoutTotal);
     setShowPaymentModal(true);
   };
 
@@ -269,8 +284,6 @@ export default function PosClient({
             }
           : null,
       discount: cartTotals.discount,
-      tax: cartTotals.tax,
-      service_charge: cartTotals.serviceCharge,
       cash_given: paymentMethod === "cash" ? cashGivenInput : null,
       customer_id: attachedCustomer?.id || null,
       items: itemsPayload,
@@ -288,6 +301,16 @@ export default function PosClient({
       change: res.data.change,
       paymentMethod,
       tableNo: selectedTableNo || null,
+      serviceType,
+      cashierName: staffList.find((staff) => staff.id === selectedStaffId)?.name || "Kasir",
+      createdAt: new Date().toISOString(),
+      subtotal: res.data.subtotal,
+      discount: res.data.discount,
+      tax: res.data.tax,
+      serviceCharge: res.data.serviceCharge,
+      deliveryFee: res.data.deliveryFee,
+      cashGiven: paymentMethod === "cash" ? cashGivenInput : undefined,
+      customerName: attachedCustomer?.name,
       items: cartList.map((c) => ({
         name: c.item.name,
         qty: c.qty,
@@ -340,44 +363,83 @@ export default function PosClient({
     );
   };
 
-  // Web Bluetooth Thermal ESC/POS Trigger
+  // Web Bluetooth Thermal ESC/POS Trigger. Browser hanya bisa bicara ke
+  // perangkat yang membuka layanan Bluetooth-nya; printer USB/A4 tetap memakai
+  // halaman struk dan dialog cetak bawaan perangkat.
   const handlePrintBluetoothThermal = async () => {
     if (!completedOrder) return;
-    const staff = staffList.find((s) => s.id === selectedStaffId);
     const receiptText = generateEscPosReceiptText({
       businessName: business?.name || "KAEL POS",
       businessAddress: business?.address || "",
       businessPhone: business?.phone || "",
       orderNo: completedOrder.orderNo,
       tableNo: completedOrder.tableNo,
-      serviceType,
-      cashierName: staff?.name || "Kasir",
-      createdAt: new Date().toISOString(),
+      serviceType: completedOrder.serviceType,
+      cashierName: completedOrder.cashierName,
+      createdAt: completedOrder.createdAt,
       items: completedOrder.items,
-      subtotal: cartTotals.subtotal,
-      discount: discountNominal,
-      tax: cartTotals.tax,
-      serviceCharge: cartTotals.serviceCharge,
+      subtotal: completedOrder.subtotal,
+      discount: completedOrder.discount,
+      tax: completedOrder.tax,
+      serviceCharge: completedOrder.serviceCharge,
+      deliveryFee: completedOrder.deliveryFee,
       total: completedOrder.total,
       paymentMethod: completedOrder.paymentMethod,
-      cashGiven: cashGivenInput || undefined,
+      cashGiven: completedOrder.cashGiven,
       cashChange: completedOrder.change || undefined,
-      customerName: attachedCustomer?.name,
+      customerName: completedOrder.customerName,
     });
 
+    const bluetooth = (navigator as Navigator & { bluetooth?: any }).bluetooth;
+    if (!bluetooth) {
+      window.open(`/receipt/${completedOrder.orderId}`, "_blank", "noopener,noreferrer");
+      return;
+    }
+
     try {
-      if ((navigator as any).bluetooth) {
-        alert("Menghubungkan ke printer Bluetooth 58mm...");
-        const device = await (navigator as any).bluetooth.requestDevice({
-          acceptAllDevices: true,
-          optionalServices: ["000018f0-0000-1000-8000-00805f9b34fb"],
-        });
-        alert(`Terhubung ke ${device.name}. Mengirim perintah cetak struk ESC/POS.`);
-      } else {
-        window.open(`/receipt/${completedOrder.orderId}`, "_blank");
+      const device = await bluetooth.requestDevice({
+        acceptAllDevices: true,
+        optionalServices: [
+          "000018f0-0000-1000-8000-00805f9b34fb",
+          "49535343-fe7d-4ae5-8fa9-9fafd205e455",
+        ],
+      });
+      const server = await device.gatt?.connect();
+      if (!server) throw new Error("Printer tidak dapat dihubungkan.");
+
+      const service = await (async () => {
+        for (const uuid of ["000018f0-0000-1000-8000-00805f9b34fb", "49535343-fe7d-4ae5-8fa9-9fafd205e455"]) {
+          try { return await server.getPrimaryService(uuid); } catch { /* coba profil printer berikutnya */ }
+        }
+        throw new Error("Profil ESC/POS printer belum dikenali.");
+      })();
+      const characteristic = await (async () => {
+        for (const uuid of ["00002af1-0000-1000-8000-00805f9b34fb", "49535343-8841-43f4-a8d4-ecbe34729bb3"]) {
+          try { return await service.getCharacteristic(uuid); } catch { /* coba karakteristik berikutnya */ }
+        }
+        throw new Error("Jalur tulis printer belum dikenali.");
+      })();
+
+      const encoded = new TextEncoder().encode(receiptText);
+      const payload = new Uint8Array(encoded.length + 8);
+      payload.set([0x1b, 0x40], 0);
+      payload.set(encoded, 2);
+      payload.set([0x0a, 0x0a, 0x0a, 0x1d, 0x56, 0x00], encoded.length + 2);
+
+      for (let offset = 0; offset < payload.length; offset += 180) {
+        const chunk = payload.slice(offset, offset + 180);
+        if (typeof characteristic.writeValueWithoutResponse === "function") {
+          await characteristic.writeValueWithoutResponse(chunk);
+        } else {
+          await characteristic.writeValue(chunk);
+        }
       }
-    } catch {
-      window.open(`/receipt/${completedOrder.orderId}`, "_blank");
+      device.gatt?.disconnect();
+      alert(`Struk #${completedOrder.orderNo} terkirim ke ${device.name || "printer thermal"}.`);
+    } catch (error) {
+      console.warn("[KAEL] cetak Bluetooth gagal", error);
+      const useBrowserPrint = window.confirm("Printer Bluetooth belum bisa menerima struk. Buka versi thermal di dialog cetak browser?");
+      if (useBrowserPrint) window.open(`/receipt/${completedOrder.orderId}`, "_blank", "noopener,noreferrer");
     }
   };
 
@@ -417,14 +479,15 @@ export default function PosClient({
           {/* Quick Actions Header */}
           <div className="flex items-center gap-1.5 font-mono text-xs">
             
-            {/* Reports Link */}
-            <Link
-              href="/app/pos/reports"
-              className="btn-tactile flex items-center gap-1 rounded-xl border border-[#232331] bg-white px-2.5 py-1.5 font-bold text-[#232331] shadow-ink-xs"
-            >
-              <TrendingUp size={13} />
-              <span className="hidden sm:inline">Laporan Laba</span>
-            </Link>
+            {userRole === "owner" && (
+              <Link
+                href="/app/pos/owner"
+                className="btn-tactile flex items-center gap-1 rounded-xl border border-[#232331] bg-white px-2.5 py-1.5 font-bold text-[#232331] shadow-ink-xs"
+              >
+                <TrendingUp size={13} />
+                <span className="hidden sm:inline">Dashboard Owner</span>
+              </Link>
+            )}
 
             {/* QR Orders Queue Badge */}
             {pendingQrOrders.length > 0 && (
@@ -638,11 +701,14 @@ export default function PosClient({
               </div>
             </div>
 
+            {cartTotals.serviceCharge > 0 && <div className="flex justify-between text-[#7b7b8e]"><span>Service:</span><span>{formatRupiah(cartTotals.serviceCharge)}</span></div>}
+            {cartTotals.tax > 0 && <div className="flex justify-between text-[#7b7b8e]"><span>Pajak:</span><span>{formatRupiah(cartTotals.tax)}</span></div>}
+
             {/* Grand Total */}
             <div className="flex justify-between items-baseline pt-1 border-t border-[#dedee8]">
               <span className="font-extrabold text-sm text-[#232331]">TOTAL:</span>
               <span className="text-xl font-black text-[#16a34a]">
-                {formatRupiah(cartTotals.total)}
+                {formatRupiah(checkoutTotal)}
               </span>
             </div>
 
@@ -653,7 +719,7 @@ export default function PosClient({
               onClick={handleOpenPayment}
               className="btn-tactile w-full flex items-center justify-center gap-2 rounded-2xl border-2 border-[#232331] bg-[#232331] py-3.5 text-sm font-black text-white shadow-ink-md disabled:opacity-40 min-h-[48px]"
             >
-              <span>Bayar {formatRupiah(cartTotals.total)} ➔</span>
+              <span>Bayar {formatRupiah(checkoutTotal)} ➔</span>
             </button>
 
           </div>
@@ -669,7 +735,7 @@ export default function PosClient({
             
             <div className="flex items-center justify-between border-b border-[#dedee8] pb-3">
               <h3 className="font-extrabold text-base text-[#232331] font-sans">
-                Pembayaran Kasir #{generateDailyOrderNo(orderCountToday + 1)}
+                Pembayaran Kasir
               </h3>
               <button
                 type="button"
@@ -772,10 +838,25 @@ export default function PosClient({
                   <div className="rounded-xl border border-[#16a34a] bg-[#dcfce7] p-2.5 flex justify-between items-center">
                     <div>
                       <span className="font-bold text-sm text-[#232331] block">{attachedCustomer.name}</span>
-                      <span className="text-[10.5px] text-[#7b7b8e]">{maskPhoneNumber(attachedCustomer.phone)}</span>
+                      <span className="text-[10.5px] text-[#7b7b8e]">{attachedCustomer.phone_masked}</span>
                     </div>
                     <span className="font-black text-xs text-[#16a34a]">
-                      +{calculateEarnedPoints(cartTotals.total, 10000)} Pts Masuk ✓
+                      {/*
+                        Angka pastinya hanya boleh ditampilkan kalau memang
+                        bisa dipastikan dari layar ini. Kurs poin dibaca dari
+                        program yang sebenarnya, bukan angka tetap. Kalau
+                        program level menyala, jumlah akhirnya bergantung level
+                        member ini dan baru dihitung di server — jadi kasir
+                        diberi kepastian bahwa poinnya masuk, tanpa angka yang
+                        bisa meleset di depan pelanggan.
+                      */}
+                      {!loyaltyProgram
+                        ? "Member Terpasang ✓"
+                        : loyaltyProgram.tiers_is_active
+                          ? "Poin Masuk Otomatis ✓"
+                          : loyaltyProgram.mode === "stamp"
+                            ? `+${loyaltyProgram.stamp_per_visit} Stamp Masuk ✓`
+                            : `+${calculateEarnedPoints(cartTotals.total, loyaltyProgram.earn_rate)} Pts Masuk ✓`}
                     </span>
                   </div>
                 ) : (
@@ -801,7 +882,7 @@ export default function PosClient({
                             }}
                             className="w-full flex justify-between items-center p-1.5 rounded-lg hover:bg-[#f0edff] text-left text-[11px]"
                           >
-                            <span className="font-bold text-[#232331]">{c.name} ({maskPhoneNumber(c.phone)})</span>
+                            <span className="font-bold text-[#232331]">{c.name} ({c.phone_masked})</span>
                             <span className="font-bold text-[#16a34a]">{c.balance} Pts</span>
                           </button>
                         ))}
@@ -840,7 +921,7 @@ export default function PosClient({
                   <label className="block font-bold text-[#232331]">Uang Tunai Diterima (Rp):</label>
                   <input
                     type="number"
-                    min={cartTotals.total}
+                    min={checkoutTotal}
                     step={5000}
                     value={cashGivenInput}
                     onChange={(e) => setCashGivenInput(Number(e.target.value))}
@@ -849,14 +930,14 @@ export default function PosClient({
 
                   {/* Quick Cash Pills */}
                   <div className="flex flex-wrap gap-1.5 pt-1">
-                    {[cartTotals.total, 50000, 100000, 150000, 200000].filter((v, i, a) => a.indexOf(v) === i && v >= cartTotals.total).map((amt) => (
+                    {[checkoutTotal, 50000, 100000, 150000, 200000].filter((v, i, a) => a.indexOf(v) === i && v >= checkoutTotal).map((amt) => (
                       <button
                         key={amt}
                         type="button"
                         onClick={() => setCashGivenInput(amt)}
                         className="px-2 py-1 rounded-lg border border-[#dedee8] bg-white text-[10.5px] font-bold text-[#7b7b8e] hover:border-[#232331]"
                       >
-                        {amt === cartTotals.total ? "Uang Pas" : formatRupiah(amt)}
+                        {amt === checkoutTotal ? "Uang Pas" : formatRupiah(amt)}
                       </button>
                     ))}
                   </div>
@@ -875,7 +956,7 @@ export default function PosClient({
               {paymentMethod === "qris" && (
                 <QrisPayment
                   business={business}
-                  amount={cartTotals.total}
+                  amount={checkoutTotal}
                   isOwner={userRole === "owner"}
                 />
               )}
@@ -934,7 +1015,7 @@ export default function PosClient({
                 className="btn-tactile w-full flex items-center justify-center gap-2 rounded-xl border-2 border-[#232331] bg-[#232331] py-2.5 text-xs font-bold text-white shadow-ink-xs"
               >
                 <Printer size={14} />
-                <span>Cetak Struk Thermal (ESC/POS)</span>
+                <span>Cetak Thermal Bluetooth</span>
               </button>
 
               <Link

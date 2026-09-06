@@ -16,10 +16,14 @@ import {
   Coffee, 
   CheckCircle2, 
   AlertTriangle, 
-  Search, 
-  ChevronRight 
+  Search,
+  ChevronRight,
+  Star,
+  MessageSquare,
+  LayoutDashboard,
 } from "lucide-react";
-import type { Business, Order, Shift } from "@/lib/types";
+import type { Business, Order, Shift, FeedbackSummary, FeedbackRow } from "@/lib/types";
+import { FEEDBACK_REASONS } from "@/lib/types";
 import { refundOrderAction } from "@/lib/actions";
 import { serviceTypeLabel } from "@/lib/pos-engine";
 import { formatRupiah, formatBusinessDateTime } from "@/lib/formatters";
@@ -53,11 +57,15 @@ export default function PosOwnerReportsPage({
   reports,
   orders,
   shifts,
+  feedbackSummary,
+  recentFeedback,
 }: {
   business: Business | null;
   reports: PosReports;
   orders: Order[];
   shifts: Shift[];
+  feedbackSummary: FeedbackSummary;
+  recentFeedback: FeedbackRow[];
 }) {
   const router = useRouter();
 
@@ -70,8 +78,9 @@ export default function PosOwnerReportsPage({
   const refreshAll = () => router.refresh();
 
   const handleOpenRefund = (order: Order) => {
+    const remaining = Math.max(0, Number(order.total) - Number(order.refund_total ?? 0));
     setRefundingOrderId(order.id);
-    setRefundAmount(order.total);
+    setRefundAmount(remaining);
     setRefundReason("Pembatalan Pesanan Pelanggan");
   };
 
@@ -120,11 +129,11 @@ export default function PosOwnerReportsPage({
           </div>
 
           <Link
-            href="/app/pos"
+            href="/app/pos/owner"
             className="btn-tactile flex items-center gap-1 rounded-xl border-2 border-[#232331] bg-[#d9ff57] px-3.5 py-1.5 font-mono text-xs font-black text-[#232331] shadow-ink-xs"
           >
-            <Receipt size={13} />
-            <span>Buka Kasir</span>
+            <LayoutDashboard size={13} />
+            <span>Dashboard Owner</span>
           </Link>
         </div>
       </header>
@@ -259,6 +268,83 @@ export default function PosOwnerReportsPage({
           </div>
         </div>
 
+        {/* SECTION 1.5: FEEDBACK PASCATRANSAKSI */}
+        <div className="rounded-2xl sm:rounded-3xl border sm:border-2 border-[#232331] bg-white p-4 sm:p-6 shadow-ink-md space-y-4">
+          <div className="border-b border-[#dedee8] pb-3">
+            <h3 className="font-extrabold text-sm sm:text-base text-[#232331]">
+              Feedback Pelanggan
+            </h3>
+            <p className="text-[11px] sm:text-xs text-[#7b7b8e]">
+              Rating dan alasan singkat yang dikirim pelanggan dari halaman struk, sesudah transaksi.
+            </p>
+          </div>
+
+          {feedbackSummary.total === 0 ? (
+            <div className="py-8 text-center">
+              <MessageSquare className="mx-auto text-[#7958d8]" size={25} />
+              <p className="mt-3 text-sm font-bold">Belum ada feedback masuk</p>
+              <p className="mt-1 text-xs text-[#5c5c70]">Muncul otomatis begitu pelanggan mengisi rating dari struk digitalnya.</p>
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-3 gap-3 font-mono text-xs">
+                <div className="rounded-xl border border-[#dedee8] bg-[#fcfcfe] p-3 text-center">
+                  <p className="text-lg font-black text-[#232331]">{feedbackSummary.total}</p>
+                  <p className="text-[10px] text-[#7b7b8e]">Total Feedback</p>
+                </div>
+                <div className="rounded-xl border border-[#dedee8] bg-[#fcfcfe] p-3 text-center">
+                  <p className="flex items-center justify-center gap-1 text-lg font-black text-[#232331]">
+                    {feedbackSummary.avgRating.toFixed(1)}
+                    <Star size={14} className="fill-[#facc15] text-[#facc15]" />
+                  </p>
+                  <p className="text-[10px] text-[#7b7b8e]">Rata-rata Rating</p>
+                </div>
+                <div className="rounded-xl border border-[#dedee8] bg-[#fcfcfe] p-3 text-center">
+                  <p className={`text-lg font-black ${feedbackSummary.lowCount > 0 ? "text-[#c2410c]" : "text-[#232331]"}`}>{feedbackSummary.lowCount}</p>
+                  <p className="text-[10px] text-[#7b7b8e]">Rating ≤3</p>
+                </div>
+              </div>
+
+              {feedbackSummary.byReason.length > 0 && (
+                <div>
+                  <p className="font-mono text-[10px] font-bold uppercase text-[#7958d8]">Masalah yang paling sering muncul</p>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {feedbackSummary.byReason.map((r) => (
+                      <span key={r.reason_code} className="rounded-full border border-[#dedee8] bg-[#fcfcfe] px-2.5 py-1 font-mono text-[11px] font-bold text-[#5c5c70]">
+                        {FEEDBACK_REASONS.find((f) => f.key === r.reason_code)?.label ?? r.reason_code} · {r.count}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="max-h-72 divide-y divide-[#dedee8] overflow-y-auto">
+                {recentFeedback.map((f) => (
+                  <div key={f.id} className="py-2.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1">
+                        {[1, 2, 3, 4, 5].map((n) => (
+                          <Star key={n} size={12} className={f.rating >= n ? "fill-[#facc15] text-[#facc15]" : "text-[#dedee8]"} />
+                        ))}
+                        {f.reason_code && (
+                          <span className="ml-1.5 rounded-full bg-[#fff7f7] px-2 py-0.5 font-mono text-[9.5px] font-bold text-[#b91c1c]">
+                            {FEEDBACK_REASONS.find((r) => r.key === f.reason_code)?.label ?? f.reason_code}
+                          </span>
+                        )}
+                      </div>
+                      <span className="shrink-0 font-mono text-[10px] text-[#7b7b8e]">{formatBusinessDateTime(f.created_at)}</span>
+                    </div>
+                    <p className="mt-1 text-xs text-[#5c5c70]">
+                      <span className="font-bold text-[#232331]">{f.customer_name || "Pelanggan"}</span> · #{f.order_no}
+                    </p>
+                    {f.comment && <p className="mt-1 text-xs italic text-[#232331]">&ldquo;{f.comment}&rdquo;</p>}
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+
         {/* SECTION 2: RECENT ORDERS & OWNER REFUND */}
         <div className="rounded-2xl sm:rounded-3xl border sm:border-2 border-[#232331] bg-white p-4 sm:p-6 shadow-ink-md space-y-4">
           <div className="border-b border-[#dedee8] pb-3">
@@ -296,20 +382,22 @@ export default function PosOwnerReportsPage({
                       {serviceTypeLabel(ord.service_type, ord.table_no)}
                     </td>
                     <td className="py-3 px-3 font-black text-sm text-[#16a34a]">
-                      {formatRupiah(ord.total)}
+                      {formatRupiah(Math.max(0, Number(ord.total) - Number(ord.refund_total ?? 0)))}
                     </td>
                     <td className="py-3 px-3 uppercase font-bold text-[#7b7b8e]">
                       {ord.payment_method}
                     </td>
                     <td className="py-3 px-3">
                       <span className={`inline-flex items-center gap-1 font-bold text-[10px] px-2 py-0.5 rounded-full border ${
-                        ord.status === "paid"
+                        (ord.refund_total ?? 0) > 0
+                          ? "bg-[#feebee] text-[#ef4444] border-[#ef4444]"
+                          : ord.status === "paid"
                           ? "bg-[#dcfce7] text-[#16a34a] border-[#16a34a]"
                           : ord.status === "refunded"
                           ? "bg-[#feebee] text-[#ef4444] border-[#ef4444]"
                           : "bg-[#fef3c7] text-[#d97706] border-[#d97706]"
                       }`}>
-                        {ord.status.toUpperCase()}
+                        {(ord.refund_total ?? 0) > 0 ? `REFUND ${formatRupiah(ord.refund_total ?? 0)}` : ord.status.toUpperCase()}
                       </span>
                     </td>
                     <td className="py-3 px-3 text-right space-x-1.5 whitespace-nowrap">
@@ -320,7 +408,7 @@ export default function PosOwnerReportsPage({
                       >
                         Struk
                       </Link>
-                      {ord.status === "paid" && (
+                      {ord.status === "paid" && Number(ord.refund_total ?? 0) < Number(ord.total) && (
                         <button
                           type="button"
                           onClick={() => handleOpenRefund(ord)}
@@ -439,7 +527,7 @@ export default function PosOwnerReportsPage({
               </div>
 
               <p className="text-[10px] text-[#7b7b8e] leading-relaxed">
-                ⚡ Transaksi asli akan tetap tersimpan di database sebagai jejak audit dan ditandai sebagai 'refunded'.
+                Transaksi asli tetap tercatat sebagai penjualan. Nominal refund mengurangi omzet dan laci kas pada shift pengembaliannya.
               </p>
 
               <div className="flex justify-end gap-2 pt-2 border-t border-[#dedee8] font-mono">

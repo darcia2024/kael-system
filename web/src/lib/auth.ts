@@ -8,6 +8,8 @@ import {
 } from "node:crypto";
 
 import type { StaffPermission, User } from "./types";
+import { getActiveSessionUser } from "./session-user";
+import { isCurrentSession } from "./session-policy";
 
 /**
  * Sesi dan verifikasi PIN.
@@ -139,7 +141,21 @@ export async function destroySession(): Promise<void> {
 
 export async function getSession(): Promise<Session | null> {
   const store = await cookies();
-  return deserialize(store.get(SESSION_COOKIE)?.value);
+  const session = deserialize(store.get(SESSION_COOKIE)?.value);
+  if (!session) return null;
+
+  const current = await getActiveSessionUser(session.userId);
+  // Semua atribut otorisasi wajib sama dengan data terbaru di database.
+  // Ini menutup sesi staf yang sudah dicabut atau dipindah tenant.
+  if (!current || !isCurrentSession(session, current)) return null;
+
+  return {
+    userId: current.id,
+    businessId: current.businessId,
+    role: current.role,
+    name: current.name,
+    permissions: current.role === "staff" ? current.permissions : undefined,
+  };
 }
 
 // ---------------------------------------------------------------------------

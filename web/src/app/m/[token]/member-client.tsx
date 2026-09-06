@@ -2,26 +2,32 @@
 
 import { useState, useMemo } from "react";
 import Link from "next/link";
-import { 
-  Gift, 
-  Sparkles, 
-  QrCode, 
-  History, 
-  CheckCircle2, 
-  AlertCircle, 
-  ArrowRight, 
-  Store, 
-  ShieldCheck, 
-  Copy, 
-  Check, 
-  Clock, 
+import {
+  Gift,
+  Sparkles,
+  QrCode,
+  History,
+  CheckCircle2,
+  AlertCircle,
+  ArrowRight,
+  Store,
+  ShieldCheck,
+  Copy,
+  Check,
+  Clock,
   Ticket,
-  ChevronRight
+  ChevronRight,
+  Users,
+  Share2,
+  Cake,
+  Crown
 } from "lucide-react";
-import type { Customer, Business, LoyaltyProgram, Reward, PointLedger, Redemption } from "@/lib/types";
-import { maskPhoneNumber } from "@/lib/loyalty-engine";
+import type { Customer, Business, LoyaltyProgram, Reward, PointLedger, Redemption, LoyaltyTier } from "@/lib/types";
+import { maskPhoneNumber, resolveTier } from "@/lib/loyalty-engine";
 import { formatRupiah, formatBusinessDateTime } from "@/lib/formatters";
 import { BusinessMark } from "@/components/business-mark";
+import { updateMarketingPreferenceAction, updateCustomerBirthdayAction } from "@/lib/actions";
+import { siteHost } from "@/lib/site";
 
 /**
  * Tampilan halaman member. Seluruh datanya dikirim sebagai props oleh komponen
@@ -40,18 +46,87 @@ export interface MemberPageData {
   balance: number;
   ledger: PointLedger[];
   redemptions: Redemption[];
+  /** Null kalau program referral toko ini belum diaktifkan owner. */
+  referralCode: string | null;
+  /** Kosong kalau program level toko ini belum diaktifkan owner. */
+  tiers: LoyaltyTier[];
+  lifetimeSpend: number;
 }
 
 export default function CustomerMemberProgressPage({
-  customer, business, program, rewards, balance, ledger, redemptions,
+  customer, business, program, rewards, balance, ledger, redemptions, referralCode, tiers, lifetimeSpend,
 }: MemberPageData) {
   const [activeTab, setActiveTab] = useState<"rewards" | "history">("rewards");
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
+  const [copiedReferralLink, setCopiedReferralLink] = useState(false);
+  const [marketingOptIn, setMarketingOptIn] = useState(customer?.marketing_opt_in ?? false);
+  const [savingMarketingOptIn, setSavingMarketingOptIn] = useState(false);
+  const [marketingPreferenceError, setMarketingPreferenceError] = useState<string | null>(null);
+  const [birthdayInput, setBirthdayInput] = useState("");
+  const [savingBirthday, setSavingBirthday] = useState(false);
+  const [birthdayError, setBirthdayError] = useState<string | null>(null);
+  const [birthdaySaved, setBirthdaySaved] = useState(false);
+
+  const activeVoucher = useMemo(
+    () => redemptions.find((redemption) => redemption.status === "issued") ?? null,
+    [redemptions],
+  );
+  const latestPurchase = useMemo(
+    () => ledger.find((entry) => entry.reason === "purchase" && Number(entry.amount_spent) > 0) ?? null,
+    [ledger],
+  );
+  const spendUntilNextPoint = program?.mode === "point" && latestPurchase && program.earn_rate > 0
+    ? program.earn_rate - (Number(latestPurchase.amount_spent) % program.earn_rate)
+    : 0;
 
   const handleCopyCode = (code: string) => {
     navigator.clipboard.writeText(code);
     setCopiedCode(code);
     setTimeout(() => setCopiedCode(null), 2000);
+  };
+
+  const handleMarketingPreference = async (nextValue: boolean) => {
+    if (!customer) return;
+    setMarketingPreferenceError(null);
+    setSavingMarketingOptIn(true);
+    const result = await updateMarketingPreferenceAction(customer.token, nextValue);
+    setSavingMarketingOptIn(false);
+    if (!result.ok) {
+      setMarketingPreferenceError(result.error);
+      return;
+    }
+    setMarketingOptIn(nextValue);
+  };
+
+  const handleSaveBirthday = async () => {
+    if (!customer || !birthdayInput) return;
+    setBirthdayError(null);
+    setSavingBirthday(true);
+    const result = await updateCustomerBirthdayAction(customer.token, birthdayInput);
+    setSavingBirthday(false);
+    if (!result.ok) {
+      setBirthdayError(result.error);
+      return;
+    }
+    setBirthdaySaved(true);
+  };
+
+  const referralLink = useMemo(() => {
+    if (!referralCode || !business?.store_code) return null;
+    return `https://${siteHost}/loyalty/register?toko=${encodeURIComponent(business.store_code)}&ref=${encodeURIComponent(referralCode)}`;
+  }, [referralCode, business?.store_code]);
+
+  const referralMessage = useMemo(() => {
+    if (!referralLink || !business) return "";
+    const firstName = customer?.name?.trim().split(/\s+/)[0] || "";
+    return `Halo! ${firstName ? firstName + " ajak kamu " : "Aku ajak kamu "}jadi member ${business.name}. Daftar lewat tautan ini, kita berdua dapat bonus di belanja pertamamu ya:\n${referralLink}`;
+  }, [referralLink, business, customer?.name]);
+
+  const handleCopyReferralLink = () => {
+    if (!referralLink) return;
+    navigator.clipboard.writeText(referralLink);
+    setCopiedReferralLink(true);
+    setTimeout(() => setCopiedReferralLink(false), 2000);
   };
 
   // Next reward progress
@@ -62,6 +137,15 @@ export default function CustomerMemberProgressPage({
 
   const progressPercent = nextTargetReward
     ? Math.min(100, Math.round((balance / nextTargetReward.point_cost) * 100))
+    : 100;
+
+  const sortedTiers = useMemo(() => [...tiers].sort((a, b) => a.min_lifetime_spend - b.min_lifetime_spend), [tiers]);
+  const currentTier = useMemo(() => resolveTier(lifetimeSpend, tiers), [lifetimeSpend, tiers]);
+  const nextTier = currentTier
+    ? sortedTiers.find((t) => t.min_lifetime_spend > currentTier.min_lifetime_spend) ?? null
+    : sortedTiers[0] ?? null;
+  const tierProgressPercent = nextTier
+    ? Math.min(100, Math.round((lifetimeSpend / nextTier.min_lifetime_spend) * 100))
     : 100;
 
   if (!customer || !business || !program) {
@@ -175,6 +259,12 @@ export default function CustomerMemberProgressPage({
             </div>
           </div>
 
+          {program.mode === "point" && latestPurchase && spendUntilNextPoint > 0 && spendUntilNextPoint < program.earn_rate && (
+            <p className="rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-[10.5px] leading-snug text-[#f3f1ff]">
+              Di belanja terakhirmu, masih kurang {formatRupiah(spendUntilNextPoint)} untuk mendapat 1 poin lagi. Sisa ini tidak dibawa ke transaksi berikutnya.
+            </p>
+          )}
+
           {/* Progress to Next Reward */}
           {nextTargetReward && (
             <div className="space-y-1.5 font-mono text-xs">
@@ -200,8 +290,77 @@ export default function CustomerMemberProgressPage({
 
         </div>
 
+        {/* LEVEL MEMBER (kalau program level toko ini aktif) */}
+        {program.tiers_is_active && currentTier && (
+          <div className="rounded-2xl border-2 border-[#232331] bg-gradient-to-br from-[#fef9c3] to-white p-4 shadow-ink-xs space-y-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-[#d97706] bg-[#fef3c7] text-[#d97706]">
+                  <Crown size={16} />
+                </span>
+                <div>
+                  <span className="block text-[10px] font-mono font-bold uppercase text-[#d97706]">Level Member</span>
+                  <h3 className="text-sm font-black text-[#232331]">{currentTier.name}</h3>
+                </div>
+              </div>
+              {Number(currentTier.earn_multiplier) > 1 && (
+                <span className="shrink-0 rounded-full border border-[#d97706] bg-[#fef3c7] px-2.5 py-1 text-[11px] font-black text-[#d97706]">
+                  {Number(currentTier.earn_multiplier).toFixed(2)}x {program.mode === "stamp" ? "Stempel" : "Poin"}
+                </span>
+              )}
+            </div>
+            {currentTier.benefit_note && <p className="text-[11px] text-[#5c5c70]">{currentTier.benefit_note}</p>}
+            {nextTier && (
+              <div className="space-y-1">
+                <div className="flex justify-between text-[10.5px]">
+                  <span className="text-[#7b7b8e]">Menuju {nextTier.name}</span>
+                  <span className="font-bold text-[#d97706]">{formatRupiah(lifetimeSpend)} / {formatRupiah(nextTier.min_lifetime_spend)}</span>
+                </div>
+                <div className="h-1.5 w-full overflow-hidden rounded-full bg-[#f3e8b8]">
+                  <div className="h-full rounded-full bg-[#d97706] transition-all duration-500" style={{ width: `${tierProgressPercent}%` }} />
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* AJAK TEMAN (kalau program referral toko ini aktif) */}
+        {referralLink && (
+          <div className="rounded-2xl border-2 border-[#232331] bg-white p-4 shadow-ink-xs space-y-3">
+            <div className="flex items-center gap-2">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-[#7958d8] bg-[#f0edff] text-[#7958d8]">
+                <Users size={16} />
+              </span>
+              <div className="min-w-0">
+                <h3 className="text-sm font-extrabold text-[#232331]">Ajak Teman</h3>
+                <p className="text-[10.5px] text-[#7b7b8e]">Bagikan tautanmu. Kalian berdua dapat bonus saat temanmu belanja pertama kali.</p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <a
+                href={`https://wa.me/?text=${encodeURIComponent(referralMessage)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn-tactile flex flex-1 items-center justify-center gap-1.5 rounded-xl border-2 border-[#232331] bg-[#25D366] py-2.5 text-xs font-black text-white shadow-ink-xs"
+              >
+                <Share2 size={14} />
+                <span>Bagikan lewat WhatsApp</span>
+              </a>
+              <button
+                type="button"
+                onClick={handleCopyReferralLink}
+                className="btn-tactile shrink-0 rounded-xl border-2 border-[#232331] bg-white p-2.5 text-[#232331]"
+                title="Salin tautan"
+              >
+                {copiedReferralLink ? <Check size={16} /> : <Copy size={16} />}
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* RECENT CLAIMED REDEMPTION VOUCHER CARD (If Any) */}
-        {redemptions.length > 0 && redemptions[0] && (
+        {activeVoucher && (
           <div className="rounded-2xl border-2 border-[#16a34a] bg-[#dcfce7] p-3.5 space-y-2 font-mono text-xs animate-in fade-in">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-1.5 text-[#16a34a] font-black">
@@ -216,20 +375,20 @@ export default function CustomerMemberProgressPage({
             <div className="rounded-xl bg-white p-2.5 border border-[#16a34a]/30 flex items-center justify-between gap-2">
               <div>
                 <span className="font-extrabold text-sm text-[#232331] font-mono block tracking-wider">
-                  {redemptions[0].code}
+                  {activeVoucher.code}
                 </span>
                 <span className="text-[10px] text-[#7b7b8e] font-sans">
-                  Status: Berhasil diverifikasi kasir ✓
+                  Status: Belum dipakai. Tunjukkan kode ini ke kasir.
                 </span>
               </div>
 
               <button
                 type="button"
-                onClick={() => handleCopyCode(redemptions[0].code)}
+                onClick={() => handleCopyCode(activeVoucher.code)}
                 className="btn-tactile rounded-lg bg-[#232331] text-[#d9ff57] p-1.5 text-[10.5px] font-bold"
                 title="Salin Kode"
               >
-                {copiedCode === redemptions[0].code ? <Check size={14} /> : <Copy size={14} />}
+                {copiedCode === activeVoucher.code ? <Check size={14} /> : <Copy size={14} />}
               </button>
             </div>
           </div>
@@ -300,7 +459,7 @@ export default function CustomerMemberProgressPage({
                     </span>
 
                     <span className="text-[10.5px] font-bold text-[#7958d8]">
-                      Tukarkan di Kasir ➔
+                      Tukarkan di Kasir
                     </span>
                   </div>
                 </div>
@@ -349,6 +508,65 @@ export default function CustomerMemberProgressPage({
           <p className="text-[9.5px] leading-relaxed">
             Data Anda hanya digunakan untuk keperluan program loyalitas toko {business.name}.
           </p>
+        </div>
+
+        {/* AJAKAN LENGKAPI TANGGAL LAHIR (kalau program ulang tahun aktif & belum diisi) */}
+        {program.birthday_is_active && !customer.birthday && (
+          <div className="rounded-2xl border-2 border-[#232331] bg-white p-3.5 space-y-2.5 font-sans">
+            <div className="flex items-center gap-2">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-[#db2777] bg-[#fce7f3] text-[#db2777]">
+                <Cake size={15} />
+              </span>
+              <div className="min-w-0">
+                <h3 className="text-xs font-bold text-[#232331]">Lengkapi tanggal lahir</h3>
+                <p className="text-[10.5px] text-[#5c5c70]">
+                  {program.birthday_bonus_points > 0
+                    ? `Dapat bonus ${program.birthday_bonus_points} ${program.mode === "stamp" ? "stempel" : "poin"} spesial di hari ulang tahunmu.`
+                    : "Biar toko ini bisa kirim ucapan spesial di hari ulang tahunmu."}
+                </p>
+              </div>
+            </div>
+
+            {birthdaySaved ? (
+              <p className="flex items-center gap-1.5 text-[10.5px] font-bold text-[#16a34a]"><CheckCircle2 size={13} />Tersimpan. Sampai jumpa di hari spesialmu!</p>
+            ) : (
+              <div className="flex items-center gap-2">
+                <input
+                  type="date"
+                  value={birthdayInput}
+                  max={new Date().toISOString().slice(0, 10)}
+                  onChange={(e) => setBirthdayInput(e.target.value)}
+                  className="min-h-11 flex-1 rounded-xl border border-[#dedee8] bg-[#fcfcfe] p-2.5 text-xs font-bold text-[#232331]"
+                />
+                <button
+                  type="button"
+                  onClick={() => void handleSaveBirthday()}
+                  disabled={!birthdayInput || savingBirthday}
+                  className="btn-tactile min-h-11 shrink-0 rounded-xl border-2 border-[#232331] bg-[#232331] px-3 text-xs font-black text-[#d9ff57] disabled:opacity-50"
+                >
+                  {savingBirthday ? "..." : "Simpan"}
+                </button>
+              </div>
+            )}
+            {birthdayError && <p className="text-[10.5px] font-bold text-[#c2410c]">{birthdayError}</p>}
+          </div>
+        )}
+
+        <div className="rounded-2xl border-2 border-[#232331] bg-white p-3.5 font-sans">
+          <label className="flex min-h-11 cursor-pointer items-start gap-3">
+            <input
+              type="checkbox"
+              checked={marketingOptIn}
+              disabled={savingMarketingOptIn}
+              onChange={(event) => void handleMarketingPreference(event.target.checked)}
+              className="mt-1 h-4 w-4 rounded accent-[#232331]"
+            />
+            <span className="min-w-0">
+              <span className="block text-xs font-bold text-[#232331]">Info promo lewat WhatsApp</span>
+              <span className="mt-0.5 block text-[10.5px] leading-relaxed text-[#5c5c70]">{marketingOptIn ? "Anda setuju menerima info promo dan pengingat poin dari toko ini." : "Centang jika Anda ingin menerima info promo dan pengingat poin dari toko ini."}</span>
+            </span>
+          </label>
+          {marketingPreferenceError && <p className="mt-2 text-[10.5px] font-bold text-[#c2410c]">{marketingPreferenceError}</p>}
         </div>
 
       </main>

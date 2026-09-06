@@ -25,7 +25,7 @@ import {
   Search
 } from "lucide-react";
 import type { Business, Card, CardTap } from "@/lib/types";
-import { updateCardAction, searchPlacesAction } from "@/lib/actions";
+import { updateCardAction, searchPlacesAction, syncGoogleReviewSnapshotAction } from "@/lib/actions";
 import { calculateCleanTaps, generateDailyTapSeries } from "@/lib/tap-counter";
 import { formatCardCodeDisplay } from "@/lib/card-code";
 import { formatBusinessDateTime } from "@/lib/formatters";
@@ -36,11 +36,19 @@ export default function KaelReviewOwnerDashboard({
   business,
   cards,
   rawTaps,
+  googleReport,
+  suspiciousTapCount,
   sessionRole,
 }: {
   business: Business | null;
   cards: Card[];
   rawTaps: CardTap[];
+  googleReport: {
+    latest: { rating: number; reviewCount: number; capturedAt: string } | null;
+    growth7d: number;
+    growth30d: number;
+  };
+  suspiciousTapCount: number;
   /** Menentukan ke beranda mana tombol kembali mengantar. */
   sessionRole: "owner" | "staff";
 }) {
@@ -53,7 +61,14 @@ export default function KaelReviewOwnerDashboard({
   const [editPlacesResults, setEditPlacesResults] = useState<GooglePlaceResult[]>([]);
   const [selectedPlace, setSelectedPlace] = useState<GooglePlaceResult | null>(null);
   const [manualPlaceId, setManualPlaceId] = useState("");
+
+  /**
+   * Tujuan untuk kartu jenis `link`, yang tidak menunjuk tempat di Google.
+   * Kartu ulasan tidak memakai ini dan alurnya tidak berubah sama sekali.
+   */
+  const [editCustomUrl, setEditCustomUrl] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const [isSyncingGoogle, setIsSyncingGoogle] = useState(false);
 
   // Debounce search query perubahan Google Places
   useEffect(() => {
@@ -81,6 +96,7 @@ export default function KaelReviewOwnerDashboard({
     setEditLabel(card.label || "");
     setEditSearchQuery(business?.name || "");
     setManualPlaceId("");
+    setEditCustomUrl(card.destination_url || "");
     setSelectedPlace(null);
   };
 
@@ -91,7 +107,27 @@ export default function KaelReviewOwnerDashboard({
     setIsSaving(true);
     let newDestinationUrl = selectedCardForEdit.destination_url;
 
-    if (selectedPlace) {
+    /**
+     * Kartu tautan tidak pernah menyentuh Google Places. Pemeriksaan bentuk
+     * alamat dilakukan di sini supaya kesalahan ketik ketahuan sebelum
+     * dikirim, tapi server tetap memeriksanya lagi lewat updateCardAction.
+     */
+    if (selectedCardForEdit.type === "link") {
+      const tautan = editCustomUrl.trim();
+      try {
+        const sah = new URL(tautan);
+        if (sah.protocol !== "https:") {
+          alert("Tautan harus memakai https.");
+          setIsSaving(false);
+          return;
+        }
+        newDestinationUrl = sah.toString();
+      } catch {
+        alert("Tautan tidak valid. Tulis lengkap beserta https:// di depannya.");
+        setIsSaving(false);
+        return;
+      }
+    } else if (selectedPlace) {
       newDestinationUrl = selectedPlace.directReviewUrl;
     } else if (manualPlaceId.trim()) {
       newDestinationUrl = buildGoogleReviewUrl(manualPlaceId.trim());
@@ -123,6 +159,14 @@ export default function KaelReviewOwnerDashboard({
       alert(res.error);
       return;
     }
+    router.refresh();
+  };
+
+  const handleSyncGoogle = async () => {
+    setIsSyncingGoogle(true);
+    const result = await syncGoogleReviewSnapshotAction();
+    setIsSyncingGoogle(false);
+    if (!result.ok) return alert(result.error);
     router.refresh();
   };
 
@@ -171,6 +215,24 @@ export default function KaelReviewOwnerDashboard({
             Metrik di bawah mencatat <strong>berapa kali kartu fisik di-tap oleh pelanggan</strong>. Pengisian ulasan bintang terjadi langsung di dalam platform resmi Google Maps dan Google tidak mengirimkan data ulasan balik ke pihak ketiga. Label ini disajikan secara transparan agar kalkulasi pertumbuhan reputasi tokomu tetap akurat.
           </p>
         </div>
+
+        <section className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
+          <div className="rounded-2xl border-2 border-[#232331] bg-white p-5 shadow-ink-md">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="font-mono text-[10px] font-bold text-[#7958d8]">GOOGLE REVIEW SNAPSHOT</p>
+                <h2 className="mt-1 text-lg font-extrabold">{googleReport.latest ? `${googleReport.latest.rating.toFixed(1)} dari ${googleReport.latest.reviewCount} ulasan` : "Belum ada snapshot"}</h2>
+                <p className="mt-1 text-xs text-[#7b7b8e]">Pertumbuhan 7 hari: {googleReport.growth7d >= 0 ? "+" : ""}{googleReport.growth7d} ulasan. 30 hari: {googleReport.growth30d >= 0 ? "+" : ""}{googleReport.growth30d} ulasan.</p>
+              </div>
+              {sessionRole === "owner" && <button type="button" onClick={handleSyncGoogle} disabled={isSyncingGoogle} className="btn-tactile rounded-lg border-2 border-[#232331] bg-[#d9ff57] px-3 py-2 text-xs font-bold disabled:opacity-50">{isSyncingGoogle ? "Menyinkronkan..." : "Sync Google"}</button>}
+            </div>
+          </div>
+          <div className={`rounded-2xl border-2 p-5 shadow-ink-md ${suspiciousTapCount ? "border-[#c2410c] bg-[#ffedd5]" : "border-[#232331] bg-[#dcfce7]"}`}>
+            <p className="font-mono text-[10px] font-bold">MONITOR TAP</p>
+            <p className="mt-1 text-lg font-extrabold">{suspiciousTapCount ? `${suspiciousTapCount} tap perlu dicek` : "Tidak ada tap mencurigakan"}</p>
+            <p className="mt-1 text-xs">Sistem menandai lonjakan berulang dari sumber yang sama dalam 24 jam.</p>
+          </div>
+        </section>
 
         {/* 4 SUMMARY METRICS */}
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -404,6 +466,24 @@ export default function KaelReviewOwnerDashboard({
                           <span>302</span>
                         </Link>
 
+                        {card.type === "review" && sessionRole === "owner" && (
+                          <Link
+                            href={`/app/review/standee/${card.id}`}
+                            className="btn-tactile inline-flex items-center gap-0.5 rounded-lg border border-[#232331] bg-[#d9ff57] px-2 py-1 text-[10.5px] font-bold text-[#232331]"
+                          >
+                            Cetak
+                          </Link>
+                        )}
+
+                        {card.type === "link" && sessionRole === "owner" && (
+                          <Link
+                            href={`/app/review/smart-touch/${card.id}`}
+                            className="btn-tactile inline-flex items-center gap-0.5 rounded-lg border border-[#232331] bg-[#d9ff57] px-2 py-1 text-[10.5px] font-bold text-[#232331]"
+                          >
+                            Smart Touch
+                          </Link>
+                        )}
+
                         {/* Edit Card Button */}
                         <button
                           type="button"
@@ -475,6 +555,26 @@ export default function KaelReviewOwnerDashboard({
                 />
               </div>
 
+              {/* Kartu tautan: alamat diketik langsung, tidak ada tempat Google. */}
+              {selectedCardForEdit.type === "link" ? (
+                <div className="space-y-1.5">
+                  <label className="block font-mono text-xs font-bold text-[#232331]">
+                    Ganti alamat tujuan:
+                  </label>
+                  <input
+                    type="url"
+                    value={editCustomUrl}
+                    onChange={(e) => setEditCustomUrl(e.target.value)}
+                    placeholder="https://portofolio-saya.com"
+                    className="w-full rounded-xl border border-[#232331] px-3 py-2.5 font-mono text-xs font-bold text-[#232331] focus:outline-none"
+                  />
+                  <p className="text-[11px] leading-relaxed text-[#7b7b8e]">
+                    Harus diawali https. Kartunya tidak perlu ditulis ulang: yang tersimpan
+                    di kartu cuma alamat pengalihan, tujuannya disimpan di sini.
+                  </p>
+                </div>
+              ) : (
+              <>
               {/* Places Search */}
               <div className="space-y-1.5">
                 <label className="block font-mono text-xs font-bold text-[#232331]">
@@ -512,12 +612,18 @@ export default function KaelReviewOwnerDashboard({
                   })}
                 </div>
               </div>
+              </>
+              )}
 
               {/* Destination Preview */}
               <div className="rounded-xl border border-[#dedee8] bg-[#fcfcfe] p-3 text-[11px] font-mono space-y-1">
                 <span className="text-[#7b7b8e] block">URL TUJUAN AKHIR SAAT INI:</span>
                 <p className="text-[#16a34a] font-bold break-all">
-                  {selectedPlace ? selectedPlace.directReviewUrl : selectedCardForEdit.destination_url}
+                  {selectedCardForEdit.type === "link"
+                    ? editCustomUrl.trim() || selectedCardForEdit.destination_url
+                    : selectedPlace
+                      ? selectedPlace.directReviewUrl
+                      : selectedCardForEdit.destination_url}
                 </p>
               </div>
 

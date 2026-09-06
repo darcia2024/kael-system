@@ -11,6 +11,7 @@
  */
 
 import type { RecipeIngredientItem, RecipePackagingItem } from "./finance-engine";
+import type { MemberSegment } from "./member-segments";
 
 /**
  * Modul yang bisa diberikan owner ke karyawannya.
@@ -62,6 +63,9 @@ export interface Business {
   qris_merchant_city: string | null;
   qris_nmid: string | null;
   qris_uploaded_at: string | null;
+  /** Tarif POS milik toko; dihitung ulang server pada saat checkout. */
+  pos_tax_rate: number;
+  pos_service_charge_rate: number;
   /**
    * Tenant peragaan yang disiapkan tim KAEL atas nama calon pembeli, bukan
    * pelanggan yang membayar. Hanya baris seperti ini yang boleh disentuh
@@ -70,6 +74,12 @@ export interface Business {
   is_demo: boolean;
   /** Tanggal tenant demo boleh dihapus. Null untuk pelanggan sungguhan. */
   demo_expires_at: string | null;
+  /** Nama publik yang boleh berbeda dari nama legal tenant. */
+  public_name?: string | null;
+  /** Domain milik tenant, baru aktif setelah DNS diverifikasi tim KAEL. */
+  custom_domain?: string | null;
+  locale?: string;
+  currency_code?: string;
   created_at: string;
 }
 
@@ -130,7 +140,22 @@ export interface Customer {
   birthday: string | null;
   token: string;
   consent_at: string;
+  marketing_opt_in: boolean;
+  marketing_opt_in_at: string | null;
+  /** Member yang mengajaknya daftar. NULL kalau daftar tanpa kode referral. */
+  referred_by: string | null;
+  /** Terisi begitu bonus referral cair di belanja pertamanya. NULL berarti masih menunggu. */
+  referral_rewarded_at: string | null;
   created_at: string;
+}
+
+/** Ringkasan perilaku member yang dihitung dari ledger, bukan disimpan ganda. */
+export interface CustomerProfileSummary extends Customer {
+  balance: number;
+  lifetime_spend: number | string;
+  purchase_count: number;
+  points_earned: number;
+  last_activity_at: string | null;
 }
 
 export interface Card {
@@ -138,7 +163,14 @@ export interface Card {
   card_code: string;
   business_id: string | null;
   business_name?: string | null;
-  type: "review" | "loyalty" | "attendance";
+  /**
+   * Jenis kartu, dan inilah yang menentukan ke mana tap-nya berujung.
+   *
+   * `link` mengarah ke tautan bebas milik pemiliknya, bukan ke Google.
+   * Perilakunya sama dengan `review` di rute pengalihan; yang berbeda cuma
+   * cara mengisinya saat aktivasi dan cara menamainya di layar.
+   */
+  type: "review" | "loyalty" | "attendance" | "link";
   status: "unactivated" | "active" | "suspended";
   activation_pin_hash: string | null;
   destination_url: string | null;
@@ -196,6 +228,22 @@ export interface Recipe {
   updated_at: string;
 }
 
+/** Data minimum untuk direktori staf. Nomor lengkap dan token tidak ikut dikirim. */
+export interface CustomerDirectoryEntry {
+  id: string;
+  name: string | null;
+  phone_masked: string;
+  phone_last4: string;
+  balance: number;
+  created_at: string;
+}
+
+export interface FinancePocket { id: string; business_id: string; name: string; allocation_pct: number; created_at: string; }
+export interface FinanceTransaction { id: string; business_id: string; type: "income" | "expense"; category: string; amount: number; occurred_on: string; note: string | null; pocket_id: string | null; source: "manual" | "pos" | "inventory" | "asset"; created_at: string; }
+export interface FinanceAsset { id: string; business_id: string; name: string; category: string; acquired_on: string; purchase_cost: number; salvage_value: number; useful_life_months: number; is_active: boolean; created_at: string; }
+export interface InventoryItem { id: string; business_id: string; sku: string | null; name: string; unit: string; stock_qty: number; average_cost: number; reorder_level: number; created_at: string; updated_at: string; }
+export interface FinanceSummary { income: number; expenses: number; operatingExpenses: number; posRevenue: number; estimatedCogs: number; hppCoverageRevenue: number; grossProfit: number; depreciation: number; netProfit: number; fixedCosts: number; breakEvenRevenue: number; }
+
 // -----------------------------------------------------------------------------
 // 03 · KAEL LOYALTY DATA STRUCTURES
 // -----------------------------------------------------------------------------
@@ -207,7 +255,68 @@ export interface LoyaltyProgram {
   earn_rate: number;
   stamp_per_visit: number;
   point_expiry_months: number | null;
+  /** Mati secara default. Referral menulis poin sungguhan, jadi tidak boleh menyala tanpa owner mengatur nilainya. */
+  referral_is_active: boolean;
+  referral_referrer_points: number;
+  referral_referee_points: number;
+  /** Batas wajar bonus pengajak per bulan, supaya satu nomor tidak bisa memanen poin tanpa batas. */
+  referral_monthly_cap: number;
+  /** Mati secara default. Ulang tahun bisa membawa bonus poin sungguhan, jadi butuh saklar sendiri. */
+  birthday_is_active: boolean;
+  birthday_bonus_points: number;
+  /** Dipakai bareng untuk jendela deteksi ulang tahun maupun anniversary. */
+  birthday_window_days: number;
+  /** Mati secara default. Lihat catatan di spec 03-kael-loyalty §7: cuma bernilai kalau member sudah cukup banyak. */
+  tiers_is_active: boolean;
+  /** Nama bebas per tenant, mis. Poin, Stamp, atau Kopi. */
+  unit_name?: string;
+  minimum_purchase?: number;
+  max_earn_per_transaction?: number | null;
+  rounding_mode?: "floor" | "round";
   updated_at: string;
+}
+
+/** Level member (Basic/Silver/Gold). Dihitung dari lifetime_spend, tidak pernah disimpan di baris customers. */
+export interface LoyaltyTier {
+  id: string;
+  business_id: string;
+  name: string;
+  min_lifetime_spend: number;
+  earn_multiplier: number;
+  benefit_note: string | null;
+  sort_order: number;
+  created_at: string;
+}
+
+/** Satu baris "member dengan tanggal tahunan yang jatuh dalam jendela". Dipakai untuk ulang tahun dan anniversary. */
+export interface AnnualDateCandidate {
+  customer_id: string;
+  name: string | null;
+  days_until: number;
+  occurs_on: string;
+}
+
+export interface LoyaltyCode {
+  id: string;
+  business_id: string;
+  code: string;
+  source: "referral" | "birthday" | "campaign" | "manual";
+  owner_customer_id: string | null;
+  reward_points: number;
+  max_uses: number | null;
+  valid_until: string | null;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface ReferralReportRow {
+  customer_id: string;
+  name: string | null;
+  phone: string;
+  code: string | null;
+  referred_count: number;
+  rewarded_count: number;
+  points_earned: number;
 }
 
 export interface PointLedger {
@@ -215,7 +324,13 @@ export interface PointLedger {
   business_id: string;
   customer_id: string;
   delta: number;
-  reason: "purchase" | "redeem" | "birthday" | "manual" | "correction" | "expiry";
+  /**
+   * Harus sejalan dengan CHECK di point_ledger (migrasi terakhir yang
+   * menyentuhnya: 20260902000004_campaign_codes.sql). Kalau database menerima
+   * alasan baru tapi union ini tertinggal, layar dan analitik yang menyaring
+   * per-alasan akan diam-diam melewatkan barisnya.
+   */
+  reason: "purchase" | "redeem" | "birthday" | "manual" | "correction" | "expiry" | "referral" | "campaign";
   note: string;
   amount_spent: number | null;
   created_by: string;
@@ -240,8 +355,61 @@ export interface Redemption {
   code: string;
   status: "issued" | "used" | "expired";
   redeemed_by: string | null;
+  used_by: string | null;
   created_at: string;
   used_at: string | null;
+}
+
+export type LoyaltyCampaignStatus = "pending" | "opened" | "sent" | "skipped";
+
+/**
+ * Segmen campaign: empat berbasis perilaku belanja (MemberSegment), dua
+ * berbasis tanggal tahunan, satu berbasis kedaluwarsa poin. Union terpisah
+ * dari MemberSegment karena ulang tahun, anniversary, dan poin hampir hangus
+ * bukan hasil getMemberSegment — sumbu yang berbeda sepenuhnya, bukan nilai
+ * tambahan di sumbu yang sama.
+ */
+export type LoyaltyCampaignSegment = MemberSegment | "birthday" | "anniversary" | "expiring_points";
+
+export interface LoyaltyCampaignSummary {
+  id: string;
+  business_id: string;
+  name: string;
+  segment: LoyaltyCampaignSegment;
+  message_template: string;
+  /** Diisi hanya untuk campaign yang dibuat lewat pemilih tujuan. Null untuk campaign segmen lama dan ulang tahun/anniversary. */
+  goal: string | null;
+  created_by: string;
+  created_at: string;
+  recipient_count: number;
+  opened_count: number;
+  sent_count: number;
+  returned_count: number;
+  /** Kode promo campaign ini, kalau ada. Null untuk campaign tanpa kode (segmen lama, ulang tahun, anniversary). */
+  code: string | null;
+  /** Berapa kali kode itu benar-benar dipakai di kasir — bukti nyata, beda dari returned_count yang cuma sinyal. */
+  code_used_count: number;
+}
+
+export interface LoyaltyCampaignRecipient {
+  id: string;
+  campaign_id: string;
+  customer_id: string;
+  status: LoyaltyCampaignStatus;
+  opened_at: string | null;
+  sent_at: string | null;
+  created_at: string;
+  name: string | null;
+  phone: string;
+  balance: number;
+  purchase_count: number;
+}
+
+export interface PointExpiryCandidate {
+  customer_id: string;
+  name: string | null;
+  points: number;
+  expires_at: string;
 }
 
 // -----------------------------------------------------------------------------
@@ -264,6 +432,10 @@ export interface MenuItem {
   photo_url?: string;
   is_available: boolean;
   recipe_id?: string | null; // Tersambung ke KAEL Finance
+  /** Retail tidak selalu memakai resep; stok dan HPP bisa ditautkan langsung. */
+  inventory_item_id?: string | null;
+  inventory_qty_per_sale?: number | null;
+  unit_cost_override?: number | null;
   sort_order: number;
 }
 
@@ -346,6 +518,8 @@ export interface Order {
   shift_id: string | null;
   created_by: string;
   created_at: string;
+  /** Akumulasi refund pada order ini, diisi oleh query laporan bila diperlukan. */
+  refund_total?: number;
 }
 
 export interface Refund {
@@ -354,7 +528,47 @@ export interface Refund {
   amount: number;
   reason: string;
   approved_by: string;
+  shift_id: string | null;
   created_at: string;
+}
+
+// -----------------------------------------------------------------------------
+// FEEDBACK PASCATRANSAKSI
+// -----------------------------------------------------------------------------
+
+/** Cuma diisi kalau rating ≤3 — daftar tertutup supaya bisa diringkas jadi "masalah yang sering muncul". */
+export type FeedbackReasonCode = "rasa" | "harga" | "antrean" | "pelayanan" | "kebersihan" | "lainnya";
+
+export const FEEDBACK_REASONS: { key: FeedbackReasonCode; label: string }[] = [
+  { key: "rasa", label: "Rasa / kualitas" },
+  { key: "harga", label: "Harga" },
+  { key: "antrean", label: "Antrean lama" },
+  { key: "pelayanan", label: "Pelayanan" },
+  { key: "kebersihan", label: "Kebersihan" },
+  { key: "lainnya", label: "Lainnya" },
+];
+
+export interface MemberFeedback {
+  id: string;
+  business_id: string;
+  customer_id: string | null;
+  order_id: string;
+  rating: number;
+  reason_code: FeedbackReasonCode | null;
+  comment: string | null;
+  created_at: string;
+}
+
+export interface FeedbackSummary {
+  total: number;
+  avgRating: number;
+  lowCount: number;
+  byReason: { reason_code: FeedbackReasonCode; count: number }[];
+}
+
+export interface FeedbackRow extends MemberFeedback {
+  customer_name: string | null;
+  order_no: string;
 }
 
 // -----------------------------------------------------------------------------

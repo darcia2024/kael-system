@@ -228,6 +228,7 @@ export default function CustomerQrOrderPage({
 
   return (
     <div className="min-h-screen bg-[#f7f6fc] text-[#232331] font-sans flex flex-col justify-between max-w-md mx-auto border-x border-[#dedee8] pb-28">
+      {business?.is_demo && <p className="bg-amber-100 p-2 text-center text-xs font-bold text-amber-950">DEMO - tidak untuk pembayaran sungguhan</p>}
       
       {/* Top Header */}
       <header className="sticky top-0 z-30 border-b-2 border-[#232331] bg-white/95 backdrop-blur-md px-4 py-3">

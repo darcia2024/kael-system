@@ -12,6 +12,15 @@
  * - margin_pct    = (profit_unit / selling_price) * 100
  * - markup_pct    = (profit_unit / hpp_per_unit) * 100
  * - harga_rekomendasi = Math.ceil( (hpp_per_unit / (1 - target_margin/100)) / 500 ) * 500
+ *
+ * Dua keadaan yang TIDAK boleh disembunyikan, karena keduanya membuat angka
+ * yang keluar terlihat lebih bagus dari kenyataannya:
+ *
+ *   1. Bahan yang tidak dikenali -> dicatat di `unknown_ingredient_ids`.
+ *      Modal jadi terlalu murah, margin terlihat lebih besar, saran harga
+ *      terlalu rendah. Pemilik warung memasang harga di bawah biaya.
+ *   2. Target margin >= 100% -> `target_margin_unreachable`. Tidak ada harga
+ *      yang memenuhinya; modalnya harus nol rupiah.
  */
 
 export interface IngredientItem {
@@ -64,8 +73,27 @@ export interface RecipeHppResult {
   markup_pct: number;
   target_margin_pct: number;
   is_under_target: boolean;
+  /** 0 kalau targetnya mustahil (≥100%). Lihat `target_margin_unreachable`. */
   recommended_price_target_margin: number;
+  /**
+   * Target margin 100% berarti menjual dengan modal nol rupiah. Dulu keadaan
+   * ini diam-diam mengembalikan modal apa adanya sebagai "saran harga", jadi
+   * layar menyarankan jual di harga modal — untung nol — tanpa keterangan.
+   * Sekarang keadaannya dinyatakan, dan yang memanggil wajib menanganinya.
+   */
+  target_margin_unreachable: boolean;
   ingredient_breakdown: IngredientCostDetail[];
+  /**
+   * Bahan yang ada di resep tapi tidak bisa dikenali (belum ada di master, atau
+   * isi packnya nol sehingga harga satuannya tidak bisa dihitung).
+   *
+   * Kosong berarti seluruh biaya bahan sudah terhitung. Kalau tidak kosong,
+   * `biaya_bahan` dan semua angka turunannya BELUM lengkap — modal terlihat
+   * lebih murah dari yang sebenarnya, dan itu arah kesalahan yang paling
+   * berbahaya untuk kalkulator harga jual. Yang memanggil wajib menampilkan
+   * ini, bukan menyembunyikannya.
+   */
+  unknown_ingredient_ids: string[];
 }
 
 /**
@@ -90,11 +118,17 @@ export function calculateRecipeHpp(
 
   let totalBiayaBahan = 0;
   const breakdown: IngredientCostDetail[] = [];
+  const unknownIngredientIds: string[] = [];
 
   // 1. Hitung biaya bahan baku batch
   for (const item of input.ingredients) {
     const ing = ingredientsMasterMap.get(item.ingredient_id);
-    if (!ing || ing.pack_size <= 0) continue;
+    // Bahan yang tidak dikenali TIDAK dihitung nol diam-diam. Dia dicatat,
+    // supaya layar bisa bilang "modal di bawah ini belum lengkap".
+    if (!ing || ing.pack_size <= 0) {
+      unknownIngredientIds.push(item.ingredient_id);
+      continue;
+    }
 
     const unitCost = ing.pack_price / ing.pack_size;
     const subtotal = unitCost * item.qty;
@@ -125,10 +159,19 @@ export function calculateRecipeHpp(
   const marginPct = sellingPrice > 0 ? (profitPerUnit / sellingPrice) * 100 : 0;
   const markupPct = hppPerUnit > 0 ? (profitPerUnit / hppPerUnit) * 100 : 0;
 
-  // 5. Rekomendasi harga jual dari target margin (dibulatkan ke Rp 500)
+  /**
+   * 5. Rekomendasi harga jual dari target margin (dibulatkan ke Rp 500).
+   *
+   * Target ≥100% berarti modalnya harus nol rupiah — tidak mungkin, dan
+   * jawabannya bukan sebuah angka. Dulu keadaan ini mengembalikan modal apa
+   * adanya, sehingga layar menyarankan menjual di harga modal (untung nol)
+   * seolah itu saran yang sah.
+   */
   const marginFactor = 1 - (targetMarginPct / 100);
-  const rawTargetPrice = marginFactor > 0 ? hppPerUnit / marginFactor : hppPerUnit;
-  const recommendedPrice = roundUpTo500(rawTargetPrice);
+  const targetMarginUnreachable = marginFactor <= 0;
+  const recommendedPrice = targetMarginUnreachable
+    ? 0
+    : roundUpTo500(hppPerUnit / marginFactor);
 
   const isUnderTarget = targetMarginPct > 0 && marginPct < targetMarginPct && sellingPrice > 0;
 
@@ -145,7 +188,9 @@ export function calculateRecipeHpp(
     target_margin_pct: targetMarginPct,
     is_under_target: isUnderTarget,
     recommended_price_target_margin: recommendedPrice,
+    target_margin_unreachable: targetMarginUnreachable,
     ingredient_breakdown: breakdown,
+    unknown_ingredient_ids: unknownIngredientIds,
   };
 }
 

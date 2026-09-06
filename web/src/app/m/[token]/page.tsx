@@ -35,6 +35,9 @@ export default async function MemberPage({
         balance={0}
         ledger={[]}
         redemptions={[]}
+        referralCode={null}
+        tiers={[]}
+        lifetimeSpend={0}
       />
     );
   }
@@ -48,6 +51,24 @@ export default async function MemberPage({
     db.getRedemptions(customer.id),
   ]);
 
+  /**
+   * Kode dicetak malas, hanya kalau program referral menyala. Bisnis yang
+   * tidak pernah mengaktifkan referral tidak perlu satu baris pun di
+   * loyalty_codes untuk tiap membernya.
+   */
+  const referralCode = program?.referral_is_active
+    ? await db.getOrCreateReferralCode(customer.business_id, customer.id)
+    : null;
+
+  // Level dihitung di klien dari lifetime_spend — sama seperti alasan progress
+  // reward juga dihitung di klien, bukan di server: cuma perbandingan angka.
+  const [tiers, lifetimeSpend] = program?.tiers_is_active
+    ? await Promise.all([
+        db.getLoyaltyTiers(customer.business_id),
+        db.getCustomerLifetimeSpend(customer.business_id, customer.id),
+      ])
+    : [[], 0];
+
   return (
     <MemberClient
       customer={customer}
@@ -57,6 +78,9 @@ export default async function MemberPage({
       balance={balance}
       ledger={ledger}
       redemptions={redemptions}
+      referralCode={referralCode}
+      tiers={tiers}
+      lifetimeSpend={lifetimeSpend}
     />
   );
 }

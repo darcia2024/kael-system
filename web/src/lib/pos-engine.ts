@@ -114,6 +114,7 @@ export function generateEscPosReceiptText(params: {
   discount: number;
   tax: number;
   serviceCharge: number;
+  deliveryFee?: number;
   total: number;
   paymentMethod: string;
   cashGiven?: number;
@@ -170,6 +171,9 @@ export function generateEscPosReceiptText(params: {
   }
   if (params.tax > 0) {
     lines.push(row("PB1 / Pajak", `Rp ${params.tax.toLocaleString("id-ID")}`));
+  }
+  if (params.deliveryFee && params.deliveryFee > 0) {
+    lines.push(row("Ongkir", `Rp ${params.deliveryFee.toLocaleString("id-ID")}`));
   }
 
   lines.push(doubleDivider);

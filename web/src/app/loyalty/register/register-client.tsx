@@ -3,27 +3,33 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { 
-  Gift, 
-  Sparkles, 
-  ShieldCheck, 
-  ArrowRight, 
-  Coffee, 
-  CheckCircle2, 
-  AlertCircle, 
-  Lock 
+import {
+  Gift,
+  Sparkles,
+  ShieldCheck,
+  ArrowRight,
+  Coffee,
+  CheckCircle2,
+  AlertCircle,
+  Lock,
+  UserPlus
 } from "lucide-react";
 import type { Business, LoyaltyProgram } from "@/lib/types";
 import { registerCustomerAction } from "@/lib/actions";
-import { normalizePhoneNumber } from "@/lib/loyalty-engine";
+import { normalizePhoneNumber, isValidIndonesianPhoneNumber } from "@/lib/loyalty-engine";
 import { formatRupiah } from "@/lib/formatters";
+import { BusinessMark } from '@/components/business-mark';
 
 export default function CustomerRegistrationPage({
   business,
   program,
+  referralCode,
+  referrerName,
 }: {
   business: Business | null;
   program: LoyaltyProgram | null;
+  referralCode?: string;
+  referrerName?: string | null;
 }) {
   const router = useRouter();
 
@@ -31,6 +37,7 @@ export default function CustomerRegistrationPage({
   const [phone, setPhone] = useState("");
   const [birthday, setBirthday] = useState("");
   const [consent, setConsent] = useState(true);
+  const [marketingConsent, setMarketingConsent] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -44,7 +51,7 @@ export default function CustomerRegistrationPage({
     }
 
     const norm = normalizePhoneNumber(phone);
-    if (!norm || norm.length < 9) {
+    if (!isValidIndonesianPhoneNumber(norm)) {
       setErrorMsg("Nomor WhatsApp tidak valid. Masukkan nomor yang benar (contoh: 08123456789).");
       return;
     }
@@ -63,10 +70,14 @@ export default function CustomerRegistrationPage({
         return;
       }
       const res = await registerCustomerAction(
-        business.id, name.trim(), norm, consent, birthday || undefined,
+        business.id, name.trim(), norm, consent, birthday || undefined, marketingConsent, referralCode,
       );
       if (res.ok) {
-        // Token hanya ada di respons ini, tidak pernah ikut ke bundel halaman.
+        if (res.data.alreadyMember || !res.data.token) {
+          setErrorMsg("Nomor ini sudah terdaftar. Minta kasir toko membantu membuka kartu member Anda.");
+          setIsLoading(false);
+          return;
+        }
         router.push(`/m/${res.data.token}`);
       } else {
         setErrorMsg(res.error);
@@ -85,9 +96,8 @@ export default function CustomerRegistrationPage({
         
         {/* Merchant Branding */}
         <div className="text-center space-y-2">
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border-2 border-[#232331] bg-[#d9ff57] text-[#232331] shadow-ink-xs">
-            <Gift size={24} />
-          </div>
+          <div className="flex justify-center"><BusinessMark name={business?.name || 'Kafe'} logoUrl={business?.logo_url} brandColor={business?.brand_color}/></div>
+          {business?.is_demo && <p className="text-xs font-bold text-amber-800">DEMO - gunakan data uji</p>}
 
           <div>
             <span className="text-[10.5px] font-mono font-bold text-[#7958d8] uppercase tracking-wider block">
@@ -102,6 +112,18 @@ export default function CustomerRegistrationPage({
             Kumpulkan {program?.mode === "stamp" ? "stempel" : "poin"} setiap belanja dan nikmati berbagai traktiran menu gratis!
           </p>
         </div>
+
+        {/* Referral Banner */}
+        {referrerName && (
+          <div className="rounded-2xl border-2 border-[#7958d8] bg-[#f0edff] p-3 flex items-center gap-2.5">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[#7958d8] text-white">
+              <UserPlus size={15} />
+            </span>
+            <p className="text-xs font-bold text-[#5b3fb0] leading-snug">
+              Diajak oleh <span className="text-[#232331]">{referrerName.trim().split(/\s+/)[0]}</span>. Daftar sekarang, dan kalian berdua dapat bonus di belanja pertamamu.
+            </p>
+          </div>
+        )}
 
         {/* Benefits Preview Pill */}
         <div className="rounded-2xl border border-[#dedee8] bg-[#fcfcfe] p-3 font-mono text-xs text-[#7b7b8e] flex items-center justify-between">
@@ -184,6 +206,17 @@ export default function CustomerRegistrationPage({
                 Saya menyetujui penyimpanan nomor WhatsApp dan nama untuk keperluan program loyalitas member di <strong className="text-[#232331]">{business?.name}</strong> (Kepatuhan UU PDP No. 27/2022).
               </span>
             </label>
+            <label className="flex items-start gap-2 cursor-pointer border-t border-[#dedee8] pt-2">
+              <input
+                type="checkbox"
+                checked={marketingConsent}
+                onChange={(e) => setMarketingConsent(e.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded accent-[#232331]"
+              />
+              <span className="text-[#5c5c70] leading-snug">
+                Saya bersedia menerima info promo dan pengingat poin melalui WhatsApp. Pilihan ini boleh diubah kapan saja dari kartu member saya.
+              </span>
+            </label>
           </div>
 
           <button
@@ -191,7 +224,7 @@ export default function CustomerRegistrationPage({
             disabled={isLoading}
             className="btn-tactile w-full flex items-center justify-center gap-2 rounded-2xl border-2 border-[#232331] bg-[#232331] py-3.5 text-sm font-black text-white shadow-ink-md hover:bg-[#323244]"
           >
-            <span>{isLoading ? "Menyiapkan Kartu..." : "Buka Paspor Member Saya ➔"}</span>
+            <span>{isLoading ? "Menyiapkan Kartu..." : "Buka Paspor Member Saya"}</span>
           </button>
 
         </form>

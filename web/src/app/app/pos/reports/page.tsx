@@ -21,14 +21,23 @@ export default async function PosReportsPage() {
   // kasir punya izin POS. Angka margin bukan urusan yang mencatatnya.
   if (session.role !== "owner") redirect("/app/pos");
 
-  const [business, reports, orders, shifts] = await Promise.all([
+  const [business, reports, orders, shifts, feedbackSummary, recentFeedback] = await Promise.all([
     db.getBusiness(session.businessId),
     db.getPosReports(session.businessId),
     db.getOrders(session.businessId, 100),
     db.getShifts(session.businessId),
+    db.getFeedbackSummary(session.businessId),
+    db.getRecentFeedback(session.businessId),
   ]);
 
   return (
-    <ReportsClient business={business} reports={reports} orders={orders} shifts={shifts} />
+    <ReportsClient
+      business={business}
+      reports={reports}
+      orders={orders}
+      shifts={shifts}
+      feedbackSummary={feedbackSummary}
+      recentFeedback={recentFeedback}
+    />
   );
 }

@@ -20,10 +20,12 @@ export const metadata: Metadata = {
 export default async function ReviewDashboardPage() {
   const { session } = await guardModulePage("review", "/app/review");
 
-  const [business, cards, rawTaps] = await Promise.all([
+  const [business, cards, rawTaps, googleReport, suspiciousTaps] = await Promise.all([
     db.getBusiness(session.businessId),
     db.getCards(session.businessId),
     db.getCardTaps(session.businessId),
+    db.getGoogleReviewReport(session.businessId),
+    db.getSuspiciousCardTaps(session.businessId),
   ]);
 
   return (
@@ -31,6 +33,8 @@ export default async function ReviewDashboardPage() {
       business={business}
       cards={cards}
       rawTaps={rawTaps}
+      googleReport={googleReport}
+      suspiciousTapCount={suspiciousTaps.length}
       sessionRole={session.role === "owner" ? "owner" : "staff"}
     />
   );

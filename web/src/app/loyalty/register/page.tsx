@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 
 import { db } from "@/lib/db";
 import { normalizeCardCode } from "@/lib/card-code";
+import { normalizeLoyaltyCode } from "@/lib/loyalty-code";
 import { moduleLock } from "@/lib/licensing";
 import RegisterClient from "./register-client";
 
@@ -65,9 +66,9 @@ function Pesan({ judul, isi }: { judul: string; isi: string }) {
 export default async function RegisterPage({
   searchParams,
 }: {
-  searchParams: Promise<{ card?: string; toko?: string }>;
+  searchParams: Promise<{ card?: string; toko?: string; ref?: string }>;
 }) {
-  const { card, toko } = await searchParams;
+  const { card, toko, ref } = await searchParams;
   const business = await bisnisDariTautan(card, toko);
 
   /**
@@ -106,5 +107,23 @@ export default async function RegisterPage({
   }
 
   const program = await db.getLoyaltyProgram(business.id);
-  return <RegisterClient business={business} program={program} />;
+
+  /**
+   * Nama pengajak cuma ditampilkan kalau program referral MENYALA. Kalau
+   * tidak, kode tetap dilekatkan diam-diam (lihat registerCustomerAction) —
+   * supaya kalau owner mengaktifkannya nanti, ajakan yang sudah terjadi tidak
+   * hilang percuma — tapi pelanggan tidak dijanjikan bonus yang belum tentu ada.
+   */
+  const referrer = ref?.trim() && program?.referral_is_active
+    ? await db.resolveReferralCode(business.id, normalizeLoyaltyCode(ref))
+    : null;
+
+  return (
+    <RegisterClient
+      business={business}
+      program={program}
+      referralCode={ref?.trim() || undefined}
+      referrerName={referrer?.name ?? null}
+    />
+  );
 }

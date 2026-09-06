@@ -26,6 +26,11 @@ export function normalizePhoneNumber(input: string): string {
   return clean;
 }
 
+/** Nomor seluler Indonesia yang dapat dipakai sebagai WhatsApp, format 628... */
+export function isValidIndonesianPhoneNumber(input: string): boolean {
+  return /^628\d{7,12}$/.test(normalizePhoneNumber(input));
+}
+
 /**
  * Format nomor telepon dengan sensor privasi untuk halaman member publik
  * Misal: 6281311506025 -> +62 813-****-6025
@@ -82,6 +87,55 @@ export function calculateEarnedPoints(amountSpent: number, earnRate = 10000): nu
 }
 
 /**
+ * Ulang tahun & anniversary member — mencari kapan tanggal tahunan berikutnya
+ * jatuh, dan apakah itu masuk jendela hari yang dicek.
+ *
+ * Dipakai bareng untuk dua sumber: customers.birthday (ulang tahun) dan
+ * customers.created_at (anniversary jadi member). Keduanya "tanggal yang
+ * berulang tiap tahun, tahun aslinya tidak berarti apa-apa" — mesin yang sama,
+ * cuma beda kolom yang dibaca pemanggilnya.
+ */
+
+function startOfUTCDay(d: Date): Date {
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+}
+
+/**
+ * Tanggal tahunan berikutnya dari hari ini, dengan 29 Februari dipetakan ke
+ * 28 Februari di tahun biasa. Kalau tanggal tahun ini sudah lewat, lompat ke
+ * tahun depan.
+ */
+function nextAnnualOccurrence(date: Date, from: Date): Date {
+  const month = date.getUTCMonth();
+  const day = date.getUTCDate();
+  const today = startOfUTCDay(from);
+  const clampedDay = (year: number) => {
+    const lastDayOfMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+    return Math.min(day, lastDayOfMonth);
+  };
+  const thisYear = today.getUTCFullYear();
+  let occurrence = new Date(Date.UTC(thisYear, month, clampedDay(thisYear)));
+  if (occurrence < today) {
+    occurrence = new Date(Date.UTC(thisYear + 1, month, clampedDay(thisYear + 1)));
+  }
+  return occurrence;
+}
+
+export interface AnnualDateMatch {
+  daysUntil: number;
+  /** Tanggal kejadian berikutnya, format YYYY-MM-DD. */
+  occursOn: string;
+}
+
+/** Null kalau tanggal tahunan berikutnya jatuh di luar windowDays hari ke depan. */
+export function matchAnnualDate(date: string, windowDays: number, now: Date): AnnualDateMatch | null {
+  const occurrence = nextAnnualOccurrence(new Date(date), now);
+  const daysUntil = Math.round((occurrence.getTime() - startOfUTCDay(now).getTime()) / 86_400_000);
+  if (daysUntil < 0 || daysUntil > windowDays) return null;
+  return { daysUntil, occursOn: occurrence.toISOString().slice(0, 10) };
+}
+
+/**
  * Hitung persentase diskon efektif yang diberikan sebuah reward (Proteksi Biaya Owner)
  * Formula: (Nilai Hadiah / (Biaya Poin * Kurs Poin)) * 100
  * Contoh: Kopi Rp 25.000 ditukar 10 Poin (@ Rp 10.000 = Belanja Rp 100.000) -> Diskon Efektif 25%
@@ -104,4 +158,21 @@ export function calculateRewardDiscountRate(
     discountRatePct,
     isHighDiscount,
   };
+}
+
+/**
+ * Level member (Basic, Silver, Gold) — dihitung dari lifetime_spend, sama
+ * seperti saldo poin dihitung dari SUM(delta) ledger. Tidak pernah disimpan
+ * sebagai kolom, supaya tidak ada baris yang bisa tertinggal dari transaksi
+ * sebenarnya.
+ *
+ * Mengembalikan level TERTINGGI yang syaratnya sudah terpenuhi. Null kalau
+ * daftar tiers kosong (fitur belum diatur owner sama sekali).
+ */
+export function resolveTier<T extends { min_lifetime_spend: number }>(
+  lifetimeSpend: number,
+  tiers: T[],
+): T | null {
+  const sorted = [...tiers].sort((a, b) => b.min_lifetime_spend - a.min_lifetime_spend);
+  return sorted.find((t) => lifetimeSpend >= t.min_lifetime_spend) ?? null;
 }

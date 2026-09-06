@@ -65,6 +65,39 @@ export function isPlacesSearchConfigured(): boolean {
 }
 
 /**
+ * Mengambil dua angka yang memang dapat dipakai sebagai snapshot reputasi.
+ * Place Details dipilih karena tenant sudah menyimpan Place ID, sehingga tidak
+ * perlu mencari ulang nama usaha dan berisiko menangkap tempat yang salah.
+ */
+export async function getGoogleReviewSnapshot(placeId: string): Promise<{
+  rating: number;
+  reviewCount: number;
+} | null> {
+  const key = process.env.GOOGLE_PLACES_API_KEY;
+  const id = placeId.trim();
+  if (!key || !id) return null;
+  try {
+    const response = await fetch(`https://places.googleapis.com/v1/places/${encodeURIComponent(id)}`, {
+      headers: {
+        "X-Goog-Api-Key": key,
+        "X-Goog-FieldMask": "rating,userRatingCount",
+      },
+      cache: "no-store",
+    });
+    if (!response.ok) {
+      console.error("[KAEL] Place Details menolak snapshot review:", response.status);
+      return null;
+    }
+    const data = await response.json() as { rating?: number; userRatingCount?: number };
+    if (!Number.isFinite(data.rating) || !Number.isFinite(data.userRatingCount)) return null;
+    return { rating: Number(data.rating), reviewCount: Number(data.userRatingCount) };
+  } catch (error) {
+    console.error("[KAEL] Place Details gagal mengambil snapshot review", error);
+    return null;
+  }
+}
+
+/**
  * Mencari bisnis lewat Google Places API (Text Search v1).
  *
  * HANYA boleh dipanggil dari server: kunci API tidak boleh sampai ke browser.

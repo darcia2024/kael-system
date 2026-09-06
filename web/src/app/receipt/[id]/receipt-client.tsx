@@ -2,22 +2,25 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { 
-  Receipt, 
-  Share2, 
-  Printer, 
-  CheckCircle2, 
-  ArrowLeft, 
-  AlertCircle, 
-  Copy, 
-  Check, 
-  ExternalLink 
+import {
+  Receipt,
+  Share2,
+  Printer,
+  CheckCircle2,
+  ArrowLeft,
+  AlertCircle,
+  Copy,
+  Check,
+  ExternalLink,
+  Star
 } from "lucide-react";
-import type { Order, OrderItem, Customer, Business } from "@/lib/types";
+import type { Order, OrderItem, Customer, Business, FeedbackReasonCode } from "@/lib/types";
+import { FEEDBACK_REASONS } from "@/lib/types";
 import { serviceTypeLabel } from "@/lib/pos-engine";
 import { formatRupiah, formatBusinessDateTime } from "@/lib/formatters";
 import { generateEscPosReceiptText } from "@/lib/pos-engine";
 import { BusinessMark } from "@/components/business-mark";
+import { submitFeedbackAction } from "@/lib/actions";
 
 /**
  * Tampilan struk. Datanya diambil di server oleh page.tsx.
@@ -37,10 +40,26 @@ export interface ReceiptPageData {
     | null;
   /** Nama kasir saja. Objek pengguna tidak pernah menyeberang ke sini. */
   staffName: string | null;
+  /**
+   * True kalau pesanan ini sudah pernah diberi feedback. Halaman menampilkan
+   * ucapan terima kasih dan MENYEMBUNYIKAN formulirnya — bukan menampilkan
+   * ulang rating atau komentarnya. Tautan struk bisa diteruskan ke siapa saja.
+   */
+  hasFeedback: boolean;
+  /** URL kartu ulasan Google aktif toko ini. Null kalau belum ada. */
+  reviewUrl: string | null;
+  /** Alamat struk ini, dibangun di server supaya sama persis di HTML awal dan sesudah hydrate. */
+  receiptUrl: string;
 }
 
-export default function DigitalReceiptPage({ data, staffName }: ReceiptPageData) {
+export default function DigitalReceiptPage({ data, staffName, hasFeedback, reviewUrl, receiptUrl }: ReceiptPageData) {
   const [copied, setCopied] = useState(false);
+  const [rating, setRating] = useState<number | null>(null);
+  const [reasonCode, setReasonCode] = useState<FeedbackReasonCode | null>(null);
+  const [feedbackComment, setFeedbackComment] = useState("");
+  const [submittingFeedback, setSubmittingFeedback] = useState(false);
+  const [feedbackSubmitted, setFeedbackSubmitted] = useState(hasFeedback);
+  const [feedbackError, setFeedbackError] = useState<string | null>(null);
 
   if (!data || !data.order || !data.business) {
     return (
@@ -68,13 +87,32 @@ export default function DigitalReceiptPage({ data, staffName }: ReceiptPageData)
 
   const { order, items, customer, business } = data;
 
-  const receiptUrl = typeof window !== "undefined" ? window.location.href : "";
   const waShareMessage = encodeURIComponent(
     `Terima kasih telah berkunjung ke *${business.name}*!\nBerikut struk digital pesanan #${order.order_no}:\n${receiptUrl}`
   );
 
   const handlePrint = () => {
     window.print();
+  };
+
+  const canGiveFeedback = order.status === "paid" || order.status === "refunded";
+
+  const handleSubmitFeedback = async () => {
+    if (!rating) return;
+    setFeedbackError(null);
+    setSubmittingFeedback(true);
+    const res = await submitFeedbackAction({
+      orderId: order.id,
+      rating,
+      reasonCode: reasonCode ?? undefined,
+      comment: feedbackComment.trim() || undefined,
+    });
+    setSubmittingFeedback(false);
+    if (!res.ok) {
+      setFeedbackError(res.error);
+      return;
+    }
+    setFeedbackSubmitted(true);
   };
 
   const handleCopyLink = () => {
@@ -84,7 +122,15 @@ export default function DigitalReceiptPage({ data, staffName }: ReceiptPageData)
   };
 
   return (
-    <div className="min-h-screen bg-[#f7f6fc] text-[#232331] font-sans flex flex-col justify-between max-w-md mx-auto p-4 sm:p-6 print:p-0 print:max-w-none">
+    <div className="kael-thermal-receipt min-h-screen bg-[#f7f6fc] text-[#232331] font-sans flex flex-col justify-between max-w-md mx-auto p-4 sm:p-6 print:p-0 print:max-w-none">
+      <style jsx global>{`
+        @media print {
+          @page { size: 80mm auto; margin: 0; }
+          html, body { width: 80mm !important; min-height: 0 !important; background: #fff !important; }
+          .kael-thermal-receipt { width: 72mm !important; max-width: 72mm !important; min-height: 0 !important; margin: 0 auto !important; padding: 3mm 0 5mm !important; background: #fff !important; }
+          .kael-thermal-receipt .shadow-ink-lg, .kael-thermal-receipt .shadow-ink-md, .kael-thermal-receipt .shadow-ink-xs { box-shadow: none !important; }
+        }
+      `}</style>
       
       {/* Top Floating Action Bar (Hidden in Print) */}
       <div className="flex items-center justify-between gap-2 pb-4 print:hidden">
@@ -112,7 +158,7 @@ export default function DigitalReceiptPage({ data, staffName }: ReceiptPageData)
             className="btn-tactile flex items-center gap-1.5 rounded-xl border-2 border-[#232331] bg-[#232331] px-3 py-1.5 font-mono text-xs font-black text-white shadow-ink-xs"
           >
             <Printer size={13} />
-            <span>Cetak</span>
+            <span>Cetak 80mm</span>
           </button>
         </div>
       </div>
@@ -208,6 +254,13 @@ export default function DigitalReceiptPage({ data, staffName }: ReceiptPageData)
             </div>
           )}
 
+          {order.delivery_fee > 0 && (
+            <div className="flex justify-between text-[#7b7b8e]">
+              <span>Ongkir</span>
+              <span>{formatRupiah(order.delivery_fee)}</span>
+            </div>
+          )}
+
           <div className="flex justify-between text-base font-black text-[#232331] border-t-2 border-[#232331] pt-2">
             <span>TOTAL BAYAR</span>
             <span className="text-[#16a34a]">{formatRupiah(order.total)}</span>
@@ -239,6 +292,103 @@ export default function DigitalReceiptPage({ data, staffName }: ReceiptPageData)
         </div>
 
       </div>
+
+      {/* FEEDBACK PASCATRANSAKSI (Print Hidden) */}
+      {canGiveFeedback && (
+        <div className="mt-4 rounded-3xl border-2 border-[#232331] bg-white p-5 shadow-ink-lg print:hidden">
+          {feedbackSubmitted ? (
+            <div className="space-y-3 text-center">
+              <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-2xl border-2 border-[#16a34a] bg-[#dcfce7] text-[#16a34a]">
+                <CheckCircle2 size={20} />
+              </div>
+              <div>
+                <p className="text-sm font-black text-[#232331]">Terima kasih atas masukanmu!</p>
+                <p className="mt-0.5 text-xs text-[#7b7b8e]">Sudah kami terima dan akan ditinjau oleh {business.name}.</p>
+              </div>
+              {reviewUrl && (
+                <a
+                  href={reviewUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn-tactile flex items-center justify-center gap-1.5 rounded-xl border-2 border-[#16a34a] bg-[#dcfce7] py-2.5 text-xs font-black text-[#16a34a]"
+                >
+                  <ExternalLink size={14} />
+                  <span>Bagikan juga di Google Review</span>
+                </a>
+              )}
+            </div>
+          ) : (
+            <div>
+              <p className="text-center text-sm font-black text-[#232331]">Bagaimana pengalamanmu di {business.name}?</p>
+              <div className="mt-3 flex justify-center gap-2">
+                {[1, 2, 3, 4, 5].map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => setRating(n)}
+                    className="btn-tactile p-1"
+                    aria-label={`Beri ${n} bintang`}
+                  >
+                    <Star size={30} className={(rating ?? 0) >= n ? "fill-[#facc15] text-[#facc15]" : "text-[#dedee8]"} />
+                  </button>
+                ))}
+              </div>
+
+              {rating !== null && (
+                <div className="mt-4 space-y-3">
+                  {rating <= 3 && (
+                    <div className="flex flex-wrap justify-center gap-1.5">
+                      {FEEDBACK_REASONS.map((r) => (
+                        <button
+                          key={r.key}
+                          type="button"
+                          onClick={() => setReasonCode(reasonCode === r.key ? null : r.key)}
+                          className={`btn-tactile rounded-full border-2 px-3 py-1.5 text-[11px] font-bold ${
+                            reasonCode === r.key ? "border-[#232331] bg-[#232331] text-white" : "border-[#dedee8] bg-white text-[#5c5c70]"
+                          }`}
+                        >
+                          {r.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  <textarea
+                    value={feedbackComment}
+                    onChange={(e) => setFeedbackComment(e.target.value.slice(0, 500))}
+                    rows={2}
+                    placeholder={rating >= 4 ? "Ada yang mau disampaikan? (opsional)" : "Ceritakan lebih detail? (opsional)"}
+                    className="w-full rounded-xl border border-[#dedee8] bg-[#fcfcfe] p-3 text-xs text-[#232331]"
+                  />
+
+                  {reviewUrl && (
+                    <a
+                      href={reviewUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="btn-tactile flex items-center justify-center gap-1.5 rounded-xl border-2 border-[#16a34a] bg-[#dcfce7] py-2.5 text-xs font-black text-[#16a34a]"
+                    >
+                      <ExternalLink size={14} />
+                      <span>Bagikan juga di Google Review</span>
+                    </a>
+                  )}
+
+                  {feedbackError && <p className="text-center text-[11px] font-bold text-[#c2410c]">{feedbackError}</p>}
+
+                  <button
+                    type="button"
+                    onClick={() => void handleSubmitFeedback()}
+                    disabled={submittingFeedback}
+                    className="btn-tactile w-full rounded-xl border-2 border-[#232331] bg-[#232331] py-2.5 text-xs font-black text-[#d9ff57] disabled:opacity-50"
+                  >
+                    {submittingFeedback ? "Mengirim..." : "Kirim Feedback"}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Copy Link Pill (Print Hidden) */}
       <div className="pt-4 text-center print:hidden">

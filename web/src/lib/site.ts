@@ -21,7 +21,7 @@ export const site = {
    * Vercel lalu deploy ulang. Nilai di sini cuma jaring pengaman kalau
    * variabelnya belum diisi.
    */
-  url: process.env.NEXT_PUBLIC_SITE_URL ?? "https://kael-system.vercel.app",
+  url: process.env.NEXT_PUBLIC_SITE_URL ?? "https://kaels.site",
   locale: "id_ID",
   whatsapp: process.env.NEXT_PUBLIC_KAEL_WHATSAPP ?? "6281311506025",
   email: "daru.fahma@gmail.com",

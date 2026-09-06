@@ -12,14 +12,17 @@ export const metadata: Metadata = {
 export default async function PosPage() {
   const { session } = await guardModulePage("pos", "/app/pos");
 
-  const [business, categories, menuItems, activeShift, pendingQrOrders, users, orders] = await Promise.all([
+  const [business, categories, menuItems, activeShift, pendingQrOrders, users, loyaltyProgram] = await Promise.all([
     db.getBusiness(session.businessId),
     db.getCategories(session.businessId),
     db.getMenuItems(session.businessId),
     db.getActiveShift(session.businessId),
     db.getPendingQrOrders(session.businessId),
     db.getUsers(session.businessId),
-    db.getOrders(session.businessId, 100),
+    // Dibutuhkan supaya perkiraan poin di layar kasir memakai kurs yang
+    // sebenarnya, bukan angka tetap. NULL kalau toko ini belum menyiapkan
+    // program loyalty — layarnya lalu tidak menjanjikan poin apa pun.
+    db.getLoyaltyProgram(session.businessId),
   ]);
 
   return (
@@ -33,8 +36,10 @@ export default async function PosPage() {
         .filter((u) => u.role === "staff" && u.is_active)
         .map((u) => ({ id: u.id, name: u.name }))}
       currentUserId={session.userId}
-      orderCountToday={orders.length}
       userRole={session.role === "owner" ? "owner" : "staff"}
+      loyaltyProgram={loyaltyProgram}
+      taxRatePct={Number(business?.pos_tax_rate ?? 0)}
+      serviceChargePct={Number(business?.pos_service_charge_rate ?? 0)}
     />
   );
 }
