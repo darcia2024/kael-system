@@ -302,11 +302,32 @@ export default function CustomerQrOrderPage({
                     : "border-[#dedee8] bg-[#fcfcfe] opacity-60"
                 }`}
               >
-                <div className="flex justify-between items-start gap-2">
-                  <div className="min-w-0">
+                <div className="flex justify-between items-start gap-2.5">
+                  {/*
+                    Foto menu, kalau pemiliknya sudah mengisinya. Bukan Next
+                    <Image>: alamatnya diketik pemilik usaha ke domain mana
+                    pun, dan pengoptimal Next menolak host yang tidak terdaftar
+                    di next.config — menu bergambar akan gagal dimuat begitu
+                    ada pemilik yang memakai layanan gambar baru.
+                  */}
+                  {item.photo_url && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={item.photo_url}
+                      alt=""
+                      loading="lazy"
+                      className="h-20 w-20 shrink-0 rounded-xl border border-[#dedee8] object-cover"
+                    />
+                  )}
+                  <div className="min-w-0 flex-1">
                     <h3 className="font-extrabold text-sm text-[#232331] font-sans">
                       {item.name}
                     </h3>
+                    {item.description && (
+                      <p className="mt-0.5 text-[11px] leading-relaxed text-[#7b7b8e] font-sans">
+                        {item.description}
+                      </p>
+                    )}
                     <span className="font-black text-sm font-mono text-[#c2410c] block mt-0.5">
                       {formatRupiah(item.price)}
                     </span>

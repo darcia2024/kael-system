@@ -6,7 +6,7 @@ import { headers } from "next/headers";
 
 import { db } from "./db";
 import type { LoyaltyCampaignStatus, LoyaltyCampaignSegment, StaffPermission, FeedbackReasonCode } from "./types";
-import { FEEDBACK_REASONS } from "./types";
+import { FEEDBACK_REASONS, RATING_TINGGI } from "./types";
 import {
   searchPlaces,
   isPlacesSearchConfigured,
@@ -21,6 +21,7 @@ import { calculateCartTotals } from "./pos-engine";
 import { normalizeLoyaltyCode } from "./loyalty-code";
 import { isValidIndonesianPhoneNumber } from "./loyalty-engine";
 import { hashClientIp } from "./auth-security";
+import { normalizeCardCode } from "./card-code";
 import { CAMPAIGN_GOALS, type CampaignGoalKey } from "./campaign-templates";
 import {
   requireStaff, requireOwner, requireKaelAdmin, requirePermission,
@@ -509,6 +510,74 @@ export async function submitFeedbackAction(input: {
   const result = await db.submitFeedback(input.orderId, input.rating, input.reasonCode ?? null, comment);
   if (!result.success) return fail(result.error);
   revalidatePath(`/receipt/${input.orderId}`);
+  return done(null);
+}
+
+/**
+ * Rating dari tap kartu NFC. Jalur publik: tidak ada sesi, tidak ada login.
+ *
+ * Yang dikembalikan saat rating tinggi adalah alamat ulasan Google milik kartu
+ * itu sendiri, diambil dari database — bukan dari apa pun yang dikirim
+ * peramban. Kalau alamatnya dipercaya dari klien, siapa pun yang membuka
+ * halaman ini bisa membelokkan pelanggan kafe ke situs mana saja.
+ */
+export async function submitCardFeedbackAction(input: {
+  cardCode: string;
+  rating: number;
+}): Promise<ActionResult<{ feedbackId: string; reviewUrl: string | null }>> {
+  const cardCode = normalizeCardCode(input.cardCode);
+  if (!cardCode) return fail("Kartu tidak dikenali.");
+  if (!Number.isInteger(input.rating) || input.rating < 1 || input.rating > 5) {
+    return fail("Rating tidak valid.");
+  }
+
+  const card = await db.getRatingCard(cardCode);
+  if (!card) return fail("Kartu tidak dikenali.");
+
+  // Alasan penolakan tidak disebutkan ke pelanggan, sama seperti pendaftaran
+  // member: dia tidak perlu tahu tokonya telat memperpanjang langganan.
+  if (await moduleLock(card.business_id, "review", "write")) {
+    return fail("Penilaian sedang tidak tersedia di toko ini.");
+  }
+
+  const requestHeaders = await headers();
+  const forwarded = requestHeaders.get("x-forwarded-for");
+  const clientIp = forwarded?.split(",")[0]?.trim() || requestHeaders.get("x-real-ip");
+  if (clientIp && !(await db.allowCardFeedback(card.business_id, await hashClientIp(clientIp)))) {
+    return fail("Terlalu banyak penilaian dari jaringan ini. Coba lagi dalam satu jam.");
+  }
+
+  const result = await db.submitCardFeedback(cardCode, input.rating);
+  if (!result.success) return fail(result.error);
+
+  /**
+   * Alamat Google hanya dikembalikan untuk rating tinggi. Bukan sekadar soal
+   * tampilan: kalau alamatnya ikut dikirim ke layar keluhan, siapa pun yang
+   * membuka panel jaringan peramban bisa membacanya, dan janji "yang kamu
+   * tulis cuma dibaca pemilik" berhenti jadi benar.
+   */
+  return done({
+    feedbackId: result.feedbackId,
+    reviewUrl: input.rating >= RATING_TINGGI ? result.reviewUrl : null,
+  });
+}
+
+/** Alasan dan cerita yang menyusul, ditempelkan ke baris rating yang sama. */
+export async function attachCardFeedbackAction(input: {
+  feedbackId: string;
+  reasonCode?: FeedbackReasonCode;
+  comment?: string;
+}): Promise<ActionResult<null>> {
+  if (!input.feedbackId) return fail("Penilaian tidak dikenali.");
+  if (input.reasonCode && !FEEDBACK_REASONS.some((r) => r.key === input.reasonCode)) {
+    return fail("Alasan tidak dikenal.");
+  }
+  const comment = input.comment?.trim() || null;
+  if (comment && comment.length > 500) return fail("Komentar maksimal 500 karakter.");
+  if (!input.reasonCode && !comment) return fail("Pilih bagian yang kurang atau tulis ceritanya.");
+
+  const ok = await db.attachCardFeedbackDetail(input.feedbackId, input.reasonCode ?? null, comment);
+  if (!ok) return fail("Penilaian ini sudah dikirim sebelumnya.");
   return done(null);
 }
 
@@ -1162,6 +1231,124 @@ export async function refundOrderAction(
   if (!result.success) return fail(result.error);
   revalidatePath("/app/pos/reports");
   revalidatePath("/app/pos/owner");
+  return done(null);
+}
+
+/**
+ * Batas alamat gambar menu.
+ *
+ * Wajib https, dan hanya https. Halaman pesan sendiri dibuka lewat https, dan
+ * peramban memblokir gambar http di dalamnya tanpa pesan apa pun — menu yang
+ * gambarnya tidak pernah muncul akan terlihat seperti aplikasi yang rusak,
+ * bukan seperti alamat yang salah. `data:` dan `javascript:` ditolak di jalur
+ * yang sama: keduanya bisa dipakai menitipkan isi sembarangan ke halaman yang
+ * terbuka untuk umum.
+ */
+function bersihkanUrlGambar(input: string | undefined | null): string | null | "invalid" {
+  const nilai = input?.trim();
+  if (!nilai) return null;
+  try {
+    const url = new URL(nilai);
+    if (url.protocol !== "https:") return "invalid";
+    return url.toString();
+  } catch {
+    return "invalid";
+  }
+}
+
+export async function saveMenuItemAction(input: {
+  id?: string;
+  name: string;
+  price: number;
+  categoryId?: string | null;
+  description?: string;
+  photoUrl?: string;
+  recipeId?: string | null;
+  isAvailable?: boolean;
+  sortOrder?: number;
+}): Promise<ActionResult<null>> {
+  // Menyusun daftar menu dan harganya adalah keputusan pemilik usaha, bukan
+  // kasir. Kasir cuma boleh menandai menu habis lewat setMenuAvailabilityAction.
+  const { businessId } = await requireOwner();
+  const locked = await moduleLock(businessId, "pos", "write");
+  if (locked) return fail(locked);
+
+  const name = input.name?.trim();
+  if (!name) return fail("Nama menu belum diisi.");
+  if (name.length > 80) return fail("Nama menu maksimal 80 karakter.");
+  if (!Number.isFinite(input.price) || input.price < 0) return fail("Harga tidak valid.");
+  if (input.price > 100_000_000) return fail("Harga terlalu besar.");
+
+  const description = input.description?.trim() || null;
+  if (description && description.length > 300) return fail("Deskripsi maksimal 300 karakter.");
+
+  const photoUrl = bersihkanUrlGambar(input.photoUrl);
+  if (photoUrl === "invalid") {
+    return fail("Alamat gambar harus lengkap dan diawali https://");
+  }
+
+  const saved = await db.saveMenuItem(businessId, {
+    id: input.id,
+    name,
+    price: Math.round(input.price),
+    category_id: input.categoryId ?? null,
+    description,
+    photo_url: photoUrl,
+    recipe_id: input.recipeId ?? null,
+    is_available: input.isAvailable ?? true,
+    sort_order: input.sortOrder ?? 0,
+  });
+  if (!saved) return fail("Menu tidak ditemukan.");
+
+  revalidatePath("/app/pos");
+  revalidatePath("/app/pos/menu");
+  return done(null);
+}
+
+export async function deleteMenuItemAction(menuItemId: string): Promise<ActionResult<{ hidden: boolean }>> {
+  const { businessId } = await requireOwner();
+  const locked = await moduleLock(businessId, "pos", "write");
+  if (locked) return fail(locked);
+
+  const hasil = await db.deleteMenuItem(menuItemId, businessId);
+  if (hasil === "not_found") return fail("Menu tidak ditemukan.");
+
+  revalidatePath("/app/pos");
+  revalidatePath("/app/pos/menu");
+  return done({ hidden: hasil === "hidden" });
+}
+
+export async function saveCategoryAction(input: {
+  id?: string;
+  name: string;
+  sortOrder?: number;
+}): Promise<ActionResult<null>> {
+  const { businessId } = await requireOwner();
+  const locked = await moduleLock(businessId, "pos", "write");
+  if (locked) return fail(locked);
+
+  const name = input.name?.trim();
+  if (!name) return fail("Nama kategori belum diisi.");
+  if (name.length > 60) return fail("Nama kategori maksimal 60 karakter.");
+
+  const saved = await db.saveCategory(businessId, { id: input.id, name, sort_order: input.sortOrder ?? 0 });
+  if (!saved) return fail("Kategori tidak ditemukan.");
+
+  revalidatePath("/app/pos");
+  revalidatePath("/app/pos/menu");
+  return done(null);
+}
+
+export async function deleteCategoryAction(categoryId: string): Promise<ActionResult<null>> {
+  const { businessId } = await requireOwner();
+  const locked = await moduleLock(businessId, "pos", "write");
+  if (locked) return fail(locked);
+
+  const ok = await db.deleteCategory(categoryId, businessId);
+  if (!ok) return fail("Kategori masih dipakai menu. Pindahkan menunya dulu.");
+
+  revalidatePath("/app/pos");
+  revalidatePath("/app/pos/menu");
   return done(null);
 }
 

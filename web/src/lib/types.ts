@@ -426,10 +426,13 @@ export interface Category {
 export interface MenuItem {
   id: string;
   business_id: string;
-  category_id: string;
+  /** NULL kalau menunya belum dimasukkan ke kategori mana pun. */
+  category_id: string | null;
   name: string;
   price: number;
-  photo_url?: string;
+  /** Penjelasan singkat di halaman pesan. NULL kalau menunya tidak butuh. */
+  description?: string | null;
+  photo_url?: string | null;
   is_available: boolean;
   recipe_id?: string | null; // Tersambung ke KAEL Finance
   /** Retail tidak selalu memakai resep; stok dan HPP bisa ditautkan langsung. */
@@ -461,6 +464,20 @@ export interface OrderItem {
   qty: number;
   subtotal: number;
   note?: string;
+}
+
+/**
+ * Satu shift beserta konteks yang dibutuhkan pemilik untuk membacanya.
+ *
+ * `total_sales` dan `cash_sales` sudah BERSIH dari refund yang uangnya keluar
+ * pada shift itu. `cash_sales` yang dipakai membandingkan dengan hitungan laci;
+ * `total_sales` termasuk QRIS dan transfer, yang tidak pernah masuk laci.
+ */
+export interface ShiftReport extends Shift {
+  staff_name: string;
+  orders_count: number;
+  cash_sales: number;
+  total_sales: number;
 }
 
 export interface Order {
@@ -548,11 +565,35 @@ export const FEEDBACK_REASONS: { key: FeedbackReasonCode; label: string }[] = [
   { key: "lainnya", label: "Lainnya" },
 ];
 
+/**
+ * Kalimat siap pakai untuk rating tinggi.
+ *
+ * Bukan untuk mengarang ulasan atas nama orang: yang dipilih di sini disalin
+ * ke papan klip supaya pelanggan menempelkannya sendiri di kotak ulasan Google,
+ * dan dia tetap bisa mengubah atau menghapusnya di sana. Alasannya praktis —
+ * orang yang puas hampir selalu berhenti di halaman Google karena tidak tahu
+ * mau menulis apa, bukan karena tidak mau menulis.
+ */
+export const PRAISE_TEMPLATES: { key: string; label: string; text: string }[] = [
+  { key: "rasa", label: "Rasanya enak", text: "Rasanya enak dan konsisten." },
+  { key: "tempat", label: "Tempatnya nyaman", text: "Tempatnya nyaman buat duduk lama." },
+  { key: "pelayanan", label: "Pelayanan ramah", text: "Pelayanannya ramah dan cepat." },
+  { key: "harga", label: "Harga masuk akal", text: "Harganya masuk akal untuk porsinya." },
+  { key: "bersih", label: "Bersih", text: "Tempatnya bersih dan terawat." },
+  { key: "ulang", label: "Bakal balik lagi", text: "Bakal balik lagi." },
+];
+
+/** Ambang yang memisahkan "ajak ke Google" dari "dengarkan sendiri". */
+export const RATING_TINGGI = 4;
+
 export interface MemberFeedback {
   id: string;
   business_id: string;
   customer_id: string | null;
-  order_id: string;
+  /** NULL kalau feedback datang dari tap kartu, bukan dari halaman struk. */
+  order_id: string | null;
+  /** NULL kalau feedback datang dari halaman struk, bukan dari tap kartu. */
+  card_id: string | null;
   rating: number;
   reason_code: FeedbackReasonCode | null;
   comment: string | null;
@@ -568,7 +609,10 @@ export interface FeedbackSummary {
 
 export interface FeedbackRow extends MemberFeedback {
   customer_name: string | null;
-  order_no: string;
+  /** NULL untuk feedback dari tap kartu: tidak ada pesanan yang bisa disebut. */
+  order_no: string | null;
+  /** Label kartu asal, supaya owner tahu meja atau titik mana yang mengeluh. */
+  card_label: string | null;
 }
 
 // -----------------------------------------------------------------------------

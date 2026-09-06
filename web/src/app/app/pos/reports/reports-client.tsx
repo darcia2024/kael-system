@@ -22,7 +22,7 @@ import {
   MessageSquare,
   LayoutDashboard,
 } from "lucide-react";
-import type { Business, Order, Shift, FeedbackSummary, FeedbackRow } from "@/lib/types";
+import type { Business, Order, ShiftReport, FeedbackSummary, FeedbackRow } from "@/lib/types";
 import { FEEDBACK_REASONS } from "@/lib/types";
 import { refundOrderAction } from "@/lib/actions";
 import { serviceTypeLabel } from "@/lib/pos-engine";
@@ -63,7 +63,7 @@ export default function PosOwnerReportsPage({
   business: Business | null;
   reports: PosReports;
   orders: Order[];
-  shifts: Shift[];
+  shifts: ShiftReport[];
   feedbackSummary: FeedbackSummary;
   recentFeedback: FeedbackRow[];
 }) {
@@ -440,7 +440,10 @@ export default function PosOwnerReportsPage({
             <table className="w-full text-left font-mono text-xs">
               <thead>
                 <tr className="border-b border-[#dedee8] text-[#7b7b8e] text-[10px] uppercase">
+                  <th className="py-2.5 px-3">Kasir</th>
                   <th className="py-2.5 px-3">Waktu Buka</th>
+                  <th className="py-2.5 px-3 text-right">Dilayani</th>
+                  <th className="py-2.5 px-3">Penjualan</th>
                   <th className="py-2.5 px-3">Modal Awal</th>
                   <th className="py-2.5 px-3">Waktu Tutup</th>
                   <th className="py-2.5 px-3">Uang Sistem</th>
@@ -451,8 +454,19 @@ export default function PosOwnerReportsPage({
               <tbody className="divide-y divide-[#dedee8]">
                 {shifts.map((sh) => (
                   <tr key={sh.id} className="hover:bg-[#fcfcfe]">
+                    <td className="py-3 px-3 font-sans text-xs font-black text-[#232331]">
+                      {sh.staff_name}
+                    </td>
                     <td className="py-3 px-3 text-[11px]">
                       {formatBusinessDateTime(sh.opened_at)}
+                    </td>
+                    <td className="py-3 px-3 text-right font-bold">
+                      {sh.orders_count} orang
+                    </td>
+                    {/* Termasuk QRIS dan transfer; yang dibandingkan dengan laci
+                        cuma bagian tunai, dan itu ada di kolom Uang Sistem. */}
+                    <td className="py-3 px-3 font-bold text-[#15803d]">
+                      {formatRupiah(sh.total_sales)}
                     </td>
                     <td className="py-3 px-3 font-bold">
                       {formatRupiah(sh.opening_cash)}

@@ -31,6 +31,7 @@ import {
   Users, 
   ShieldCheck,
   TrendingUp,
+  UtensilsCrossed,
   RefreshCw
 } from "lucide-react";
 import type { 
@@ -480,13 +481,22 @@ export default function PosClient({
           <div className="flex items-center gap-1.5 font-mono text-xs">
             
             {userRole === "owner" && (
-              <Link
-                href="/app/pos/owner"
-                className="btn-tactile flex items-center gap-1 rounded-xl border border-[#232331] bg-white px-2.5 py-1.5 font-bold text-[#232331] shadow-ink-xs"
-              >
-                <TrendingUp size={13} />
-                <span className="hidden sm:inline">Dashboard Owner</span>
-              </Link>
+              <>
+                <Link
+                  href="/app/pos/menu"
+                  className="btn-tactile flex items-center gap-1 rounded-xl border border-[#232331] bg-white px-2.5 py-1.5 font-bold text-[#232331] shadow-ink-xs"
+                >
+                  <UtensilsCrossed size={13} />
+                  <span className="hidden sm:inline">Kelola Menu</span>
+                </Link>
+                <Link
+                  href="/app/pos/owner"
+                  className="btn-tactile flex items-center gap-1 rounded-xl border border-[#232331] bg-white px-2.5 py-1.5 font-bold text-[#232331] shadow-ink-xs"
+                >
+                  <TrendingUp size={13} />
+                  <span className="hidden sm:inline">Dashboard Owner</span>
+                </Link>
+              </>
             )}
 
             {/* QR Orders Queue Badge */}

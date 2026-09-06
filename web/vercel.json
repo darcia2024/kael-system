@@ -1,5 +1,5 @@
 {
   "framework": "nextjs",
-  "regions": ["sin1"],
+  "regions": ["syd1"],
   "crons": [{ "path": "/api/cron/review-snapshots", "schedule": "0 2 * * *" }]
 }

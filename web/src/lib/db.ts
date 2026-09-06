@@ -24,7 +24,7 @@ import type {
   Business, BusinessModule, User, Customer, CustomerProfileSummary, Card, CardTap,
   Ingredient, IngredientPriceHistory, Recipe, FinancePocket, FinanceTransaction, FinanceAsset, InventoryItem, FinanceSummary, LoyaltyProgram, PointLedger,
   Reward, Redemption, LoyaltyCampaignSummary, LoyaltyCampaignRecipient, LoyaltyCampaignStatus, PointExpiryCandidate,
-  Category, MenuItem, Shift, Order, OrderItem, Refund, SafeUser,
+  Category, MenuItem, Shift, ShiftReport, Order, OrderItem, Refund, SafeUser,
 } from "./types";
 
 export * from "./types";
@@ -2618,19 +2618,95 @@ export const db = {
     return rows.length > 0;
   },
 
-  async createMenuItem(businessId: string, data: Partial<MenuItem>): Promise<MenuItem> {
+  /**
+   * Menyimpan satu menu, membuat baru atau memperbarui yang sudah ada.
+   *
+   * UPDATE-nya menyaring business_id, bukan cuma id. Tanpa itu, id menu milik
+   * toko lain yang dikirim dari layar akan ikut terubah — dan id menu bukan
+   * rahasia, dia muncul di halaman pesan yang terbuka untuk umum.
+   */
+  async saveMenuItem(
+    businessId: string,
+    data: Partial<MenuItem> & { id?: string },
+  ): Promise<MenuItem | null> {
+    const row = {
+      category_id: data.category_id || null,
+      name: data.name!,
+      price: data.price ?? 0,
+      description: data.description ?? null,
+      photo_url: data.photo_url ?? null,
+      is_available: data.is_available ?? true,
+      recipe_id: data.recipe_id || null,
+      sort_order: data.sort_order ?? 0,
+    };
+
+    if (data.id) {
+      return one<MenuItem>(await sql`
+        UPDATE menu_items SET ${sql(row)}, updated_at = NOW()
+        WHERE id = ${data.id} AND business_id = ${businessId} RETURNING *
+      `);
+    }
     return one<MenuItem>(await sql`
-      INSERT INTO menu_items ${sql({
-        business_id: businessId,
-        category_id: data.category_id ?? null,
-        name: data.name!,
-        price: data.price ?? 0,
-        photo_url: data.photo_url ?? null,
-        is_available: data.is_available ?? true,
-        recipe_id: data.recipe_id ?? null,
-        sort_order: data.sort_order ?? 0,
+      INSERT INTO menu_items ${sql({ ...row, business_id: businessId })} RETURNING *
+    `);
+  },
+
+  /**
+   * Menu yang pernah terjual TIDAK dihapus, cuma disembunyikan.
+   *
+   * order_items menyimpan nama dan harga sebagai snapshot, jadi struk lama
+   * tetap terbaca. Tapi menu_item_id-nya masih menunjuk ke sini, dan laporan
+   * per menu ikut hilang begitu barisnya lenyap. Yang sudah punya riwayat
+   * karena itu dinonaktifkan; yang belum pernah dipesan boleh benar-benar
+   * hilang, supaya salah ketik tidak menumpuk selamanya di daftar.
+   */
+  async deleteMenuItem(
+    id: string,
+    businessId: string,
+  ): Promise<"deleted" | "hidden" | "not_found"> {
+    return sql.begin(async (tx) => {
+      const menu = one<{ id: string }>(await tx`
+        SELECT id FROM menu_items WHERE id = ${id} AND business_id = ${businessId}
+      `);
+      if (!menu) return "not_found" as const;
+
+      const terpakai = await tx`SELECT 1 FROM order_items WHERE menu_item_id = ${id} LIMIT 1`;
+      if (terpakai.length) {
+        await tx`UPDATE menu_items SET is_available = FALSE, updated_at = NOW() WHERE id = ${id}`;
+        return "hidden" as const;
+      }
+      await tx`DELETE FROM menu_items WHERE id = ${id} AND business_id = ${businessId}`;
+      return "deleted" as const;
+    });
+  },
+
+  async saveCategory(
+    businessId: string,
+    data: { id?: string; name: string; sort_order?: number },
+  ): Promise<Category | null> {
+    if (data.id) {
+      return one<Category>(await sql`
+        UPDATE categories SET name = ${data.name}, sort_order = ${data.sort_order ?? 0}
+        WHERE id = ${data.id} AND business_id = ${businessId} RETURNING *
+      `);
+    }
+    return one<Category>(await sql`
+      INSERT INTO categories ${sql({
+        business_id: businessId, name: data.name, sort_order: data.sort_order ?? 0,
       })} RETURNING *
-    `)!;
+    `);
+  },
+
+  /** Kategori yang masih dipakai menu tidak boleh hilang begitu saja. */
+  async deleteCategory(id: string, businessId: string): Promise<boolean> {
+    const dipakai = await sql`
+      SELECT 1 FROM menu_items WHERE category_id = ${id} AND business_id = ${businessId} LIMIT 1
+    `;
+    if (dipakai.length) return false;
+    const rows = await sql`
+      DELETE FROM categories WHERE id = ${id} AND business_id = ${businessId} RETURNING id
+    `;
+    return rows.length > 0;
   },
 
   async getActiveShift(businessId: string): Promise<Shift | null> {
@@ -2640,10 +2716,48 @@ export const db = {
     `);
   },
 
-  async getShifts(businessId: string): Promise<Shift[]> {
+  /**
+   * Riwayat shift beserta siapa yang menjaganya dan apa yang terjadi selama itu.
+   *
+   * Tabel shifts sendiri cuma menyimpan uang laci: modal awal, hitungan akhir,
+   * dan selisihnya. Itu menjawab "cocok atau tidak", tapi tidak menjawab
+   * "punya siapa" dan "seberapa sibuk" — dua pertanyaan pertama yang diajukan
+   * pemilik ketika selisihnya tidak nol.
+   *
+   * Penjualan dijumlahkan per shift lewat orders.shift_id, dan refund
+   * dikurangkan lewat refunds.shift_id. Refund SENGAJA dihitung dari shift
+   * tempat uangnya benar-benar keluar dari laci, bukan dari shift tempat
+   * pesanannya dibuat: yang harus cocok dengan hitungan laci sore ini adalah
+   * uang yang keluar sore ini, termasuk kalau yang direfund pesanan kemarin.
+   */
+  async getShifts(businessId: string): Promise<ShiftReport[]> {
     return (await sql`
-      SELECT * FROM shifts WHERE business_id = ${businessId} ORDER BY opened_at DESC LIMIT 60
-    `) as unknown as Shift[];
+      SELECT s.*,
+        COALESCE(NULLIF(TRIM(u.name), ''), 'Kasir') AS staff_name,
+        COALESCE(o.orders_count, 0)::int AS orders_count,
+        COALESCE(o.cash_sales, 0) - COALESCE(r.cash_refunds, 0) AS cash_sales,
+        COALESCE(o.total_sales, 0) - COALESCE(r.total_refunds, 0) AS total_sales
+      FROM shifts s
+      LEFT JOIN users u ON u.id = s.opened_by
+      LEFT JOIN (
+        SELECT shift_id,
+          COUNT(*)::int AS orders_count,
+          SUM(total) FILTER (WHERE payment_method = 'cash') AS cash_sales,
+          SUM(total) AS total_sales
+        FROM orders WHERE business_id = ${businessId} AND status = 'paid' AND shift_id IS NOT NULL
+        GROUP BY shift_id
+      ) o ON o.shift_id = s.id
+      LEFT JOIN (
+        SELECT rf.shift_id,
+          SUM(rf.amount) FILTER (WHERE ord.payment_method = 'cash') AS cash_refunds,
+          SUM(rf.amount) AS total_refunds
+        FROM refunds rf JOIN orders ord ON ord.id = rf.order_id
+        WHERE ord.business_id = ${businessId} AND rf.shift_id IS NOT NULL
+        GROUP BY rf.shift_id
+      ) r ON r.shift_id = s.id
+      WHERE s.business_id = ${businessId}
+      ORDER BY s.opened_at DESC LIMIT 60
+    `) as unknown as ShiftReport[];
   },
 
   /** Jadwal POS bersifat opt-in agar tenant lama tidak mendadak terkunci. */
@@ -2898,6 +3012,105 @@ export const db = {
   },
 
   /**
+   * Rating dari tap kartu.
+   *
+   * Berbeda dari jalur struk, di sini tidak ada pesanan yang bisa dipakai
+   * sebagai kunci "satu orang satu kali". Kartu di meja ditap banyak orang
+   * sepanjang hari, jadi membatasi per kartu justru membungkam pelanggan
+   * kedua dan seterusnya. Yang membatasi pembanjiran adalah pembatas laju per
+   * jaringan di `allowCardFeedback`, bukan constraint di tabel.
+   */
+  async submitCardFeedback(
+    cardCode: string, rating: number,
+  ): Promise<
+    | { success: true; feedbackId: string; businessId: string; reviewUrl: string | null }
+    | { success: false; error: string }
+  > {
+    const card = one<{ id: string; business_id: string | null; destination_url: string | null }>(await sql`
+      SELECT id, business_id, destination_url FROM cards
+      WHERE card_code = ${cardCode} AND status = 'active'
+    `);
+    if (!card || !card.business_id) return { success: false, error: "Kartu tidak dikenali." };
+
+    const row = one<{ id: string }>(await sql`
+      INSERT INTO member_feedback ${sql({
+        business_id: card.business_id, customer_id: null, order_id: null, card_id: card.id,
+        rating, reason_code: null, comment: null,
+      })} RETURNING id
+    `);
+    return {
+      success: true,
+      feedbackId: row!.id,
+      businessId: card.business_id,
+      reviewUrl: card.destination_url,
+    };
+  },
+
+  /**
+   * Melengkapi baris yang sudah ada dengan alasan dan komentarnya.
+   *
+   * Bintangnya disimpan begitu ditekan, sebelum orangnya sempat mengetik apa
+   * pun — kalau menunggu tombol Kirim, pelanggan yang menekan bintang satu
+   * lalu menutup ponselnya tidak akan pernah terhitung, padahal justru itu
+   * yang paling perlu diketahui pemilik kafe.
+   *
+   * Syarat WHERE-nya yang menjaga: hanya baris dari kartu, hanya yang belum
+   * pernah dilengkapi, dan hanya dalam setengah jam pertama. Tanpa itu, id
+   * feedback yang bocor bisa dipakai menimpa keluhan orang lain kapan saja.
+   */
+  async attachCardFeedbackDetail(
+    feedbackId: string, reasonCode: string | null, comment: string | null,
+  ): Promise<boolean> {
+    const rows = await sql`
+      UPDATE member_feedback
+      SET reason_code = ${reasonCode}, comment = ${comment}
+      WHERE id = ${feedbackId}
+        AND card_id IS NOT NULL
+        AND reason_code IS NULL AND comment IS NULL
+        AND created_at >= NOW() - INTERVAL '30 minutes'
+      RETURNING id
+    `;
+    return rows.length > 0;
+  },
+
+  /**
+   * Batas 10 rating per jam untuk satu jaringan dan satu toko.
+   *
+   * Lebih longgar dari pendaftaran member (5) karena satu kafe memang bisa
+   * punya banyak pelanggan di balik satu WiFi, dan rating yang ditolak berarti
+   * keluhan yang tidak pernah sampai ke pemiliknya. Cukup ketat untuk
+   * menghentikan satu orang yang menekan bintang satu berulang kali.
+   */
+  async allowCardFeedback(businessId: string, ipHash: string): Promise<boolean> {
+    return sql.begin(async (tx) => {
+      await tx`SELECT pg_advisory_xact_lock(hashtext(${businessId + ":nilai:" + ipHash}))`;
+      await tx`DELETE FROM feedback_attempts WHERE created_at < NOW() - INTERVAL '2 days'`;
+      const row = one<{ count: string | number }>(await tx`
+        SELECT COUNT(*) AS count FROM feedback_attempts
+        WHERE business_id = ${businessId} AND ip_hash = ${ipHash}
+          AND created_at >= NOW() - INTERVAL '1 hour'
+      `);
+      if (num(row?.count) >= 10) return false;
+      await tx`INSERT INTO feedback_attempts ${tx({ business_id: businessId, ip_hash: ipHash })}`;
+      return true;
+    });
+  },
+
+  /** Kartu beserta identitas tokonya, untuk halaman rating publik. */
+  async getRatingCard(cardCode: string) {
+    return one<{
+      card_id: string; card_label: string | null; business_id: string;
+      business_name: string; brand_color: string; logo_url: string | null;
+      destination_url: string | null;
+    }>(await sql`
+      SELECT c.id AS card_id, c.label AS card_label, c.destination_url,
+             b.id AS business_id, b.name AS business_name, b.brand_color, b.logo_url
+      FROM cards c JOIN businesses b ON b.id = c.business_id
+      WHERE c.card_code = ${cardCode} AND c.status = 'active' AND c.type = 'review'
+    `);
+  },
+
+  /**
    * Dipanggil di server component halaman struk. Kalau sudah ada, halaman
    * menampilkan ucapan terima kasih dan MENYEMBUNYIKAN formulirnya — bukan
    * menampilkan ulang rating atau komentarnya. Tautan struk bisa diteruskan
@@ -2945,11 +3158,17 @@ export const db = {
 
   /** Feedback terbaru lengkap dengan komentarnya, untuk owner benar-benar membaca — bukan cuma menghitung. */
   async getRecentFeedback(businessId: string, limit = 20): Promise<import("./types").FeedbackRow[]> {
+    /**
+     * LEFT JOIN, bukan JOIN. Sejak rating bisa datang dari tap kartu, baris
+     * tanpa pesanan itu sah — dan JOIN biasa akan membuangnya diam-diam,
+     * sehingga keluhan dari meja tidak pernah sampai ke layar pemilik.
+     */
     return (await sql`
-      SELECT f.*, c.name AS customer_name, o.order_no
+      SELECT f.*, c.name AS customer_name, o.order_no, k.label AS card_label
       FROM member_feedback f
       LEFT JOIN customers c ON c.id = f.customer_id
-      JOIN orders o ON o.id = f.order_id
+      LEFT JOIN orders o ON o.id = f.order_id
+      LEFT JOIN cards k ON k.id = f.card_id
       WHERE f.business_id = ${businessId}
       ORDER BY f.created_at DESC
       LIMIT ${limit}

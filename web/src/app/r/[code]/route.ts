@@ -54,12 +54,28 @@ export async function GET(
   });
 
   /**
-   * Kartu ulasan dan kartu tautan bebas berujung sama: ke alamat yang
-   * disimpan pemiliknya. Bedanya cuma di cara mengisinya saat aktivasi,
-   * jadi tidak ada gunanya menduplikasi cabangnya di sini.
+   * Kartu ulasan mendarat di halaman penilaian KAEL, bukan langsung ke Google.
+   *
+   * Versi sebelumnya melempar setiap tap ke halaman ulasan Google apa adanya.
+   * Yang puas menulis di sana, dan yang kecewa juga — pemilik kafe baru tahu
+   * ada yang salah setelah bintang satunya terlanjur terbit dan permanen.
+   * Sekarang bintangnya ditanya lebih dulu di halaman sendiri, jadi keluhan
+   * punya tempat mendarat yang bisa dibalas, dan pujian tetap sampai ke Google.
+   *
+   * Kartu tanpa alamat Google tetap dibuka: penilaiannya masih tercatat, cuma
+   * langkah terakhirnya yang tidak ada. Itu urusan pemilik kartu, bukan alasan
+   * memperlihatkan layar galat ke pelanggan yang sedang memegang ponselnya.
    */
-  if (card.type === "review" || card.type === "link") {
-    if (card.type === "link" && await db.getSmartTouchByCode(card.card_code)) {
+  if (card.type === "review") {
+    return NextResponse.redirect(new URL(`/nilai/${card.card_code}`, request.url), 302);
+  }
+
+  /**
+   * Kartu tautan bebas berujung ke alamat yang disimpan pemiliknya, atau ke
+   * halaman Smart Touch kalau kartunya sudah punya daftar tombol.
+   */
+  if (card.type === "link") {
+    if (await db.getSmartTouchByCode(card.card_code)) {
       return NextResponse.redirect(new URL(`/touch/${card.card_code}`, request.url), 302);
     }
     if (!card.destination_url) {
