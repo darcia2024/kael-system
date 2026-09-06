@@ -26,7 +26,7 @@ import type { LicenseState, ModuleStatus } from "@/lib/licensing";
 import { rupiah, type ModuleKey } from "@/lib/modules-catalog";
 import { waLink } from "@/lib/site";
 import {
-  createStaffAction, deactivateStaffAction, setStaffPermissionsAction, logout,
+  createStaffAction, deactivateStaffAction, setStaffPermissionsAction, resetStaffPinAction, logout,
 } from "@/lib/actions";
 import { STAFF_PERMISSIONS, type StaffPermission } from "@/lib/types";
 import { formatBusinessDate } from "@/lib/formatters";
@@ -90,6 +90,12 @@ export default function AppPortalHub({
   const [newStaffName, setNewStaffName] = useState("");
   const [newStaffPin, setNewStaffPin] = useState("");
 
+  // Ganti PIN. Null berarti tidak ada yang sedang diganti.
+  const [pinUntuk, setPinUntuk] = useState<{ id: string; name: string } | null>(null);
+  const [pinBaru, setPinBaru] = useState("");
+  const [pinGalat, setPinGalat] = useState<string | null>(null);
+  const [pinSedangSimpan, setPinSedangSimpan] = useState(false);
+
   const handleAddStaff = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newStaffName || newStaffPin.length < 4 || newStaffPin.length > 6) {
@@ -132,6 +138,37 @@ export default function AppPortalHub({
       alert(res.error);
       return;
     }
+    router.refresh();
+  };
+
+  /**
+   * Mengganti PIN karyawan yang lupa PIN-nya.
+   *
+   * Diganti, bukan ditampilkan: PIN tersimpan sebagai hash satu arah, jadi
+   * tidak ada yang bisa membacanya kembali — termasuk pemilik usaha dan
+   * termasuk tim KAEL. Sebelum ini, kasir yang lupa PIN berarti akunnya harus
+   * dinonaktifkan dan dibuat ulang, dan riwayat transaksinya kehilangan
+   * jejak siapa yang melayani.
+   */
+  const gantiPin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!pinUntuk) return;
+    if (!/^\d{4,6}$/.test(pinBaru)) {
+      setPinGalat("PIN harus 4 sampai 6 angka.");
+      return;
+    }
+    setPinSedangSimpan(true);
+    setPinGalat(null);
+    const res = await resetStaffPinAction(pinUntuk.id, pinBaru);
+    setPinSedangSimpan(false);
+    if (!res.ok) {
+      setPinGalat(res.error);
+      return;
+    }
+    const nama = pinUntuk.name;
+    setPinUntuk(null);
+    setPinBaru("");
+    alert(`PIN ${nama} sudah diganti. Beri tahu langsung ke orangnya, jangan lewat chat grup.`);
     router.refresh();
   };
 
@@ -666,13 +703,28 @@ export default function AppPortalHub({
                     </td>
                     <td className="py-3 px-3 text-right">
                       {u.role === "staff" && (
-                        <button
-                          type="button"
-                          onClick={() => toggleStaffActive(u.id, u.is_active)}
-                          className="text-[11px] font-bold text-[#7958d8] hover:underline"
-                        >
-                          {u.is_active ? "Nonaktifkan" : "Aktifkan Kembali"}
-                        </button>
+                        <div className="flex items-center justify-end gap-3">
+                          {u.is_active && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setPinUntuk({ id: u.id, name: u.name });
+                                setPinBaru("");
+                                setPinGalat(null);
+                              }}
+                              className="text-[11px] font-bold text-[#7958d8] hover:underline"
+                            >
+                              Ganti PIN
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => toggleStaffActive(u.id, u.is_active)}
+                            className="text-[11px] font-bold text-[#7958d8] hover:underline"
+                          >
+                            {u.is_active ? "Nonaktifkan" : "Aktifkan Kembali"}
+                          </button>
+                        </div>
                       )}
                     </td>
                   </tr>
@@ -685,6 +737,57 @@ export default function AppPortalHub({
         )}
 
       </main>
+
+      {pinUntuk && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <form
+            onSubmit={gantiPin}
+            className="w-full max-w-sm rounded-2xl border-2 border-[#232331] bg-white p-5"
+          >
+            <h3 className="text-base font-black text-[#232331]">Ganti PIN {pinUntuk.name}</h3>
+            <p className="mt-1 text-[11px] leading-relaxed text-[#7b7b8e]">
+              PIN lama tidak bisa dilihat siapa pun, termasuk kamu — yang tersimpan
+              cuma hash-nya. Yang bisa dilakukan adalah menggantinya dengan yang baru.
+            </p>
+
+            <label className="mt-4 block text-xs font-bold text-[#232331]">
+              PIN baru (4-6 angka)
+              <input
+                value={pinBaru}
+                onChange={(e) => setPinBaru(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                inputMode="numeric"
+                autoComplete="off"
+                autoFocus
+                placeholder="······"
+                className="mt-1 w-full rounded-lg border-2 border-[#232331] px-3 py-2 text-center font-mono text-lg font-black tracking-[0.4em]"
+              />
+            </label>
+
+            {pinGalat && (
+              <p className="mt-2 rounded-lg border border-[#c2410c] bg-[#fff7ed] p-2 text-xs font-bold text-[#c2410c]">
+                {pinGalat}
+              </p>
+            )}
+
+            <div className="mt-5 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setPinUntuk(null)}
+                className="flex-1 rounded-lg border-2 border-[#232331] bg-white px-4 py-2.5 text-sm font-black"
+              >
+                Batal
+              </button>
+              <button
+                type="submit"
+                disabled={pinSedangSimpan}
+                className="flex-1 rounded-lg border-2 border-[#232331] bg-[#d9ff57] px-4 py-2.5 text-sm font-black disabled:opacity-60"
+              >
+                {pinSedangSimpan ? "Menyimpan..." : "Simpan PIN"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
 
       <footer className="border-t border-[#dedee8] bg-white py-4 text-center text-xs font-mono text-[#7b7b8e]">
         KAEL System · Data tokomu tersimpan terpisah dan hanya bisa dibuka dari akun ini

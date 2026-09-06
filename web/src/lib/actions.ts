@@ -1247,6 +1247,18 @@ export async function refundOrderAction(
 function bersihkanUrlGambar(input: string | undefined | null): string | null | "invalid" {
   const nilai = input?.trim();
   if (!nilai) return null;
+
+  /**
+   * Gambar yang diunggah lewat KAEL sendiri disimpan sebagai alamat internal
+   * `/api/gambar/<uuid>`, bukan alamat lengkap. Bentuk ini diterima lebih dulu
+   * dan dicocokkan ketat ke pola id-nya, bukan sekadar "diawali garis miring" —
+   * kalau tidak, kolom ini bisa dipakai menitipkan jalur apa pun di domain
+   * yang sama ke dalam atribut src halaman publik.
+   */
+  if (/^\/api\/gambar\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(nilai)) {
+    return nilai;
+  }
+
   try {
     const url = new URL(nilai);
     if (url.protocol !== "https:") return "invalid";
@@ -1254,6 +1266,52 @@ function bersihkanUrlGambar(input: string | undefined | null): string | null | "
   } catch {
     return "invalid";
   }
+}
+
+/** Jenis berkas yang boleh disimpan. SVG tidak ada di sini, dan itu disengaja. */
+const MIME_GAMBAR = new Set(["image/webp", "image/jpeg", "image/png"]);
+const BATAS_GAMBAR = 400 * 1024;
+
+/**
+ * Menerima satu gambar dari layar kelola menu.
+ *
+ * Yang dikirim peramban sudah diperkecil dan dikompres di sisi klien. Batas di
+ * sini bukan pengulangan yang sopan melainkan penjaga sebenarnya: yang memanggil
+ * Server Action tidak harus layar KAEL, dan siapa pun yang sudah masuk sebagai
+ * pemilik bisa mengirim apa saja ke sini langsung.
+ */
+export async function uploadImageAction(
+  dataUrl: string,
+  dimensi?: { width: number; height: number },
+): Promise<ActionResult<{ url: string }>> {
+  const { businessId } = await requireOwner();
+
+  const cocok = /^data:([a-z/+.-]+);base64,([A-Za-z0-9+/=]+)$/i.exec(dataUrl?.trim() ?? "");
+  if (!cocok) return fail("Berkas gambar tidak terbaca.");
+
+  const [, mime, base64] = cocok;
+  if (!MIME_GAMBAR.has(mime.toLowerCase())) {
+    return fail("Format gambar harus WebP, JPG, atau PNG.");
+  }
+
+  let bytes: Buffer;
+  try {
+    bytes = Buffer.from(base64, "base64");
+  } catch {
+    return fail("Berkas gambar tidak terbaca.");
+  }
+  if (!bytes.byteLength) return fail("Berkas gambar kosong.");
+  if (bytes.byteLength > BATAS_GAMBAR) {
+    return fail("Gambar terlalu besar. Coba foto lain atau potong dulu.");
+  }
+
+  const id = await db.saveUploadedImage(businessId, {
+    mime: mime.toLowerCase(),
+    bytes,
+    width: dimensi?.width ?? null,
+    height: dimensi?.height ?? null,
+  });
+  return done({ url: `/api/gambar/${id}` });
 }
 
 export async function saveMenuItemAction(input: {

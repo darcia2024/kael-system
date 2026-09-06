@@ -1,16 +1,20 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Plus, Pencil, Trash2, ImageOff, Loader2, X } from "lucide-react";
+import {
+  ArrowLeft, Plus, Pencil, Trash2, ImageOff, Loader2, X, Upload,
+} from "lucide-react";
 
 import {
   saveMenuItemAction,
   deleteMenuItemAction,
   saveCategoryAction,
   deleteCategoryAction,
+  uploadImageAction,
 } from "@/lib/actions";
+import { kompresGambar } from "@/lib/kompres-gambar";
 import type { Category, MenuItem } from "@/lib/types";
 
 const rupiah = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
@@ -52,6 +56,41 @@ export default function MenuClient({
   const [galat, setGalat] = useState<string | null>(null);
   const [kabar, setKabar] = useState<string | null>(null);
   const [kategoriBaru, setKategoriBaru] = useState("");
+  const [sedangUnggah, setSedangUnggah] = useState(false);
+  const berkasRef = useRef<HTMLInputElement | null>(null);
+
+  /**
+   * Memilih foto: diperkecil di peramban lebih dulu, baru dikirim.
+   *
+   * Alamatnya langsung ditulis ke draf, tetapi menunya sendiri BELUM disimpan.
+   * Gambar yang terunggah lalu ditinggalkan karena orangnya menekan Batal akan
+   * menjadi baris yatim di uploaded_images — tidak berbahaya, cuma memakan
+   * tempat, dan itu harga yang lebih murah daripada memaksa orang menyimpan
+   * menu setengah jadi hanya supaya bisa melihat fotonya.
+   */
+  const pilihFoto = async (file: File | undefined) => {
+    if (!file || !draf) return;
+    setGalat(null);
+    setSedangUnggah(true);
+    try {
+      const kecil = await kompresGambar(file);
+      const res = await uploadImageAction(kecil.dataUrl, {
+        width: kecil.width,
+        height: kecil.height,
+      });
+      if (!res.ok) {
+        setGalat(res.error);
+        return;
+      }
+      setDraf((d) => (d ? { ...d, photoUrl: res.data.url } : d));
+    } catch (err) {
+      setGalat(err instanceof Error ? err.message : "Gambar gagal diproses.");
+    } finally {
+      setSedangUnggah(false);
+      // Supaya memilih berkas yang SAMA lagi tetap memicu onChange.
+      if (berkasRef.current) berkasRef.current.value = "";
+    }
+  };
 
   const namaKategori = (id: string | null) =>
     categories.find((c) => c.id === id)?.name ?? "Tanpa kategori";
@@ -357,16 +396,64 @@ export default function MenuClient({
                 />
               </label>
 
-              <label className="block text-xs font-bold">
-                Alamat gambar <span className="font-normal text-[#7b7b8e]">(opsional)</span>
+              <div className="text-xs font-bold">
+                Foto menu <span className="font-normal text-[#7b7b8e]">(opsional)</span>
+
+                <input
+                  ref={berkasRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => pilihFoto(e.target.files?.[0])}
+                  className="hidden"
+                />
+
+                <div className="mt-1 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => berkasRef.current?.click()}
+                    disabled={sedangUnggah}
+                    className="flex flex-1 items-center justify-center gap-2 rounded-lg border-2 border-[#232331] bg-white px-3 py-2 text-xs font-black disabled:opacity-60"
+                  >
+                    {sedangUnggah ? (
+                      <>
+                        <Loader2 size={14} className="animate-spin" /> Memproses...
+                      </>
+                    ) : (
+                      <>
+                        <Upload size={14} /> {draf.photoUrl ? "Ganti foto" : "Ambil / pilih foto"}
+                      </>
+                    )}
+                  </button>
+                  {draf.photoUrl && (
+                    <button
+                      type="button"
+                      onClick={() => setDraf({ ...draf, photoUrl: "" })}
+                      className="rounded-lg border-2 border-[#232331] bg-white px-3 py-2 text-xs font-black text-[#c2410c]"
+                    >
+                      Hapus
+                    </button>
+                  )}
+                </div>
+
+                <p className="mt-1 font-normal text-[11px] leading-relaxed text-[#7b7b8e]">
+                  Foto dari kamera langsung dikecilkan di HP sebelum dikirim, jadi
+                  tidak menghabiskan kuota.
+                </p>
+
+                {/*
+                  Kolom alamat tetap ada untuk yang gambarnya sudah terlanjur
+                  ada di internet. Menghapusnya berarti menu yang alamatnya
+                  ditulis sebelum fitur unggah ada jadi tidak bisa diperbaiki.
+                */}
                 <input
                   value={draf.photoUrl}
                   onChange={(e) => setDraf({ ...draf, photoUrl: e.target.value })}
-                  type="url"
-                  placeholder="https://..."
-                  className="mt-1 w-full rounded-lg border-2 border-[#232331] px-3 py-2 font-mono text-xs font-normal"
+                  type="text"
+                  placeholder="atau tempel alamat gambar https://..."
+                  className="mt-2 w-full rounded-lg border border-[#dedee8] px-3 py-2 font-mono text-[11px] font-normal"
                 />
-              </label>
+              </div>
+
               {draf.photoUrl.trim() && (
                 <div className="overflow-hidden rounded-lg border border-[#dedee8]">
                   {/* eslint-disable-next-line @next/next/no-img-element */}

@@ -2680,6 +2680,42 @@ export const db = {
     });
   },
 
+  /**
+   * Menyimpan satu gambar unggahan dan mengembalikan id-nya.
+   *
+   * Barisnya tidak pernah diperbarui. Mengganti gambar menu berarti menyimpan
+   * baris baru dan menulis alamat baru ke menu_items — itulah yang membuat
+   * /api/gambar/[id] boleh mengirim header cache "immutable" tanpa risiko
+   * pelanggan melihat gambar lama selamanya.
+   */
+  async saveUploadedImage(
+    businessId: string,
+    data: { mime: string; bytes: Buffer; width: number | null; height: number | null },
+  ): Promise<string> {
+    const row = one<{ id: string }>(await sql`
+      INSERT INTO uploaded_images ${sql({
+        business_id: businessId,
+        mime: data.mime,
+        bytes: data.bytes,
+        byte_size: data.bytes.byteLength,
+        width: data.width,
+        height: data.height,
+      })} RETURNING id
+    `);
+    return row!.id;
+  },
+
+  /**
+   * Satu gambar untuk disajikan. TIDAK menyaring business_id: gambar menu
+   * tampil di halaman pesan yang memang terbuka untuk umum, dan id-nya UUID
+   * acak yang tidak bisa ditebak berurutan.
+   */
+  async getUploadedImage(id: string) {
+    return one<{ mime: string; bytes: Buffer }>(await sql`
+      SELECT mime, bytes FROM uploaded_images WHERE id = ${id}
+    `);
+  },
+
   async saveCategory(
     businessId: string,
     data: { id?: string; name: string; sort_order?: number },
