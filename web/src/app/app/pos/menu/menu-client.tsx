@@ -16,6 +16,7 @@ import {
 } from "@/lib/actions";
 import { kompresGambar } from "@/lib/kompres-gambar";
 import type { Category, MenuItem } from "@/lib/types";
+import { PLACEHOLDER_MENU } from "@/lib/types";
 
 const rupiah = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 
@@ -261,17 +262,27 @@ export default function MenuClient({
                 key={m.id}
                 className="flex items-center gap-3 rounded-xl border border-[#dedee8] bg-[#fcfcfe] p-3"
               >
-                <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-[#dedee8] bg-white">
-                  {m.photo_url ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={m.photo_url}
-                      alt=""
-                      className="h-full w-full object-cover"
-                      loading="lazy"
-                    />
-                  ) : (
-                    <ImageOff size={17} className="text-[#c9c9d6]" />
+                <div className="relative flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-[#dedee8] bg-white">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={m.photo_url || PLACEHOLDER_MENU}
+                    alt=""
+                    className="h-full w-full object-cover"
+                    loading="lazy"
+                  />
+                  {/*
+                    Placeholder terlihat sama persis dengan foto sungguhan di
+                    daftar ini, padahal artinya berlawanan. Penanda kecil supaya
+                    pemilik usaha tahu menu mana yang belum difoto tanpa harus
+                    membuka satu per satu.
+                  */}
+                  {!m.photo_url && (
+                    <span
+                      className="absolute bottom-0 right-0 rounded-tl bg-[#232331]/70 p-0.5 text-white"
+                      title="Belum ada foto"
+                    >
+                      <ImageOff size={11} />
+                    </span>
                   )}
                 </div>
 

@@ -1872,24 +1872,21 @@ export async function setBusinessBrandingAction(
      */
     if (raw.length > 500) return fail("Tautan logo terlalu panjang, maksimal 500 karakter.");
 
-    let parsed: URL;
-    try {
-      parsed = new URL(raw);
-    } catch {
-      return fail("Tautan logo bukan URL yang sah. Tempel tautan lengkap beserta https://");
-    }
-
     /**
-     * Hanya https. Aplikasi ini dilayani lewat https di produksi, dan
-     * peramban memblokir gambar http di halaman https tanpa memberi tahu
-     * siapa pun. Menolaknya sekarang jauh lebih baik daripada logo yang
-     * tampak tersimpan tapi tidak pernah muncul di layar pelanggan.
+     * Aturan yang sama persis dengan foto menu, dan sengaja lewat fungsi yang
+     * sama. Sebelumnya di sini ada pemeriksaan `new URL()` tersendiri yang
+     * hanya menerima https — sehingga logo yang diunggah lewat KAEL, yang
+     * alamatnya berbentuk /api/gambar/<uuid>, ditolak oleh panel yang justru
+     * dipakai untuk menggantinya. Satu aturan di satu tempat menutup jenis
+     * ketimpangan itu.
      */
-    if (parsed.protocol !== "https:") {
-      return fail("Tautan logo harus diawali https, karena gambar http diblokir peramban.");
+    const bersih = bersihkanUrlGambar(raw);
+    if (bersih === "invalid") {
+      return fail(
+        "Tautan logo harus lengkap dan diawali https, atau gambar yang diunggah lewat KAEL.",
+      );
     }
-
-    logoUrl = parsed.toString();
+    logoUrl = bersih;
   }
 
   const updated = await db.updateBusiness(businessId, {

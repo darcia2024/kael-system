@@ -15,6 +15,7 @@ import {
   Clock, 
 } from "lucide-react";
 import type { Business, Category, MenuItem } from "@/lib/types";
+import { PLACEHOLDER_MENU } from "@/lib/types";
 import { createQrOrderAction } from "@/lib/actions";
 import QrCode from "@/components/qr-code";
 import { buildDynamicQris } from "@/lib/qris-engine";
@@ -310,15 +311,13 @@ export default function CustomerQrOrderPage({
                     di next.config — menu bergambar akan gagal dimuat begitu
                     ada pemilik yang memakai layanan gambar baru.
                   */}
-                  {item.photo_url && (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={item.photo_url}
-                      alt=""
-                      loading="lazy"
-                      className="h-20 w-20 shrink-0 rounded-xl border border-[#dedee8] object-cover"
-                    />
-                  )}
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={item.photo_url || PLACEHOLDER_MENU}
+                    alt=""
+                    loading="lazy"
+                    className="h-20 w-20 shrink-0 rounded-xl border border-[#dedee8] object-cover"
+                  />
                   <div className="min-w-0 flex-1">
                     <h3 className="font-extrabold text-sm text-[#232331] font-sans">
                       {item.name}

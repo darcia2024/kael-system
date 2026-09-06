@@ -423,6 +423,19 @@ export interface Category {
   sort_order: number;
 }
 
+/**
+ * Gambar yang tampil untuk menu yang belum punya foto.
+ *
+ * Aset statis di public/, bukan baris di uploaded_images: berkasnya milik
+ * aplikasi dan sama untuk semua toko, jadi menyalinnya ke database sekali per
+ * tenant cuma menggandakan hal yang sama berulang kali.
+ *
+ * Ada gunanya menampilkan sesuatu alih-alih membiarkan kosong. Daftar menu
+ * dengan sebagian bergambar dan sebagian tidak terlihat seperti halaman yang
+ * gagal dimuat, bukan seperti menu yang memang belum difoto.
+ */
+export const PLACEHOLDER_MENU = "/placeholder-menu.webp";
+
 export interface MenuItem {
   id: string;
   business_id: string;
