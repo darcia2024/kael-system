@@ -38,18 +38,36 @@ export default async function MemberPage({
         referralCode={null}
         tiers={[]}
         lifetimeSpend={0}
+        cardSettings={null}
+        menuItems={[]}
+        visitCount={0}
       />
     );
   }
 
-  const [business, program, rewards, balance, ledger, redemptions] = await Promise.all([
-    db.getBusiness(customer.business_id),
-    db.getLoyaltyProgram(customer.business_id),
-    db.getRewards(customer.business_id),
-    db.getCustomerPointBalance(customer.id),
-    db.getCustomerLedger(customer.id),
-    db.getRedemptions(customer.id),
-  ]);
+  const [business, program, rewards, balance, ledger, redemptions, cardSettings, stamp] =
+    await Promise.all([
+      db.getBusiness(customer.business_id),
+      db.getLoyaltyProgram(customer.business_id),
+      db.getRewards(customer.business_id),
+      db.getCustomerPointBalance(customer.id),
+      db.getCustomerLedger(customer.id),
+      db.getRedemptions(customer.id),
+      db.getMemberCardSettings(customer.business_id),
+      db.getStampProgress(customer.business_id, customer.id),
+    ]);
+
+  /**
+   * Menu hanya diambil kalau pemiliknya memang mau menampilkannya. Toko jasa
+   * tidak punya menu, dan menariknya untuk lalu dibuang cuma menambah satu
+   * perjalanan ke database pada halaman yang dibuka pelanggan dari ponselnya.
+   *
+   * Bawaannya menyala: toko yang belum pernah membuka layar setelan tetap
+   * mendapat kartu yang isinya lengkap.
+   */
+  const menuItems = cardSettings?.show_menu !== false
+    ? await db.getMenuForMemberCard(customer.business_id)
+    : [];
 
   /**
    * Kode dicetak malas, hanya kalau program referral menyala. Bisnis yang
@@ -81,6 +99,9 @@ export default async function MemberPage({
       referralCode={referralCode}
       tiers={tiers}
       lifetimeSpend={lifetimeSpend}
+      cardSettings={cardSettings}
+      menuItems={menuItems}
+      visitCount={stamp.totalKunjungan}
     />
   );
 }

@@ -25,6 +25,7 @@ import type {
   Ingredient, IngredientPriceHistory, Recipe, FinancePocket, FinanceTransaction, FinanceAsset, InventoryItem, FinanceSummary, LoyaltyProgram, PointLedger,
   Reward, Redemption, LoyaltyCampaignSummary, LoyaltyCampaignRecipient, LoyaltyCampaignStatus, PointExpiryCandidate,
   Category, MenuItem, Shift, ShiftReport, Order, OrderItem, Refund, SafeUser,
+  MemberCardSettings,
 } from "./types";
 
 export * from "./types";
@@ -2056,6 +2057,13 @@ export const db = {
     note: string,
     amountSpent: number | null,
     staffUserId: string,
+    /**
+     * Baris ini mewakili satu kedatangan. Default false: koreksi manual,
+     * bonus ulang tahun, dan bonus referral menambah saldo tanpa orangnya
+     * datang ke toko, dan menghitungnya sebagai kunjungan membuat kartu
+     * stempel penuh tanpa pelanggannya pernah belanja.
+     */
+    isVisit = false,
   ): Promise<PointLedger> {
     return one<PointLedger>(await sql`
       INSERT INTO point_ledger ${sql({
@@ -2066,6 +2074,7 @@ export const db = {
         note,
         amount_spent: amountSpent,
         created_by: staffUserId,
+        is_visit: isVisit,
       })} RETURNING *
     `)!;
   },
@@ -2110,12 +2119,23 @@ export const db = {
       }
     }
 
+    /**
+     * Satu kedatangan yang sah.
+     *
+     * Sengaja diukur dari minimum belanja, BUKAN dari `earned > 0`. Keduanya
+     * hampir selalu sama, tapi tidak selalu: mode poin dengan kurs Rp10.000
+     * memberi nol poin untuk belanja Rp8.000 walaupun orangnya benar-benar
+     * datang. Yang dihitung di sini kedatangannya, bukan hadiahnya.
+     */
+    const layakKunjungan = amountSpent > 0 && amountSpent >= num(program.minimum_purchase);
+
     const entry = orderId ? await sql.begin(async (tx) => {
       const [order] = await tx`SELECT * FROM orders WHERE id = ${orderId} AND business_id = ${businessId} AND customer_id = ${customerId} AND payment_status = 'paid' FOR UPDATE`;
       if (!order || order.loyalty_applied_at) return null;
       const ledger = earned > 0 ? one<PointLedger>(await tx`INSERT INTO point_ledger ${tx({
         business_id: businessId, customer_id: customerId, delta: earned, reason: 'purchase',
         note: 'Belanja ' + order.order_no, amount_spent: amountSpent, created_by: staffUserId, order_id: orderId,
+        is_visit: layakKunjungan,
       })} RETURNING *`) : null;
       await tx`UPDATE orders SET loyalty_applied_at = NOW() WHERE id = ${orderId}`;
       return ledger;
@@ -2123,6 +2143,7 @@ export const db = {
       ? await this.addPointTransaction(
           businessId, customerId, earned, "purchase",
           "Belanja Rp " + amountSpent.toLocaleString("id-ID"), amountSpent, staffUserId,
+          layakKunjungan,
         )
       : null;
 
@@ -2135,6 +2156,73 @@ export const db = {
      */
     await this.settleReferralOnFirstPurchase(businessId, customerId, staffUserId);
     return entry;
+  },
+
+  // =========================================================================
+  // Kartu member
+  // =========================================================================
+
+  async getMemberCardSettings(businessId: string): Promise<MemberCardSettings | null> {
+    return one<MemberCardSettings>(await sql`
+      SELECT * FROM member_card_settings WHERE business_id = ${businessId}
+    `);
+  },
+
+  async saveMemberCardSettings(
+    businessId: string,
+    data: Omit<MemberCardSettings, "business_id" | "updated_at">,
+  ): Promise<MemberCardSettings> {
+    return one<MemberCardSettings>(await sql`
+      INSERT INTO member_card_settings ${sql({ business_id: businessId, ...data })}
+      ON CONFLICT (business_id) DO UPDATE SET
+        headline = EXCLUDED.headline,
+        welcome_text = EXCLUDED.welcome_text,
+        opening_hours = EXCLUDED.opening_hours,
+        instagram = EXCLUDED.instagram,
+        whatsapp = EXCLUDED.whatsapp,
+        announcement = EXCLUDED.announcement,
+        show_menu = EXCLUDED.show_menu,
+        updated_at = NOW()
+      RETURNING *
+    `)!;
+  },
+
+  /**
+   * Progres stempel seorang member.
+   *
+   * `terpakai` dihitung dari penukaran yang sudah terjadi, bukan dari saldo
+   * poin. Saldo bisa berubah karena koreksi manual owner atau bonus ulang
+   * tahun, dan kalau kartu stempelnya ikut bergerak karena itu, pelanggan
+   * melihat stempel bertambah tanpa pernah datang — persis hal yang membuat
+   * orang berhenti percaya pada kartu stempel.
+   */
+  async getStampProgress(businessId: string, customerId: string) {
+    const [kunjungan, ditukar] = await Promise.all([
+      sql`
+        SELECT COUNT(*)::int AS n, MAX(created_at) AS terakhir
+        FROM point_ledger
+        WHERE business_id = ${businessId} AND customer_id = ${customerId} AND is_visit
+      `,
+      sql`
+        SELECT COALESCE(SUM(r.point_cost), 0)::int AS n
+        FROM redemptions d JOIN rewards r ON r.id = d.reward_id
+        WHERE d.customer_id = ${customerId} AND d.status <> 'cancelled'
+      `,
+    ]);
+    return {
+      totalKunjungan: num(kunjungan[0]?.n),
+      kunjunganTerakhir: (kunjungan[0]?.terakhir as string | null) ?? null,
+      stempelTerpakai: num(ditukar[0]?.n),
+    };
+  },
+
+  /** Menu yang layak dipamerkan di kartu member: tersedia, dan ada harganya. */
+  async getMenuForMemberCard(businessId: string): Promise<MenuItem[]> {
+    return (await sql`
+      SELECT * FROM menu_items
+      WHERE business_id = ${businessId} AND is_available = TRUE AND price > 0
+      ORDER BY sort_order, name LIMIT 30
+    `) as unknown as MenuItem[];
   },
 
   async getRewards(businessId: string): Promise<Reward[]> {

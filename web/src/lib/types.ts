@@ -337,6 +337,34 @@ export interface PointLedger {
   created_at: string;
 }
 
+/**
+ * Isi kartu member yang dikarang pemilik usaha.
+ *
+ * Logo dan warna TIDAK ada di sini dan itu disengaja: keduanya kolom
+ * `businesses` yang dipegang tim KAEL saat menyiapkan tenant, bukan sesuatu
+ * yang harus dipikirkan pemilik warung. Yang di sini isinya — hal-hal yang
+ * cuma dia yang tahu.
+ */
+export interface MemberCardSettings {
+  business_id: string;
+  headline: string | null;
+  welcome_text: string | null;
+  opening_hours: string | null;
+  instagram: string | null;
+  /** Nomor yang benar-benar dijawab orang, untuk tombol simpan ke WhatsApp. */
+  whatsapp: string | null;
+  announcement: string | null;
+  show_menu: boolean;
+  updated_at: string;
+}
+
+/** Progres kartu stempel yang dilihat pelanggan. */
+export interface StampProgress {
+  totalKunjungan: number;
+  kunjunganTerakhir: string | null;
+  stempelTerpakai: number;
+}
+
 export interface Reward {
   id: string;
   business_id: string;

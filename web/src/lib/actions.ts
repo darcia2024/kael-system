@@ -19,7 +19,7 @@ import { parseBrandColor } from "./branding";
 import { readQris, buildDynamicQris } from "./qris-engine";
 import { calculateCartTotals } from "./pos-engine";
 import { normalizeLoyaltyCode } from "./loyalty-code";
-import { isValidIndonesianPhoneNumber } from "./loyalty-engine";
+import { isValidIndonesianPhoneNumber, normalizePhoneNumber } from "./loyalty-engine";
 import { hashClientIp } from "./auth-security";
 import { normalizeCardCode } from "./card-code";
 import { CAMPAIGN_GOALS, type CampaignGoalKey } from "./campaign-templates";
@@ -695,6 +695,114 @@ export async function addPointsAction(
   const balance = await db.getCustomerPointBalance(customerId);
   revalidatePath("/app/loyalty");
   return done({ earned: entry?.delta ?? 0, balance });
+}
+
+/**
+ * Kasir mendaftarkan member langsung dari layarnya.
+ *
+ * Jalur ini ada karena jalur yang lain tidak selalu bisa dipakai. Pelanggan
+ * yang tangannya penuh, ponselnya lowbat, atau yang memang tidak mau menyentuh
+ * kartu di meja tetap bisa jadi member cuma dengan menyebutkan nomornya. Yang
+ * mengetik kasirnya.
+ *
+ * Bedanya dari pendaftaran publik: tidak ada pembatas laju per jaringan, karena
+ * yang memanggil sudah masuk dengan PIN dan setiap barisnya tercatat atas nama
+ * siapa. Yang tetap sama: nomor yang sudah terdaftar TIDAK membuat baris kedua,
+ * dia memulangkan member yang sudah ada — kasir sering mendaftarkan ulang orang
+ * yang lupa pernah daftar.
+ */
+export async function registerCustomerByStaffAction(input: {
+  name: string;
+  phone: string;
+}): Promise<
+  ActionResult<{
+    /** Bentuknya sama dengan hasil pencarian, supaya layar kasir bisa langsung
+     * menempelkannya ke keranjang tanpa memanggil pencarian sekali lagi. */
+    customer: import("./types").CustomerDirectoryEntry;
+    token: string;
+    alreadyMember: boolean;
+  }>
+> {
+  const { businessId } = await requirePermission("loyalty");
+  const locked = await moduleLock(businessId, "loyalty", "write");
+  if (locked) return fail(locked);
+
+  const name = input.name?.trim();
+  if (!name) return fail("Nama pelanggan belum diisi.");
+  if (name.length > 80) return fail("Nama terlalu panjang.");
+  if (!isValidIndonesianPhoneNumber(input.phone)) {
+    return fail("Nomor WhatsApp tidak valid. Contoh: 081234567890");
+  }
+
+  /**
+   * marketingOptIn sengaja false. Persetujuan menerima promo harus datang dari
+   * orangnya sendiri; kasir yang mencentangkannya atas nama pelanggan bukan
+   * persetujuan, dan UU PDP tidak membedakan niat baik dari pelanggaran.
+   */
+  const result = await db.registerCustomer(businessId, name, input.phone, undefined, false);
+  if (!result.success) return fail(result.error);
+
+  /**
+   * Saldo dibaca ulang, tidak diasumsikan nol. Nomor yang sudah terdaftar
+   * memulangkan member lama beserta poin yang sudah dia kumpulkan, dan kasir
+   * yang melihat "0 poin" untuk pelanggan lama akan mengira datanya hilang.
+   */
+  const balance = await db.getCustomerPointBalance(result.customer.id);
+  const last4 = result.customer.phone.slice(-4);
+
+  revalidatePath("/app/loyalty");
+  revalidatePath("/app/pos");
+  return done({
+    customer: {
+      id: result.customer.id,
+      name: result.customer.name,
+      created_at: result.customer.created_at,
+      phone_last4: last4,
+      phone_masked: `+62 ***-***-${last4}`,
+      balance,
+    },
+    token: result.customer.token,
+    alreadyMember: result.alreadyMember,
+  });
+}
+
+/** Isi kartu member yang dikarang pemilik usaha. Logo dan warna bukan di sini. */
+export async function saveMemberCardSettingsAction(input: {
+  headline?: string;
+  welcomeText?: string;
+  openingHours?: string;
+  instagram?: string;
+  whatsapp?: string;
+  announcement?: string;
+  showMenu: boolean;
+}): Promise<ActionResult<null>> {
+  const { businessId } = await requireOwner();
+  const locked = await moduleLock(businessId, "loyalty", "write");
+  if (locked) return fail(locked);
+
+  const potong = (v: string | undefined, maks: number) => {
+    const t = v?.trim();
+    return t ? t.slice(0, maks) : null;
+  };
+
+  const whatsapp = input.whatsapp?.trim();
+  if (whatsapp && !isValidIndonesianPhoneNumber(whatsapp)) {
+    return fail("Nomor WhatsApp toko tidak valid. Contoh: 081234567890");
+  }
+
+  await db.saveMemberCardSettings(businessId, {
+    headline: potong(input.headline, 60),
+    welcome_text: potong(input.welcomeText, 200),
+    opening_hours: potong(input.openingHours, 120),
+    instagram: potong(input.instagram, 100),
+    // Disimpan dalam bentuk wa.me: kode negara, tanpa "+", tanpa nol depan.
+    whatsapp: whatsapp ? normalizePhoneNumber(whatsapp) : null,
+    announcement: potong(input.announcement, 300),
+    show_menu: input.showMenu,
+  });
+
+  revalidatePath("/app/loyalty");
+  return done(null);
 }
 
 /**

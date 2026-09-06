@@ -3,40 +3,34 @@
 import { useState, useMemo } from "react";
 import Link from "next/link";
 import {
-  Gift,
-  Sparkles,
-  QrCode,
-  History,
-  CheckCircle2,
-  AlertCircle,
-  ArrowRight,
-  Store,
-  ShieldCheck,
-  Copy,
-  Check,
-  Clock,
-  Ticket,
-  ChevronRight,
-  Users,
-  Share2,
-  Cake,
-  Crown
+  Gift, QrCode, History, CheckCircle2, AlertCircle, ArrowRight, ShieldCheck,
+  Copy, Check, Clock, Ticket, Users, Share2, Cake, Crown, MessageCircle,
+  AtSign, MapPin, UtensilsCrossed, Info, Megaphone, Stamp,
 } from "lucide-react";
-import type { Customer, Business, LoyaltyProgram, Reward, PointLedger, Redemption, LoyaltyTier } from "@/lib/types";
+
+import type {
+  Customer, Business, LoyaltyProgram, Reward, PointLedger, Redemption,
+  LoyaltyTier, MemberCardSettings, MenuItem,
+} from "@/lib/types";
+import { PLACEHOLDER_MENU } from "@/lib/types";
 import { maskPhoneNumber, resolveTier } from "@/lib/loyalty-engine";
 import { formatRupiah, formatBusinessDateTime } from "@/lib/formatters";
 import { BusinessMark } from "@/components/business-mark";
+import { brandSurface, normalizeBrandColor, readableInkOn } from "@/lib/branding";
 import { updateMarketingPreferenceAction, updateCustomerBirthdayAction } from "@/lib/actions";
 import { siteHost } from "@/lib/site";
 
 /**
- * Tampilan halaman member. Seluruh datanya dikirim sebagai props oleh komponen
- * server di page.tsx.
+ * Kartu member yang dipegang pelanggan.
  *
+ * Seluruh datanya dikirim sebagai props oleh komponen server di page.tsx.
  * Sebelumnya komponen ini memanggil db langsung dari sisi klien, yang berarti
- * token pelanggan dan seluruh data contoh ikut masuk ke bundel JavaScript.
- * Token itu satu-satunya pengaman halaman ini, jadi dia tidak boleh sampai ke
- * browser siapa pun selain pemiliknya.
+ * token pelanggan ikut masuk ke bundel JavaScript — dan token itu satu-satunya
+ * pengaman halaman ini.
+ *
+ * Bentuknya kartu, bukan daftar. Yang membuka halaman ini orang yang sedang
+ * berdiri di depan kasir, dan yang perlu dia lihat dalam dua detik cuma satu:
+ * sudah berapa stempel. Sisanya boleh menunggu di bawah.
  */
 export interface MemberPageData {
   customer: Customer | null;
@@ -51,12 +45,19 @@ export interface MemberPageData {
   /** Kosong kalau program level toko ini belum diaktifkan owner. */
   tiers: LoyaltyTier[];
   lifetimeSpend: number;
+  /** Isi kartu yang dikarang pemilik usaha. Null kalau belum pernah disetel. */
+  cardSettings: MemberCardSettings | null;
+  menuItems: MenuItem[];
+  visitCount: number;
 }
 
+type Tab = "hadiah" | "menu" | "info" | "riwayat";
+
 export default function CustomerMemberProgressPage({
-  customer, business, program, rewards, balance, ledger, redemptions, referralCode, tiers, lifetimeSpend,
+  customer, business, program, rewards, balance, ledger, redemptions,
+  referralCode, tiers, lifetimeSpend, cardSettings, menuItems, visitCount,
 }: MemberPageData) {
-  const [activeTab, setActiveTab] = useState<"rewards" | "history">("rewards");
+  const [tab, setTab] = useState<Tab>("hadiah");
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [copiedReferralLink, setCopiedReferralLink] = useState(false);
   const [marketingOptIn, setMarketingOptIn] = useState(customer?.marketing_opt_in ?? false);
@@ -68,21 +69,88 @@ export default function CustomerMemberProgressPage({
   const [birthdaySaved, setBirthdaySaved] = useState(false);
 
   const activeVoucher = useMemo(
-    () => redemptions.find((redemption) => redemption.status === "issued") ?? null,
+    () => redemptions.find((r) => r.status === "issued") ?? null,
     [redemptions],
   );
-  const latestPurchase = useMemo(
-    () => ledger.find((entry) => entry.reason === "purchase" && Number(entry.amount_spent) > 0) ?? null,
-    [ledger],
+
+  /**
+   * Hadiah terdekat yang belum terjangkau. Kalau semuanya sudah terjangkau,
+   * yang dipakai yang paling mahal — supaya kartunya tidak pernah kehabisan
+   * target dan berhenti terasa berjalan.
+   */
+  const targetHadiah = useMemo(() => {
+    const urut = [...rewards].sort((a, b) => a.point_cost - b.point_cost);
+    return urut.find((r) => r.point_cost > balance) ?? urut[urut.length - 1] ?? null;
+  }, [rewards, balance]);
+
+  /**
+   * Berapa kotak yang digambar di kartu stempel.
+   *
+   * Diambil dari harga hadiah terdekat, bukan dari kolom tersendiri. Kalau
+   * jumlah kotaknya disimpan terpisah dari harga hadiahnya, keduanya pasti
+   * akan berbeda suatu hari — pemilik mengubah harga hadiah lewat layar
+   * hadiah, kartunya tetap menggambar sepuluh kotak, dan pelanggan yang
+   * kotaknya penuh diberi tahu bahwa poinnya masih kurang.
+   */
+  const totalKotak = Math.min(20, Math.max(1, targetHadiah?.point_cost ?? 10));
+  const kotakTerisi = Math.min(balance, totalKotak);
+  const stempelKurang = Math.max(0, totalKotak - balance);
+
+  const sortedTiers = useMemo(
+    () => [...tiers].sort((a, b) => a.min_lifetime_spend - b.min_lifetime_spend),
+    [tiers],
   );
-  const spendUntilNextPoint = program?.mode === "point" && latestPurchase && program.earn_rate > 0
-    ? program.earn_rate - (Number(latestPurchase.amount_spent) % program.earn_rate)
-    : 0;
+  const currentTier = useMemo(() => resolveTier(lifetimeSpend, tiers), [lifetimeSpend, tiers]);
+  const nextTier = currentTier
+    ? sortedTiers.find((t) => t.min_lifetime_spend > currentTier.min_lifetime_spend) ?? null
+    : sortedTiers[0] ?? null;
+
+  const referralLink = useMemo(() => {
+    if (!referralCode || !business?.store_code) return null;
+    return `https://${siteHost}/loyalty/register?toko=${encodeURIComponent(business.store_code)}&ref=${encodeURIComponent(referralCode)}`;
+  }, [referralCode, business?.store_code]);
+
+  const referralMessage = useMemo(() => {
+    if (!referralLink || !business) return "";
+    const firstName = customer?.name?.trim().split(/\s+/)[0] || "";
+    return `Halo! ${firstName ? firstName + " ajak kamu " : "Aku ajak kamu "}jadi member ${business.name}. Daftar lewat tautan ini, kita berdua dapat bonus di belanja pertamamu ya:\n${referralLink}`;
+  }, [referralLink, business, customer?.name]);
+
+  /**
+   * Tombol simpan ke WhatsApp.
+   *
+   * Yang mengirim pesannya PELANGGAN, ke nomor tokonya. Arahnya sengaja begitu:
+   * tautan kartu jadi tersimpan di riwayat chat orangnya sendiri, tempat yang
+   * dia buka setiap hari — bukan di bookmark peramban yang tidak pernah dibuka
+   * lagi. Tokonya sekalian punya percakapan yang sudah terbuka kalau nanti
+   * perlu mengabari sesuatu.
+   *
+   * Tanpa nomor toko, tombolnya tidak digambar sama sekali. wa.me tanpa nomor
+   * membuka pemilih kontak, dan pelanggan yang mengirim kartunya ke orang acak
+   * lebih buruk daripada tidak ada tombolnya.
+   */
+  const nomorToko = cardSettings?.whatsapp?.trim() || null;
+  const linkKartu = customer ? `https://${siteHost}/m/${customer.token}` : "";
+  const simpanKeWa = useMemo(() => {
+    if (!nomorToko || !business || !customer) return null;
+    const pesan =
+      `Halo ${business.name}! Ini kartu member saya atas nama ${customer.name ?? "-"}.\n` +
+      `${linkKartu}\n\n` +
+      `(Disimpan di sini biar gampang dibuka lagi pas belanja.)`;
+    return `https://wa.me/${nomorToko}?text=${encodeURIComponent(pesan)}`;
+  }, [nomorToko, business, customer, linkKartu]);
 
   const handleCopyCode = (code: string) => {
     navigator.clipboard.writeText(code);
     setCopiedCode(code);
     setTimeout(() => setCopiedCode(null), 2000);
+  };
+
+  const handleCopyReferralLink = () => {
+    if (!referralLink) return;
+    navigator.clipboard.writeText(referralLink);
+    setCopiedReferralLink(true);
+    setTimeout(() => setCopiedReferralLink(false), 2000);
   };
 
   const handleMarketingPreference = async (nextValue: boolean) => {
@@ -111,53 +179,16 @@ export default function CustomerMemberProgressPage({
     setBirthdaySaved(true);
   };
 
-  const referralLink = useMemo(() => {
-    if (!referralCode || !business?.store_code) return null;
-    return `https://${siteHost}/loyalty/register?toko=${encodeURIComponent(business.store_code)}&ref=${encodeURIComponent(referralCode)}`;
-  }, [referralCode, business?.store_code]);
-
-  const referralMessage = useMemo(() => {
-    if (!referralLink || !business) return "";
-    const firstName = customer?.name?.trim().split(/\s+/)[0] || "";
-    return `Halo! ${firstName ? firstName + " ajak kamu " : "Aku ajak kamu "}jadi member ${business.name}. Daftar lewat tautan ini, kita berdua dapat bonus di belanja pertamamu ya:\n${referralLink}`;
-  }, [referralLink, business, customer?.name]);
-
-  const handleCopyReferralLink = () => {
-    if (!referralLink) return;
-    navigator.clipboard.writeText(referralLink);
-    setCopiedReferralLink(true);
-    setTimeout(() => setCopiedReferralLink(false), 2000);
-  };
-
-  // Next reward progress
-  const nextTargetReward = useMemo(() => {
-    const sorted = [...rewards].sort((a, b) => a.point_cost - b.point_cost);
-    return sorted.find((r) => r.point_cost > balance) || sorted[sorted.length - 1];
-  }, [rewards, balance]);
-
-  const progressPercent = nextTargetReward
-    ? Math.min(100, Math.round((balance / nextTargetReward.point_cost) * 100))
-    : 100;
-
-  const sortedTiers = useMemo(() => [...tiers].sort((a, b) => a.min_lifetime_spend - b.min_lifetime_spend), [tiers]);
-  const currentTier = useMemo(() => resolveTier(lifetimeSpend, tiers), [lifetimeSpend, tiers]);
-  const nextTier = currentTier
-    ? sortedTiers.find((t) => t.min_lifetime_spend > currentTier.min_lifetime_spend) ?? null
-    : sortedTiers[0] ?? null;
-  const tierProgressPercent = nextTier
-    ? Math.min(100, Math.round((lifetimeSpend / nextTier.min_lifetime_spend) * 100))
-    : 100;
-
   if (!customer || !business || !program) {
     return (
-      <div className="min-h-screen bg-[#f7f6fc] text-[#232331] font-sans flex items-center justify-center p-4">
-        <div className="w-full max-w-sm rounded-3xl border-2 border-[#232331] bg-white p-6 shadow-ink-lg text-center space-y-4">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-[#feebee] text-[#ef4444] border-2 border-[#ef4444]">
+      <div className="flex min-h-screen items-center justify-center bg-[#f7f6fc] p-4 font-sans text-[#232331]">
+        <div className="w-full max-w-sm space-y-4 rounded-3xl border-2 border-[#232331] bg-white p-6 text-center shadow-ink-lg">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl border-2 border-[#ef4444] bg-[#feebee] text-[#ef4444]">
             <AlertCircle size={28} />
           </div>
           <div className="space-y-1">
-            <h1 className="text-lg font-black text-[#232331]">Kartu Member Tidak Ditemukan</h1>
-            <p className="text-xs text-[#7b7b8e]">
+            <h1 className="text-lg font-black">Kartu Member Tidak Ditemukan</h1>
+            <p className="text-xs text-[#5c5c70]">
               Tautan kartu member ini tidak valid atau telah diperbarui oleh pihak toko.
             </p>
           </div>
@@ -173,13 +204,30 @@ export default function CustomerMemberProgressPage({
     );
   }
 
+  const warna = normalizeBrandColor(business.brand_color);
+  const kartu = brandSurface(warna);
+  const tinta = readableInkOn(warna);
+  /** Warna transparan di atas warna merek, supaya kontrasnya ikut apa pun mereknya. */
+  const kabut = tinta === "#232331" ? "rgba(35,35,49,0.10)" : "rgba(255,255,255,0.16)";
+  const garis = tinta === "#232331" ? "rgba(35,35,49,0.22)" : "rgba(255,255,255,0.28)";
+  const isStempel = program.mode === "stamp";
+  const unit = isStempel ? "stempel" : "poin";
+
+  const TABS: { key: Tab; label: string; icon: typeof Gift; tampil: boolean }[] = [
+    { key: "hadiah", label: "Hadiah", icon: Gift, tampil: true },
+    { key: "menu", label: "Menu", icon: UtensilsCrossed, tampil: menuItems.length > 0 },
+    { key: "info", label: "Info", icon: Info, tampil: true },
+    { key: "riwayat", label: "Riwayat", icon: History, tampil: true },
+  ];
+  const tabTampil = TABS.filter((t) => t.tampil);
+
   return (
-    <div className="min-h-screen bg-[#f7f6fc] text-[#232331] font-sans flex flex-col justify-between max-w-md mx-auto border-x border-[#dedee8] min-h-screen">
-      
-      {/* Top Merchant Identity Header */}
-      <header className="sticky top-0 z-30 border-b-2 border-[#232331] bg-white/95 backdrop-blur-md px-4 py-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2.5 min-w-0">
+    <div className="mx-auto flex min-h-screen max-w-md flex-col border-x border-[#dedee8] bg-[#f7f6fc] font-sans text-[#232331]">
+
+      {/* ---------------------------------------------------------- KEPALA */}
+      <header className="sticky top-0 z-30 border-b-2 border-[#232331] bg-white/95 px-4 py-3 backdrop-blur-md">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-2.5">
             <BusinessMark
               name={business.name}
               logoUrl={business.logo_url}
@@ -187,395 +235,532 @@ export default function CustomerMemberProgressPage({
               className="rounded-xl border border-[#232331]"
             />
             <div className="min-w-0">
-              <h1 className="font-black text-sm text-[#232331] truncate">
-                {business.name}
-              </h1>
-              <span className="text-[10px] text-[#7b7b8e] font-mono block truncate">
-                Member Paspor Digital Resmi
+              <h1 className="truncate text-sm font-black">{business.name}</h1>
+              <span className="block truncate font-mono text-[10px] text-[#5c5c70]">
+                {cardSettings?.headline?.trim() || "Kartu Member Digital"}
               </span>
             </div>
           </div>
-
-          <div className="flex items-center gap-1">
-            <span className="inline-flex items-center gap-1 rounded-full border border-[#16a34a] bg-[#dcfce7] px-2 py-0.5 font-mono text-[9px] font-bold text-[#16a34a]">
-              <ShieldCheck size={11} />
-              <span>PDP Safe</span>
-            </span>
-          </div>
+          <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-[#16a34a] bg-[#dcfce7] px-2 py-0.5 font-mono text-[9px] font-bold text-[#16a34a]">
+            <ShieldCheck size={11} />
+            <span>PDP Safe</span>
+          </span>
         </div>
       </header>
 
-      {/* Main Container */}
-      <main className="flex-1 p-4 space-y-4">
-        
-        {/* CUSTOMER PASSPORT DIGITAL CARD */}
-        <div className="card-tactile rounded-3xl border-2 border-[#232331] bg-gradient-to-br from-[#232331] via-[#2c2b3d] to-[#1e1d2b] p-5 text-white shadow-ink-lg space-y-4 relative overflow-hidden">
-          
-          {/* Subtle Watermark Pattern */}
-          <div className="absolute right-[-20px] bottom-[-20px] opacity-10 text-white pointer-events-none">
-            <Sparkles size={160} />
-          </div>
+      <main className="flex-1 space-y-4 p-4">
 
-          {/* Card Top */}
-          <div className="flex justify-between items-start">
-            <div>
-              <span className="text-[10px] font-mono text-[#d9ff57] font-bold uppercase tracking-wider block">
-                PASPOR MEMBER {program.mode === "stamp" ? "STEMPEL" : "LOYALITAS"}
+        {/* ------------------------------------------------ KARTU UTAMA */}
+        <div
+          className="card-tactile relative overflow-hidden rounded-3xl border-2 border-[#232331] p-5 shadow-ink-lg"
+          style={kartu}
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <span className="block font-mono text-[10px] font-bold uppercase tracking-wider opacity-85">
+                {isStempel ? "Kartu Stempel" : "Kartu Poin"}
               </span>
-              <h2 className="text-xl font-black text-white font-sans mt-0.5">
-                {customer.name}
-              </h2>
-              <span className="text-[11px] font-mono text-[#a1a1aa]">
+              <h2 className="mt-0.5 truncate text-xl font-black">{customer.name}</h2>
+              <span className="font-mono text-[11px] opacity-85">
                 {maskPhoneNumber(customer.phone)}
               </span>
             </div>
-
-            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/10 border border-white/20 text-[#d9ff57]">
-              <Ticket size={20} />
-            </div>
+            <span
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl"
+              style={{ backgroundColor: kabut, border: `1px solid ${garis}` }}
+            >
+              {isStempel ? <Stamp size={19} /> : <Ticket size={19} />}
+            </span>
           </div>
 
-          {/* Large Point / Stamp Gauge */}
-          <div className="rounded-2xl bg-white/10 backdrop-blur-md p-4 border border-white/15 flex items-center justify-between">
-            <div>
-              <span className="text-[10px] font-mono text-[#dedee8] uppercase block">
-                SALDO {program.mode === "stamp" ? "STEMPEL AKTIF" : "POIN TERKUMPUL"}
-              </span>
-              <div className="flex items-baseline gap-1.5 mt-0.5">
-                <span className="text-3xl sm:text-4xl font-black font-mono text-[#d9ff57]">
-                  {balance}
+          {isStempel ? (
+            <>
+              {/*
+                Kartu stempel digambar sebagai kotak, bukan angka. Orang mengerti
+                "tinggal dua kotak lagi" tanpa membaca apa pun; "8 dari 10 poin"
+                harus dibaca dan dihitung dulu.
+              */}
+              <div className="mt-4 grid grid-cols-5 gap-2">
+                {Array.from({ length: totalKotak }, (_, i) => {
+                  const terisi = i < kotakTerisi;
+                  return (
+                    <span
+                      key={i}
+                      aria-hidden
+                      className="flex aspect-square items-center justify-center rounded-xl text-xs font-black"
+                      /*
+                       * Kotak kosong TIDAK diredupkan dengan opacity.
+                       * Sebelumnya 0.75, dan angkanya jatuh ke kontras 3,83 —
+                       * di bawah ambang 4,5 yang dibaca orang di bawah lampu
+                       * kafe sambil berdiri. Yang membedakan terisi dari kosong
+                       * sudah cukup dari warna latarnya sendiri.
+                       */
+                      style={{
+                        backgroundColor: terisi ? tinta : kabut,
+                        color: terisi ? warna : "inherit",
+                        border: `1px solid ${garis}`,
+                      }}
+                    >
+                      {terisi ? <Check size={15} strokeWidth={3.5} /> : i + 1}
+                    </span>
+                  );
+                })}
+              </div>
+              <p className="sr-only">
+                {kotakTerisi} dari {totalKotak} stempel terkumpul.
+              </p>
+
+              <div
+                className="mt-4 flex items-center justify-between gap-3 rounded-2xl px-4 py-3"
+                style={{ backgroundColor: kabut, border: `1px solid ${garis}` }}
+              >
+                <div className="min-w-0">
+                  <span className="block font-mono text-[10px] uppercase opacity-95">
+                    Terkumpul
+                  </span>
+                  <span className="font-mono text-2xl font-black">
+                    {kotakTerisi}
+                    <span className="text-sm opacity-95">/{totalKotak}</span>
+                  </span>
+                </div>
+                <p className="min-w-0 text-right text-[11px] font-bold leading-snug">
+                  {stempelKurang === 0
+                    ? "Penuh! Tunjukkan ke kasir."
+                    : `Kurang ${stempelKurang} kali datang lagi`}
+                </p>
+              </div>
+            </>
+          ) : (
+            <div
+              className="mt-4 flex items-center justify-between gap-3 rounded-2xl px-4 py-3"
+              style={{ backgroundColor: kabut, border: `1px solid ${garis}` }}
+            >
+              <div>
+                <span className="block font-mono text-[10px] uppercase opacity-95">
+                  Poin terkumpul
                 </span>
-                <span className="text-xs font-mono text-white/80 font-bold">
-                  {program.mode === "stamp" ? "Stempel" : "Pts"}
-                </span>
+                <span className="font-mono text-3xl font-black">{balance}</span>
+              </div>
+              <div className="text-right font-mono text-[11px] opacity-80">
+                <span className="block text-[10px] opacity-85">Kurs belanja</span>
+                <span className="font-bold">{formatRupiah(program.earn_rate)} = 1</span>
               </div>
             </div>
+          )}
 
-            <div className="text-right font-mono text-xs">
-              <span className="text-[10px] text-[#a1a1aa] block">Kurs Belanja</span>
-              <span className="font-bold text-white text-[11px]">
-                {program.mode === "stamp" ? "1 Kunjungan = 1 Stamp" : `${formatRupiah(program.earn_rate)} = 1 Pts`}
-              </span>
-            </div>
-          </div>
-
-          {program.mode === "point" && latestPurchase && spendUntilNextPoint > 0 && spendUntilNextPoint < program.earn_rate && (
-            <p className="rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-[10.5px] leading-snug text-[#f3f1ff]">
-              Di belanja terakhirmu, masih kurang {formatRupiah(spendUntilNextPoint)} untuk mendapat 1 poin lagi. Sisa ini tidak dibawa ke transaksi berikutnya.
+          {targetHadiah && (
+            <p className="mt-3 text-[11px] leading-snug opacity-80">
+              Target: <span className="font-bold">{targetHadiah.name}</span>
+              {balance >= targetHadiah.point_cost
+                ? " — sudah bisa ditukar."
+                : ` — kurang ${targetHadiah.point_cost - balance} ${unit}.`}
             </p>
           )}
 
-          {/* Progress to Next Reward */}
-          {nextTargetReward && (
-            <div className="space-y-1.5 font-mono text-xs">
-              <div className="flex justify-between text-[10.5px]">
-                <span className="text-[#dedee8]">Target: {nextTargetReward.name}</span>
-                <span className="text-[#d9ff57] font-bold">{balance}/{nextTargetReward.point_cost} Pts</span>
-              </div>
-              
-              <div className="h-2 w-full rounded-full bg-white/20 overflow-hidden">
-                <div 
-                  className="h-full bg-[#d9ff57] rounded-full transition-all duration-500" 
-                  style={{ width: `${progressPercent}%` }}
-                />
-              </div>
-
-              <span className="text-[9.5px] text-[#a1a1aa] block text-right">
-                {balance >= nextTargetReward.point_cost 
-                  ? "✓ Siap ditukarkan ke kasir!" 
-                  : `Kurang ${nextTargetReward.point_cost - balance} poin lagi untuk klaim.`}
-              </span>
-            </div>
-          )}
-
+          <div className="mt-3 flex items-center justify-between gap-2 font-mono text-[10px] opacity-85">
+            <span>Member sejak {formatBusinessDateTime(customer.created_at).split(",")[0]}</span>
+            <span>{visitCount}x datang</span>
+          </div>
         </div>
 
-        {/* LEVEL MEMBER (kalau program level toko ini aktif) */}
-        {program.tiers_is_active && currentTier && (
-          <div className="rounded-2xl border-2 border-[#232331] bg-gradient-to-br from-[#fef9c3] to-white p-4 shadow-ink-xs space-y-2.5">
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-[#d97706] bg-[#fef3c7] text-[#d97706]">
-                  <Crown size={16} />
-                </span>
-                <div>
-                  <span className="block text-[10px] font-mono font-bold uppercase text-[#d97706]">Level Member</span>
-                  <h3 className="text-sm font-black text-[#232331]">{currentTier.name}</h3>
-                </div>
-              </div>
-              {Number(currentTier.earn_multiplier) > 1 && (
-                <span className="shrink-0 rounded-full border border-[#d97706] bg-[#fef3c7] px-2.5 py-1 text-[11px] font-black text-[#d97706]">
-                  {Number(currentTier.earn_multiplier).toFixed(2)}x {program.mode === "stamp" ? "Stempel" : "Poin"}
-                </span>
-              )}
-            </div>
-            {currentTier.benefit_note && <p className="text-[11px] text-[#5c5c70]">{currentTier.benefit_note}</p>}
-            {nextTier && (
-              <div className="space-y-1">
-                <div className="flex justify-between text-[10.5px]">
-                  <span className="text-[#7b7b8e]">Menuju {nextTier.name}</span>
-                  <span className="font-bold text-[#d97706]">{formatRupiah(lifetimeSpend)} / {formatRupiah(nextTier.min_lifetime_spend)}</span>
-                </div>
-                <div className="h-1.5 w-full overflow-hidden rounded-full bg-[#f3e8b8]">
-                  <div className="h-full rounded-full bg-[#d97706] transition-all duration-500" style={{ width: `${tierProgressPercent}%` }} />
-                </div>
-              </div>
-            )}
+        {/* -------------------------------------------- SIMPAN KE WHATSAPP */}
+        {simpanKeWa && (
+          <a
+            href={simpanKeWa}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn-tactile flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl border-2 border-[#232331] bg-[#25D366] px-4 py-3 text-sm font-black text-white shadow-ink-xs"
+          >
+            <MessageCircle size={17} />
+            Simpan kartu ke WhatsApp
+          </a>
+        )}
+        {simpanKeWa && (
+          <p className="-mt-2 px-1 text-center text-[10.5px] leading-relaxed text-[#5c5c70]">
+            Kartunya terkirim sebagai chat ke {business.name}, jadi gampang dibuka lagi
+            kapan pun tanpa perlu mencari tautannya.
+          </p>
+        )}
+
+        {/* ------------------------------------------------- KABAR DARI TOKO */}
+        {cardSettings?.announcement?.trim() && (
+          <div className="flex items-start gap-2.5 rounded-2xl border-2 border-[#232331] bg-[#fff8e1] p-3.5">
+            <Megaphone size={16} className="mt-0.5 shrink-0 text-[#8a6d00]" />
+            <p className="min-w-0 text-[11.5px] leading-relaxed font-medium text-[#5c4a00]">
+              {cardSettings.announcement}
+            </p>
           </div>
         )}
 
-        {/* AJAK TEMAN (kalau program referral toko ini aktif) */}
-        {referralLink && (
-          <div className="rounded-2xl border-2 border-[#232331] bg-white p-4 shadow-ink-xs space-y-3">
-            <div className="flex items-center gap-2">
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-[#7958d8] bg-[#f0edff] text-[#7958d8]">
-                <Users size={16} />
-              </span>
-              <div className="min-w-0">
-                <h3 className="text-sm font-extrabold text-[#232331]">Ajak Teman</h3>
-                <p className="text-[10.5px] text-[#7b7b8e]">Bagikan tautanmu. Kalian berdua dapat bonus saat temanmu belanja pertama kali.</p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <a
-                href={`https://wa.me/?text=${encodeURIComponent(referralMessage)}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="btn-tactile flex flex-1 items-center justify-center gap-1.5 rounded-xl border-2 border-[#232331] bg-[#25D366] py-2.5 text-xs font-black text-white shadow-ink-xs"
-              >
-                <Share2 size={14} />
-                <span>Bagikan lewat WhatsApp</span>
-              </a>
-              <button
-                type="button"
-                onClick={handleCopyReferralLink}
-                className="btn-tactile shrink-0 rounded-xl border-2 border-[#232331] bg-white p-2.5 text-[#232331]"
-                title="Salin tautan"
-              >
-                {copiedReferralLink ? <Check size={16} /> : <Copy size={16} />}
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* RECENT CLAIMED REDEMPTION VOUCHER CARD (If Any) */}
+        {/* -------------------------------------------------------- VOUCHER */}
         {activeVoucher && (
-          <div className="rounded-2xl border-2 border-[#16a34a] bg-[#dcfce7] p-3.5 space-y-2 font-mono text-xs animate-in fade-in">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5 text-[#16a34a] font-black">
-                <CheckCircle2 size={15} />
-                <span>VOUCHER DIGITAL ANDA</span>
-              </div>
-              <span className="text-[9.5px] bg-white px-2 py-0.5 rounded-full border border-[#16a34a] font-bold text-[#16a34a]">
-                Tunjukkan ke Kasir
-              </span>
+          <div className="space-y-2 rounded-2xl border-2 border-[#16a34a] bg-[#f0fdf4] p-4">
+            <div className="flex items-center gap-2 text-[#15803d]">
+              <QrCode size={16} />
+              <span className="text-xs font-black">Voucher siap dipakai</span>
             </div>
-
-            <div className="rounded-xl bg-white p-2.5 border border-[#16a34a]/30 flex items-center justify-between gap-2">
-              <div>
-                <span className="font-extrabold text-sm text-[#232331] font-mono block tracking-wider">
-                  {activeVoucher.code}
-                </span>
-                <span className="text-[10px] text-[#7b7b8e] font-sans">
-                  Status: Belum dipakai. Tunjukkan kode ini ke kasir.
-                </span>
-              </div>
-
+            <div className="flex items-center gap-2">
+              <code className="min-w-0 flex-1 truncate rounded-xl border border-[#16a34a] bg-white px-3 py-2.5 text-center font-mono text-lg font-black tracking-widest text-[#15803d]">
+                {activeVoucher.code}
+              </code>
               <button
                 type="button"
                 onClick={() => handleCopyCode(activeVoucher.code)}
-                className="btn-tactile rounded-lg bg-[#232331] text-[#d9ff57] p-1.5 text-[10.5px] font-bold"
-                title="Salin Kode"
+                aria-label="Salin kode voucher"
+                className="shrink-0 rounded-xl border-2 border-[#232331] bg-white p-2.5"
               >
-                {copiedCode === activeVoucher.code ? <Check size={14} /> : <Copy size={14} />}
+                {copiedCode === activeVoucher.code ? <Check size={16} /> : <Copy size={16} />}
               </button>
             </div>
+            <p className="text-[10.5px] text-[#15803d]">
+              Tunjukkan kode ini ke kasir. Berlaku sekali pakai.
+            </p>
           </div>
         )}
 
-        {/* 2-TAB SWITCH: REWARDS & RIWAYAT */}
-        <div className="flex items-center rounded-2xl border-2 border-[#232331] bg-white p-1 font-mono text-xs font-bold gap-1 shadow-ink-xs">
-          <button
-            type="button"
-            onClick={() => setActiveTab("rewards")}
-            className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl transition-all ${
-              activeTab === "rewards" ? "bg-[#232331] text-[#d9ff57] shadow-ink-xs" : "text-[#7b7b8e] hover:text-[#232331]"
-            }`}
-          >
-            <Gift size={14} />
-            <span>Katalog Hadiah ({rewards.length})</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab("history")}
-            className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl transition-all ${
-              activeTab === "history" ? "bg-[#232331] text-[#d9ff57] shadow-ink-xs" : "text-[#7b7b8e] hover:text-[#232331]"
-            }`}
-          >
-            <History size={14} />
-            <span>Riwayat Poin</span>
-          </button>
-        </div>
-
-        {/* TAB 1: REWARD CATALOG */}
-        {activeTab === "rewards" && (
-          <div className="space-y-2.5">
-            {rewards.map((reward) => {
-              const canRedeem = balance >= reward.point_cost;
-              return (
-                <div
-                  key={reward.id}
-                  className={`card-tactile rounded-2xl border-2 p-3.5 space-y-2 transition-all ${
-                    canRedeem
-                      ? "border-[#232331] bg-white shadow-ink-xs"
-                      : "border-[#dedee8] bg-[#fcfcfe] opacity-80"
-                  }`}
-                >
-                  <div className="flex justify-between items-start gap-2">
-                    <div className="min-w-0">
-                      <h4 className="font-extrabold text-sm text-[#232331] font-sans">
-                        {reward.name}
-                      </h4>
-                      <span className="text-[11px] text-[#7b7b8e] font-mono block">
-                        Nilai Menu: {formatRupiah(reward.market_value)}
-                      </span>
-                    </div>
-
-                    <div className="rounded-xl border border-[#7958d8] bg-[#f0edff] px-2.5 py-1 text-center shrink-0">
-                      <span className="font-black text-sm text-[#7958d8] font-mono block">
-                        {reward.point_cost}
-                      </span>
-                      <span className="text-[8.5px] text-[#7958d8] font-bold uppercase font-mono block">
-                        Poin
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between gap-2 pt-1 border-t border-[#dedee8] font-mono text-xs">
-                    <span className="text-[10px] text-[#7b7b8e]">
-                      {canRedeem ? "✓ Saldo poinmu cukup" : `Kurang ${reward.point_cost - balance} poin`}
-                    </span>
-
-                    <span className="text-[10.5px] font-bold text-[#7958d8]">
-                      Tukarkan di Kasir
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {/* TAB 2: POINT LEDGER HISTORY */}
-        {activeTab === "history" && (
-          <div className="rounded-2xl border-2 border-[#232331] bg-white p-4 shadow-ink-xs space-y-3 font-mono text-xs">
-            <div className="flex items-center justify-between border-b border-[#dedee8] pb-2">
-              <span className="font-bold text-[#232331]">Buku Transaksi Poin</span>
-              <span className="text-[10px] text-[#7b7b8e]">{ledger.length} Aktivitas</span>
-            </div>
-
-            <div className="space-y-2 divide-y divide-[#dedee8]">
-              {ledger.map((item) => (
-                <div key={item.id} className="pt-2 first:pt-0 flex justify-between items-center gap-2">
-                  <div className="min-w-0">
-                    <span className="font-bold text-[#232331] font-sans block text-xs truncate">
-                      {item.note || (item.delta > 0 ? "Perolehan Belanja" : "Penukaran Hadiah")}
-                    </span>
-                    <span className="text-[10px] text-[#7b7b8e] block">
-                      {formatBusinessDateTime(item.created_at)}
-                    </span>
-                  </div>
-
-                  <span className={`font-black text-sm shrink-0 ${
-                    item.delta > 0 ? "text-[#16a34a]" : "text-[#ef4444]"
-                  }`}>
-                    {item.delta > 0 ? `+${item.delta}` : item.delta} Pts
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* UU PDP PRIVACY NOTICE */}
-        <div className="rounded-2xl border border-[#dedee8] bg-white p-3.5 space-y-1.5 text-center text-xs font-mono text-[#7b7b8e]">
-          <div className="flex items-center justify-center gap-1 text-[#16a34a] font-bold text-[10.5px]">
-            <ShieldCheck size={13} />
-            <span>Kerahasiaan Data Terjamin (UU PDP No. 27/2022)</span>
-          </div>
-          <p className="text-[9.5px] leading-relaxed">
-            Data Anda hanya digunakan untuk keperluan program loyalitas toko {business.name}.
-          </p>
-        </div>
-
-        {/* AJAKAN LENGKAPI TANGGAL LAHIR (kalau program ulang tahun aktif & belum diisi) */}
-        {program.birthday_is_active && !customer.birthday && (
-          <div className="rounded-2xl border-2 border-[#232331] bg-white p-3.5 space-y-2.5 font-sans">
+        {/* ----------------------------------------------------------- LEVEL */}
+        {program.tiers_is_active && currentTier && (
+          <div className="space-y-2 rounded-2xl border-2 border-[#232331] bg-gradient-to-br from-[#fef9c3] to-white p-4 shadow-ink-xs">
             <div className="flex items-center gap-2">
-              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-[#db2777] bg-[#fce7f3] text-[#db2777]">
-                <Cake size={15} />
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-[#d97706] bg-[#fef3c7] text-[#d97706]">
+                <Crown size={16} />
               </span>
               <div className="min-w-0">
-                <h3 className="text-xs font-bold text-[#232331]">Lengkapi tanggal lahir</h3>
+                <p className="text-xs font-black">Level {currentTier.name}</p>
                 <p className="text-[10.5px] text-[#5c5c70]">
-                  {program.birthday_bonus_points > 0
-                    ? `Dapat bonus ${program.birthday_bonus_points} ${program.mode === "stamp" ? "stempel" : "poin"} spesial di hari ulang tahunmu.`
-                    : "Biar toko ini bisa kirim ucapan spesial di hari ulang tahunmu."}
+                  {currentTier.earn_multiplier > 1
+                    ? `Dapat ${currentTier.earn_multiplier}x ${unit} tiap belanja.`
+                    : currentTier.benefit_note || "Terima kasih sudah jadi langganan."}
                 </p>
               </div>
             </div>
-
-            {birthdaySaved ? (
-              <p className="flex items-center gap-1.5 text-[10.5px] font-bold text-[#16a34a]"><CheckCircle2 size={13} />Tersimpan. Sampai jumpa di hari spesialmu!</p>
-            ) : (
-              <div className="flex items-center gap-2">
-                <input
-                  type="date"
-                  value={birthdayInput}
-                  max={new Date().toISOString().slice(0, 10)}
-                  onChange={(e) => setBirthdayInput(e.target.value)}
-                  className="min-h-11 flex-1 rounded-xl border border-[#dedee8] bg-[#fcfcfe] p-2.5 text-xs font-bold text-[#232331]"
-                />
-                <button
-                  type="button"
-                  onClick={() => void handleSaveBirthday()}
-                  disabled={!birthdayInput || savingBirthday}
-                  className="btn-tactile min-h-11 shrink-0 rounded-xl border-2 border-[#232331] bg-[#232331] px-3 text-xs font-black text-[#d9ff57] disabled:opacity-50"
-                >
-                  {savingBirthday ? "..." : "Simpan"}
-                </button>
-              </div>
+            {nextTier && (
+              <p className="text-[10.5px] text-[#5c5c70]">
+                Belanja {formatRupiah(Math.max(0, nextTier.min_lifetime_spend - lifetimeSpend))} lagi
+                untuk naik ke {nextTier.name}.
+              </p>
             )}
-            {birthdayError && <p className="text-[10.5px] font-bold text-[#c2410c]">{birthdayError}</p>}
           </div>
         )}
 
-        <div className="rounded-2xl border-2 border-[#232331] bg-white p-3.5 font-sans">
-          <label className="flex min-h-11 cursor-pointer items-start gap-3">
-            <input
-              type="checkbox"
-              checked={marketingOptIn}
-              disabled={savingMarketingOptIn}
-              onChange={(event) => void handleMarketingPreference(event.target.checked)}
-              className="mt-1 h-4 w-4 rounded accent-[#232331]"
-            />
-            <span className="min-w-0">
-              <span className="block text-xs font-bold text-[#232331]">Info promo lewat WhatsApp</span>
-              <span className="mt-0.5 block text-[10.5px] leading-relaxed text-[#5c5c70]">{marketingOptIn ? "Anda setuju menerima info promo dan pengingat poin dari toko ini." : "Centang jika Anda ingin menerima info promo dan pengingat poin dari toko ini."}</span>
-            </span>
-          </label>
-          {marketingPreferenceError && <p className="mt-2 text-[10.5px] font-bold text-[#c2410c]">{marketingPreferenceError}</p>}
+        {/* ------------------------------------------------------------ TAB */}
+        <div className="flex gap-1.5 rounded-2xl border-2 border-[#232331] bg-white p-1.5">
+          {tabTampil.map((t) => {
+            const Icon = t.icon;
+            const aktif = tab === t.key;
+            return (
+              <button
+                key={t.key}
+                type="button"
+                onClick={() => setTab(t.key)}
+                className={`flex min-h-10 flex-1 items-center justify-center gap-1 rounded-xl text-[11px] font-black ${
+                  aktif ? "bg-[#232331] text-[#d9ff57]" : "text-[#5c5c70]"
+                }`}
+              >
+                <Icon size={13} />
+                <span>{t.label}</span>
+              </button>
+            );
+          })}
         </div>
 
+        {tab === "hadiah" && (
+          <div className="space-y-2">
+            {rewards.length === 0 ? (
+              <Kosong teks="Belum ada hadiah yang disiapkan toko ini." />
+            ) : (
+              rewards.map((r) => {
+                const cukup = balance >= r.point_cost;
+                return (
+                  <div
+                    key={r.id}
+                    className="flex items-center gap-3 rounded-2xl border-2 border-[#232331] bg-white p-3.5 shadow-ink-xs"
+                  >
+                    <span
+                      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl font-mono text-sm font-black"
+                      style={cukup ? kartu : { backgroundColor: "#f2f1f7", color: "#4a4a5c" }}
+                    >
+                      {r.point_cost}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-black">{r.name}</p>
+                      <p className="text-[10.5px] text-[#5c5c70]">
+                        {cukup
+                          ? "Sudah bisa ditukar di kasir."
+                          : `Kurang ${r.point_cost - balance} ${unit} lagi.`}
+                      </p>
+                    </div>
+                    {cukup && (
+                      <CheckCircle2 size={18} className="shrink-0 text-[#16a34a]" />
+                    )}
+                  </div>
+                );
+              })
+            )}
+            <p className="px-1 text-[10.5px] leading-relaxed text-[#5c5c70]">
+              Penukaran dilakukan kasir dari layarnya. Tunjukkan kartu ini saat membayar.
+            </p>
+          </div>
+        )}
+
+        {tab === "menu" && (
+          <div className="space-y-2">
+            {menuItems.map((m) => (
+              <div
+                key={m.id}
+                className="flex items-center gap-3 rounded-2xl border-2 border-[#232331] bg-white p-3 shadow-ink-xs"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={m.photo_url || PLACEHOLDER_MENU}
+                  alt=""
+                  loading="lazy"
+                  className="h-16 w-16 shrink-0 rounded-xl border border-[#dedee8] object-cover"
+                />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-black">{m.name}</p>
+                  {m.description && (
+                    <p className="mt-0.5 text-[11px] leading-relaxed text-[#5c5c70]">
+                      {m.description}
+                    </p>
+                  )}
+                  <p className="mt-0.5 font-mono text-xs font-black text-[#c2410c]">
+                    {formatRupiah(m.price)}
+                  </p>
+                </div>
+              </div>
+            ))}
+            <p className="px-1 text-[10.5px] text-[#5c5c70]">
+              Harga bisa berubah. Yang berlaku harga di kasir.
+            </p>
+          </div>
+        )}
+
+        {tab === "info" && (
+          <div className="space-y-3">
+            {cardSettings?.welcome_text?.trim() && (
+              <p className="rounded-2xl border-2 border-[#232331] bg-white p-4 text-[12px] leading-relaxed shadow-ink-xs">
+                {cardSettings.welcome_text}
+              </p>
+            )}
+
+            <div className="divide-y divide-[#dedee8] rounded-2xl border-2 border-[#232331] bg-white shadow-ink-xs">
+              {business.address?.trim() && (
+                <BarisInfo icon={MapPin} label="Alamat" nilai={business.address} />
+              )}
+              {cardSettings?.opening_hours?.trim() && (
+                <BarisInfo icon={Clock} label="Jam buka" nilai={cardSettings.opening_hours} />
+              )}
+              {nomorToko && (
+                <BarisInfo
+                  icon={MessageCircle}
+                  label="WhatsApp"
+                  nilai={nomorToko}
+                  href={`https://wa.me/${nomorToko}`}
+                />
+              )}
+              {cardSettings?.instagram?.trim() && (
+                <BarisInfo
+                  icon={AtSign}
+                  label="Instagram"
+                  nilai={cardSettings.instagram.replace(/^@/, "@")}
+                  href={`https://instagram.com/${cardSettings.instagram.replace(/^@/, "")}`}
+                />
+              )}
+              {!business.address?.trim() &&
+                !cardSettings?.opening_hours?.trim() &&
+                !nomorToko &&
+                !cardSettings?.instagram?.trim() && (
+                  <div className="p-4">
+                    <Kosong teks="Toko ini belum mengisi info kontaknya." />
+                  </div>
+                )}
+            </div>
+
+            {/* AJAK TEMAN */}
+            {referralLink && (
+              <div className="space-y-2.5 rounded-2xl border-2 border-[#232331] bg-white p-4 shadow-ink-xs">
+                <div className="flex items-center gap-2">
+                  <Users size={15} className="text-[#7958d8]" />
+                  <p className="text-xs font-black">Ajak teman, dua-duanya dapat bonus</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <code className="min-w-0 flex-1 truncate rounded-xl border border-[#dedee8] bg-[#fcfcfe] px-3 py-2 font-mono text-xs font-bold">
+                    {referralCode}
+                  </code>
+                  <button
+                    type="button"
+                    onClick={handleCopyReferralLink}
+                    aria-label="Salin tautan ajakan"
+                    className="shrink-0 rounded-xl border-2 border-[#232331] bg-white p-2"
+                  >
+                    {copiedReferralLink ? <Check size={15} /> : <Copy size={15} />}
+                  </button>
+                </div>
+                <a
+                  href={`https://wa.me/?text=${encodeURIComponent(referralMessage)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn-tactile flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border-2 border-[#232331] bg-[#d9ff57] text-xs font-black"
+                >
+                  <Share2 size={14} /> Bagikan lewat WhatsApp
+                </a>
+              </div>
+            )}
+
+            {/* ULANG TAHUN */}
+            {program.birthday_is_active && !customer.birthday && (
+              <div className="space-y-2.5 rounded-2xl border-2 border-[#232331] bg-white p-4 shadow-ink-xs">
+                <div className="flex items-center gap-2">
+                  <Cake size={15} className="text-[#c2410c]" />
+                  <div className="min-w-0">
+                    <p className="text-xs font-black">Lengkapi tanggal lahir</p>
+                    <p className="text-[10.5px] text-[#5c5c70]">
+                      {program.birthday_bonus_points > 0
+                        ? `Dapat bonus ${program.birthday_bonus_points} ${unit} di hari ulang tahunmu.`
+                        : "Biar toko ini bisa kirim ucapan spesial."}
+                    </p>
+                  </div>
+                </div>
+                {birthdaySaved ? (
+                  <p className="flex items-center gap-1.5 text-[10.5px] font-bold text-[#16a34a]">
+                    <CheckCircle2 size={13} /> Tersimpan. Sampai jumpa di hari spesialmu!
+                  </p>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="date"
+                      value={birthdayInput}
+                      max={new Date().toISOString().slice(0, 10)}
+                      onChange={(e) => setBirthdayInput(e.target.value)}
+                      className="min-h-11 flex-1 rounded-xl border border-[#dedee8] bg-[#fcfcfe] p-2.5 text-xs font-bold"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => void handleSaveBirthday()}
+                      disabled={!birthdayInput || savingBirthday}
+                      className="btn-tactile min-h-11 shrink-0 rounded-xl border-2 border-[#232331] bg-[#232331] px-3 text-xs font-black text-[#d9ff57] disabled:opacity-50"
+                    >
+                      {savingBirthday ? "..." : "Simpan"}
+                    </button>
+                  </div>
+                )}
+                {birthdayError && (
+                  <p className="text-[10.5px] font-bold text-[#c2410c]">{birthdayError}</p>
+                )}
+              </div>
+            )}
+
+            {/* PERSETUJUAN PROMO */}
+            <div className="rounded-2xl border-2 border-[#232331] bg-white p-3.5">
+              <label className="flex min-h-11 cursor-pointer items-start gap-3">
+                <input
+                  type="checkbox"
+                  checked={marketingOptIn}
+                  disabled={savingMarketingOptIn}
+                  onChange={(e) => void handleMarketingPreference(e.target.checked)}
+                  className="mt-1 h-4 w-4 rounded accent-[#232331]"
+                />
+                <span className="min-w-0">
+                  <span className="block text-xs font-bold">Info promo lewat WhatsApp</span>
+                  <span className="mt-0.5 block text-[10.5px] leading-relaxed text-[#5c5c70]">
+                    {marketingOptIn
+                      ? "Kamu setuju menerima info promo dan pengingat dari toko ini."
+                      : "Centang kalau mau menerima info promo dan pengingat dari toko ini."}
+                  </span>
+                </span>
+              </label>
+              {marketingPreferenceError && (
+                <p className="mt-2 text-[10.5px] font-bold text-[#c2410c]">
+                  {marketingPreferenceError}
+                </p>
+              )}
+            </div>
+
+            <p className="px-1 text-[10.5px] leading-relaxed text-[#5c5c70]">
+              Nama dan nomormu disimpan hanya untuk program member toko ini, sesuai
+              UU PDP No. 27/2022. Tidak dibagikan ke pihak lain.
+            </p>
+          </div>
+        )}
+
+        {tab === "riwayat" && (
+          <div className="space-y-2">
+            {ledger.length === 0 ? (
+              <Kosong teks="Belum ada aktivitas." />
+            ) : (
+              ledger.slice(0, 30).map((e) => (
+                <div
+                  key={e.id}
+                  className="flex items-center justify-between gap-3 rounded-2xl border border-[#dedee8] bg-white p-3"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-xs font-bold">{e.note}</p>
+                    <p className="font-mono text-[10px] text-[#5c5c70]">
+                      {formatBusinessDateTime(e.created_at)}
+                    </p>
+                  </div>
+                  <span
+                    className={`shrink-0 font-mono text-sm font-black ${
+                      e.delta >= 0 ? "text-[#15803d]" : "text-[#c2410c]"
+                    }`}
+                  >
+                    {e.delta >= 0 ? "+" : ""}
+                    {e.delta}
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
+        )}
       </main>
 
-      {/* Footer */}
-      <footer className="border-t border-[#dedee8] bg-white py-3 text-center text-[10.5px] font-mono text-[#7b7b8e]">
-        KAEL Loyalty Member Passport · Live
+      <footer className="border-t border-[#dedee8] bg-white py-3 text-center font-mono text-[10.5px] text-[#5c5c70]">
+        Powered by KAEL Loyalty
       </footer>
-
     </div>
   );
+}
+
+function Kosong({ teks }: { teks: string }) {
+  return (
+    <p className="rounded-2xl border border-dashed border-[#dedee8] p-6 text-center text-xs text-[#5c5c70]">
+      {teks}
+    </p>
+  );
+}
+
+function BarisInfo({
+  icon: Icon,
+  label,
+  nilai,
+  href,
+}: {
+  icon: typeof MapPin;
+  label: string;
+  nilai: string;
+  href?: string;
+}) {
+  const isi = (
+    <>
+      <Icon size={15} className="mt-0.5 shrink-0 text-[#7958d8]" />
+      <span className="min-w-0">
+        <span className="block font-mono text-[10px] uppercase text-[#5c5c70]">{label}</span>
+        <span className="block break-words text-xs font-bold">{nilai}</span>
+      </span>
+    </>
+  );
+  if (href) {
+    return (
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="flex min-h-12 items-start gap-2.5 p-3.5"
+      >
+        {isi}
+      </a>
+    );
+  }
+  return <div className="flex items-start gap-2.5 p-3.5">{isi}</div>;
 }

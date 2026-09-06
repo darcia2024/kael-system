@@ -28,6 +28,7 @@ import {
   Save,
   Lock,
   UserPlus,
+  IdCard,
   RefreshCw,
   Ticket,
   MessageCircle,
@@ -1119,6 +1120,16 @@ export default function KaelLoyaltyDashboard({
                 >
                   <UserPlus size={13} />
                   <span>Buka Form Pendaftaran Member Baru</span>
+                </Link>
+
+                {/* Isi kartu yang dipegang pelanggan: sapaan, jam buka, kabar,
+                    dan nomor WhatsApp yang menyalakan tombol simpan kartu. */}
+                <Link
+                  href="/app/loyalty/kartu"
+                  className="btn-tactile mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-xl border border-[#232331] bg-[#d9ff57] py-2 text-xs font-black text-[#232331] shadow-ink-xs"
+                >
+                  <IdCard size={13} />
+                  <span>Atur Isi Kartu Member</span>
                 </Link>
               </div>
 

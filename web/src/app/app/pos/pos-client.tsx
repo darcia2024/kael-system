@@ -32,6 +32,7 @@ import {
   ShieldCheck,
   TrendingUp,
   UtensilsCrossed,
+  UserPlus,
   RefreshCw
 } from "lucide-react";
 import type { 
@@ -50,7 +51,8 @@ import {
   openShiftAction,
   closeShiftAction,
   updateOrderStatusAction,
-  searchCustomersAction
+  searchCustomersAction,
+  registerCustomerByStaffAction
 } from "@/lib/actions";
 import { 
   calculateCartTotals, 
@@ -127,6 +129,13 @@ export default function PosClient({
 
   // Loyalty Customer Integration in POS
   const [loyaltySearchQuery, setLoyaltySearchQuery] = useState("");
+
+  // Pendaftaran member dari layar kasir.
+  const [formMemberBaru, setFormMemberBaru] = useState(false);
+  const [memberBaruNama, setMemberBaruNama] = useState("");
+  const [memberBaruTelp, setMemberBaruTelp] = useState("");
+  const [simpanMemberBaru, setSimpanMemberBaru] = useState(false);
+  const [galatMemberBaru, setGalatMemberBaru] = useState<string | null>(null);
   const [loyaltySearchResults, setLoyaltySearchResults] = useState<CustomerDirectoryEntry[]>([]);
   const [attachedCustomer, setAttachedCustomer] = useState<CustomerDirectoryEntry | null>(null);
 
@@ -893,9 +902,86 @@ export default function PosClient({
                             className="w-full flex justify-between items-center p-1.5 rounded-lg hover:bg-[#f0edff] text-left text-[11px]"
                           >
                             <span className="font-bold text-[#232331]">{c.name} ({c.phone_masked})</span>
-                            <span className="font-bold text-[#16a34a]">{c.balance} Pts</span>
+                            <span className="font-bold text-[#15803d]">{c.balance} Pts</span>
                           </button>
                         ))}
+                      </div>
+                    )}
+
+                    {/*
+                      Daftar member langsung dari kasir.
+                      Pelanggan cukup menyebutkan nama dan nomornya; tidak perlu
+                      memegang ponsel, tidak perlu menyentuh kartu di meja. Ini
+                      jalur yang paling sering terpakai saat antrean panjang.
+                    */}
+                    {!formMemberBaru ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFormMemberBaru(true);
+                          setMemberBaruNama("");
+                          setMemberBaruTelp(loyaltySearchQuery.replace(/\D/g, ""));
+                          setGalatMemberBaru(null);
+                        }}
+                        className="mt-1.5 flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-[#7958d8] py-1.5 text-[11px] font-bold text-[#7958d8]"
+                      >
+                        <UserPlus size={12} /> Daftarkan member baru
+                      </button>
+                    ) : (
+                      <div className="mt-1.5 space-y-1.5 rounded-xl border border-[#7958d8] bg-[#faf9ff] p-2">
+                        <input
+                          type="text"
+                          value={memberBaruNama}
+                          onChange={(e) => setMemberBaruNama(e.target.value)}
+                          placeholder="Nama pelanggan"
+                          className="w-full rounded-lg border border-[#dedee8] px-2 py-1.5 text-[11px] font-bold"
+                        />
+                        <input
+                          type="tel"
+                          inputMode="numeric"
+                          value={memberBaruTelp}
+                          onChange={(e) => setMemberBaruTelp(e.target.value)}
+                          placeholder="Nomor WhatsApp"
+                          className="w-full rounded-lg border border-[#dedee8] px-2 py-1.5 font-mono text-[11px] font-bold"
+                        />
+                        {galatMemberBaru && (
+                          <p className="text-[10px] font-bold text-[#c2410c]">{galatMemberBaru}</p>
+                        )}
+                        <div className="flex gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setFormMemberBaru(false)}
+                            className="flex-1 rounded-lg border border-[#dedee8] bg-white py-1.5 text-[11px] font-bold text-[#5c5c70]"
+                          >
+                            Batal
+                          </button>
+                          <button
+                            type="button"
+                            disabled={simpanMemberBaru}
+                            onClick={async () => {
+                              setGalatMemberBaru(null);
+                              setSimpanMemberBaru(true);
+                              const res = await registerCustomerByStaffAction({
+                                name: memberBaruNama,
+                                phone: memberBaruTelp,
+                              });
+                              setSimpanMemberBaru(false);
+                              if (!res.ok) {
+                                setGalatMemberBaru(res.error);
+                                return;
+                              }
+                              // Langsung menempel ke transaksi yang sedang berjalan,
+                              // supaya belanja hari ini ikut terhitung — bukan baru
+                              // dimulai dari kedatangan berikutnya.
+                              setAttachedCustomer(res.data.customer);
+                              setFormMemberBaru(false);
+                              setLoyaltySearchQuery("");
+                            }}
+                            className="flex-1 rounded-lg border border-[#232331] bg-[#d9ff57] py-1.5 text-[11px] font-black text-[#232331] disabled:opacity-60"
+                          >
+                            {simpanMemberBaru ? "..." : "Daftar & pakai"}
+                          </button>
+                        </div>
                       </div>
                     )}
                   </div>
