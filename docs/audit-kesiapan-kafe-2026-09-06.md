@@ -8,7 +8,9 @@ Versi pertama audit ini menunjuk `BAKSOMIN` (Bakso & Mie Ayam Pak Min). Tenant i
 
 Bisa dipresentasikan untuk penjajakan dan calon pilot dengan keterbatasan dijelaskan. Belum siap dijanjikan sebagai paket operasional lengkap.
 
-Ketiga blocker P1 dari audit awal sudah hilang: dashboard owner tidak lagi error, poin dan stok sudah idempoten saat dicoba ulang, dan data demo kafe sudah terisi. Yang tersisa sebagian besar adalah hal yang memang belum pernah diuji pada perangkat fisik dan pada alur transaksi penuh lewat UI, bukan bug yang sudah diketahui. Satu-satunya P1 yang tersisa adalah kartu demo yang belum diisi tujuannya.
+Ketiga blocker P1 dari audit awal sudah hilang: dashboard owner tidak lagi error, poin dan stok sudah idempoten saat dicoba ulang, dan data demo kafe sudah terisi. Lima dari enam layanan kafe sudah bisa ditunjukkan hari ini.
+
+Yang keenam tidak bisa: **penyaringan rating pada kartu NFC belum dibangun sama sekali**, dan sebagiannya memang tidak boleh dibangun seperti yang diminta. Ini bukan bug dan bukan pekerjaan setengah jadi; kodenya tidak ada. Jangan dijanjikan.
 
 Audit ini membaca kode, memeriksa database produksi, mencoba halaman produksi kaels.site, serta menjalankan npm run check. Tidak mengirim WA/review Google dan tidak menguji printer fisik.
 
@@ -27,21 +29,47 @@ Audit ini membaca kode, memeriksa database produksi, mencoba halaman produksi ka
 
 ## Temuan prioritas
 
-1. **P1 - Kartu demo `D9BLDK7H` belum punya tujuan.** Statusnya `active` dan jenisnya `link`, tetapi `destination_url` masih kosong. Kalau ditap sekarang, kartunya mendarat di `/r/status?type=no_destination`, bukan di halaman mana pun. Isi tujuannya sebelum dibawa ke calon pelanggan, atau jangan tunjukkan bagian NFC sama sekali.
-2. **P2 - Pemulihan sinkronisasi masih manual.** Pembayaran tetap disimpan lebih dulu, lalu `syncPaidOrder` menambahkan poin dan memotong stok terpisah. Bagian yang berbahaya sudah ditutup: keduanya idempoten dan kegagalannya tercatat di `sync_error` serta muncul di dashboard owner. Yang belum ada adalah worker terjadwal, jadi kalau owner tidak pernah menekan tombol proses ulang, order itu diam saja tanpa poin dan tanpa potongan stok.
-3. **P2 - Refund tidak mengembalikan stok.** Ini keputusan yang disengaja: minuman yang sudah dibuat tidak otomatis bisa dijual lagi. Konsekuensinya koreksi stok setelah refund harus dilakukan manual berdasarkan barang yang benar-benar kembali.
-4. **P2 - Resep demo belum realistis.** Ketiga resep punya `operational_cost` 0 dan satu bahan tunggal berlabel "Bahan contoh". Angka HPP-nya benar secara hitungan tetapi tidak menyerupai resep kafe sungguhan. Cukup untuk memperlihatkan cara kerjanya, kurang meyakinkan kalau pemilik usaha menanyakan detail.
-5. **P2 - Member demo tidak punya nomor telepon asli.** Keduanya bernama "Pelanggan simulasi" dengan telepon `DEMO-<uuid>`. Pencarian member lewat nomor telepon di kasir tidak bisa didemokan dengan data ini; kartu membernya tetap bisa dibuka lewat token.
-6. **Kesenjangan produk - NFC Review langsung redirect ke `destination_url`.** Belum ada alur NFC pilih rating lalu keluhan otomatis ke WA. Feedback struk memiliki tautan Google untuk rating >=4, bukan alur NFC yang diminta. `submitFeedbackAction` menyimpan feedback; tidak mengirim WA otomatis.
-7. **Keterbatasan - printer.** Tersedia lewat browser print dan jalur Web Bluetooth untuk profil tertentu. Belum diuji pada printer fisik. Jangan menjanjikan semua printer Bluetooth/USB atau semua ponsel kompatibel.
-8. **Keterbatasan - masa berlaku demo.** `KAELCAFE` dan keempat modulnya sama-sama kedaluwarsa **6 Oktober 2026**. Setelah tanggal itu demo berhenti bekerja tanpa peringatan di layar.
+1. **P1 - Penyaringan rating di kartu NFC belum ada.** Yang dijual sebagai "bintang 5 ke Google, bintang 1 ke WhatsApp" belum dibangun. Yang ada dua hal terpisah: kartu NFC membuka halaman Smart Touch berisi daftar tombol, dan formulir rating bintang ada di halaman struk `/receipt/[id]` yang baru muncul setelah pelanggan bertransaksi di kasir. Tidak ada percabangan berdasarkan bintang pada jalur kartu, dan tidak ada satu baris kode pun yang mengirim WhatsApp sendiri. Lihat bagian "Penyaringan rating" di bawah.
+2. **P1 - Kartu demo `D9BLDK7H` cuma punya dua tombol.** Kartunya hidup: tap mendarat di `/touch/D9BLDK7H` berisi "Pesan dari meja 1" dan "Daftar member". Tombol Google Review tidak ada karena `google_place_id` tenant ini kosong, dan tombol WhatsApp juga tidak ada. Kalau kartunya mau ditunjukkan sebagai contoh kartu ulasan, isi dulu tombol Review lewat `/app/review` -> Smart Touch.
+3. **P2 - Pemulihan sinkronisasi masih manual.** Pembayaran tetap disimpan lebih dulu, lalu `syncPaidOrder` menambahkan poin dan memotong stok terpisah. Bagian yang berbahaya sudah ditutup: keduanya idempoten dan kegagalannya tercatat di `sync_error` serta muncul di dashboard owner. Yang belum ada adalah worker terjadwal, jadi kalau owner tidak pernah menekan tombol proses ulang, order itu diam saja tanpa poin dan tanpa potongan stok.
+4. **P2 - Refund tidak mengembalikan stok.** Ini keputusan yang disengaja: minuman yang sudah dibuat tidak otomatis bisa dijual lagi. Konsekuensinya koreksi stok setelah refund harus dilakukan manual berdasarkan barang yang benar-benar kembali.
+5. **P2 - Resep demo belum realistis.** Ketiga resep punya `operational_cost` 0 dan satu bahan tunggal berlabel "Bahan contoh". Angka HPP-nya benar secara hitungan tetapi tidak menyerupai resep kafe sungguhan. Cukup untuk memperlihatkan cara kerjanya, kurang meyakinkan kalau pemilik usaha menanyakan detail.
+6. **P2 - Member demo tidak punya nomor telepon asli.** Keduanya bernama "Pelanggan simulasi" dengan telepon `DEMO-<uuid>`. Pencarian member lewat nomor telepon di kasir tidak bisa didemokan dengan data ini; kartu membernya tetap bisa dibuka lewat token.
+7. **P2 - Keluhan tidak memberi tahu siapa pun.** Rating dan komentar dari halaman struk tersimpan di `member_feedback` dan muncul di `/app/pos/reports`. Tidak ada notifikasi ke mana pun: tidak WA, tidak email, tidak push. Owner baru tahu ada bintang 1 kalau dia membuka laporan sendiri.
+8. **Keterbatasan - printer.** Tersedia lewat browser print dan jalur Web Bluetooth untuk profil tertentu. Belum diuji pada printer fisik. Jangan menjanjikan semua printer Bluetooth/USB atau semua ponsel kompatibel.
+9. **Keterbatasan - masa berlaku demo.** `KAELCAFE` dan keempat modulnya sama-sama kedaluwarsa **6 Oktober 2026**. Setelah tanggal itu demo berhenti bekerja tanpa peringatan di layar.
 
-## Review dan keluhan
+## Penyaringan rating
 
-Pola hanya mengarahkan rating bagus ke Google termasuk selectively soliciting positive reviews. Kebijakan Google melarangnya:
+Fitur yang diminta: pelanggan tap kartu NFC, pilih bintang. Bintang 5 langsung ke Google Maps, bintang 1 diarahkan mengisi alasan lalu terkirim otomatis ke WhatsApp pemilik.
+
+### Apa yang benar-benar ada
+
+Dua hal terpisah, dan tidak satu pun menyambung jadi alur di atas.
+
+**Kartu NFC** membuka `/touch/[code]`, sebuah halaman berisi daftar tombol: Google Review, WhatsApp, Menu, Jadi Member, Lokasi, Booking. Pelanggan memilih tombol. Tidak ada bintang, tidak ada percabangan.
+
+**Formulir bintang** ada di halaman struk `/receipt/[id]`, yang butuh `orderId` — artinya baru muncul setelah pelanggan bertransaksi lewat kasir. Di situ bintang 1-3 memunculkan pilihan alasan dan kolom komentar. Hasilnya masuk ke tabel `member_feedback` dan tampil di `/app/pos/reports`.
+
+### Apa yang tidak ada
+
+- Tidak ada percabangan rating pada jalur kartu. Diperiksa: tidak ada kata "rating" di `src/app/r/` maupun `src/app/touch/`.
+- **Tidak ada pengiriman WhatsApp otomatis, di mana pun di seluruh aplikasi.** Setiap `wa.me` di kode ini adalah tautan yang membuka aplikasi WhatsApp dengan teks yang sudah terisi. Manusia tetap harus menekan tombol Kirim.
+- Halaman `/app/settings/brand` memang punya formulir Meta WhatsApp Cloud API (provider, Phone Number ID, nama secret). Formulir itu menyimpan pengaturan yang **tidak dibaca kode mana pun untuk mengirim**. Menyetel channel bukan bukti pesan terkirim.
+- Bintang 1 tidak memberi tahu siapa pun. Owner baru tahu kalau membuka laporan sendiri.
+
+### Bagian yang memang tidak boleh dibangun
+
+Mengarahkan hanya bintang 4-5 ke Google dan menyaring sisanya adalah *selectively soliciting positive reviews*, yang dilarang kebijakan Google:
 https://support.google.com/contributionpolicy/answer/7400114?hl=en
 
-Usulan yang layak dijual: semua pelanggan mendapat pilihan Google Review dan saran pribadi. Keluhan bisa dicatat lalu dinotifikasikan ke owner. Untuk pengiriman WA tanpa pelanggan menekan Kirim, perlu integrasi provider/API dan pengujian delivery; wa.me hanya membuka percakapan berisi teks.
+Risikonya jatuh ke pemilik kafe, bukan ke KAEL: ulasan bisa dihapus dan profil bisnisnya bisa kena tindakan. Menjualnya sebagai fitur berarti menjual sesuatu yang bisa merugikan pelanggan sendiri. Aplikasi ini dulu sempat begitu dan sudah sengaja diubah: sekarang tautan Google muncul untuk semua rating.
+
+### Yang boleh dijanjikan
+
+Versi yang sah dan tetap menjawab kekhawatiran pemilik kafe: **semua** pelanggan diberi dua pilihan sekaligus, "Tulis di Google" dan "Sampaikan ke kami saja". Yang kecewa hampir selalu memilih yang kedua karena lebih cepat dan tidak perlu akun. Efeknya mirip yang diinginkan tanpa menyaring siapa pun.
+
+Untuk WhatsApp otomatis, sebut apa adanya: perlu integrasi provider (Meta Cloud API atau gateway), nomor bisnis terverifikasi, template pesan disetujui, dan biaya per percakapan. Sampai itu ada dan diuji, yang bisa dijanjikan cuma notifikasi di dalam aplikasi.
 
 ## Status per layanan
 
@@ -52,7 +80,8 @@ Usulan yang layak dijual: semua pelanggan mendapat pilihan Google Review dan sar
 | HPP | Finance produksi terbuka. 3 bahan dan 3 resep terpaut ke ketiga menu. Tes engine bahan, kemasan, margin, pembulatan lulus. | Resepnya masih "bahan contoh" tunggal dengan biaya operasional 0 |
 | Ordering | `/order/KAELCAFE/1` terbuka dengan menu, logo, dan warna toko | Link tanpa nomor meja tidak membuka menu; checkout dan pelunasan belum diuji live |
 | Membership | `/loyalty/register?toko=KAELCAFE` terbuka. Kurs Rp10.000 = 1 Poin. 2 member, 1 reward "Minuman gratis (demo)" seharga 10 poin, 2 baris point ledger. | Member demo tanpa nomor telepon asli; earn/redeem/refund belum diuji ujung ke ujung |
-| NFC | 1 kartu `D9BLDK7H` berstatus aktif dan sudah pernah ditap 1x | Tujuannya masih kosong, jadi tap-nya belum mendarat ke mana pun. Lihat temuan P1 nomor 1 |
+| NFC Smart Touch | Kartu `D9BLDK7H` aktif. `/r/D9BLDK7H` dites di produksi: mendarat di `/touch/D9BLDK7H` berisi nama toko, logo, warna, dan 2 tombol. Tap tercatat. | Belum ada tombol Google Review maupun WhatsApp di kartu demo ini |
+| Penyaringan rating NFC | Tidak ada. Tidak ditemukan satu pun percabangan rating di `src/app/r/` maupun `src/app/touch/`, dan tidak ada satu pun pemanggilan API pengirim WhatsApp di seluruh `src/`. | **Belum dibangun.** Lihat bagian "Penyaringan rating" |
 | Tampilan per usaha | Logo dan warna `#7b3f2e` tampil di halaman pesan dan halaman daftar member produksi | Logo demo masih gambar contoh, belum logo kafe sungguhan |
 
 ## Kredensial untuk pengujian
@@ -91,7 +120,7 @@ Master admin, hanya untuk tim internal: https://kaels.site/admin
 
 Gunakan data uji dan nomor WA milik sendiri. Jangan mengirim ulasan uji ke Google atau pesan ke nomor contoh pada tenant.
 
-1. Isi tujuan kartu `D9BLDK7H` lewat dashboard Review, lalu tap sekali untuk memastikan mendarat di tempat yang benar. Kalau dilewati, jangan tunjukkan kartunya sama sekali.
+1. Buka `/app/review` -> Smart Touch kartu `D9BLDK7H`. Tambahkan tombol Google Review dan WhatsApp kalau kartunya mau ditunjukkan sebagai kartu ulasan; sekarang isinya cuma tombol pesan dan daftar member. Tap sekali untuk memastikan tampilannya benar.
 2. Login owner. Buka https://kaels.site/app/finance. Buka salah satu dari tiga resep yang sudah ada, ganti "Bahan contoh" dengan bahan sungguhan, tambahkan biaya operasional dan kemasan. Simpan, buka ulang, pastikan angkanya tetap.
 3. Periksa ketiga menu POS sudah terpaut ke resepnya; di database ketiganya sudah. Tambah satu reward kedua kalau ingin mendemokan pilihan penukaran.
 4. Buka https://kaels.site/loyalty/register?toko=KAELCAFE di ponsel pelanggan. Daftarkan member uji dengan nomor telepon sungguhan milik sendiri; ini sekaligus menutup kekurangan pada temuan P2 nomor 5. Pastikan muncul di dashboard dan kartu membernya bisa dibuka. Jangan bagikan token kartu pribadi.
@@ -111,6 +140,6 @@ Ini tidak membuktikan semua query database, alur UI, atau perangkat fisik berfun
 
 ## Prioritas sebelum menerima penggunaan operasional
 
-Isi tujuan kartu demo; ganti resep contoh dengan resep sungguhan; jalankan transaksi sampai refund dan tutup shift; uji printer serta NFC yang akan dipakai; siapkan worker retry terjadwal supaya pemulihan sinkronisasi tidak bergantung pada owner menekan tombol. Tawarkan pilot terkontrol setelah alur tersebut lulus.
+Lengkapi tombol kartu Smart Touch; ganti resep contoh dengan resep sungguhan; jalankan transaksi sampai refund dan tutup shift; uji printer serta NFC yang akan dipakai; siapkan worker retry terjadwal supaya pemulihan sinkronisasi tidak bergantung pada owner menekan tombol. Tawarkan pilot terkontrol setelah alur tersebut lulus.
 
 Jangan menjanjikan mode offline, QRIS otomatis terverifikasi, WA otomatis, atau penyaringan review sebelum implementasi dan pengujiannya tersedia.
