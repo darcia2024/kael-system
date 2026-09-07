@@ -193,6 +193,74 @@ export function generateEscPosReceiptText(params: {
 }
 
 /**
+ * Ringkasan struk untuk WhatsApp. Berbeda dengan cetak thermal, pesan ini
+ * dioptimalkan untuk dibaca di layar chat: total dan tautan struk berada di
+ * bagian akhir, sementara rincian transaksi tetap utuh di atasnya.
+ */
+export function generateWhatsAppReceiptMessage(params: {
+  businessName: string;
+  orderNo: string;
+  createdAtLabel: string;
+  serviceLabel: string;
+  cashierName?: string | null;
+  items: { name: string; qty: number; price: number; note?: string | null }[];
+  subtotal: number;
+  discount: number;
+  tax: number;
+  serviceCharge: number;
+  deliveryFee?: number;
+  total: number;
+  paymentMethod: string;
+  cashGiven?: number | null;
+  cashChange?: number | null;
+  receiptUrl: string;
+  memberCardUrl?: string | null;
+}): string {
+  const money = (value: number) => `Rp ${Math.round(value).toLocaleString("id-ID")}`;
+  const clean = (value: string) => value.replace(/[\\*_~`]/g, "").trim();
+  const paymentLabel: Record<string, string> = {
+    cash: "Tunai",
+    qris: "QRIS",
+    transfer: "Transfer bank",
+    card: "Kartu",
+  };
+  const lines = [
+    `*${clean(params.businessName)}*`,
+    "Struk digital",
+    "",
+    `No. pesanan: *${clean(params.orderNo)}*`,
+    `Waktu: ${clean(params.createdAtLabel)}`,
+    `Layanan: ${clean(params.serviceLabel)}`,
+  ];
+
+  if (params.cashierName) lines.push(`Kasir: ${clean(params.cashierName)}`);
+
+  lines.push("", "*Rincian pesanan*");
+  for (const item of params.items) {
+    lines.push(`- ${Math.max(1, item.qty)}x ${clean(item.name)}  ${money(item.price * item.qty)}`);
+    if (item.note?.trim()) lines.push(`  Catatan: ${clean(item.note)}`);
+  }
+
+  lines.push("", `Subtotal: ${money(params.subtotal)}`);
+  if (params.discount > 0) lines.push(`Diskon: -${money(params.discount)}`);
+  if (params.serviceCharge > 0) lines.push(`Biaya layanan: ${money(params.serviceCharge)}`);
+  if (params.tax > 0) lines.push(`Pajak: ${money(params.tax)}`);
+  if (params.deliveryFee && params.deliveryFee > 0) lines.push(`Ongkir: ${money(params.deliveryFee)}`);
+
+  lines.push(`*TOTAL DIBAYAR: ${money(params.total)}*`);
+  lines.push(`Pembayaran: ${paymentLabel[params.paymentMethod] ?? clean(params.paymentMethod)}`);
+  if (params.paymentMethod === "cash" && params.cashGiven) {
+    lines.push(`Tunai diterima: ${money(params.cashGiven)}`);
+    lines.push(`Kembalian: ${money(params.cashChange ?? 0)}`);
+  }
+
+  lines.push("", "Struk lengkap:", params.receiptUrl);
+  if (params.memberCardUrl) lines.push("", "Kartu member Anda:", params.memberCardUrl);
+  lines.push("", "Terima kasih sudah berkunjung.");
+  return lines.join("\n");
+}
+
+/**
  * Generator nomor order harian misal A-001, A-014
  */
 export function generateDailyOrderNo(orderCountToday = 1): string {

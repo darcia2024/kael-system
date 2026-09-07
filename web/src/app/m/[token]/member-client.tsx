@@ -275,33 +275,37 @@ export default function CustomerMemberProgressPage({
 
           {isStempel ? (
             <>
-              {/*
-                Kartu stempel digambar sebagai kotak, bukan angka. Orang mengerti
-                "tinggal dua kotak lagi" tanpa membaca apa pun; "8 dari 10 poin"
-                harus dibaca dan dihitung dulu.
-              */}
-              <div className="mt-4 grid grid-cols-5 gap-2">
+              <div className="mt-4 rounded-2xl p-3" style={{ backgroundColor: kabut, border: `1px solid ${garis}` }}>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <span className="block font-mono text-[10px] font-bold uppercase tracking-wider opacity-90">Kartu kunjungan</span>
+                    <p className="mt-1 text-[11px] font-bold leading-snug">
+                      Kumpulkan {totalKotak} stempel{targetHadiah ? ` untuk ${targetHadiah.name}` : " untuk hadiah Anda"}.
+                    </p>
+                  </div>
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full" style={{ border: `1px solid ${garis}`, backgroundColor: kotakTerisi > 0 ? tinta : kabut }}>
+                    <Stamp size={15} />
+                  </span>
+                </div>
+              </div>
+
+              <div className="mt-3 grid grid-cols-5 gap-2.5">
                 {Array.from({ length: totalKotak }, (_, i) => {
                   const terisi = i < kotakTerisi;
+                  const hadiahBerikutnya = i === totalKotak - 1;
                   return (
                     <span
                       key={i}
                       aria-hidden
-                      className="flex aspect-square items-center justify-center rounded-xl text-xs font-black"
-                      /*
-                       * Kotak kosong TIDAK diredupkan dengan opacity.
-                       * Sebelumnya 0.75, dan angkanya jatuh ke kontras 3,83 —
-                       * di bawah ambang 4,5 yang dibaca orang di bawah lampu
-                       * kafe sambil berdiri. Yang membedakan terisi dari kosong
-                       * sudah cukup dari warna latarnya sendiri.
-                       */
+                      className="relative flex aspect-square items-center justify-center rounded-full text-xs font-black shadow-sm"
                       style={{
                         backgroundColor: terisi ? tinta : kabut,
                         color: terisi ? warna : "inherit",
-                        border: `1px solid ${garis}`,
+                        border: `2px solid ${terisi ? tinta : garis}`,
                       }}
                     >
-                      {terisi ? <Check size={15} strokeWidth={3.5} /> : i + 1}
+                      {terisi ? <Stamp size={17} strokeWidth={2.6} /> : hadiahBerikutnya ? <Gift size={15} /> : i + 1}
+                      {terisi && <span className="absolute -bottom-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full text-[8px] font-black" style={{ backgroundColor: warna, color: tinta, border: `1px solid ${garis}` }}>{i + 1}</span>}
                     </span>
                   );
                 })}
@@ -310,10 +314,8 @@ export default function CustomerMemberProgressPage({
                 {kotakTerisi} dari {totalKotak} stempel terkumpul.
               </p>
 
-              <div
-                className="mt-4 flex items-center justify-between gap-3 rounded-2xl px-4 py-3"
-                style={{ backgroundColor: kabut, border: `1px solid ${garis}` }}
-              >
+              <div className="mt-4 rounded-2xl px-4 py-3" style={{ backgroundColor: kabut, border: `1px solid ${garis}` }}>
+                <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
                   <span className="block font-mono text-[10px] uppercase opacity-95">
                     Terkumpul
@@ -328,6 +330,10 @@ export default function CustomerMemberProgressPage({
                     ? "Penuh! Tunjukkan ke kasir."
                     : `Kurang ${stempelKurang} kali datang lagi`}
                 </p>
+                </div>
+                <div className="mt-3 h-1.5 overflow-hidden rounded-full" style={{ backgroundColor: garis }}>
+                  <div className="h-full rounded-full transition-all" style={{ width: `${(kotakTerisi / totalKotak) * 100}%`, backgroundColor: tinta }} />
+                </div>
               </div>
             </>
           ) : (

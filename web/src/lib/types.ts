@@ -158,19 +158,52 @@ export interface CustomerProfileSummary extends Customer {
   last_activity_at: string | null;
 }
 
+/**
+ * Layanan yang dilayani satu kartu. Satu kartu, satu layanan — tidak ada
+ * yang punya jalur cadangan ke layanan lain.
+ */
+export type CardService = "review" | "loyalty" | "attendance" | "link" | "smart_touch";
+
+export const CARD_SERVICE_LABEL: Record<CardService, string> = {
+  review: "Penilaian & Ulasan Google",
+  link: "Tautan Tunggal",
+  smart_touch: "Smart Touch (banyak tombol)",
+  loyalty: "Kartu Member",
+  attendance: "Absensi Staf",
+};
+
+/**
+ * Layanan yang memakai `destination_url`, dan APA arti alamat itu baginya.
+ * Layanan di luar daftar ini tidak pernah membaca kolomnya — jadi layarnya
+ * tidak boleh menawarkan pengisiannya, supaya tidak ada alamat tersimpan
+ * yang kelihatan berarti padahal tidak pernah dipakai.
+ */
+export const CARD_SERVICE_DESTINATION: Partial<Record<CardService, string>> = {
+  review: "Alamat ulasan Google, dipakai setelah pelanggan memberi bintang tinggi.",
+  link: "Alamat yang dibuka begitu kartu di-tap.",
+};
+
 export interface Card {
   id: string;
   card_code: string;
   business_id: string | null;
   business_name?: string | null;
   /**
-   * Jenis kartu, dan inilah yang menentukan ke mana tap-nya berujung.
+   * Layanan kartu ini. SATU kartu melayani TEPAT satu hal.
    *
-   * `link` mengarah ke tautan bebas milik pemiliknya, bukan ke Google.
-   * Perilakunya sama dengan `review` di rute pengalihan; yang berbeda cuma
-   * cara mengisinya saat aktivasi dan cara menamainya di layar.
+   *   review       halaman penilaian bintang, lalu lanjut ke Google
+   *   link         satu tautan tunggal milik pemiliknya
+   *   smart_touch  daftar tombol pilihan di satu halaman
+   *   loyalty      kartu member
+   *   attendance   absensi staf
+   *
+   * Tidak ada jenis yang punya jalur cadangan ke jenis lain. Dulu `link`
+   * melayani dua hal sekaligus — tautan tunggal DAN Smart Touch — dan yang
+   * menang ditentukan urutan pemeriksaan di rute, bukan pilihan pemiliknya.
+   * Akibatnya tautan yang sudah diisi bisa berhenti dipakai tanpa keterangan
+   * apa pun begitu tombol Smart Touch ditambahkan.
    */
-  type: "review" | "loyalty" | "attendance" | "link";
+  type: CardService;
   status: "unactivated" | "active" | "suspended";
   activation_pin_hash: string | null;
   destination_url: string | null;
@@ -201,6 +234,10 @@ export interface Ingredient {
   pack_price: number;
   pack_size: number;
   base_unit: "gr" | "ml" | "pcs";
+  category?: "bahan_baku" | "kemasan" | "barang_kulakan" | "lainnya" | null;
+  brand?: string | null;
+  supplier_name?: string | null;
+  notes?: string | null;
   updated_at: string;
 }
 
@@ -224,6 +261,26 @@ export interface Recipe {
   target_margin_pct: number;
   ingredients: RecipeIngredientItem[];
   packaging: RecipePackagingItem[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FinanceCalculatorPreset {
+  id: string;
+  business_id: string;
+  name: string;
+  mode: "kuliner" | "retail" | "jasa";
+  direct_cost: number;
+  supporting_cost: number;
+  operational_cost: number;
+  selling_price: number;
+  discount_pct: number;
+  payment_fee_pct: number;
+  channel_fee_pct: number;
+  tax_reserve_pct: number;
+  target_margin_pct: number;
+  monthly_fixed_cost: number;
+  monthly_profit_target: number;
   created_at: string;
   updated_at: string;
 }

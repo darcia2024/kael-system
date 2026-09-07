@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, ExternalLink, Loader2, Check, AlertTriangle } from "lucide-react";
+import { ArrowLeft, ExternalLink, Loader2, Check, AlertTriangle, Printer } from "lucide-react";
 
 import { saveMemberCardSettingsAction, updateLoyaltyProgramAction } from "@/lib/actions";
 import type { MemberCardSettings } from "@/lib/types";
@@ -13,12 +13,14 @@ const rupiah = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 export default function KartuClient({
   settings,
   storeCode,
+  businessName,
   minimumPurchase,
   mode,
   targetStempel,
 }: {
   settings: MemberCardSettings | null;
   storeCode: string | null;
+  businessName: string;
   minimumPurchase: number;
   mode: "point" | "stamp";
   targetStempel: number | null;
@@ -37,6 +39,17 @@ export default function KartuClient({
   const [simpan, setSimpan] = useState(false);
   const [galat, setGalat] = useState<string | null>(null);
   const [sukses, setSukses] = useState(false);
+
+  const cetakKartuStempel = () => {
+    const escape = (value: string) => value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[character] ?? character));
+    const jumlah = targetStempel ?? 10;
+    const minimalBelanja = Number(minimal.replace(/[^\d]/g, "")) || 0;
+    const jendela = window.open("", "kael-kartu-stempel", "width=900,height=700");
+    if (!jendela) return;
+    const cap = Array.from({ length: jumlah }, (_, index) => `<span class="stamp">${index + 1}</span>`).join("");
+    jendela.document.write(`<!doctype html><html><head><title>Kartu Stempel ${escape(businessName)}</title><style>@page{size:A4;margin:14mm}*{box-sizing:border-box}body{font-family:Arial,sans-serif;color:#232331}.page{display:grid;grid-template-columns:repeat(2,90mm);gap:12mm;justify-content:center}.card{width:90mm;height:54mm;border:2px solid #232331;border-radius:6mm;padding:6mm;position:relative;overflow:hidden}.front{background:#d9ff57}.back{background:#f7f4ff}.brand{font-size:10pt;font-weight:900;text-transform:uppercase;letter-spacing:1px}.title{font-size:19pt;font-weight:900;margin-top:4mm}.sub{font-size:8.5pt;margin-top:2mm}.stamps{display:grid;grid-template-columns:repeat(5,1fr);gap:3mm;margin-top:5mm}.stamp{aspect-ratio:1;border:2px dashed #232331;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:8pt;font-weight:800;background:rgba(255,255,255,.55)}.rule{font-size:10pt;font-weight:800;line-height:1.4;margin-top:5mm}.gift{margin-top:4mm;border:2px solid #232331;border-radius:4mm;background:#fff;padding:3mm;font-size:9pt;font-weight:800}.small{font-size:7.5pt;line-height:1.35;margin-top:3mm}@media print{body{margin:0}}</style></head><body><div class="page"><section class="card front"><div class="brand">${escape(businessName)}</div><div class="title">Kartu Stempel</div><div class="sub">Satu kunjungan, satu cap. Yuk, penuhkan kartunya!</div><div class="stamps">${cap}</div></section><section class="card back"><div class="brand">Cara mendapat stempel</div><div class="rule">Belanja minimal ${minimalBelanja > 0 ? rupiah(minimalBelanja) : "sesuai ketentuan toko"} = 1 stempel</div><div class="gift">${jumlah} stempel penuh = hadiah spesial dari kami</div><div class="small">Simpan kartu ini dan tunjukkan ke kasir setiap berkunjung. Stempel yang hilang atau kartu rusak tidak dapat diganti.</div></section></div><script>window.onload=()=>window.print()</script></body></html>`);
+    jendela.document.close();
+  };
 
   const kirim = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -143,6 +156,14 @@ export default function KartuClient({
               ? `Kartu stempel pelanggan menggambar ${targetStempel} kotak, mengikuti harga hadiah termurah yang aktif. Ubah jumlahnya lewat harga hadiah di halaman Loyalty — supaya jumlah kotak dan harga hadiah tidak pernah berbeda.`
               : "Belum ada hadiah aktif, jadi kartu pelanggan menggambar 10 kotak sebagai bawaan. Buat hadiah dulu di halaman Loyalty."}
           </p>
+
+          {mode === "stamp" && (
+            <div className="rounded-xl border-2 border-[#232331] bg-[#d9ff57] p-3">
+              <p className="text-sm font-black">Kartu stempel fisik siap cetak</p>
+              <p className="mt-1 text-[11px] leading-relaxed text-[#5c5c70]">Formatnya dua sisi ukuran kartu dompet: depan berisi {targetStempel ?? 10} lingkaran stempel, belakang berisi aturan main. Cetak di kertas tebal agar tahan dibawa anak-anak.</p>
+              <button type="button" onClick={cetakKartuStempel} className="mt-3 inline-flex min-h-10 items-center gap-2 rounded-xl border-2 border-[#232331] bg-white px-4 text-xs font-black shadow-ink-xs"><Printer size={15} /> Cetak Kartu Stempel</button>
+            </div>
+          )}
         </section>
 
         {/* ------------------------------------------------------------ ISI */}

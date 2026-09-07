@@ -89,6 +89,7 @@ export default async function StaffHomePage({
       businessName={business?.name ?? "KAEL"}
       staffName={session.name}
       modules={modules}
+      hrEnabled={Boolean(licenses.get("hr")?.canRead)}
       notice={pesan}
     />
   );

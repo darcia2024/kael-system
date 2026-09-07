@@ -24,8 +24,20 @@ import {
   X,
   Search
 } from "lucide-react";
-import type { Business, Card, CardTap } from "@/lib/types";
-import { updateCardAction, searchPlacesAction, syncGoogleReviewSnapshotAction } from "@/lib/actions";
+import {
+  CARD_SERVICE_DESTINATION,
+  CARD_SERVICE_LABEL,
+  type Business,
+  type Card,
+  type CardService,
+  type CardTap,
+} from "@/lib/types";
+import {
+  updateCardAction,
+  searchPlacesAction,
+  syncGoogleReviewSnapshotAction,
+  setCardServiceAction,
+} from "@/lib/actions";
 import { calculateCleanTaps, generateDailyTapSeries } from "@/lib/tap-counter";
 import { formatCardCodeDisplay } from "@/lib/card-code";
 import { formatBusinessDateTime } from "@/lib/formatters";
@@ -69,6 +81,15 @@ export default function KaelReviewOwnerDashboard({
   const [editCustomUrl, setEditCustomUrl] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [isSyncingGoogle, setIsSyncingGoogle] = useState(false);
+
+  /**
+   * Pemilihan layanan kartu. Satu kartu satu layanan, jadi ini radio, bukan
+   * centang: tidak ada bentuk layar yang mengizinkan dua-duanya sekaligus.
+   */
+  const [serviceCard, setServiceCard] = useState<Card | null>(null);
+  const [serviceChoice, setServiceChoice] = useState<CardService>("review");
+  const [isSavingService, setIsSavingService] = useState(false);
+  const [serviceError, setServiceError] = useState("");
 
   // Debounce search query perubahan Google Places
   useEffect(() => {
@@ -144,6 +165,26 @@ export default function KaelReviewOwnerDashboard({
       return;
     }
     setSelectedCardForEdit(null);
+    router.refresh();
+  };
+
+  const handleOpenServiceModal = (card: Card) => {
+    setServiceCard(card);
+    setServiceChoice(card.type);
+    setServiceError("");
+  };
+
+  const handleSaveService = async () => {
+    if (!serviceCard || serviceChoice === serviceCard.type) return;
+    setIsSavingService(true);
+    setServiceError("");
+    const res = await setCardServiceAction(serviceCard.id, serviceChoice);
+    setIsSavingService(false);
+    if (!res.ok) {
+      setServiceError(res.error);
+      return;
+    }
+    setServiceCard(null);
     router.refresh();
   };
 
@@ -415,16 +456,43 @@ export default function KaelReviewOwnerDashboard({
                         </span>
                       </td>
 
-                      {/* Label */}
+                      {/* Label + layanan kartu ini */}
                       <td className="py-3 px-3 font-sans font-bold text-[#232331]">
-                        {card.label || "Tanpa Label"}
+                        <span className="block">{card.label || "Tanpa Label"}</span>
+                        {/*
+                          Layanan ditulis terang-terangan di tiap baris. Satu
+                          kartu melayani satu hal, dan pemiliknya harus bisa
+                          melihat yang mana tanpa menebak dari tombol yang
+                          kebetulan muncul di sebelah kanan.
+                        */}
+                        {sessionRole === "owner" ? (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenServiceModal(card)}
+                            title="Ganti layanan kartu ini"
+                            className="btn-tactile mt-1 inline-flex items-center gap-1 rounded-full border border-[#7958d8] bg-[#f0edff] px-2 py-0.5 font-mono text-[9px] font-bold text-[#7958d8]"
+                          >
+                            {CARD_SERVICE_LABEL[card.type]}
+                            <Layers size={9} />
+                          </button>
+                        ) : (
+                          <span className="mt-1 inline-block rounded-full border border-[#7958d8] bg-[#f0edff] px-2 py-0.5 font-mono text-[9px] font-bold text-[#7958d8]">
+                            {CARD_SERVICE_LABEL[card.type]}
+                          </span>
+                        )}
                       </td>
 
-                      {/* Destination */}
+                      {/* Destination — hanya untuk layanan yang benar-benar memakainya */}
                       <td className="py-3 px-3 max-w-[200px]">
-                        <span className="truncate block text-[#7b7b8e] text-[11px]" title={card.destination_url || "-"}>
-                          {card.destination_url || "Belum ditentukan"}
-                        </span>
+                        {CARD_SERVICE_DESTINATION[card.type] ? (
+                          <span className="truncate block text-[#7b7b8e] text-[11px]" title={card.destination_url || "-"}>
+                            {card.destination_url || "Belum ditentukan"}
+                          </span>
+                        ) : (
+                          <span className="block text-[11px] text-[#b6b6c4]" title="Layanan kartu ini tidak memakai alamat tujuan">
+                            —
+                          </span>
+                        )}
                       </td>
 
                       {/* Tap Count */}
@@ -475,7 +543,7 @@ export default function KaelReviewOwnerDashboard({
                           </Link>
                         )}
 
-                        {card.type === "link" && sessionRole === "owner" && (
+                        {card.type === "smart_touch" && sessionRole === "owner" && (
                           <Link
                             href={`/app/review/smart-touch/${card.id}`}
                             className="btn-tactile inline-flex items-center gap-0.5 rounded-lg border border-[#232331] bg-[#d9ff57] px-2 py-1 text-[10.5px] font-bold text-[#232331]"
@@ -484,14 +552,21 @@ export default function KaelReviewOwnerDashboard({
                           </Link>
                         )}
 
-                        {/* Edit Card Button */}
-                        <button
-                          type="button"
-                          onClick={() => handleOpenEditModal(card)}
-                          className="btn-tactile rounded-lg border border-[#7958d8] bg-[#f0edff] px-2 py-1 text-[10.5px] font-bold text-[#7958d8]"
-                        >
-                          Edit Tujuan
-                        </button>
+                        {/*
+                          "Edit Tujuan" cuma untuk kartu yang layanannya memang
+                          membaca alamat tujuan. Menawarkannya di kartu member
+                          atau Smart Touch cuma mengundang alamat tersimpan yang
+                          tidak pernah dipakai rute mana pun.
+                        */}
+                        {CARD_SERVICE_DESTINATION[card.type] && (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEditModal(card)}
+                            className="btn-tactile rounded-lg border border-[#7958d8] bg-[#f0edff] px-2 py-1 text-[10.5px] font-bold text-[#7958d8]"
+                          >
+                            Edit Tujuan
+                          </button>
+                        )}
 
                         {/* Suspend / Unsuspend */}
                         <button
@@ -516,6 +591,125 @@ export default function KaelReviewOwnerDashboard({
         </div>
 
       </main>
+
+      {/*
+        PILIH LAYANAN KARTU
+
+        Radio, bukan centang, dan itu memang inti dari layar ini: satu kartu
+        mengerjakan satu hal. Kartu ulasan tidak sekalian jadi kartu member,
+        dan Smart Touch tidak menumpang di kartu tautan — pemiliknya memilih,
+        lalu kartunya melakukan persis itu saat di-tap.
+      */}
+      {serviceCard && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#232331]/60 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-md space-y-5 rounded-3xl border-2 border-[#232331] bg-white p-6 shadow-ink-lg animate-in fade-in zoom-in duration-150">
+
+            <div className="flex items-center justify-between border-b border-[#dedee8] pb-3">
+              <div className="flex items-center gap-2">
+                <Layers size={18} className="text-[#7958d8]" />
+                <h3 className="text-base font-extrabold text-[#232331]">
+                  Layanan Kartu {formatCardCodeDisplay(serviceCard.card_code)}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setServiceCard(null)}
+                className="rounded-xl p-1 text-[#7b7b8e] hover:bg-[#f0edff] hover:text-[#232331]"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <p className="text-[11.5px] leading-relaxed text-[#7b7b8e]">
+              Satu kartu untuk satu keperluan. Pilih salah satu — kartunya akan
+              melakukan persis itu setiap kali di-tap, tidak ada yang lain.
+            </p>
+
+            <div className="space-y-2">
+              {(Object.keys(CARD_SERVICE_LABEL) as CardService[]).map((service) => {
+                const dipilih = serviceChoice === service;
+                return (
+                  <label
+                    key={service}
+                    className={`flex cursor-pointer items-start gap-2.5 rounded-2xl border-2 p-3 transition ${
+                      dipilih
+                        ? "border-[#232331] bg-[#f0edff]"
+                        : "border-[#dedee8] bg-white hover:border-[#7958d8]"
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="layanan-kartu"
+                      value={service}
+                      checked={dipilih}
+                      onChange={() => setServiceChoice(service)}
+                      className="mt-0.5 accent-[#7958d8]"
+                    />
+                    <span className="flex-1">
+                      <span className="block text-xs font-extrabold text-[#232331]">
+                        {CARD_SERVICE_LABEL[service]}
+                      </span>
+                      {CARD_SERVICE_DESTINATION[service] && (
+                        <span className="mt-0.5 block text-[10.5px] leading-relaxed text-[#7b7b8e]">
+                          {CARD_SERVICE_DESTINATION[service]}
+                        </span>
+                      )}
+                      {service === serviceCard.type && (
+                        <span className="mt-1 inline-block font-mono text-[9px] font-bold text-[#16a34a]">
+                          LAYANAN SEKARANG
+                        </span>
+                      )}
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+
+            {/*
+              Alamat tujuan dikosongkan, dan itu ditulis di depan sebelum
+              tombolnya ditekan. Alamat lama milik layanan yang lama.
+            */}
+            {serviceChoice !== serviceCard.type && (
+              <div className="rounded-2xl border border-[#f59e0b] bg-[#fffbeb] p-3">
+                <p className="text-[11px] leading-relaxed font-bold text-[#92400e]">
+                  Alamat tujuan kartu ini akan dikosongkan.
+                </p>
+                <p className="mt-0.5 text-[10.5px] leading-relaxed text-[#92400e]">
+                  {CARD_SERVICE_DESTINATION[serviceChoice]
+                    ? "Setelah pindah, isi alamat barunya lewat tombol Edit Tujuan."
+                    : `Layanan ${CARD_SERVICE_LABEL[serviceChoice]} memang tidak memakai alamat tujuan.`}
+                </p>
+              </div>
+            )}
+
+            {serviceError && (
+              <div className="flex items-start gap-2 rounded-2xl border border-[#ef4444] bg-[#feebee] p-3">
+                <AlertCircle size={14} className="mt-0.5 shrink-0 text-[#ef4444]" />
+                <p className="text-[11px] leading-relaxed font-bold text-[#ef4444]">{serviceError}</p>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-2 border-t border-[#dedee8] pt-3">
+              <button
+                type="button"
+                onClick={() => setServiceCard(null)}
+                className="rounded-xl border border-[#dedee8] bg-white px-4 py-2 text-xs font-bold text-[#7b7b8e]"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveService}
+                disabled={isSavingService || serviceChoice === serviceCard.type}
+                className="btn-tactile rounded-xl bg-[#232331] px-5 py-2 text-xs font-extrabold text-[#d9ff57] shadow-ink-xs disabled:opacity-40"
+              >
+                {isSavingService ? "Memindah..." : "Pakai Layanan Ini ✓"}
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
 
       {/* EDIT MODAL DIALOG */}
       {selectedCardForEdit && (

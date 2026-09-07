@@ -34,6 +34,7 @@ export default async function KartuMemberPage() {
     <KartuClient
       settings={settings}
       storeCode={business?.store_code ?? null}
+      businessName={business?.name ?? "Usaha Anda"}
       minimumPurchase={Number(program?.minimum_purchase ?? 0)}
       mode={program?.mode ?? "point"}
       /** Hadiah termurah menentukan berapa kotak yang digambar di kartu stempel. */

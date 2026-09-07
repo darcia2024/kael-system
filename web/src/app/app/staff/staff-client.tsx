@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { LogOut, AlertTriangle, ChevronRight, Lock } from "lucide-react";
+import { LogOut, AlertTriangle, ChevronRight, Lock, ClipboardCheck } from "lucide-react";
 
 import { logout } from "@/lib/actions";
 import type { StaffPermission } from "@/lib/types";
@@ -32,11 +32,13 @@ export default function StaffHomeClient({
   businessName,
   staffName,
   modules,
+  hrEnabled,
   notice,
 }: {
   businessName: string;
   staffName: string;
   modules: StaffModule[];
+  hrEnabled: boolean;
   notice: string | null;
 }) {
   return (
@@ -75,6 +77,13 @@ export default function StaffHomeClient({
             <AlertTriangle size={18} className="shrink-0 mt-0.5" />
             <p className="font-mono text-xs font-bold">{notice}</p>
           </div>
+        )}
+
+        {hrEnabled && (
+          <Link href="/app/hr/attendance" className="btn-tactile flex items-center gap-4 rounded-3xl border-2 border-[#232331] bg-[#d9ff57] p-5 shadow-ink-md">
+            <ClipboardCheck size={22} className="shrink-0" />
+            <div className="min-w-0 flex-1"><h2 className="font-extrabold text-base">Absensi dan izin saya</h2><p className="mt-0.5 text-xs text-[#4d4d5e]">Masuk, pulang, atau ajukan izin dan lembur.</p></div><ChevronRight size={20} className="shrink-0" />
+          </Link>
         )}
 
         {modules.length === 0 ? (

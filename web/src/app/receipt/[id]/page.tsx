@@ -23,7 +23,7 @@ export default async function ReceiptPage({
   const data = await db.getOrderById(id);
 
   if (!data) {
-    return <ReceiptClient data={null} staffName={null} hasFeedback={false} reviewUrl={null} receiptUrl="" />;
+    return <ReceiptClient data={null} staffName={null} hasFeedback={false} reviewUrl={null} receiptUrl="" memberCardUrl={null} />;
   }
 
   /**
@@ -52,6 +52,7 @@ export default async function ReceiptPage({
    * alasan menunggu browser untuk mengetahuinya.
    */
   const receiptUrl = `https://${siteHost}/receipt/${id}`;
+  const memberCardUrl = data.customer?.token ? `https://${siteHost}/m/${data.customer.token}` : null;
 
   return (
     <ReceiptClient
@@ -60,6 +61,7 @@ export default async function ReceiptPage({
       hasFeedback={hasFeedback}
       reviewUrl={reviewUrl}
       receiptUrl={receiptUrl}
+      memberCardUrl={memberCardUrl}
     />
   );
 }

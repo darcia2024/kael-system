@@ -5,12 +5,14 @@ import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 
 import { db } from "./db";
-import type { LoyaltyCampaignStatus, LoyaltyCampaignSegment, StaffPermission, FeedbackReasonCode } from "./types";
-import { FEEDBACK_REASONS, RATING_TINGGI } from "./types";
+import type { LoyaltyCampaignStatus, LoyaltyCampaignSegment, StaffPermission, FeedbackReasonCode, FinanceCalculatorPreset, CardService } from "./types";
+import { FEEDBACK_REASONS, CARD_SERVICE_LABEL, CARD_SERVICE_DESTINATION } from "./types";
 import {
   searchPlaces,
   isPlacesSearchConfigured,
   getGoogleReviewSnapshot,
+  buildGoogleReviewUrl,
+  extractPlaceIdFromInput,
   type GooglePlaceResult,
 } from "./google-places";
 import { moduleLock, requireModuleRead, getModuleView } from "./licensing";
@@ -210,16 +212,29 @@ export async function activateCardAction(
     );
   }
 
-  let url: URL;
-  try {
-    url = new URL(destinationUrl);
-  } catch {
-    return fail("Tautan tujuan tidak valid.");
+  /**
+   * Alamat tujuan hanya disimpan kalau layanan kartunya memang membacanya.
+   *
+   * Layar aktivasi lama melempar setiap kartu selain `link` ke pemilih tempat
+   * Google, jadi kartu member pun pulang membawa alamat ulasan Google yang
+   * tidak pernah dibuka rute mana pun — tapi tetap tampil di dasbor seolah
+   * kartu itu juga melayani ulasan. Yang dikirim browser tidak dipercaya di
+   * sini: jenis kartunya yang menentukan.
+   */
+  let tujuan: string | null = null;
+  if (CARD_SERVICE_DESTINATION[card.type]) {
+    let url: URL;
+    try {
+      url = new URL(destinationUrl);
+    } catch {
+      return fail("Tautan tujuan tidak valid.");
+    }
+    if (url.protocol !== "https:") return fail("Tautan tujuan harus memakai https.");
+    tujuan = url.toString();
   }
-  if (url.protocol !== "https:") return fail("Tautan tujuan harus memakai https.");
 
   const cardLabel = label?.trim() || placeDetails?.name || "Meja Kasir";
-  const result = await db.activateCard(code, pin, businessId, url.toString(), cardLabel);
+  const result = await db.activateCard(code, pin, businessId, tujuan, cardLabel);
   if (!result.success) return fail(result.error!);
 
   revalidatePath("/app/review");
@@ -241,7 +256,7 @@ export async function checkCardAction(code: string): Promise<
      * bebas. Tanpa ini layarnya harus menebak, dan menebak berarti kartu
      * tautan dipaksa memilih tempat di Google yang tidak pernah ada.
      */
-    type: "review" | "loyalty" | "attendance" | "link";
+    type: "review" | "loyalty" | "attendance" | "link" | "smart_touch";
   }>
 > {
   const card = await db.getCardByCode(code);
@@ -282,18 +297,65 @@ export async function updateCardAction(
     } catch {
       return fail("Tautan tujuan tidak valid.");
     }
+
+    /**
+     * Hanya layanan yang benar-benar MEMBACA destination_url yang boleh
+     * mengisinya. Sebelum ini alamat bisa disimpan ke kartu jenis apa pun —
+     * di basis data masih ada kartu member yang menyimpan tautan ulasan
+     * Google yang tidak pernah dipakai rute mana pun, tapi tetap tampil di
+     * dashboard seolah berarti.
+     */
+    const existing = (await db.getCards(businessId)).find((c) => c.id === cardId);
+    if (!existing) return fail("Kartu tidak ditemukan pada bisnis ini.");
+    if (!CARD_SERVICE_DESTINATION[existing.type]) {
+      return fail(
+        `Kartu ${CARD_SERVICE_LABEL[existing.type]} tidak memakai alamat tujuan, jadi mengisinya tidak akan berpengaruh.`,
+      );
+    }
   }
 
   const card = await db.updateCard(cardId, businessId, updates);
   if (!card) return fail("Kartu tidak ditemukan pada bisnis ini.");
+  if (card.type === "review" && updates.destination_url) {
+    const placeId = extractPlaceIdFromInput(updates.destination_url);
+    if (placeId) {
+      await db.updateBusiness(businessId, { google_place_id: placeId });
+      revalidatePath(`/touch/${card.card_code}`);
+    }
+  }
   revalidatePath("/app/review");
+  return done(null);
+}
+
+/**
+ * Menentukan satu-satunya layanan yang dijalankan sebuah kartu.
+ *
+ * Pemilik memang harus memilih: kartu ulasan tidak bisa sekalian jadi kartu
+ * member, dan Smart Touch tidak menumpang di kartu tautan. Pemeriksaan sisa
+ * data ada di db.setCardService supaya tidak ada yang hilang diam-diam.
+ */
+export async function setCardServiceAction(
+  cardId: string,
+  service: CardService,
+): Promise<ActionResult<null>> {
+  const { businessId } = await requireOwner();
+  const locked = await moduleLock(businessId, "review", "write");
+  if (locked) return fail(locked);
+
+  if (!CARD_SERVICE_LABEL[service]) return fail("Layanan kartu tidak dikenali.");
+
+  const res = await db.setCardService(cardId, businessId, service);
+  if (!res.ok) return fail(res.error!);
+
+  revalidatePath("/app/review");
+  if (res.card) revalidatePath(`/touch/${res.card.card_code}`);
   return done(null);
 }
 
 /** Penerbitan batch hanya untuk tim KAEL. */
 export async function issueCardsAction(
   count: number,
-  type: "review" | "loyalty" | "attendance" | "link",
+  type: "review" | "loyalty" | "attendance" | "link" | "smart_touch",
 ): Promise<ActionResult<{ card_code: string; activation_pin: string }[]>> {
   await requireKaelAdmin();
   if (count < 1 || count > 200) return fail("Jumlah kartu harus antara 1 dan 200.");
@@ -435,6 +497,23 @@ export async function saveSmartTouchAction(
   const { businessId, userId } = await requireOwner();
   const locked = await moduleLock(businessId, "review", "write");
   if (locked) return fail(locked);
+
+  /**
+   * Smart Touch hanya boleh menempel pada kartu yang MEMANG kartu Smart
+   * Touch. Tanpa penjaga ini, tombol bisa dipasang ke kartu jenis apa pun —
+   * dan dulu itulah yang membuat kartu `link` diam-diam berhenti memakai
+   * tautan tujuannya.
+   */
+  const targetCard = (await db.getCards(businessId)).find((c) => c.id === cardId);
+  if (!targetCard) return fail("Kartu tidak ditemukan pada bisnis ini.");
+  if (targetCard.type !== "smart_touch") {
+    return fail(
+      `Kartu ini dipakai untuk layanan ${CARD_SERVICE_LABEL[targetCard.type]}, bukan Smart Touch. Satu kartu hanya melayani satu hal — ubah dulu layanan kartunya kalau memang mau dijadikan Smart Touch.`,
+    );
+  }
+
+  const business = await db.getBusiness(businessId);
+  if (!business) return fail("Usaha tidak ditemukan.");
   if (data.title.trim().length < 2 || data.title.trim().length > 80) return fail("Judul halaman harus 2 sampai 80 karakter.");
   if (!data.buttons.length || data.buttons.length > 7) return fail("Isi 1 sampai 7 tombol aksi.");
   const seen = new Set<string>();
@@ -442,11 +521,26 @@ export async function saveSmartTouchAction(
     if (seen.has(button.actionKey)) return fail("Satu jenis aksi hanya boleh satu tombol.");
     seen.add(button.actionKey);
     if (button.label.trim().length < 2 || button.label.trim().length > 50) return fail("Label tombol harus 2 sampai 50 karakter.");
-    if (button.enabled) {
+    if (button.enabled && button.actionKey !== "review") {
       try { if (new URL(button.targetUrl).protocol !== "https:") return fail("Tujuan tombol yang tampil harus memakai https."); } catch { return fail("Ada tujuan tombol yang tampil tidak valid."); }
     }
   }
-  const saved = await db.saveSmartTouch(cardId, businessId, { title: data.title.trim(), subtitle: data.subtitle?.trim() || null, buttons: data.buttons.map((button, index) => ({ actionKey: button.actionKey, label: button.label.trim(), targetUrl: button.targetUrl.trim(), enabled: button.enabled, sortOrder: index })) });
+  const reviewIsEnabled = data.buttons.some((button) => button.actionKey === "review" && button.enabled);
+  if (reviewIsEnabled && !business.google_place_id?.trim()) {
+    return fail("Isi Place ID Google di pengaturan usaha sebelum menampilkan tombol ulasan Google.");
+  }
+  const reviewUrl = business.google_place_id ? buildGoogleReviewUrl(business.google_place_id) : null;
+  const saved = await db.saveSmartTouch(cardId, businessId, {
+    title: data.title.trim(),
+    subtitle: data.subtitle?.trim() || null,
+    buttons: data.buttons.map((button, index) => ({
+      actionKey: button.actionKey,
+      label: button.label.trim(),
+      targetUrl: button.actionKey === "review" && reviewUrl ? reviewUrl : button.targetUrl.trim(),
+      enabled: button.enabled,
+      sortOrder: index,
+    })),
+  });
   if (!saved) return fail("Kartu Smart Touch tidak ditemukan. Gunakan kartu jenis Link yang sudah aktif.");
   await db.recordAuditEvent({ businessId, actorUserId: userId, action: "smart_touch.saved", entityType: "card", entityId: cardId });
   revalidatePath(`/touch/${saved.card_code}`);
@@ -516,10 +610,9 @@ export async function submitFeedbackAction(input: {
 /**
  * Rating dari tap kartu NFC. Jalur publik: tidak ada sesi, tidak ada login.
  *
- * Yang dikembalikan saat rating tinggi adalah alamat ulasan Google milik kartu
- * itu sendiri, diambil dari database — bukan dari apa pun yang dikirim
- * peramban. Kalau alamatnya dipercaya dari klien, siapa pun yang membuka
- * halaman ini bisa membelokkan pelanggan kafe ke situs mana saja.
+ * Alamat ulasan Google milik kartu selalu dikembalikan dari database, bukan
+ * dari apa pun yang dikirim peramban. Dengan begitu semua pelanggan mendapat
+ * pilihan Google yang sama, tanpa mengarahkan rating tertentu ke sana.
  */
 export async function submitCardFeedbackAction(input: {
   cardCode: string;
@@ -550,15 +643,9 @@ export async function submitCardFeedbackAction(input: {
   const result = await db.submitCardFeedback(cardCode, input.rating);
   if (!result.success) return fail(result.error);
 
-  /**
-   * Alamat Google hanya dikembalikan untuk rating tinggi. Bukan sekadar soal
-   * tampilan: kalau alamatnya ikut dikirim ke layar keluhan, siapa pun yang
-   * membuka panel jaringan peramban bisa membacanya, dan janji "yang kamu
-   * tulis cuma dibaca pemilik" berhenti jadi benar.
-   */
   return done({
     feedbackId: result.feedbackId,
-    reviewUrl: input.rating >= RATING_TINGGI ? result.reviewUrl : null,
+    reviewUrl: result.reviewUrl,
   });
 }
 
@@ -1537,6 +1624,7 @@ export async function setMenuAvailabilityAction(
 
 export async function createIngredientAction(
   name: string, packPrice: number, packSize: number, baseUnit: "gr" | "ml" | "pcs",
+  metadata: { category?: "bahan_baku" | "kemasan" | "barang_kulakan" | "lainnya"; brand?: string; supplier_name?: string; notes?: string } = {},
 ): Promise<ActionResult<{ id: string }>> {
   const { businessId } = await requireOwner();
   const locked = await moduleLock(businessId, "finance", "write");
@@ -1545,7 +1633,12 @@ export async function createIngredientAction(
   if (packPrice <= 0) return fail("Harga kemasan harus lebih dari nol.");
   if (packSize <= 0) return fail("Isi kemasan harus lebih dari nol.");
 
-  const ing = await db.createIngredient(businessId, name.trim(), packPrice, packSize, baseUnit);
+  const ing = await db.createIngredient(businessId, name.trim(), packPrice, packSize, baseUnit, {
+    category: metadata.category ?? "bahan_baku",
+    brand: metadata.brand?.trim() || null,
+    supplier_name: metadata.supplier_name?.trim() || null,
+    notes: metadata.notes?.trim() || null,
+  });
   revalidatePath("/app/finance");
   return done({ id: ing.id });
 }
@@ -1621,6 +1714,66 @@ export async function saveRecipeAction(data: {
   const recipe = await db.saveRecipe(businessId, data);
   revalidatePath("/app/finance");
   return done({ id: recipe.id });
+}
+
+/** CSV berisi data kontak hanya untuk owner, bukan untuk kasir atau staf loyalty. */
+export async function exportLoyaltyCustomersAction() {
+  const { businessId } = await requireOwner();
+  const locked = await moduleLock(businessId, "loyalty", "read");
+  if (locked) return fail(locked);
+  return done(await db.getCustomerExport(businessId));
+}
+
+export async function saveFinanceCalculatorPresetAction(data: {
+  id?: string;
+  name: string;
+  mode: "kuliner" | "retail" | "jasa";
+  direct_cost: number;
+  supporting_cost: number;
+  operational_cost: number;
+  selling_price: number;
+  discount_pct: number;
+  payment_fee_pct: number;
+  channel_fee_pct: number;
+  tax_reserve_pct: number;
+  target_margin_pct: number;
+  monthly_fixed_cost: number;
+  monthly_profit_target: number;
+}): Promise<ActionResult<FinanceCalculatorPreset>> {
+  const { businessId } = await requireOwner();
+  const locked = await moduleLock(businessId, "finance", "write");
+  if (locked) return fail(locked);
+  if (!data.name.trim()) return fail("Nama produk atau layanan belum diisi.");
+
+  const numericValues = [
+    data.direct_cost, data.supporting_cost, data.operational_cost, data.selling_price,
+    data.discount_pct, data.payment_fee_pct, data.channel_fee_pct, data.tax_reserve_pct,
+    data.target_margin_pct, data.monthly_fixed_cost, data.monthly_profit_target,
+  ];
+  if (numericValues.some((value) => !Number.isFinite(value) || value < 0)) {
+    return fail("Angka perhitungan tidak boleh kosong atau minus.");
+  }
+  if (data.selling_price <= 0) return fail("Isi harga jual sebelum menyimpan perhitungan.");
+  if (data.direct_cost + data.supporting_cost + data.operational_cost <= 0) {
+    return fail("Isi minimal satu modal per transaksi sebelum menyimpan.");
+  }
+  if ([data.discount_pct, data.payment_fee_pct, data.channel_fee_pct, data.tax_reserve_pct, data.target_margin_pct].some((value) => value > 100)) {
+    return fail("Persentase tidak boleh lebih dari 100%.");
+  }
+
+  const preset = await db.saveFinanceCalculatorPreset(businessId, { ...data, name: data.name.trim() });
+  revalidatePath("/app/finance");
+  return done(preset);
+}
+
+export async function deleteFinanceCalculatorPresetAction(id: string): Promise<ActionResult<null>> {
+  const { businessId } = await requireOwner();
+  const locked = await moduleLock(businessId, "finance", "write");
+  if (locked) return fail(locked);
+  const deleted = await db.deleteFinanceCalculatorPreset(id, businessId);
+  if (!deleted) return fail("Perhitungan tersimpan tidak ditemukan.");
+  revalidatePath("/app/finance");
+  return done(null);
 }
 
 export async function deleteRecipeAction(id: string): Promise<ActionResult<null>> {
@@ -1765,6 +1918,14 @@ export async function deactivateStaffAction(userId: string): Promise<ActionResul
   const { businessId } = await requireOwner();
   const ok = await db.deactivateStaff(userId, businessId);
   if (!ok) return fail("Staf tidak ditemukan.");
+  revalidatePath("/app");
+  return done(null);
+}
+
+export async function setStaffActiveAction(userId: string, isActive: boolean): Promise<ActionResult<null>> {
+  const { businessId } = await requireOwner();
+  const updated = await db.setStaffActive(userId, businessId, isActive);
+  if (!updated) return fail("Staf tidak ditemukan.");
   revalidatePath("/app");
   return done(null);
 }

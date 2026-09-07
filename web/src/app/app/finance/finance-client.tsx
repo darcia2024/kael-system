@@ -35,6 +35,7 @@ import type {
   Recipe, 
   Ingredient, 
   IngredientPriceHistory, 
+  FinanceCalculatorPreset,
   Business 
 } from "@/lib/types";
 import { 
@@ -54,22 +55,25 @@ import {
   calculatePriceFromTargetProfit
 } from "@/lib/finance-engine";
 import { formatRupiah, formatBusinessDateTime } from "@/lib/formatters";
+import QuickCalculator from "./quick-calculator";
 
 interface FinanceClientProps {
   business: Business | null;
   initialRecipes: Recipe[];
   initialIngredients: Ingredient[];
+  initialCalculatorPresets: FinanceCalculatorPreset[];
 }
 
 export default function FinanceClient({
   business,
   initialRecipes,
   initialIngredients,
+  initialCalculatorPresets,
 }: FinanceClientProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
-  const [activeTab, setActiveTab] = useState<"catalog" | "editor" | "simulation" | "ingredients" | "onboarding">("catalog");
+  const [activeTab, setActiveTab] = useState<"quick" | "catalog" | "editor" | "simulation" | "ingredients" | "onboarding">("quick");
 
   // Master Data States
   const [recipes, setRecipes] = useState<Recipe[]>(initialRecipes);
@@ -118,6 +122,7 @@ export default function FinanceClient({
   // Search & Filter
   const [searchQuery, setSearchQuery] = useState("");
   const [filterCategory, setFilterCategory] = useState("all");
+  const [ingredientQuery, setIngredientQuery] = useState("");
 
   // ---------------------------------------------------------------------------
   // RECIPE EDITOR STATE (Tab 2)
@@ -177,6 +182,9 @@ export default function FinanceClient({
   const [simSelectedRecipeId, setSimSelectedRecipeId] = useState<string>(recipes[0]?.id || "");
   const [simTargetProfitNominal, setSimTargetProfitNominal] = useState<number>(18000);
   const [simTargetMarginPct, setSimTargetMarginPct] = useState<number>(65);
+  const [simUnitsPerDay, setSimUnitsPerDay] = useState<number>(10);
+  const [simOperatingDays, setSimOperatingDays] = useState<number>(30);
+  const [simMonthlyFixedCost, setSimMonthlyFixedCost] = useState<number>(0);
 
   const activeSimRecipe = useMemo(() => {
     return recipesWithCalc.find((r) => r.recipe.id === simSelectedRecipeId) || recipesWithCalc[0] || null;
@@ -187,6 +195,7 @@ export default function FinanceClient({
     const hpp = activeSimRecipe.calculation.hpp_per_unit;
     const priceFromNominal = calculatePriceFromTargetProfit(hpp, simTargetProfitNominal);
     const actualMarginFromNominal = priceFromNominal > 0 ? ((priceFromNominal - hpp) / priceFromNominal) * 100 : 0;
+    const actualProfitFromNominal = priceFromNominal - hpp;
     
     // Sama seperti di kalkulator resep: target >=100% tidak punya jawaban
     // berupa angka. Jangan diam-diam mengembalikan modal sebagai "harga".
@@ -198,11 +207,31 @@ export default function FinanceClient({
     return {
       priceFromNominal,
       actualMarginFromNominal,
+      actualProfitFromNominal,
       priceFromMargin,
       actualProfitFromMargin,
       marginUnreachable,
     };
   }, [activeSimRecipe, simTargetProfitNominal, simTargetMarginPct]);
+
+  const simProjections = useMemo(() => {
+    if (!simResult) return [];
+    const unitsPerDay = Math.max(0, simUnitsPerDay);
+    const operatingDays = Math.max(0, simOperatingDays);
+    const fixedCost = Math.max(0, simMonthlyFixedCost);
+    const project = (key: string, label: string, price: number, profitPerUnit: number, color: "purple" | "green") => {
+      const dailyRevenue = price * unitsPerDay;
+      const dailyProfit = profitPerUnit * unitsPerDay;
+      const monthlyRevenue = dailyRevenue * operatingDays;
+      const monthlyProfit = dailyProfit * operatingDays;
+      return { key, label, price, profitPerUnit, color, dailyRevenue, dailyProfit, monthlyRevenue, monthlyProfit, netAfterFixedCost: monthlyProfit - fixedCost };
+    };
+    const projections = [project("nominal", "Harga target laba per produk", simResult.priceFromNominal, simResult.actualProfitFromNominal, "purple")];
+    if (!simResult.marginUnreachable) {
+      projections.push(project("margin", `Harga target margin ${simTargetMarginPct}%`, simResult.priceFromMargin, simResult.actualProfitFromMargin, "green"));
+    }
+    return projections;
+  }, [simResult, simUnitsPerDay, simOperatingDays, simMonthlyFixedCost, simTargetMarginPct]);
 
   // ---------------------------------------------------------------------------
   // INGREDIENTS MASTER & PRICE CASCADE STATE (Tab 4)
@@ -212,12 +241,17 @@ export default function FinanceClient({
   const [historyDrawerIng, setHistoryDrawerIng] = useState<Ingredient | null>(null);
   const [priceHistoryList, setPriceHistoryList] = useState<IngredientPriceHistory[]>([]);
   const [showAddIngredient, setShowAddIngredient] = useState(false);
+  const [addCreatedIngredientToRecipe, setAddCreatedIngredientToRecipe] = useState(false);
 
   // New Ingredient Inputs
   const [newIngName, setNewIngName] = useState("");
   const [newIngPrice, setNewIngPrice] = useState<number>(50000);
   const [newIngSize, setNewIngSize] = useState<number>(1000);
   const [newIngUnit, setNewIngUnit] = useState<"gr" | "ml" | "pcs">("gr");
+  const [newIngCategory, setNewIngCategory] = useState<"bahan_baku" | "kemasan" | "barang_kulakan" | "lainnya">("bahan_baku");
+  const [newIngBrand, setNewIngBrand] = useState("");
+  const [newIngSupplier, setNewIngSupplier] = useState("");
+  const [newIngNotes, setNewIngNotes] = useState("");
 
   // Load price history when historyDrawerIng opens
   useEffect(() => {
@@ -363,17 +397,55 @@ export default function FinanceClient({
     e.preventDefault();
     if (!newIngName.trim()) return;
 
-    const res = await createIngredientAction(newIngName.trim(), newIngPrice, newIngSize, newIngUnit);
+    const ingredientName = newIngName.trim();
+    const ingredientPrice = newIngPrice;
+    const ingredientSize = newIngSize;
+    const ingredientUnit = newIngUnit;
+    const shouldAttachToRecipe = addCreatedIngredientToRecipe;
+    const res = await createIngredientAction(ingredientName, ingredientPrice, ingredientSize, ingredientUnit, {
+      category: newIngCategory, brand: newIngBrand, supplier_name: newIngSupplier, notes: newIngNotes,
+    });
     if (!res.ok) {
       alert(res.error);
       return;
     }
+
+    if (shouldAttachToRecipe) {
+      setIngredients((current) => [
+        ...current,
+        {
+          id: res.data.id,
+          business_id: business?.id ?? "",
+          name: ingredientName,
+          pack_price: ingredientPrice,
+          pack_size: ingredientSize,
+          base_unit: ingredientUnit,
+          category: newIngCategory,
+          brand: newIngBrand || null,
+          supplier_name: newIngSupplier || null,
+          notes: newIngNotes || null,
+          updated_at: new Date().toISOString(),
+        },
+      ]);
+      setRecipeIngredients((current) => [
+        ...current,
+        { ingredient_id: res.data.id, qty: 1 },
+      ]);
+    }
+
     refreshAllCalculations();
     setShowAddIngredient(false);
+    setAddCreatedIngredientToRecipe(false);
     setNewIngName("");
     setNewIngPrice(50000);
     setNewIngSize(1000);
-    alert(`Bahan baku "${newIngName}" berhasil ditambahkan ke master!`);
+    setNewIngCategory("bahan_baku");
+    setNewIngBrand("");
+    setNewIngSupplier("");
+    setNewIngNotes("");
+    alert(shouldAttachToRecipe
+      ? `"${ingredientName}" sudah ditambahkan dan langsung dipakai di resep ini.`
+      : `Bahan baku "${ingredientName}" berhasil ditambahkan ke master!`);
   };
 
   // Under-target margin alerts
@@ -388,6 +460,19 @@ export default function FinanceClient({
   });
 
   const categoriesList = Array.from(new Set(recipes.map((r) => r.category || "Lainnya")));
+  const ingredientUsage = useMemo(() => {
+    const usage = new Map<string, string[]>();
+    recipes.forEach((recipe) => {
+      (recipe.ingredients ?? []).forEach((item) => {
+        const current = usage.get(item.ingredient_id) ?? [];
+        usage.set(item.ingredient_id, [...current, recipe.name]);
+      });
+    });
+    return usage;
+  }, [recipes]);
+  const filteredIngredients = useMemo(() => ingredients.filter((ingredient) => (
+    ingredient.name.toLowerCase().includes(ingredientQuery.trim().toLowerCase())
+  )), [ingredients, ingredientQuery]);
 
   return (
     <div className="min-h-screen bg-[#f7f6fc] text-[#232331] font-sans flex flex-col justify-between">
@@ -443,10 +528,22 @@ export default function FinanceClient({
       </header>
 
       {/* Main Container */}
-      <main className="flex-1 mx-auto w-full max-w-7xl p-3 sm:p-6 lg:p-8 space-y-4 sm:space-y-6">
+      <main className="flex-1 mx-auto w-full max-w-7xl p-3 pb-24 sm:p-6 sm:pb-28 lg:p-8 lg:pb-8 space-y-4 sm:space-y-6">
         
         {/* TAB NAVIGATION PILLS */}
-        <div className="flex items-center overflow-x-auto scrollbar-none gap-1.5 sm:gap-2 border-b border-[#dedee8] pb-2 font-mono text-xs font-bold">
+        <div className="hidden md:flex items-center overflow-x-auto scrollbar-none gap-1.5 sm:gap-2 border-b border-[#dedee8] pb-2 font-mono text-xs font-bold">
+          <button
+            type="button"
+            onClick={() => setActiveTab("quick")}
+            className={`flex items-center gap-1.5 px-3 sm:px-4 py-2 rounded-xl border transition-all whitespace-nowrap ${
+              activeTab === "quick"
+                ? "bg-[#232331] text-[#d9ff57] border-[#232331] shadow-ink-xs"
+                : "bg-white text-[#7b7b8e] border-[#dedee8] hover:border-[#232331] hover:text-[#232331]"
+            }`}
+          >
+            <Calculator size={14} />
+            <span>Kalkulator Cepat</span>
+          </button>
           <button
             type="button"
             onClick={() => setActiveTab("catalog")}
@@ -499,6 +596,13 @@ export default function FinanceClient({
             <span>4. Master Bahan Baku ({ingredients.length})</span>
           </button>
         </div>
+
+        {/* ============================================================= */}
+        {/* KALKULATOR CEPAT UNTUK KULINER, RETAIL, DAN JASA */}
+        {/* ============================================================= */}
+        {activeTab === "quick" && (
+          <QuickCalculator initialMode={business?.business_type ?? "kuliner"} initialPresets={initialCalculatorPresets} />
+        )}
 
         {/* ============================================================= */}
         {/* TAB 1: KATALOG RESEP & MARGIN RADAR */}
@@ -663,18 +767,34 @@ export default function FinanceClient({
               <div className="rounded-2xl sm:rounded-3xl border-2 border-[#232331] bg-white p-4 sm:p-6 shadow-ink-md space-y-4 font-mono text-xs">
                 <div className="flex items-center justify-between border-b border-[#dedee8] pb-3">
                   <h3 className="font-extrabold text-sm sm:text-base text-[#232331] font-sans">
-                    {editingRecipeId ? "Ubah Resep Produk" : "Hitung Resep Produk Baru"}
+                    {editingRecipeId ? "Ubah Resep dan Modal Produk" : "Hitung Modal dan Harga Produk"}
                   </h3>
                   <span className="rounded-md bg-[#f0edff] text-[#7958d8] px-2 py-0.5 text-[10px] font-bold">
                     {recipeType === "olahan" ? "Olahan Sendiri" : "Produk Kulakan"}
                   </span>
                 </div>
 
+                <div className="rounded-xl border border-[#dedee8] bg-[#f8f8fc] p-3 font-sans">
+                  <p className="font-bold text-[#232331]">Cara pakainya</p>
+                  <p className="mt-1 text-[10px] leading-relaxed text-[#7b7b8e]">
+                    Isi produk, masukkan modal yang dipakai, lalu coba harga jual. Hasil di sebelah kanan akan berubah otomatis. Tidak perlu menghitung sendiri.
+                  </p>
+                  <div className="mt-3 grid grid-cols-3 gap-2 font-mono text-[10px]">
+                    <div className="rounded-lg border border-[#dedee8] bg-white p-2 text-[#232331]"><strong>1.</strong> Produk</div>
+                    <div className="rounded-lg border border-[#dedee8] bg-white p-2 text-[#232331]"><strong>2.</strong> Modal</div>
+                    <div className="rounded-lg border border-[#dedee8] bg-white p-2 text-[#232331]"><strong>3.</strong> Harga jual</div>
+                  </div>
+                </div>
+
                 {/* Basic Details */}
-                <div className="space-y-3 font-sans">
+                <div className="space-y-3 font-sans border-t border-[#dedee8] pt-4">
+                  <div>
+                    <p className="font-bold text-[#232331]">1. Ceritakan produk yang mau dijual</p>
+                    <p className="mt-1 text-[10px] text-[#7b7b8e]">Data ini membantu membedakan setiap menu di katalog.</p>
+                  </div>
                   <div className="grid sm:grid-cols-2 gap-3 font-mono">
                     <div className="space-y-1">
-                      <label className="block font-bold text-[#232331]">Nama Produk:</label>
+                      <label className="block font-bold text-[#232331]">Nama produk</label>
                       <input
                         type="text"
                         required
@@ -686,7 +806,7 @@ export default function FinanceClient({
                     </div>
 
                     <div className="space-y-1">
-                      <label className="block font-bold text-[#232331]">Kategori Menu:</label>
+                      <label className="block font-bold text-[#232331]">Kategori menu</label>
                       <input
                         type="text"
                         value={recipeCategory}
@@ -697,9 +817,9 @@ export default function FinanceClient({
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 font-mono">
+                  <div className="grid grid-cols-2 gap-3 font-mono">
                     <div className="space-y-1">
-                      <label className="block font-bold text-[#232331]">Tipe:</label>
+                      <label className="block font-bold text-[#232331]">Jenis produk</label>
                       <select
                         value={recipeType}
                         onChange={(e) => setRecipeType(e.target.value as any)}
@@ -708,57 +828,43 @@ export default function FinanceClient({
                         <option value="olahan">Olahan</option>
                         <option value="kulakan">Kulakan</option>
                       </select>
+                      <p className="text-[9.5px] leading-relaxed text-[#7b7b8e]">Olahan dibuat dari bahan. Kulakan adalah barang jadi dari supplier.</p>
                     </div>
 
                     <div className="space-y-1">
-                      <label className="block font-bold text-[#232331]">Hasil Pcs:</label>
+                      <label className="block font-bold text-[#232331]">Dari sekali proses, jadi berapa produk?</label>
                       <input
                         type="number"
                         min={1}
                         value={outputQty}
-                        onChange={(e) => setOutputQty(Number(e.target.value))}
+                        onChange={(e) => setOutputQty(Math.max(1, Number(e.target.value) || 1))}
                         className="w-full rounded-xl border border-[#dedee8] p-2 text-xs font-bold text-[#232331]"
                       />
-                    </div>
-
-                    <div className="space-y-1">
-                      <label className="block font-bold text-[#232331]">Harga Jual (Rp):</label>
-                      <input
-                        type="number"
-                        step={500}
-                        value={sellingPrice}
-                        onChange={(e) => setSellingPrice(Number(e.target.value))}
-                        className="w-full rounded-xl border border-[#232331] p-2 text-xs font-bold text-[#232331]"
-                      />
-                    </div>
-
-                    <div className="space-y-1">
-                      <label className="block font-bold text-[#232331]">Target %:</label>
-                      {/* 1–95: di 100% modalnya harus nol rupiah, tidak mungkin. */}
-                      <input
-                        type="number"
-                        min={1}
-                        max={95}
-                        value={targetMarginPct}
-                        onChange={(e) => setTargetMarginPct(Number(e.target.value))}
-                        className="w-full rounded-xl border border-[#dedee8] p-2 text-xs font-bold text-[#232331]"
-                      />
+                      <p className="text-[9.5px] leading-relaxed text-[#7b7b8e]">Contoh: satu adonan menghasilkan 10 cup, isi 10.</p>
                     </div>
                   </div>
                 </div>
 
                 {/* Section: Raw Ingredients List */}
-                {recipeType === "olahan" && (
-                  <div className="space-y-3 pt-3 border-t border-[#dedee8]">
+                <div className="space-y-3 pt-4 border-t border-[#dedee8]">
                     <div className="flex justify-between items-center">
-                      <h4 className="font-extrabold text-xs text-[#232331] uppercase tracking-wider font-mono">
-                        Bahan Baku Utama ({recipeIngredients.length})
-                      </h4>
+                      <div>
+                        <h4 className="font-extrabold text-xs text-[#232331] uppercase tracking-wider font-mono">
+                          2. {recipeType === "olahan" ? "Bahan untuk sekali produksi" : "Modal barang dari supplier"} ({recipeIngredients.length})
+                        </h4>
+                        <p className="mt-1 text-[10px] text-[#7b7b8e] font-sans">
+                          {recipeType === "olahan"
+                            ? "Pilih bahan, lalu isi jumlah yang dipakai untuk satu kali membuat produk."
+                            : "Tambahkan barang yang dibeli dari supplier sebagai modal produk yang dijual."}
+                        </p>
+                      </div>
                       <button
                         type="button"
-                        onClick={handleAddIngredientRow}
-                        disabled={ingredients.length === 0}
-                        className="btn-tactile text-[11px] font-bold text-[#7958d8] hover:underline disabled:cursor-not-allowed disabled:text-[#7b7b8e] disabled:no-underline"
+                        onClick={() => {
+                          setAddCreatedIngredientToRecipe(true);
+                          setShowAddIngredient(true);
+                        }}
+                        className="btn-tactile text-[11px] font-bold text-[#7958d8] hover:underline"
                       >
                         + Tambah Bahan
                       </button>
@@ -772,19 +878,19 @@ export default function FinanceClient({
                     */}
                     {ingredients.length === 0 && (
                       <div className="rounded-2xl border-2 border-dashed border-[#7958d8] bg-[#f0edff] p-4 text-center">
-                        <p className="text-xs font-black text-[#232331]">Master Bahan Baku masih kosong</p>
+                        <p className="text-xs font-black text-[#232331]">Belum ada daftar modal yang bisa dipilih</p>
                         <p className="mt-1 text-[11px] leading-relaxed text-[#5c5c70]">
-                          Resep dihitung dari harga bahan yang sudah tercatat. Isi dulu bahan-bahan yang kamu pakai — harga pack dan isinya — baru resepnya bisa dihitung.
+                          Catat dulu bahan atau barang kulakan di Master Bahan Baku: nama, harga beli satu pack, dan isi pack. Setelah itu pilih di sini agar modal dihitung otomatis.
                         </p>
                         <button
                           type="button"
                           onClick={() => {
-                            setActiveTab("ingredients");
-                            window.scrollTo({ top: 0, behavior: "smooth" });
+                            setAddCreatedIngredientToRecipe(true);
+                            setShowAddIngredient(true);
                           }}
                           className="btn-tactile mt-3 rounded-xl border-2 border-[#232331] bg-[#d9ff57] px-4 py-2 text-[11px] font-black text-[#232331] shadow-ink-xs"
                         >
-                          Isi Master Bahan Baku →
+                          Tambah Bahan Pertama →
                         </button>
                       </div>
                     )}
@@ -843,16 +949,27 @@ export default function FinanceClient({
                           </div>
                         );
                       })}
+                      {ingredients.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={handleAddIngredientRow}
+                          className="w-full rounded-xl border border-dashed border-[#7958d8] bg-[#f7f4ff] px-3 py-2 text-[11px] font-bold text-[#7958d8]"
+                        >
+                          Pilih bahan yang sudah ada
+                        </button>
+                      )}
                     </div>
                   </div>
-                )}
 
                 {/* Section: Packaging Separation */}
-                <div className="space-y-3 pt-3 border-t border-[#dedee8]">
+                <div className="space-y-3 pt-4 border-t border-[#dedee8]">
                   <div className="flex justify-between items-center">
-                    <h4 className="font-extrabold text-xs text-[#232331] uppercase tracking-wider font-mono">
-                      Packaging &amp; Kemasan ({recipePackaging.length})
-                    </h4>
+                    <div>
+                      <h4 className="font-extrabold text-xs text-[#232331] uppercase tracking-wider font-mono">
+                        3. Kemasan per produk ({recipePackaging.length})
+                      </h4>
+                      <p className="mt-1 text-[10px] text-[#7b7b8e] font-sans">Contoh: cup, tutup, sedotan, plastik, atau stiker. Ini dihitung untuk setiap produk terjual.</p>
+                    </div>
                     <button
                       type="button"
                       onClick={handleAddPackagingRow}
@@ -904,17 +1021,52 @@ export default function FinanceClient({
                 </div>
 
                 {/* Section: Operational Overhead */}
-                <div className="space-y-1 pt-3 border-t border-[#dedee8] font-mono">
+                <div className="space-y-2 pt-4 border-t border-[#dedee8] font-mono">
                   <div className="flex justify-between items-center">
-                    <label className="font-bold text-[#232331]">Biaya Operasional / Gas / Listrik (Rp):</label>
+                    <div className="pr-3">
+                      <label className="font-bold text-[#232331]">4. Biaya proses sekali produksi</label>
+                      <p className="mt-1 text-[10px] leading-relaxed text-[#7b7b8e] font-sans">Isi gas, listrik, atau ongkos proses yang khusus keluar saat membuat satu batch. Bukan sewa atau gaji bulanan.</p>
+                    </div>
                     <input
                       type="number"
                       min={0}
                       step={100}
                       value={operationalCost}
-                      onChange={(e) => setOperationalCost(Number(e.target.value))}
+                      onChange={(e) => setOperationalCost(Math.max(0, Number(e.target.value) || 0))}
                       className="w-32 rounded-lg border border-[#dedee8] p-1.5 text-right text-xs font-bold text-[#232331]"
                     />
+                  </div>
+                </div>
+
+                <div className="space-y-3 pt-4 border-t border-[#dedee8] font-sans">
+                  <div>
+                    <p className="font-bold text-[#232331]">5. Coba harga jual dan target laba</p>
+                    <p className="mt-1 text-[10px] text-[#7b7b8e]">Isi harga yang ingin Anda pasang. KAEL akan menunjukkan laba per produk dan apakah targetnya tercapai.</p>
+                  </div>
+                  <div className="grid sm:grid-cols-2 gap-3 font-mono">
+                    <div className="space-y-1">
+                      <label className="block font-bold text-[#232331]">Harga jual yang ingin dicoba (Rp)</label>
+                      <input
+                        type="number"
+                        min={0}
+                        step={500}
+                        value={sellingPrice}
+                        onChange={(e) => setSellingPrice(Math.max(0, Number(e.target.value) || 0))}
+                        className="w-full rounded-xl border-2 border-[#232331] p-2 text-xs font-bold text-[#232331]"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="block font-bold text-[#232331]">Target laba dari harga jual (%)</label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={95}
+                        value={targetMarginPct}
+                        onChange={(e) => setTargetMarginPct(Math.max(0, Number(e.target.value) || 0))}
+                        className="w-full rounded-xl border border-[#dedee8] p-2 text-xs font-bold text-[#232331]"
+                      />
+                      <p className="text-[9.5px] leading-relaxed text-[#7b7b8e]">Contoh 60%: dari harga jual Rp10.000, target laba kotor Rp6.000.</p>
+                    </div>
                   </div>
                 </div>
 
@@ -940,48 +1092,83 @@ export default function FinanceClient({
               <div className="sticky top-20 rounded-2xl sm:rounded-3xl border-2 border-[#232331] bg-white p-5 sm:p-6 shadow-ink-lg space-y-4 font-mono text-xs">
                 <div className="flex items-center justify-between border-b border-[#dedee8] pb-3">
                   <span className="font-bold text-[#7958d8] uppercase tracking-wider text-[10px]">
-                    HASIL KALKULASI REALTIME
+                    RINGKASAN ANGKA PRODUK
                   </span>
                   <Sparkles size={16} className="text-[#7958d8]" />
                 </div>
 
+                <div className="rounded-xl border border-[#dedee8] bg-[#f8f8fc] p-3 font-sans">
+                  <p className="font-bold text-[#232331]">{recipeName.trim() || "Produk baru Anda"}</p>
+                  <p className="mt-1 text-[10px] leading-relaxed text-[#7b7b8e]">
+                    Angka di bawah adalah untuk <strong>{outputQty} produk</strong> dari satu kali proses, lalu dipecah menjadi biaya per produk.
+                  </p>
+                </div>
+
                 <div className="space-y-2.5">
                   <div className="flex justify-between text-[#7b7b8e]">
-                    <span>Biaya Bahan Baku:</span>
+                    <span>Modal bahan satu kali proses</span>
                     <span>{formatRupiah(currentEditorCalc.biaya_bahan)}</span>
                   </div>
                   <div className="flex justify-between text-[#7b7b8e]">
-                    <span>Biaya Packaging:</span>
+                    <span>Kemasan per produk</span>
                     <span>{formatRupiah(currentEditorCalc.biaya_kemasan)}</span>
                   </div>
                   <div className="flex justify-between text-[#7b7b8e]">
-                    <span>Beban Operasional:</span>
+                    <span>Gas/listrik satu kali proses</span>
                     <span>{formatRupiah(currentEditorCalc.operational_cost)}</span>
                   </div>
 
-                  <div className="pt-2 border-t border-[#dedee8] flex justify-between items-baseline">
-                    <span className="font-extrabold text-sm text-[#232331]">HPP MODAL / UNIT:</span>
-                    <span className="text-xl font-black text-[#c2410c]">
-                      {formatRupiah(currentEditorCalc.hpp_per_unit)}
-                    </span>
-                  </div>
-
-                  <div className="flex justify-between items-baseline text-[#16a34a]">
-                    <span className="font-bold">PROFIT BERSIH:</span>
-                    <span className="text-base font-black">
-                      +{formatRupiah(currentEditorCalc.profit_per_unit)}
-                    </span>
-                  </div>
-
-                  <div className="p-3 rounded-2xl bg-[#f0edff] border border-[#7958d8] space-y-1 text-center">
-                    <span className="text-[10px] text-[#7958d8] font-bold block uppercase">MARGIN VS TARGET</span>
-                    <div className="text-2xl font-black text-[#7958d8]">
-                      {formatMarginPercent(currentEditorCalc.margin_pct)}
+                  <div className="pt-3 border-t border-[#dedee8]">
+                    <div className="flex justify-between items-baseline">
+                      <span className="font-extrabold text-sm text-[#232331]">MODAL 1 PRODUK</span>
+                      <span className="text-xl font-black text-[#c2410c]">
+                        {formatRupiah(currentEditorCalc.hpp_per_unit)}
+                      </span>
                     </div>
-                    <span className="text-[10.5px] text-[#7b7b8e]">
-                      Markup: {Math.round(currentEditorCalc.markup_pct)}% · Target: {targetMarginPct}%
-                    </span>
+                    <p className="mt-1 text-[10px] leading-relaxed text-[#7b7b8e]">
+                      Modal bahan {formatRupiah(currentEditorCalc.total_modal_batch)} dibagi {outputQty} produk, lalu ditambah kemasan {formatRupiah(currentEditorCalc.biaya_kemasan)} per produk.
+                    </p>
                   </div>
+
+                  {sellingPrice > 0 ? (
+                    <div className={`rounded-xl border p-3 ${currentEditorCalc.profit_per_unit < 0 ? "border-[#dc2626] bg-[#fff5f5]" : "border-[#16a34a] bg-[#f0fff4]"}`}>
+                      <div className="flex justify-between items-baseline">
+                        <span className={`font-bold ${currentEditorCalc.profit_per_unit < 0 ? "text-[#dc2626]" : "text-[#16a34a]"}`}>LABA DARI HARGA {formatRupiah(sellingPrice)}</span>
+                        <span className={`text-base font-black ${currentEditorCalc.profit_per_unit < 0 ? "text-[#dc2626]" : "text-[#16a34a]"}`}>
+                          {currentEditorCalc.profit_per_unit >= 0 ? "+" : ""}{formatRupiah(currentEditorCalc.profit_per_unit)}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-[10px] leading-relaxed text-[#7b7b8e]">
+                        {currentEditorCalc.profit_per_unit < 0
+                          ? "Harga ini masih lebih rendah dari modal. Naikkan harga jual atau cek kembali bahan dan porsi."
+                          : "Ini adalah laba kotor untuk setiap produk yang terjual, setelah modal bahan, kemasan, dan biaya proses yang diisi."}
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="rounded-xl border border-dashed border-[#7958d8] bg-[#f7f4ff] p-3">
+                      <p className="font-bold text-[#7958d8]">Belum ada harga jual untuk dibandingkan</p>
+                      <p className="mt-1 text-[10px] leading-relaxed text-[#7b7b8e]">Isi “Harga jual yang ingin dicoba” di sebelah kiri untuk melihat laba per produk.</p>
+                    </div>
+                  )}
+
+                  {sellingPrice > 0 && (
+                    <div className="p-3 rounded-2xl bg-[#f0edff] border border-[#7958d8] space-y-1 text-center">
+                      <span className="text-[10px] text-[#7958d8] font-bold block uppercase">LABA DARI HARGA JUAL</span>
+                      <div className="text-2xl font-black text-[#7958d8]">
+                        {formatMarginPercent(currentEditorCalc.margin_pct)}
+                      </div>
+                      <span className="text-[10.5px] text-[#7b7b8e]">
+                        Target Anda {targetMarginPct}%. Markup dari modal {Math.round(currentEditorCalc.markup_pct)}%.
+                      </span>
+                    </div>
+                  )}
+
+                  {currentEditorCalc.hpp_per_unit <= 0 && recipeIngredients.length === 0 && recipePackaging.length === 0 && operationalCost <= 0 ? (
+                    <div className="p-3 rounded-2xl bg-[#fffbeb] border border-[#d97706] space-y-1">
+                      <span className="text-[10px] font-bold text-[#b45309] uppercase block">Modal belum diisi</span>
+                      <span className="text-[11px] leading-relaxed text-[#5c5c70] block">Tambahkan minimal satu bahan, barang supplier, kemasan, atau biaya proses. Sebelum itu, HPP Rp0 belum bisa dipakai untuk menentukan harga.</span>
+                    </div>
+                  ) : null}
 
                   {/*
                     Rekomendasi harga hanya ditampilkan kalau targetnya memang
@@ -990,7 +1177,16 @@ export default function FinanceClient({
                     angka. Dulu keadaan ini menyarankan harga = modal, alias
                     untung nol, tanpa keterangan apa pun.
                   */}
-                  {currentEditorCalc.target_margin_unreachable ? (
+                  {currentEditorCalc.hpp_per_unit <= 0 && recipeIngredients.length === 0 && recipePackaging.length === 0 && operationalCost <= 0 ? (
+                    <div className="p-3 rounded-2xl bg-[#f7f4ff] border border-[#7958d8] space-y-1">
+                      <span className="text-[10px] font-bold text-[#7958d8] uppercase block">
+                        Rekomendasi harga menunggu modal
+                      </span>
+                      <span className="text-[11px] leading-relaxed text-[#5c5c70] block">
+                        Setelah modal produk diisi, KAEL akan menghitung harga jual yang sesuai target laba {targetMarginPct}%.
+                      </span>
+                    </div>
+                  ) : currentEditorCalc.target_margin_unreachable ? (
                     <div className="p-3 rounded-2xl bg-[#fff7f7] border border-[#dc2626] space-y-1">
                       <span className="text-[10px] font-bold text-[#dc2626] uppercase block">
                         Target {targetMarginPct}% tidak bisa dicapai
@@ -1042,13 +1238,13 @@ export default function FinanceClient({
         {/* TAB 3: SIMULASI TARGET PROFIT */}
         {/* ============================================================= */}
         {activeTab === "simulation" && activeSimRecipe && simResult && (
-          <div className="max-w-3xl mx-auto rounded-2xl sm:rounded-3xl border-2 border-[#232331] bg-white p-5 sm:p-8 shadow-ink-md space-y-6 font-mono text-xs">
+          <div className="max-w-4xl mx-auto rounded-2xl sm:rounded-3xl border-2 border-[#232331] bg-white p-5 sm:p-8 shadow-ink-md space-y-6 font-mono text-xs">
             <div className="border-b border-[#dedee8] pb-4">
               <h3 className="font-extrabold text-base sm:text-lg text-[#232331] font-sans">
-                Simulator Target Profit &amp; Rekomendasi Harga Jual
+                Simulasi Jualan Harian &amp; Bulanan
               </h3>
               <p className="text-[11px] sm:text-xs text-[#7b7b8e] font-sans">
-                Tentukan target keuntungan bersih yang Anda inginkan, sistem akan menghitung harga jual optimal secara otomatis.
+                Isi rencana jual Anda. KAEL menghitung harga jual, omzet, dan perkiraan laba berdasarkan HPP resep.
               </p>
             </div>
 
@@ -1068,36 +1264,89 @@ export default function FinanceClient({
                 </select>
               </div>
 
-              <div className="grid sm:grid-cols-2 gap-4 font-mono">
+              <div className="rounded-xl border border-[#dedee8] bg-[#f8f8fc] p-3 sm:p-4 space-y-3">
+                <p className="font-bold text-[#232331]">1. Tentukan harga jual yang ingin dicapai</p>
+                <p className="text-[10px] leading-relaxed text-[#7b7b8e]">
+                  Isi salah satu atau keduanya. Target laba berarti keuntungan dari satu produk setelah modal HPP. Target margin adalah persentase laba dari harga jual.
+                </p>
+                <div className="grid sm:grid-cols-2 gap-4 font-mono">
                 <div className="space-y-1">
-                  <label className="block font-bold text-[#232331]">Target Laba Bersih Nominal (Rp):</label>
+                  <label className="block font-bold text-[#232331]">Laba yang diinginkan per produk (Rp)</label>
                   <input
                     type="number"
                     step={1000}
                     value={simTargetProfitNominal}
-                    onChange={(e) => setSimTargetProfitNominal(Number(e.target.value))}
+                    onChange={(e) => setSimTargetProfitNominal(Math.max(0, Number(e.target.value) || 0))}
                     className="w-full rounded-xl border border-[#dedee8] p-2.5 text-sm font-bold text-[#232331]"
                   />
                 </div>
 
                 <div className="space-y-1">
-                  <label className="block font-bold text-[#232331]">Target Margin Persentase (%):</label>
+                  <label className="block font-bold text-[#232331]">Atau target margin (%)</label>
                   <input
                     type="number"
                     min={1}
                     max={95}
                     value={simTargetMarginPct}
-                    onChange={(e) => setSimTargetMarginPct(Number(e.target.value))}
+                    onChange={(e) => setSimTargetMarginPct(Math.max(0, Number(e.target.value) || 0))}
                     className="w-full rounded-xl border border-[#dedee8] p-2.5 text-sm font-bold text-[#232331]"
                   />
                 </div>
+                </div>
               </div>
 
-              {/* Result Grid */}
-              <div className="grid sm:grid-cols-2 gap-4 pt-4 border-t border-[#dedee8] font-mono">
+              <div className="rounded-xl border border-[#dedee8] bg-[#f8f8fc] p-3 sm:p-4 space-y-3">
+                <p className="font-bold text-[#232331]">2. Isi rencana penjualan</p>
+                <div className="grid sm:grid-cols-3 gap-4 font-mono">
+                  <div className="space-y-1">
+                    <label className="block font-bold text-[#232331]">Produk terjual per hari</label>
+                    <input
+                      type="number"
+                      min={0}
+                      step={1}
+                      value={simUnitsPerDay}
+                      onChange={(e) => setSimUnitsPerDay(Math.max(0, Number(e.target.value) || 0))}
+                      className="w-full rounded-xl border border-[#dedee8] p-2.5 text-sm font-bold text-[#232331]"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="block font-bold text-[#232331]">Hari buka per bulan</label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={31}
+                      step={1}
+                      value={simOperatingDays}
+                      onChange={(e) => setSimOperatingDays(Math.max(0, Number(e.target.value) || 0))}
+                      className="w-full rounded-xl border border-[#dedee8] p-2.5 text-sm font-bold text-[#232331]"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="block font-bold text-[#232331]">Biaya tetap per bulan (Rp)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      step={10000}
+                      value={simMonthlyFixedCost}
+                      onChange={(e) => setSimMonthlyFixedCost(Math.max(0, Number(e.target.value) || 0))}
+                      className="w-full rounded-xl border border-[#dedee8] p-2.5 text-sm font-bold text-[#232331]"
+                    />
+                  </div>
+                </div>
+                <p className="text-[10px] leading-relaxed text-[#7b7b8e]">
+                  Biaya tetap contohnya sewa, gaji tetap, listrik, dan internet. Isi 0 jika belum ingin memasukkannya ke simulasi.
+                </p>
+              </div>
+
+              <div className="pt-1 space-y-3">
+                <div>
+                  <p className="font-bold text-[#232331]">3. Pilih harga yang paling masuk akal</p>
+                  <p className="mt-1 text-[10px] text-[#7b7b8e]">Dua pilihan ini dihitung dari HPP {formatRupiah(activeSimRecipe.calculation.hpp_per_unit)} per produk.</p>
+                </div>
+                <div className="grid sm:grid-cols-2 gap-4 font-mono">
                 <div className="p-4 rounded-2xl bg-[#f0edff] border border-[#7958d8] space-y-1 text-center">
                   <span className="text-[10.5px] text-[#7958d8] font-bold block uppercase">
-                    Harga Jual Target Nominal (+{formatRupiah(simTargetProfitNominal)})
+                    Harga dengan laba {formatRupiah(simTargetProfitNominal)} per produk
                   </span>
                   <div className="text-2xl font-black text-[#7958d8]">
                     {formatRupiah(simResult.priceFromNominal)}
@@ -1129,8 +1378,60 @@ export default function FinanceClient({
                     </span>
                   </div>
                 )}
+                </div>
               </div>
 
+              <div className="border-t border-[#dedee8] pt-4 space-y-3">
+                <div>
+                  <p className="font-bold text-[#232331]">
+                    4. Perkiraan hasil jika terjual {simUnitsPerDay} produk per hari selama {simOperatingDays} hari
+                  </p>
+                  <p className="mt-1 text-[10px] leading-relaxed text-[#7b7b8e]">
+                    Omzet adalah seluruh nilai penjualan. Laba sebelum biaya tetap sudah dikurangi modal HPP. Sisa setelah biaya tetap hanya mengurangi angka biaya yang Anda isi di atas.
+                  </p>
+                </div>
+                <div className="grid md:grid-cols-2 gap-4">
+                  {simProjections.map((projection) => {
+                    const isGreen = projection.color === "green";
+                    const remainingIsNegative = projection.netAfterFixedCost < 0;
+                    return (
+                      <div
+                        key={projection.key}
+                        className={`rounded-2xl border p-4 space-y-3 ${isGreen ? "bg-[#f0fff4] border-[#16a34a]" : "bg-[#f7f4ff] border-[#7958d8]"}`}
+                      >
+                        <div className="flex items-start justify-between gap-3 border-b border-black/10 pb-3">
+                          <div>
+                            <p className={`font-bold ${isGreen ? "text-[#16a34a]" : "text-[#7958d8]"}`}>{projection.label}</p>
+                            <p className="mt-1 text-[10px] text-[#7b7b8e]">Harga jual {formatRupiah(projection.price)}. Laba per produk {formatRupiah(projection.profitPerUnit)}.</p>
+                          </div>
+                        </div>
+                        <dl className="grid grid-cols-2 gap-x-3 gap-y-3 text-[10px] sm:text-[11px]">
+                          <div>
+                            <dt className="text-[#7b7b8e]">Omzet per hari</dt>
+                            <dd className="mt-0.5 font-bold text-[#232331]">{formatRupiah(projection.dailyRevenue)}</dd>
+                          </div>
+                          <div>
+                            <dt className="text-[#7b7b8e]">Laba per hari</dt>
+                            <dd className="mt-0.5 font-bold text-[#232331]">{formatRupiah(projection.dailyProfit)}</dd>
+                          </div>
+                          <div>
+                            <dt className="text-[#7b7b8e]">Omzet per bulan</dt>
+                            <dd className="mt-0.5 font-bold text-[#232331]">{formatRupiah(projection.monthlyRevenue)}</dd>
+                          </div>
+                          <div>
+                            <dt className="text-[#7b7b8e]">Laba sebelum biaya tetap</dt>
+                            <dd className="mt-0.5 font-bold text-[#232331]">{formatRupiah(projection.monthlyProfit)}</dd>
+                          </div>
+                        </dl>
+                        <div className={`rounded-xl border px-3 py-2 ${remainingIsNegative ? "border-[#dc2626] bg-[#fff5f5]" : isGreen ? "border-[#16a34a] bg-white" : "border-[#7958d8] bg-white"}`}>
+                          <p className="text-[10px] text-[#7b7b8e]">Sisa setelah biaya tetap {formatRupiah(simMonthlyFixedCost)}</p>
+                          <p className={`mt-0.5 text-base font-black ${remainingIsNegative ? "text-[#dc2626]" : isGreen ? "text-[#16a34a]" : "text-[#7958d8]"}`}>{formatRupiah(projection.netAfterFixedCost)}</p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
           </div>
         )}
@@ -1153,12 +1454,26 @@ export default function FinanceClient({
 
               <button
                 type="button"
-                onClick={() => setShowAddIngredient(true)}
+                onClick={() => {
+                  setAddCreatedIngredientToRecipe(false);
+                  setShowAddIngredient(true);
+                }}
                 className="btn-tactile flex items-center gap-1.5 rounded-xl border-2 border-[#232331] bg-[#d9ff57] px-3.5 py-1.5 font-mono text-xs font-black text-[#232331] shadow-ink-xs"
               >
                 <Plus size={13} />
                 <span>+ Tambah Bahan</span>
               </button>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="rounded-xl border border-[#232331] bg-white p-3 shadow-ink-xs"><p className="font-mono text-[10px] font-bold text-[#7b7b8e]">BAHAN TERCATAT</p><p className="mt-1 text-xl font-black text-[#232331]">{ingredients.length}</p><p className="mt-1 text-[10px] text-[#7b7b8e]">Bahan dan barang supplier</p></div>
+              <div className="rounded-xl border border-[#7958d8] bg-[#f7f4ff] p-3 shadow-ink-xs"><p className="font-mono text-[10px] font-bold text-[#7958d8]">DIPAKAI DI RESEP</p><p className="mt-1 text-xl font-black text-[#232331]">{ingredients.filter((ingredient) => (ingredientUsage.get(ingredient.id)?.length ?? 0) > 0).length}</p><p className="mt-1 text-[10px] text-[#7b7b8e]">Harga ikut memengaruhi HPP menu</p></div>
+              <div className="rounded-xl border border-[#d97706] bg-[#fffbeb] p-3 shadow-ink-xs"><p className="font-mono text-[10px] font-bold text-[#b45309]">BELUM DIPAKAI</p><p className="mt-1 text-xl font-black text-[#232331]">{ingredients.filter((ingredient) => (ingredientUsage.get(ingredient.id)?.length ?? 0) === 0).length}</p><p className="mt-1 text-[10px] text-[#7b7b8e]">Bahan belum dipasang ke resep</p></div>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div className="relative w-full sm:max-w-md"><Search className="absolute left-3 top-2.5 text-[#7b7b8e]" size={15} /><input type="search" value={ingredientQuery} onChange={(event) => setIngredientQuery(event.target.value)} placeholder="Cari bahan atau barang supplier..." className="w-full rounded-xl border-2 border-[#232331] bg-white py-2 pl-9 pr-3 text-xs font-mono text-[#232331] outline-none" /></div>
+              <p className="text-[10px] text-[#7b7b8e]">Harga per satuan dipakai langsung untuk menghitung HPP.</p>
             </div>
 
             {/* Ingredients Table */}
@@ -1171,17 +1486,22 @@ export default function FinanceClient({
                       <th className="py-3 px-4">Harga Kemasan</th>
                       <th className="py-3 px-4">Ukuran Kemasan</th>
                       <th className="py-3 px-4">Harga / Satuan</th>
+                      <th className="py-3 px-4">Dipakai Di</th>
                       <th className="py-3 px-4">Terakhir Diubah</th>
                       <th className="py-3 px-4 text-right">Aksi</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[#dedee8]">
-                    {ingredients.map((ing) => {
+                    {filteredIngredients.map((ing) => {
                       const costPerBaseUnit = Number(ing.pack_price) / Number(ing.pack_size);
+                      const recipesUsingIngredient = ingredientUsage.get(ing.id) ?? [];
+                      const categoryLabel = ({ bahan_baku: "Bahan baku", kemasan: "Kemasan", barang_kulakan: "Barang kulakan", lainnya: "Lainnya" } as const)[ing.category ?? "bahan_baku"];
                       return (
                         <tr key={ing.id} className="hover:bg-[#fcfcfe]">
                           <td className="py-3 px-4 font-bold text-[#232331] font-sans">
-                            {ing.name}
+                            <p>{ing.name}</p>
+                            <p className="mt-1 text-[10px] font-normal text-[#7b7b8e]">{categoryLabel}{ing.brand ? ` · ${ing.brand}` : ""}</p>
+                            {ing.supplier_name && <p className="mt-1 text-[10px] font-normal text-[#7958d8]">Beli: {ing.supplier_name}</p>}
                           </td>
                           <td className="py-3 px-4 font-black text-[#c2410c]">
                             {formatRupiah(Number(ing.pack_price))}
@@ -1190,7 +1510,11 @@ export default function FinanceClient({
                             {ing.pack_size} {ing.base_unit}
                           </td>
                           <td className="py-3 px-4 font-bold text-[#7958d8]">
-                            Rp {costPerBaseUnit.toFixed(1)} / {ing.base_unit}
+                            Rp {costPerBaseUnit.toLocaleString("id-ID", { maximumFractionDigits: 2 })} / {ing.base_unit}
+                            <p className="mt-1 text-[10px] font-normal text-[#7b7b8e]">Dipakai sesuai jumlah di resep</p>
+                          </td>
+                          <td className="py-3 px-4">
+                            {recipesUsingIngredient.length > 0 ? <div><p className="font-bold text-[#16a34a]">{recipesUsingIngredient.length} resep</p><p className="mt-1 max-w-44 truncate text-[10px] text-[#7b7b8e]" title={recipesUsingIngredient.join(", ")}>{recipesUsingIngredient.join(", ")}</p></div> : <div><p className="font-bold text-[#b45309]">Belum dipakai</p><p className="mt-1 text-[10px] text-[#7b7b8e]">Tambahkan ke resep</p></div>}
                           </td>
                           <td className="py-3 px-4 text-[10.5px] text-[#7b7b8e]">
                             {formatBusinessDateTime(ing.updated_at)}
@@ -1218,6 +1542,9 @@ export default function FinanceClient({
                         </tr>
                       );
                     })}
+                    {filteredIngredients.length === 0 && (
+                      <tr><td colSpan={7} className="px-4 py-10 text-center text-[#7b7b8e]">Bahan tidak ditemukan. Coba kata kunci lain atau tambahkan bahan baru.</td></tr>
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -1227,6 +1554,36 @@ export default function FinanceClient({
         )}
 
       </main>
+
+      <nav aria-label="Navigasi Finance" className="fixed inset-x-0 bottom-0 z-40 border-t-2 border-[#232331] bg-white/95 px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 backdrop-blur-md md:hidden">
+        <div className="mx-auto grid max-w-lg grid-cols-5 gap-1">
+          {([
+            { key: "quick", label: "Hitung", icon: Calculator },
+            { key: "catalog", label: "Katalog", icon: Package },
+            { key: "editor", label: "Resep", icon: Edit3 },
+            { key: "simulation", label: "Target", icon: TrendingUp },
+            { key: "ingredients", label: "Bahan", icon: Layers },
+          ] as const).map((item) => {
+            const Icon = item.icon;
+            const isActive = activeTab === item.key;
+            return (
+              <button
+                key={item.key}
+                type="button"
+                onClick={() => {
+                  setActiveTab(item.key);
+                  window.scrollTo({ top: 0, behavior: "smooth" });
+                }}
+                aria-current={isActive ? "page" : undefined}
+                className={`flex min-h-14 flex-col items-center justify-center gap-1 rounded-xl text-[10px] font-bold transition-colors ${isActive ? "bg-[#232331] text-[#d9ff57]" : "text-[#7b7b8e] active:bg-[#f0edff]"}`}
+              >
+                <Icon size={18} strokeWidth={isActive ? 2.5 : 2} />
+                <span>{item.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </nav>
 
       {/* MODAL: UPDATE INGREDIENT PRICE */}
       {editingIngredient && (
@@ -1257,11 +1614,11 @@ export default function FinanceClient({
                 <label className="block font-bold text-[#232331]">Harga Kemasan Baru (Rp):</label>
                 <input
                   type="number"
-                  required
-                  min={100}
-                  step={500}
-                  value={newPackPriceInput}
-                  onChange={(e) => setNewPackPriceInput(Number(e.target.value))}
+                    required
+                    min={0}
+                    step={100}
+                    value={newPackPriceInput}
+                  onChange={(e) => setNewPackPriceInput(Math.max(0, Number(e.target.value) || 0))}
                   className="w-full rounded-xl border-2 border-[#232331] p-2.5 text-base font-black text-[#c2410c]"
                   autoFocus
                 />
@@ -1298,11 +1655,14 @@ export default function FinanceClient({
           <div className="w-full max-w-md rounded-3xl border-2 border-[#232331] bg-white p-6 shadow-ink-lg space-y-4 animate-in zoom-in-95 font-mono text-xs">
             <div className="flex items-center justify-between border-b border-[#dedee8] pb-3">
               <h3 className="font-extrabold text-base text-[#232331] font-sans">
-                Tambah Bahan Baku Baru
+                {addCreatedIngredientToRecipe ? "Tambah Bahan untuk Resep" : "Tambah Bahan Baku Baru"}
               </h3>
               <button
                 type="button"
-                onClick={() => setShowAddIngredient(false)}
+                onClick={() => {
+                  setShowAddIngredient(false);
+                  setAddCreatedIngredientToRecipe(false);
+                }}
                 className="text-[#7b7b8e] hover:text-[#232331] font-bold p-1"
               >
                 ✕
@@ -1310,8 +1670,13 @@ export default function FinanceClient({
             </div>
 
             <form onSubmit={handleCreateIngredient} className="space-y-3 font-sans">
+              {addCreatedIngredientToRecipe && (
+                <div className="rounded-xl border border-[#7958d8] bg-[#f7f4ff] p-3 text-[11px] leading-relaxed text-[#5c5c70]">
+                  Isi sekali di sini. Setelah disimpan, bahan ini langsung masuk ke resep dan tersimpan di daftar modal untuk dipakai lagi nanti.
+                </div>
+              )}
               <div className="space-y-1 font-mono">
-                <label className="block font-bold text-[#232331]">Nama Bahan Baku:</label>
+                <label className="block font-bold text-[#232331]">Nama bahan atau barang supplier</label>
                 <input
                   type="text"
                   required
@@ -1323,21 +1688,26 @@ export default function FinanceClient({
               </div>
 
               <div className="grid grid-cols-2 gap-2 font-mono">
+                <label className="block"><span className="block font-bold text-[#232331]">Jenis pencatatan</span><select value={newIngCategory} onChange={(event) => setNewIngCategory(event.target.value as typeof newIngCategory)} className="mt-1 w-full rounded-xl border border-[#dedee8] bg-white p-2 text-xs font-bold text-[#232331]"><option value="bahan_baku">Bahan baku</option><option value="kemasan">Kemasan</option><option value="barang_kulakan">Barang kulakan</option><option value="lainnya">Lainnya</option></select></label>
+                <label className="block"><span className="block font-bold text-[#232331]">Merek atau varian</span><input type="text" value={newIngBrand} onChange={(event) => setNewIngBrand(event.target.value)} placeholder="Contoh: Marjan cocopandan" className="mt-1 w-full rounded-xl border border-[#dedee8] p-2 text-xs text-[#232331]" /></label>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 font-mono">
                 <div className="space-y-1">
-                  <label className="block font-bold text-[#232331]">Harga Beli (Rp):</label>
+                <label className="block font-bold text-[#232331]">Harga beli satu kemasan (Rp)</label>
                   <input
                     type="number"
                     required
-                    min={100}
-                    step={500}
+                    min={0}
+                    step={100}
                     value={newIngPrice}
-                    onChange={(e) => setNewIngPrice(Number(e.target.value))}
+                    onChange={(e) => setNewIngPrice(Math.max(0, Number(e.target.value) || 0))}
                     className="w-full rounded-xl border border-[#dedee8] p-2 text-xs font-bold text-[#232331]"
                   />
                 </div>
 
                 <div className="space-y-1">
-                  <label className="block font-bold text-[#232331]">Isi Kemasan:</label>
+                <label className="block font-bold text-[#232331]">Isi satu kemasan</label>
                   <div className="flex gap-1">
                     <input
                       type="number"
@@ -1360,10 +1730,18 @@ export default function FinanceClient({
                 </div>
               </div>
 
+              <div className="grid grid-cols-2 gap-2 font-mono">
+                <label className="block"><span className="block font-bold text-[#232331]">Supplier atau tempat beli</span><input type="text" value={newIngSupplier} onChange={(event) => setNewIngSupplier(event.target.value)} placeholder="Contoh: Toko Sumber Makmur" className="mt-1 w-full rounded-xl border border-[#dedee8] p-2 text-xs text-[#232331]" /></label>
+                <label className="block"><span className="block font-bold text-[#232331]">Catatan pembelian</span><input type="text" value={newIngNotes} onChange={(event) => setNewIngNotes(event.target.value)} placeholder="Contoh: Harga grosir 6 botol" className="mt-1 w-full rounded-xl border border-[#dedee8] p-2 text-xs text-[#232331]" /></label>
+              </div>
+
               <div className="flex justify-end gap-2 pt-2 border-t border-[#dedee8] font-mono">
                 <button
                   type="button"
-                  onClick={() => setShowAddIngredient(false)}
+                  onClick={() => {
+                    setShowAddIngredient(false);
+                    setAddCreatedIngredientToRecipe(false);
+                  }}
                   className="rounded-xl border border-[#dedee8] bg-white px-3 py-2 font-bold text-[#7b7b8e]"
                 >
                   Batal
@@ -1373,7 +1751,7 @@ export default function FinanceClient({
                   disabled={isPending}
                   className="btn-tactile rounded-xl bg-[#232331] px-5 py-2 font-black text-[#d9ff57] shadow-ink-xs disabled:opacity-50"
                 >
-                  Tambah Bahan ✓
+                  {addCreatedIngredientToRecipe ? "Simpan & Pakai di Resep" : "Tambah Bahan ✓"}
                 </button>
               </div>
             </form>

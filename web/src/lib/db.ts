@@ -5,6 +5,7 @@ import { hashPin, verifyPin, isLegacyPinHash } from "./auth";
 import { generateCardCode, generateActivationPin } from "./card-code";
 import { hashClientIp, checkStaffLockout, calculateLockoutExpiry } from "./auth-security";
 import { calculateRecipeHpp, type IngredientItem, type RecipeHppResult } from "./finance-engine";
+import { buildGoogleReviewUrl } from "./google-places";
 import { getPointExpiryCandidates, type PointExpiryLedgerRow } from "./point-expiry";
 import {
   normalizePhoneNumber,
@@ -21,8 +22,8 @@ import {
   calculateShiftReconciliation,
 } from "./pos-engine";
 import type {
-  Business, BusinessModule, User, Customer, CustomerProfileSummary, Card, CardTap,
-  Ingredient, IngredientPriceHistory, Recipe, FinancePocket, FinanceTransaction, FinanceAsset, InventoryItem, FinanceSummary, LoyaltyProgram, PointLedger,
+  Business, BusinessModule, User, Customer, CustomerProfileSummary, Card, CardService, CardTap,
+  Ingredient, IngredientPriceHistory, Recipe, FinanceCalculatorPreset, FinancePocket, FinanceTransaction, FinanceAsset, InventoryItem, FinanceSummary, LoyaltyProgram, PointLedger,
   Reward, Redemption, LoyaltyCampaignSummary, LoyaltyCampaignRecipient, LoyaltyCampaignStatus, PointExpiryCandidate,
   Category, MenuItem, Shift, ShiftReport, Order, OrderItem, Refund, SafeUser,
   MemberCardSettings,
@@ -680,6 +681,15 @@ export const db = {
     return rows.length > 0;
   },
 
+  async setStaffActive(userId: string, businessId: string, isActive: boolean): Promise<boolean> {
+    const rows = await sql`
+      UPDATE users SET is_active = ${isActive}, failed_pin_attempts = 0, locked_until = NULL
+      WHERE id = ${userId} AND business_id = ${businessId} AND role = 'staff'
+      RETURNING id
+    `;
+    return rows.length > 0;
+  },
+
   // =========================================================================
   // Kartu dan tap (KAEL Review)
   // =========================================================================
@@ -758,7 +768,7 @@ export const db = {
    */
   async createBatchCards(
     count: number,
-    type: "review" | "loyalty" | "attendance" | "link" = "review",
+    type: "review" | "loyalty" | "attendance" | "link" | "smart_touch" = "review",
   ) {
     const issued: { card_code: string; activation_pin: string }[] = [];
     for (let i = 0; i < count; i++) {
@@ -787,7 +797,8 @@ export const db = {
     code: string,
     pin: string,
     businessId: string,
-    destinationUrl: string,
+    /** null untuk layanan yang memang tidak memakai alamat tujuan. */
+    destinationUrl: string | null,
     label = "Meja Kasir",
   ): Promise<{ success: boolean; error?: string; card?: Card }> {
     const card = await this.getCardByCode(code);
@@ -821,6 +832,67 @@ export const db = {
       WHERE id = ${cardId} AND business_id = ${businessId}
       RETURNING *
     `);
+  },
+
+  /**
+   * Memindahkan sebuah kartu ke layanan lain — satu kartu tetap satu layanan.
+   *
+   * Perpindahan diizinkan karena orang salah aktivasi dan berubah pikiran, dan
+   * kartu yang terkunci selamanya sama saja dengan kartu mati. Tapi hanya kalau
+   * layanan lamanya sudah benar-benar kosong: menghapus tombol Smart Touch atau
+   * memutus ikatan member diam-diam berarti ada yang hilang tanpa pemiliknya
+   * pernah diberi tahu.
+   *
+   * destination_url selalu dikosongkan. Alamat itu milik layanan yang lama;
+   * mewariskannya bikin kartu menunjuk ke tempat yang tidak pernah dimaksudkan.
+   */
+  async setCardService(
+    cardId: string,
+    businessId: string,
+    service: CardService,
+  ): Promise<{ ok: boolean; error?: string; card?: Card }> {
+    const card = one<Card>(await sql`
+      SELECT * FROM cards WHERE id = ${cardId} AND business_id = ${businessId} LIMIT 1
+    `);
+    if (!card) return { ok: false, error: "Kartu tidak ditemukan pada bisnis ini." };
+    if (card.type === service) return { ok: true, card };
+
+    if (card.type === "smart_touch") {
+      const profile = await sql`SELECT 1 FROM smart_touch_profiles WHERE card_id = ${cardId} LIMIT 1`;
+      if (profile.length) {
+        return {
+          ok: false,
+          error:
+            "Kartu ini masih punya halaman Smart Touch beserta tombolnya. Hapus dulu halaman itu, baru layanannya bisa dipindah.",
+        };
+      }
+    }
+
+    if (card.type === "loyalty" && card.customer_id) {
+      return {
+        ok: false,
+        error:
+          "Kartu ini sudah dipegang seorang member. Lepaskan dulu dari membernya sebelum dipakai untuk layanan lain.",
+      };
+    }
+
+    if (card.type === "attendance") {
+      const site = await sql`SELECT 1 FROM attendance_sites WHERE nfc_card_id = ${cardId} LIMIT 1`;
+      if (site.length) {
+        return {
+          ok: false,
+          error:
+            "Kartu ini masih terpasang di sebuah titik absensi. Lepaskan dulu dari titik absensinya.",
+        };
+      }
+    }
+
+    const updated = one<Card>(await sql`
+      UPDATE cards SET type = ${service}, destination_url = NULL
+      WHERE id = ${cardId} AND business_id = ${businessId}
+      RETURNING *
+    `);
+    return { ok: true, card: updated! };
   },
 
   /** Mencabut akses kartu dan mengembalikannya ke status unactivated (belum aktif) */
@@ -1020,29 +1092,45 @@ export const db = {
   },
 
   async getSmartTouch(cardId: string, businessId?: string) {
-    return one<{
+    const profile = one<{
       card_id: string; business_id: string; title: string; subtitle: string | null;
-      card_code: string; business_name: string; brand_color: string; logo_url: string | null;
+      card_code: string; business_name: string; brand_color: string; logo_url: string | null; google_place_id: string;
       buttons: { action_key: string; label: string; target_url: string; sort_order: number; is_enabled: boolean }[];
     }>(await sql`
-      SELECT p.*, c.card_code, b.name AS business_name, b.brand_color, b.logo_url,
+      SELECT p.*, c.card_code, b.name AS business_name, b.brand_color, b.logo_url, b.google_place_id,
         COALESCE((SELECT json_agg(json_build_object('action_key', x.action_key, 'label', x.label, 'target_url', x.target_url, 'sort_order', x.sort_order, 'is_enabled', x.is_enabled) ORDER BY x.sort_order) FROM smart_touch_buttons x WHERE x.card_id = p.card_id), '[]'::json) AS buttons
       FROM smart_touch_profiles p JOIN cards c ON c.id = p.card_id JOIN businesses b ON b.id = p.business_id
       WHERE p.card_id = ${cardId} ${businessId ? sql`AND p.business_id = ${businessId}` : sql``}
     `);
+    if (!profile) return null;
+    const reviewUrl = profile.google_place_id ? buildGoogleReviewUrl(profile.google_place_id) : null;
+    return {
+      ...profile,
+      buttons: profile.buttons.map((button) =>
+        button.action_key === "review" && reviewUrl ? { ...button, target_url: reviewUrl } : button,
+      ),
+    };
   },
 
   async getSmartTouchByCode(cardCode: string) {
-    return one<{
+    const profile = one<{
       card_id: string; business_id: string; title: string; subtitle: string | null;
-      card_code: string; business_name: string; brand_color: string; logo_url: string | null;
+      card_code: string; business_name: string; brand_color: string; logo_url: string | null; google_place_id: string;
       buttons: { action_key: string; label: string; target_url: string; sort_order: number; is_enabled: boolean }[];
     }>(await sql`
-      SELECT p.*, c.card_code, b.name AS business_name, b.brand_color, b.logo_url,
+      SELECT p.*, c.card_code, b.name AS business_name, b.brand_color, b.logo_url, b.google_place_id,
         COALESCE((SELECT json_agg(json_build_object('action_key', x.action_key, 'label', x.label, 'target_url', x.target_url, 'sort_order', x.sort_order, 'is_enabled', x.is_enabled) ORDER BY x.sort_order) FROM smart_touch_buttons x WHERE x.card_id = p.card_id), '[]'::json) AS buttons
       FROM smart_touch_profiles p JOIN cards c ON c.id = p.card_id JOIN businesses b ON b.id = p.business_id
-      WHERE c.card_code = ${cardCode} AND c.status = 'active'
+      WHERE c.card_code = ${cardCode} AND c.status = 'active' AND c.type = 'smart_touch'
     `);
+    if (!profile) return null;
+    const reviewUrl = profile.google_place_id ? buildGoogleReviewUrl(profile.google_place_id) : null;
+    return {
+      ...profile,
+      buttons: profile.buttons.map((button) =>
+        button.action_key === "review" && reviewUrl ? { ...button, target_url: reviewUrl } : button,
+      ),
+    };
   },
 
   async saveSmartTouch(cardId: string, businessId: string, data: { title: string; subtitle?: string | null; buttons: { actionKey: string; label: string; targetUrl: string; enabled: boolean; sortOrder: number }[] }) {
@@ -1262,6 +1350,18 @@ export const db = {
       GROUP BY c.id
       ORDER BY c.created_at DESC
     `) as unknown as import("./types").CustomerDirectoryEntry[];
+  },
+
+  async getCustomerExport(businessId: string) {
+    return (await sql`
+      SELECT c.name, c.phone, c.created_at, c.marketing_opt_in,
+        COALESCE(SUM(l.delta), 0)::int AS point_balance
+      FROM customers c
+      LEFT JOIN point_ledger l ON l.customer_id = c.id
+      WHERE c.business_id = ${businessId}
+      GROUP BY c.id
+      ORDER BY c.created_at DESC
+    `) as { name: string | null; phone: string; created_at: string; marketing_opt_in: boolean; point_balance: number }[];
   },
 
   /** Batas 5 pendaftaran publik per jam untuk satu jaringan dan satu toko. */
@@ -2374,6 +2474,60 @@ export const db = {
     `) as unknown as Ingredient[];
   },
 
+  async getFinanceCalculatorPresets(businessId: string): Promise<FinanceCalculatorPreset[]> {
+    const rows = await sql`
+      SELECT * FROM finance_calculator_presets
+      WHERE business_id = ${businessId}
+      ORDER BY updated_at DESC, name ASC
+    `;
+    return rows.map((row) => ({
+      ...row,
+      direct_cost: num(row.direct_cost), supporting_cost: num(row.supporting_cost), operational_cost: num(row.operational_cost),
+      selling_price: num(row.selling_price), discount_pct: num(row.discount_pct), payment_fee_pct: num(row.payment_fee_pct),
+      channel_fee_pct: num(row.channel_fee_pct), tax_reserve_pct: num(row.tax_reserve_pct), target_margin_pct: num(row.target_margin_pct),
+      monthly_fixed_cost: num(row.monthly_fixed_cost), monthly_profit_target: num(row.monthly_profit_target),
+    })) as unknown as FinanceCalculatorPreset[];
+  },
+
+  async saveFinanceCalculatorPreset(
+    businessId: string,
+    data: Omit<FinanceCalculatorPreset, "id" | "business_id" | "created_at" | "updated_at"> & { id?: string },
+  ): Promise<FinanceCalculatorPreset> {
+    const row = {
+      name: data.name,
+      mode: data.mode,
+      direct_cost: data.direct_cost,
+      supporting_cost: data.supporting_cost,
+      operational_cost: data.operational_cost,
+      selling_price: data.selling_price,
+      discount_pct: data.discount_pct,
+      payment_fee_pct: data.payment_fee_pct,
+      channel_fee_pct: data.channel_fee_pct,
+      tax_reserve_pct: data.tax_reserve_pct,
+      target_margin_pct: data.target_margin_pct,
+      monthly_fixed_cost: data.monthly_fixed_cost,
+      monthly_profit_target: data.monthly_profit_target,
+      updated_at: new Date().toISOString(),
+    };
+    if (data.id) {
+      const updated = one<FinanceCalculatorPreset>(await sql`
+        UPDATE finance_calculator_presets SET ${sql(row)}
+        WHERE id = ${data.id} AND business_id = ${businessId} RETURNING *
+      `);
+      if (updated) return updated;
+    }
+    return one<FinanceCalculatorPreset>(await sql`
+      INSERT INTO finance_calculator_presets ${sql({ ...row, business_id: businessId })} RETURNING *
+    `)!;
+  },
+
+  async deleteFinanceCalculatorPreset(id: string, businessId: string): Promise<boolean> {
+    const rows = await sql`
+      DELETE FROM finance_calculator_presets WHERE id = ${id} AND business_id = ${businessId} RETURNING id
+    `;
+    return rows.length > 0;
+  },
+
   async getIngredientsMap(businessId: string): Promise<Map<string, IngredientItem>> {
     const rows = await this.getIngredients(businessId);
     return new Map(
@@ -2391,11 +2545,12 @@ export const db = {
   async createIngredient(
     businessId: string, name: string, packPrice: number, packSize: number,
     baseUnit: "gr" | "ml" | "pcs",
+    metadata: Pick<Ingredient, "category" | "brand" | "supplier_name" | "notes"> = {},
   ): Promise<Ingredient> {
     return one<Ingredient>(await sql`
       INSERT INTO ingredients ${sql({
         business_id: businessId, name, pack_price: packPrice,
-        pack_size: packSize, base_unit: baseUnit,
+        pack_size: packSize, base_unit: baseUnit, ...metadata,
       })} RETURNING *
     `)!;
   },
@@ -3944,13 +4099,24 @@ export const db = {
     return one(await sql`INSERT INTO delivery_zones ${sql({ business_id: businessId, ...row })} RETURNING *`);
   },
 
+  async deleteDeliveryZone(businessId: string, zoneId: string) {
+    const rows = await sql`DELETE FROM delivery_zones WHERE id = ${zoneId} AND business_id = ${businessId} RETURNING id`;
+    return rows.length > 0;
+  },
+
   async getBookingDashboard(businessId: string) {
-    const [services, appointments, staff] = await Promise.all([
+    const [services, appointments, staff, schedules, waitlist, reminders] = await Promise.all([
       sql`SELECT * FROM booking_services WHERE business_id = ${businessId} ORDER BY name`,
       sql`SELECT a.*, s.name AS service_name, u.name AS staff_name FROM appointments a JOIN booking_services s ON s.id = a.service_id LEFT JOIN users u ON u.id = a.staff_user_id WHERE a.business_id = ${businessId} AND a.starts_at >= NOW() - INTERVAL '30 days' ORDER BY a.starts_at LIMIT 300`,
       sql`SELECT id, name FROM users WHERE business_id = ${businessId} AND role IN ('owner', 'staff') AND is_active = TRUE ORDER BY name`,
+      sql`SELECT s.*, u.name AS staff_name FROM booking_schedules s LEFT JOIN users u ON u.id = s.user_id WHERE s.business_id = ${businessId} ORDER BY s.day_of_week, s.starts_at`,
+      sql`SELECT w.*, s.name AS service_name FROM booking_waitlist w JOIN booking_services s ON s.id = w.service_id WHERE w.business_id = ${businessId} AND w.status IN ('waiting', 'notified') ORDER BY w.preferred_start NULLS LAST, w.created_at`,
+      sql`SELECT r.*, a.customer_name, a.customer_phone, a.starts_at, s.name AS service_name FROM booking_reminders r JOIN appointments a ON a.id = r.appointment_id JOIN booking_services s ON s.id = a.service_id WHERE r.business_id = ${businessId} AND r.status = 'queued' ORDER BY r.scheduled_for LIMIT 100`,
     ]);
-    return { services, appointments, staff };
+    const total = appointments.length;
+    const completed = appointments.filter((item) => item.status === "completed").length;
+    const noShow = appointments.filter((item) => item.status === "no_show").length;
+    return { services, appointments, staff, schedules, waitlist, reminders, insights: { total, completed, noShow, noShowRate: total ? Math.round((noShow / total) * 100) : 0 } };
   },
 
   async saveBookingService(businessId: string, data: { id?: string; name: string; duration_minutes: number; price: number; deposit_amount: number; capacity: number; is_active: boolean }) {
@@ -3962,12 +4128,36 @@ export const db = {
     return one(await sql`INSERT INTO booking_services ${sql({ business_id: businessId, ...row })} RETURNING *`);
   },
 
+  async saveBookingSchedule(businessId: string, data: { id?: string; user_id?: string | null; day_of_week: number; starts_at: string; ends_at: string; slot_interval_minutes: number; is_active: boolean }) {
+    const row = { user_id: data.user_id ?? null, day_of_week: data.day_of_week, starts_at: data.starts_at, ends_at: data.ends_at, slot_interval_minutes: data.slot_interval_minutes, is_active: data.is_active };
+    if (data.id) return one(await sql`UPDATE booking_schedules SET ${sql(row)} WHERE id = ${data.id} AND business_id = ${businessId} RETURNING *`);
+    return one(await sql`INSERT INTO booking_schedules ${sql({ business_id: businessId, ...row })} RETURNING *`);
+  },
+
+  async deleteBookingSchedule(businessId: string, scheduleId: string) {
+    const rows = await sql`DELETE FROM booking_schedules WHERE id = ${scheduleId} AND business_id = ${businessId} RETURNING id`;
+    return rows.length > 0;
+  },
+
+  async getPublicBookingContext(storeCode: string) {
+    const business = await this.getBusinessByStoreCode(storeCode);
+    if (!business) return null;
+    const [services, staff, schedules] = await Promise.all([
+      sql`SELECT id, name, duration_minutes, price, deposit_amount, capacity FROM booking_services WHERE business_id = ${business.id} AND is_active = TRUE ORDER BY name`,
+      sql`SELECT id, name FROM users WHERE business_id = ${business.id} AND role IN ('owner', 'staff') AND is_active = TRUE ORDER BY name`,
+      sql`SELECT id, user_id, day_of_week, starts_at, ends_at, slot_interval_minutes FROM booking_schedules WHERE business_id = ${business.id} AND is_active = TRUE ORDER BY day_of_week, starts_at`,
+    ]);
+    return { business, services, staff, schedules };
+  },
+
   async createAppointment(businessId: string, data: { service_id: string; staff_user_id?: string | null; customer_name: string; customer_phone: string; starts_at: string; note?: string | null }) {
     return sql.begin(async (tx) => {
       const service = one<{ id: string; duration_minutes: number; deposit_amount: number; capacity: number }>(await tx`SELECT * FROM booking_services WHERE id = ${data.service_id} AND business_id = ${businessId} AND is_active = TRUE`);
       if (!service) return { appointment: null, error: "Layanan tidak tersedia." };
       const start = new Date(data.starts_at);
+      if (Number.isNaN(start.getTime()) || start.getTime() < Date.now() - 60_000) return { appointment: null, error: "Pilih jadwal booking yang masih akan datang." };
       const end = new Date(start.getTime() + num(service.duration_minutes) * 60_000);
+      await tx`SELECT pg_advisory_xact_lock(hashtext(${`${businessId}:${service.id}:${data.staff_user_id ?? "any"}:${start.toISOString()}`}))`;
       const overlapping = await tx`SELECT COUNT(*)::int AS n FROM appointments WHERE business_id = ${businessId} AND service_id = ${service.id} AND status IN ('pending_deposit', 'confirmed') AND starts_at < ${end.toISOString()} AND ends_at > ${start.toISOString()} ${data.staff_user_id ? tx`AND staff_user_id = ${data.staff_user_id}` : tx``}`;
       if (num(overlapping[0]?.n) >= num(service.capacity)) return { appointment: null, error: "Slot ini sudah penuh." };
       const deposit = num(service.deposit_amount);
@@ -3981,22 +4171,105 @@ export const db = {
     return one(await sql`UPDATE appointments SET status = ${status}, cancelled_at = CASE WHEN ${status} = 'cancelled' THEN NOW() ELSE cancelled_at END WHERE id = ${id} AND business_id = ${businessId} RETURNING *`);
   },
 
+  async getPublicAppointment(token: string) {
+    return one(await sql`
+      SELECT a.*, b.name AS business_name, b.store_code, s.name AS service_name, s.duration_minutes
+      FROM appointments a
+      JOIN businesses b ON b.id = a.business_id
+      JOIN booking_services s ON s.id = a.service_id
+      WHERE a.public_token = ${token}
+    `);
+  },
+
+  async updatePublicAppointment(token: string, startsAt: string | null, cancel: boolean) {
+    const appointment = await this.getPublicAppointment(token) as { id: string; business_id: string; service_id: string; staff_user_id: string | null; customer_name: string; customer_phone: string; note: string | null; status: string } | null;
+    if (!appointment || !["pending_deposit", "confirmed"].includes(appointment.status)) return null;
+    if (cancel) return one(await sql`UPDATE appointments SET status = 'cancelled', cancelled_at = NOW(), cancelled_by = 'customer' WHERE id = ${appointment.id} RETURNING *`);
+    if (!startsAt) return null;
+    const replacement = await this.createAppointment(appointment.business_id, { service_id: appointment.service_id, staff_user_id: appointment.staff_user_id, customer_name: appointment.customer_name, customer_phone: appointment.customer_phone, starts_at: startsAt, note: appointment.note ? `${appointment.note} | Reschedule dari ${appointment.id}` : `Reschedule dari ${appointment.id}` });
+    if (!replacement.appointment) return null;
+    await sql`UPDATE appointments SET status = 'cancelled', cancelled_at = NOW(), cancelled_by = 'customer_reschedule' WHERE id = ${appointment.id}`;
+    return replacement.appointment;
+  },
+
+  async createBookingWaitlist(businessId: string, data: { service_id: string; customer_name: string; customer_phone: string; preferred_start?: string | null }) {
+    return one(await sql`INSERT INTO booking_waitlist ${sql({ business_id: businessId, service_id: data.service_id, customer_name: data.customer_name, customer_phone: data.customer_phone, preferred_start: data.preferred_start ?? null })} RETURNING *`);
+  },
+
   async getHrDashboard(businessId: string) {
-    const [staff, schedules, attendance, requests, periods, sites] = await Promise.all([
+    const [staff, schedules, attendance, requests, periods, payrollLines, sites, policy, attendanceSummary] = await Promise.all([
       sql`SELECT id, name, role FROM users WHERE business_id = ${businessId} AND role IN ('owner', 'staff') AND is_active = TRUE ORDER BY name`,
       sql`SELECT s.*, u.name AS staff_name FROM staff_work_schedules s JOIN users u ON u.id = s.user_id WHERE s.business_id = ${businessId} AND s.ends_at >= NOW() - INTERVAL '30 days' ORDER BY s.starts_at LIMIT 300`,
       sql`SELECT a.*, u.name AS staff_name FROM attendance_records a JOIN users u ON u.id = a.user_id WHERE a.business_id = ${businessId} ORDER BY a.created_at DESC LIMIT 300`,
       sql`SELECT r.*, u.name AS staff_name FROM leave_requests r JOIN users u ON u.id = r.user_id WHERE r.business_id = ${businessId} ORDER BY r.created_at DESC LIMIT 100`,
-      sql`SELECT * FROM payroll_periods WHERE business_id = ${businessId} ORDER BY period_end DESC LIMIT 24`,
+      sql`SELECT p.*, COALESCE(SUM(l.base_pay + l.overtime_pay + l.incentive_pay + l.commission_pay - l.deduction), 0)::bigint AS total_pay FROM payroll_periods p LEFT JOIN payroll_lines l ON l.payroll_period_id = p.id WHERE p.business_id = ${businessId} GROUP BY p.id ORDER BY p.period_end DESC LIMIT 24`,
+      sql`SELECT l.*, p.period_start, p.period_end, p.status AS period_status, u.name AS staff_name FROM payroll_lines l JOIN payroll_periods p ON p.id = l.payroll_period_id JOIN users u ON u.id = l.user_id WHERE p.business_id = ${businessId} ORDER BY p.period_end DESC, u.name LIMIT 500`,
       sql`SELECT * FROM attendance_sites WHERE business_id = ${businessId} AND is_active = TRUE ORDER BY name`,
+      one(await sql`SELECT attendance_require_selfie, attendance_require_location, pos_require_scheduled_shift FROM businesses WHERE id = ${businessId}`),
+      sql`SELECT u.id, u.name, COUNT(a.id)::int AS attendance_count, COUNT(a.id) FILTER (WHERE a.check_out_at IS NOT NULL)::int AS completed_count, COUNT(a.id) FILTER (WHERE a.check_out_at IS NULL)::int AS open_count, COALESCE(ROUND(SUM(EXTRACT(EPOCH FROM (COALESCE(a.check_out_at, NOW()) - a.check_in_at)) / 3600)::numeric, 1), 0) AS hours_worked FROM users u LEFT JOIN attendance_records a ON a.user_id = u.id AND a.business_id = ${businessId} AND a.check_in_at >= NOW() - INTERVAL '30 days' WHERE u.business_id = ${businessId} AND u.role IN ('owner', 'staff') AND u.is_active = TRUE GROUP BY u.id, u.name ORDER BY u.name`,
     ]);
-    return { staff, schedules, attendance, requests, periods, sites };
+    return { staff, schedules, attendance, requests, periods, payrollLines, sites, attendanceSummary, policy: policy ?? { attendance_require_selfie: true, attendance_require_location: true, pos_require_scheduled_shift: false } };
+  },
+
+  async saveAttendancePolicy(businessId: string, policy: { requireSelfie: boolean; requireLocation: boolean }) {
+    return one(await sql`UPDATE businesses SET attendance_require_selfie = ${policy.requireSelfie}, attendance_require_location = ${policy.requireLocation} WHERE id = ${businessId} RETURNING id`);
+  },
+
+  async setPosSchedulePolicy(businessId: string, required: boolean) {
+    return one(await sql`UPDATE businesses SET pos_require_scheduled_shift = ${required} WHERE id = ${businessId} RETURNING id`);
+  },
+
+  async saveAttendanceSite(businessId: string, data: { id?: string; name: string; google_place_id?: string | null; latitude?: number | null; longitude?: number | null; allowed_radius_meters: number; nfc_card_id?: string | null; is_active: boolean }) {
+    const row = { name: data.name, google_place_id: data.google_place_id ?? null, latitude: data.latitude ?? null, longitude: data.longitude ?? null, allowed_radius_meters: data.allowed_radius_meters, nfc_card_id: data.nfc_card_id ?? null, is_active: data.is_active };
+    if (data.id) return one(await sql`UPDATE attendance_sites SET ${sql(row)} WHERE id = ${data.id} AND business_id = ${businessId} RETURNING *`);
+    return one(await sql`INSERT INTO attendance_sites ${sql({ business_id: businessId, ...row })} RETURNING *`);
+  },
+
+  async getAttendanceSiteByToken(businessId: string, token: string) {
+    return one(await sql`SELECT * FROM attendance_sites WHERE business_id = ${businessId} AND qr_token::text = ${token} AND is_active = TRUE`);
   },
 
   async saveStaffSchedule(businessId: string, data: { user_id: string; starts_at: string; ends_at: string; role_label?: string | null; pos_shift_allowed: boolean }) {
-    const user = await sql`SELECT 1 FROM users WHERE id = ${data.user_id} AND business_id = ${businessId} AND is_active = TRUE`;
-    if (!user.length) return null;
-    return one(await sql`INSERT INTO staff_work_schedules ${sql({ business_id: businessId, ...data, role_label: data.role_label ?? null })} RETURNING *`);
+    return sql.begin(async (tx) => {
+      const user = await tx`SELECT 1 FROM users WHERE id = ${data.user_id} AND business_id = ${businessId} AND is_active = TRUE`;
+      if (!user.length) return null;
+      const conflict = await tx`SELECT 1 FROM staff_work_schedules WHERE business_id = ${businessId} AND user_id = ${data.user_id} AND status = 'scheduled' AND starts_at < ${data.ends_at}::timestamptz AND ends_at > ${data.starts_at}::timestamptz LIMIT 1`;
+      if (conflict.length) return "conflict" as const;
+      return one(await tx`INSERT INTO staff_work_schedules ${tx({ business_id: businessId, ...data, role_label: data.role_label ?? null })} RETURNING *`);
+    });
+  },
+
+  async cancelStaffSchedule(businessId: string, scheduleId: string) {
+    return one(await sql`UPDATE staff_work_schedules SET status = 'cancelled' WHERE id = ${scheduleId} AND business_id = ${businessId} AND status = 'scheduled' RETURNING id`);
+  },
+
+  async createLeaveRequest(businessId: string, userId: string, data: { leave_type: "leave" | "sick" | "permission" | "overtime"; starts_at: string; ends_at: string; reason: string }) {
+    return one(await sql`INSERT INTO leave_requests ${sql({ business_id: businessId, user_id: userId, ...data })} RETURNING *`);
+  },
+
+  async reviewLeaveRequest(businessId: string, ownerId: string, requestId: string, approved: boolean) {
+    return one(await sql`UPDATE leave_requests SET status = ${approved ? "approved" : "rejected"}, approved_by = ${ownerId}, approved_at = NOW() WHERE id = ${requestId} AND business_id = ${businessId} AND status = 'pending' RETURNING id`);
+  },
+
+  async createPayrollPeriod(businessId: string, data: { period_start: string; period_end: string }) {
+    return sql.begin(async (tx) => {
+      const period = one<{ id: string }>(await tx`INSERT INTO payroll_periods ${tx({ business_id: businessId, ...data })} ON CONFLICT (business_id, period_start, period_end) DO NOTHING RETURNING id`);
+      if (!period) return "exists" as const;
+      await tx`INSERT INTO payroll_lines (payroll_period_id, user_id) SELECT ${period.id}, id FROM users WHERE business_id = ${businessId} AND role = 'staff' AND is_active = TRUE`;
+      return period;
+    });
+  },
+
+  async savePayrollLine(businessId: string, data: { payroll_period_id: string; user_id: string; base_pay: number; overtime_pay: number; incentive_pay: number; commission_pay: number; deduction: number; note?: string | null }) {
+    return one(await sql`UPDATE payroll_lines l SET base_pay = ${data.base_pay}, overtime_pay = ${data.overtime_pay}, incentive_pay = ${data.incentive_pay}, commission_pay = ${data.commission_pay}, deduction = ${data.deduction}, note = ${data.note ?? null} FROM payroll_periods p WHERE l.payroll_period_id = ${data.payroll_period_id} AND l.user_id = ${data.user_id} AND l.payroll_period_id = p.id AND p.business_id = ${businessId} AND p.status = 'draft' RETURNING l.id`);
+  },
+
+  async setPayrollPeriodStatus(businessId: string, ownerId: string, periodId: string, status: "approved" | "paid") {
+    return one(await sql`UPDATE payroll_periods SET status = ${status}, approved_by = ${ownerId}, approved_at = NOW() WHERE id = ${periodId} AND business_id = ${businessId} AND ((status = 'draft' AND ${status} = 'approved') OR (status = 'approved' AND ${status} = 'paid')) RETURNING id`);
+  },
+
+  async getLeaveRequestsForUser(businessId: string, userId: string) {
+    return sql`SELECT * FROM leave_requests WHERE business_id = ${businessId} AND user_id = ${userId} ORDER BY created_at DESC LIMIT 50`;
   },
 
   async createAttendanceRecord(businessId: string, userId: string, data: { attendance_site_id?: string | null; latitude?: number | null; longitude?: number | null; selfie_url?: string | null; method: "self" | "qr" | "nfc" | "location"; direction: "in" | "out" }) {

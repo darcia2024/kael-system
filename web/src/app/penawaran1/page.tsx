@@ -237,6 +237,13 @@ export default function PenawaranHijabPage() {
               </p>
               <div className="mt-5 flex flex-col gap-2.5 sm:mt-8 sm:flex-row sm:gap-3">
                 <AuditPopup />
+                <Link
+                  href="/penawaran1/demo"
+                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-[10px] border-[1.5px] border-[#232331] bg-[#d9ff57] px-4 text-xs font-extrabold text-[#232331] shadow-ink-xs hover:bg-[#c9ef44] sm:min-h-[52px] sm:rounded-[12px] sm:px-6 sm:text-sm"
+                >
+                  Coba demo interaktif
+                  <ArrowRight className="h-3.5 w-3.5 sm:h-4 sm:w-4" strokeWidth={2.5} />
+                </Link>
                 <a
                   href="#fitur"
                   className="inline-flex min-h-11 items-center justify-center gap-2 rounded-[10px] border-[1.5px] border-[#232331] bg-white px-4 text-xs font-extrabold text-[#232331] shadow-ink-xs hover:bg-[#f0edff] sm:min-h-[52px] sm:rounded-[12px] sm:px-6 sm:text-sm"

@@ -41,7 +41,7 @@ type IssuedBatch = { card_code: string; activation_pin: string }[];
 export default function KaelAdminCardsPage({ initialCards }: { initialCards: Card[] }) {
   const [cards, setCards] = useState<Card[]>(initialCards);
   const [batchCount, setBatchCount] = useState<number>(5);
-  const [batchType, setBatchType] = useState<"review" | "loyalty" | "attendance" | "link">(
+  const [batchType, setBatchType] = useState<"review" | "loyalty" | "attendance" | "link" | "smart_touch">(
     "review",
   );
   const [generatedBatchInfo, setGeneratedBatchInfo] = useState<IssuedBatch | null>(null);

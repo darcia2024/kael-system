@@ -5,6 +5,8 @@ import { revalidatePath } from "next/cache";
 import { requireOwner, requireStaff } from "./auth";
 import { db } from "./db";
 import { moduleLock } from "./licensing";
+import { getGooglePlaceLocation, isPlacesSearchConfigured, searchPlaces } from "./google-places";
+import { CARD_SERVICE_LABEL } from "./types";
 
 export type OperationResult<T = null> = { ok: true; data: T } | { ok: false; error: string };
 const ok = <T,>(data: T): OperationResult<T> => ({ ok: true, data });
@@ -73,11 +75,33 @@ export async function saveDeliveryZoneAction(data: { id?: string; name: string; 
   revalidatePath("/app/pos"); return ok(null);
 }
 
+export async function deleteDeliveryZoneAction(zoneId: string): Promise<OperationResult> {
+  const { businessId } = await requireOwner();
+  const locked = await moduleLock(businessId, "pos", "write"); if (locked) return fail(locked);
+  if (!await db.deleteDeliveryZone(businessId, zoneId)) return fail("Area delivery tidak ditemukan.");
+  revalidatePath("/app/pos/ordering"); return ok(null);
+}
+
 export async function saveBookingServiceAction(data: { id?: string; name: string; durationMinutes: number; price: number; depositAmount: number; capacity: number; active: boolean }): Promise<OperationResult> {
   const { businessId } = await requireOwner();
   const locked = await moduleLock(businessId, "booking", "write"); if (locked) return fail(locked);
   if (data.name.trim().length < 2 || data.durationMinutes < 5 || data.price < 0 || data.depositAmount < 0 || data.capacity < 1) return fail("Data layanan belum benar.");
   await db.saveBookingService(businessId, { id: data.id, name: data.name.trim(), duration_minutes: Math.round(data.durationMinutes), price: Math.round(data.price), deposit_amount: Math.round(data.depositAmount), capacity: Math.round(data.capacity), is_active: data.active });
+  revalidatePath("/app/booking"); return ok(null);
+}
+
+export async function saveBookingScheduleAction(data: { id?: string; userId?: string; dayOfWeek: number; startsAt: string; endsAt: string; intervalMinutes: number; active: boolean }): Promise<OperationResult> {
+  const { businessId } = await requireOwner();
+  const locked = await moduleLock(businessId, "booking", "write"); if (locked) return fail(locked);
+  if (!Number.isInteger(data.dayOfWeek) || data.dayOfWeek < 0 || data.dayOfWeek > 6 || data.startsAt >= data.endsAt || data.intervalMinutes < 5 || data.intervalMinutes > 240) return fail("Jadwal slot belum benar.");
+  await db.saveBookingSchedule(businessId, { id: data.id, user_id: data.userId || null, day_of_week: data.dayOfWeek, starts_at: data.startsAt, ends_at: data.endsAt, slot_interval_minutes: data.intervalMinutes, is_active: data.active });
+  revalidatePath("/app/booking"); return ok(null);
+}
+
+export async function deleteBookingScheduleAction(scheduleId: string): Promise<OperationResult> {
+  const { businessId } = await requireOwner();
+  const locked = await moduleLock(businessId, "booking", "write"); if (locked) return fail(locked);
+  if (!await db.deleteBookingSchedule(businessId, scheduleId)) return fail("Jadwal tidak ditemukan.");
   revalidatePath("/app/booking"); return ok(null);
 }
 
@@ -90,6 +114,20 @@ export async function createPublicBookingAction(businessId: string, data: { serv
   return ok({ id: appointment.id, publicToken: appointment.public_token, depositAmount: Number(appointment.deposit_amount) });
 }
 
+export async function createBookingWaitlistAction(businessId: string, data: { serviceId: string; customerName: string; customerPhone: string; preferredStart?: string }): Promise<OperationResult> {
+  const locked = await moduleLock(businessId, "booking", "write"); if (locked) return fail("Booking belum tersedia untuk usaha ini.");
+  if (!data.serviceId || data.customerName.trim().length < 2 || data.customerPhone.trim().length < 8) return fail("Isi nama dan nomor WhatsApp yang benar.");
+  await db.createBookingWaitlist(businessId, { service_id: data.serviceId, customer_name: data.customerName.trim(), customer_phone: data.customerPhone.trim(), preferred_start: data.preferredStart || null });
+  return ok(null);
+}
+
+export async function updatePublicBookingAction(token: string, input: { cancel?: boolean; startsAt?: string }): Promise<OperationResult<{ publicToken?: string }>> {
+  if (!/^[0-9a-f-]{36}$/i.test(token)) return fail("Tautan booking tidak valid.");
+  const appointment = await db.updatePublicAppointment(token, input.startsAt ?? null, Boolean(input.cancel)) as { public_token?: string } | null;
+  if (!appointment) return fail("Booking tidak dapat diubah. Mungkin slot sudah tidak tersedia atau booking telah selesai.");
+  return ok({ publicToken: appointment.public_token });
+}
+
 export async function updateBookingStatusAction(id: string, status: "confirmed" | "completed" | "cancelled" | "no_show"): Promise<OperationResult> {
   const { businessId } = await requireOwner();
   const locked = await moduleLock(businessId, "booking", "write"); if (locked) return fail(locked);
@@ -99,15 +137,148 @@ export async function updateBookingStatusAction(id: string, status: "confirmed" 
 
 export async function saveStaffScheduleAction(data: { userId: string; startsAt: string; endsAt: string; roleLabel?: string; posShiftAllowed: boolean }): Promise<OperationResult> {
   const { businessId } = await requireOwner();
+  const locked = await moduleLock(businessId, "hr", "write"); if (locked) return fail(locked);
   if (Date.parse(data.endsAt) <= Date.parse(data.startsAt)) return fail("Jam selesai harus setelah jam mulai.");
-  if (!await db.saveStaffSchedule(businessId, { user_id: data.userId, starts_at: data.startsAt, ends_at: data.endsAt, role_label: data.roleLabel?.trim() || null, pos_shift_allowed: data.posShiftAllowed })) return fail("Staf tidak ditemukan.");
+  const result = await db.saveStaffSchedule(businessId, { user_id: data.userId, starts_at: data.startsAt, ends_at: data.endsAt, role_label: data.roleLabel?.trim() || null, pos_shift_allowed: data.posShiftAllowed });
+  if (result === "conflict") return fail("Jadwal staf ini bertabrakan dengan shift yang sudah ada.");
+  if (!result) return fail("Staf tidak ditemukan.");
   revalidatePath("/app/hr"); return ok(null);
 }
 
-export async function recordAttendanceAction(data: { direction: "in" | "out"; siteId?: string; latitude?: number; longitude?: number; selfieUrl?: string; method: "self" | "qr" | "nfc" | "location" }): Promise<OperationResult> {
+export async function cancelStaffScheduleAction(scheduleId: string): Promise<OperationResult> {
+  const { businessId } = await requireOwner();
+  const locked = await moduleLock(businessId, "hr", "write"); if (locked) return fail(locked);
+  if (!await db.cancelStaffSchedule(businessId, scheduleId)) return fail("Jadwal tidak ditemukan atau sudah dibatalkan.");
+  revalidatePath("/app/hr"); return ok(null);
+}
+
+export async function setPosSchedulePolicyAction(required: boolean): Promise<OperationResult> {
+  const { businessId } = await requireOwner();
+  const locked = await moduleLock(businessId, "hr", "write"); if (locked) return fail(locked);
+  await db.setPosSchedulePolicy(businessId, required);
+  revalidatePath("/app/hr"); revalidatePath("/app/pos"); return ok(null);
+}
+
+type LeaveInput = { leaveType: "leave" | "sick" | "permission" | "overtime"; startsAt: string; endsAt: string; reason: string };
+const validLeave = (data: LeaveInput) => data.reason.trim().length >= 5 && Date.parse(data.endsAt) > Date.parse(data.startsAt);
+
+export async function submitLeaveRequestAction(data: LeaveInput): Promise<OperationResult> {
+  const session = await requireStaff();
+  const locked = await moduleLock(session.businessId, "hr", "write"); if (locked) return fail(locked);
+  if (!validLeave(data)) return fail("Isi alasan minimal 5 karakter dan waktu selesai harus setelah mulai.");
+  await db.createLeaveRequest(session.businessId, session.userId, { leave_type: data.leaveType, starts_at: data.startsAt, ends_at: data.endsAt, reason: data.reason.trim() });
+  revalidatePath("/app/hr"); revalidatePath("/app/hr/leave"); return ok(null);
+}
+
+export async function createLeaveForStaffAction(userId: string, data: LeaveInput): Promise<OperationResult> {
+  const { businessId } = await requireOwner();
+  const locked = await moduleLock(businessId, "hr", "write"); if (locked) return fail(locked);
+  if (!validLeave(data)) return fail("Isi alasan minimal 5 karakter dan waktu selesai harus setelah mulai.");
+  await db.createLeaveRequest(businessId, userId, { leave_type: data.leaveType, starts_at: data.startsAt, ends_at: data.endsAt, reason: data.reason.trim() });
+  revalidatePath("/app/hr"); return ok(null);
+}
+
+export async function reviewLeaveRequestAction(requestId: string, approved: boolean): Promise<OperationResult> {
+  const { businessId, userId } = await requireOwner();
+  const locked = await moduleLock(businessId, "hr", "write"); if (locked) return fail(locked);
+  if (!await db.reviewLeaveRequest(businessId, userId, requestId, approved)) return fail("Pengajuan tidak ditemukan atau sudah diproses.");
+  revalidatePath("/app/hr"); return ok(null);
+}
+
+export async function createPayrollPeriodAction(data: { startsOn: string; endsOn: string }): Promise<OperationResult> {
+  const { businessId } = await requireOwner();
+  const locked = await moduleLock(businessId, "hr", "write"); if (locked) return fail(locked);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(data.startsOn) || !/^\d{4}-\d{2}-\d{2}$/.test(data.endsOn) || data.endsOn < data.startsOn) return fail("Tanggal periode gaji belum benar.");
+  const period = await db.createPayrollPeriod(businessId, { period_start: data.startsOn, period_end: data.endsOn });
+  if (period === "exists") return fail("Periode gaji tersebut sudah ada.");
+  revalidatePath("/app/hr"); return ok(null);
+}
+
+export async function savePayrollLineAction(data: { periodId: string; userId: string; basePay: number; overtimePay: number; incentivePay: number; commissionPay: number; deduction: number; note?: string }): Promise<OperationResult> {
+  const { businessId } = await requireOwner();
+  const locked = await moduleLock(businessId, "hr", "write"); if (locked) return fail(locked);
+  const values = [data.basePay, data.overtimePay, data.incentivePay, data.commissionPay, data.deduction];
+  if (values.some((value) => !Number.isSafeInteger(value) || value < 0)) return fail("Semua nominal gaji harus berupa angka bulat nol atau lebih.");
+  if (!await db.savePayrollLine(businessId, { payroll_period_id: data.periodId, user_id: data.userId, base_pay: data.basePay, overtime_pay: data.overtimePay, incentive_pay: data.incentivePay, commission_pay: data.commissionPay, deduction: data.deduction, note: data.note?.trim() || null })) return fail("Baris gaji tidak ditemukan atau periode sudah dikunci.");
+  revalidatePath("/app/hr"); return ok(null);
+}
+
+export async function setPayrollPeriodStatusAction(periodId: string, status: "approved" | "paid"): Promise<OperationResult> {
+  const { businessId, userId } = await requireOwner();
+  const locked = await moduleLock(businessId, "hr", "write"); if (locked) return fail(locked);
+  if (!await db.setPayrollPeriodStatus(businessId, userId, periodId, status)) return fail("Periode belum bisa diubah. Setujui draft terlebih dahulu sebelum menandai lunas.");
+  revalidatePath("/app/hr"); return ok(null);
+}
+
+export async function saveAttendancePolicyAction(data: { requireSelfie: boolean; requireLocation: boolean }): Promise<OperationResult> {
+  const { businessId } = await requireOwner();
+  const locked = await moduleLock(businessId, "hr", "write"); if (locked) return fail(locked);
+  await db.saveAttendancePolicy(businessId, data);
+  revalidatePath("/app/hr"); return ok(null);
+}
+
+export async function resolveAttendancePlaceAction(placeId: string): Promise<OperationResult<{ placeId: string; name: string; address: string; latitude: number; longitude: number }>> {
+  const { businessId } = await requireOwner();
+  const locked = await moduleLock(businessId, "hr", "write"); if (locked) return fail(locked);
+  const place = await getGooglePlaceLocation(placeId);
+  if (!place) return fail("Place ID tidak ditemukan. Pastikan Google Places API aktif dan Place ID benar.");
+  return ok(place);
+}
+
+export async function searchAttendancePlacesAction(query: string): Promise<OperationResult<{ placeId: string; name: string; address: string }[]>> {
+  const { businessId } = await requireOwner();
+  const locked = await moduleLock(businessId, "hr", "write"); if (locked) return fail(locked);
+  if (query.trim().length < 3) return fail("Ketik minimal 3 huruf nama atau alamat lokasi.");
+  if (!isPlacesSearchConfigured()) return fail("Google Maps API belum dikonfigurasi di server.");
+  const places = await searchPlaces(query);
+  return ok(places.map((place) => ({ placeId: place.placeId, name: place.name, address: place.address })));
+}
+
+export async function saveAttendanceSiteAction(data: { name: string; googlePlaceId?: string; latitude?: number; longitude?: number; radiusMeters: number; nfcCardId?: string }): Promise<OperationResult> {
+  const { businessId } = await requireOwner();
+  const locked = await moduleLock(businessId, "hr", "write"); if (locked) return fail(locked);
+  if (data.name.trim().length < 2 || !Number.isInteger(data.radiusMeters) || data.radiusMeters < 10 || data.radiusMeters > 5000) return fail("Nama titik dan radius absensi belum benar.");
+  if ((data.latitude === undefined) !== (data.longitude === undefined)) return fail("Isi latitude dan longitude bersama-sama, atau kosongkan keduanya.");
+
+  /**
+   * Kartu yang dipasang di titik absensi harus milik usaha ini DAN memang
+   * berlayanan absensi. Tanpa pemeriksaan ini, id kartu apa pun bisa dikirim
+   * ke sini — termasuk kartu ulasan milik usaha sebelah — dan satu kartu jadi
+   * mengerjakan dua hal sekaligus.
+   */
+  if (data.nfcCardId) {
+    const kartu = (await db.getCards(businessId)).find((c) => c.id === data.nfcCardId);
+    if (!kartu) return fail("Kartu absensi tidak ditemukan pada usaha ini.");
+    if (kartu.type !== "attendance") {
+      return fail(`Kartu itu dipakai untuk ${CARD_SERVICE_LABEL[kartu.type]}. Satu kartu hanya melayani satu hal — ubah dulu layanan kartunya di dasbor kartu.`);
+    }
+  }
+
+  await db.saveAttendanceSite(businessId, { name: data.name.trim(), google_place_id: data.googlePlaceId?.trim() || null, latitude: data.latitude ?? null, longitude: data.longitude ?? null, allowed_radius_meters: data.radiusMeters, nfc_card_id: data.nfcCardId || null, is_active: true });
+  revalidatePath("/app/hr"); return ok(null);
+}
+
+const distanceMeters = (aLat: number, aLng: number, bLat: number, bLng: number) => {
+  const r = 6_371_000; const rad = Math.PI / 180;
+  const dLat = (bLat - aLat) * rad; const dLng = (bLng - aLng) * rad;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(aLat * rad) * Math.cos(bLat * rad) * Math.sin(dLng / 2) ** 2;
+  return 2 * r * Math.atan2(Math.sqrt(h), Math.sqrt(1 - h));
+};
+
+export async function recordAttendanceAction(data: { direction: "in" | "out"; siteToken?: string; latitude?: number; longitude?: number; selfieUrl?: string; method: "self" | "qr" | "nfc" | "location" }): Promise<OperationResult> {
   const session = await requireStaff();
   if (!session.businessId) return fail("Akun belum terhubung ke usaha.");
-  const entry = await db.createAttendanceRecord(session.businessId, session.userId, { direction: data.direction, attendance_site_id: data.siteId || null, latitude: data.latitude ?? null, longitude: data.longitude ?? null, selfie_url: data.selfieUrl ?? null, method: data.method });
+  const locked = await moduleLock(session.businessId, "hr", "write"); if (locked) return fail(locked);
+  const dashboard = await db.getHrDashboard(session.businessId);
+  const policy = dashboard.policy as { attendance_require_selfie: boolean; attendance_require_location: boolean };
+  if (policy.attendance_require_selfie && !data.selfieUrl?.startsWith("data:image/")) return fail("Ambil selfie lebih dulu sebelum absensi.");
+  if (policy.attendance_require_location && (!Number.isFinite(data.latitude) || !Number.isFinite(data.longitude))) return fail("Ambil lokasi lebih dulu sebelum absensi.");
+  const site = data.siteToken ? await db.getAttendanceSiteByToken(session.businessId, data.siteToken) as { id: string; latitude: string | number | null; longitude: string | number | null; allowed_radius_meters: number } | null : null;
+  if (data.siteToken && !site) return fail("QR atau NFC titik absensi tidak aktif.");
+  if (site && site.latitude !== null && site.longitude !== null && Number.isFinite(data.latitude) && Number.isFinite(data.longitude)) {
+    if (distanceMeters(Number(site.latitude), Number(site.longitude), Number(data.latitude), Number(data.longitude)) > Number(site.allowed_radius_meters)) return fail("Kamu berada di luar radius titik absensi.");
+  }
+  const entry = await db.createAttendanceRecord(session.businessId, session.userId, { direction: data.direction, attendance_site_id: site?.id ?? null, latitude: data.latitude ?? null, longitude: data.longitude ?? null, selfie_url: data.selfieUrl ?? null, method: site ? data.method : "self" });
   if (!entry) return fail(data.direction === "in" ? "Kamu masih tercatat masuk, selesaikan absensi pulang dulu." : "Belum ada absensi masuk yang bisa ditutup.");
   revalidatePath("/app/hr"); return ok(null);
 }

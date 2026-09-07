@@ -12,10 +12,11 @@ export const metadata: Metadata = {
 export default async function FinancePage() {
   const { session } = await guardModulePage("finance", "/app/finance");
 
-  const [business, recipes, ingredients] = await Promise.all([
+  const [business, recipes, ingredients, calculatorPresets] = await Promise.all([
     db.getBusiness(session.businessId),
     db.getRecipes(session.businessId),
     db.getIngredients(session.businessId),
+    db.getFinanceCalculatorPresets(session.businessId),
   ]);
 
   return (
@@ -23,6 +24,7 @@ export default async function FinancePage() {
       business={business}
       initialRecipes={recipes}
       initialIngredients={ingredients}
+      initialCalculatorPresets={calculatorPresets}
     />
   );
 }

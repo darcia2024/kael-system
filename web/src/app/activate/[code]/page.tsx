@@ -21,6 +21,7 @@ import {
 import { checkCardAction, activateCardAction, searchPlacesAction } from "@/lib/actions";
 import { buildGoogleReviewUrl, type GooglePlaceResult } from "@/lib/google-places";
 import { formatCardCodeDisplay, normalizeCardCode } from "@/lib/card-code";
+import { CARD_SERVICE_DESTINATION, CARD_SERVICE_LABEL, type CardService } from "@/lib/types";
 import { site } from "@/lib/site";
 
 export default function CardActivationPage({ params }: { params: Promise<{ code: string }> }) {
@@ -38,11 +39,21 @@ export default function CardActivationPage({ params }: { params: Promise<{ code:
    * atau mengetik tautan sendiri. Diambil dari server saat PIN diperiksa,
    * bukan ditebak dari apa pun di layar.
    */
-  const [cardType, setCardType] = useState<"review" | "loyalty" | "attendance" | "link">(
-    "review",
-  );
+  const [cardType, setCardType] = useState<CardService>("review");
   const [customUrl, setCustomUrl] = useState<string>("");
   const isLink = cardType === "link";
+
+  /**
+   * Layar aktivasi mengikuti satu layanan kartu, bukan dua-duanya sekaligus.
+   *
+   * Sebelum ini cabangnya cuma "tautan" versus "selain tautan", jadi kartu
+   * member, absensi, dan Smart Touch semuanya dipaksa memilih tempat di Google
+   * lalu menyimpan alamat ulasan yang tidak pernah dibaca rute mana pun. Sisa
+   * alamat itu masih ada di basis data dan tetap tampil di dasbor seolah kartu
+   * member juga melayani ulasan.
+   */
+  const pakaiGoogle = cardType === "review";
+  const memakaiTujuan = Boolean(CARD_SERVICE_DESTINATION[cardType]);
 
   // Google Places search
   const [searchQuery, setSearchQuery] = useState<string>("");
@@ -90,9 +101,15 @@ export default function CardActivationPage({ params }: { params: Promise<{ code:
     // supaya tidak ada hash yang perlu dikirim ke browser.
     setCardType(check.data.type);
 
-    // Label bawaan "Meja Kasir" tidak masuk akal untuk kartu tautan.
-    if (check.data.type === "link" && label === "Meja Kasir") {
-      setLabel("Kartu Tautan");
+    // "Meja Kasir" cuma masuk akal untuk kartu yang memang duduk di meja.
+    const labelBawaan: Partial<Record<CardService, string>> = {
+      link: "Kartu Tautan",
+      loyalty: "Kartu Member",
+      attendance: "Kartu Absensi",
+      smart_touch: "Kartu Smart Touch",
+    };
+    if (label === "Meja Kasir" && labelBawaan[check.data.type]) {
+      setLabel(labelBawaan[check.data.type]!);
     }
     setStep(2);
   };
@@ -125,6 +142,27 @@ export default function CardActivationPage({ params }: { params: Promise<{ code:
       }
 
       void activateCardAction(cardCode, pin, sah.toString(), label).then((res) => {
+        setIsActivating(false);
+        if (res.ok) {
+          setActivationSuccess(true);
+          setStep(4);
+        } else {
+          setPinError(res.error);
+          setStep(1);
+        }
+      });
+      return;
+    }
+
+    /**
+     * Kartu member, absensi, dan Smart Touch tidak punya alamat tujuan sama
+     * sekali — tujuannya ditentukan layanannya sendiri saat kartu di-tap.
+     * Sama seperti kartu tautan, jenis ini hanya bisa diaktifkan sambil masuk
+     * sebagai pemilik usaha: tanpa tempat Google, server tidak punya cara tahu
+     * kartunya milik siapa.
+     */
+    if (!memakaiTujuan) {
+      void activateCardAction(cardCode, pin, "", label).then((res) => {
         setIsActivating(false);
         if (res.ok) {
           setActivationSuccess(true);
@@ -299,12 +337,18 @@ export default function CardActivationPage({ params }: { params: Promise<{ code:
                 </div>
                 <div>
                   <h2 className="text-lg sm:text-xl font-extrabold text-[#232331]">
-                    {isLink ? "Tautan Tujuan Kartu Ini" : "Pilih Lokasi Google Maps Usaha Anda"}
+                    {pakaiGoogle
+                      ? "Pilih Lokasi Google Maps Usaha Anda"
+                      : isLink
+                        ? "Tautan Tujuan Kartu Ini"
+                        : `Kartu Ini untuk ${CARD_SERVICE_LABEL[cardType]}`}
                   </h2>
                   <p className="text-xs text-[#7b7b8e]">
-                    {isLink
-                      ? "Kartu ini mengarah ke alamat mana pun yang kamu tentukan. Portofolio, katalog, Instagram, atau WhatsApp."
-                      : "KAEL secara otomatis mengunci form ulasan resmi Google Place ID tanpa perlu salin link manual."}
+                    {pakaiGoogle
+                      ? "KAEL secara otomatis mengunci form ulasan resmi Google Place ID tanpa perlu salin link manual."
+                      : isLink
+                        ? "Kartu ini mengarah ke alamat mana pun yang kamu tentukan. Portofolio, katalog, Instagram, atau WhatsApp."
+                        : "Satu kartu untuk satu keperluan. Kartu ini tidak perlu alamat tujuan — layanannya yang menentukan ke mana pelanggan mendarat."}
                   </p>
                 </div>
               </div>
@@ -334,8 +378,28 @@ export default function CardActivationPage({ params }: { params: Promise<{ code:
                 </div>
               )}
 
+              {/* Layanan tanpa alamat tujuan: tidak ada yang perlu diisi selain label. */}
+              {!memakaiTujuan && (
+                <div className="rounded-2xl border border-[#dedee8] bg-[#fcfcfe] p-4 text-[11.5px] leading-relaxed text-[#7b7b8e]">
+                  <p className="font-bold text-[#232331]">
+                    Yang terjadi saat kartu ini di-tap:
+                  </p>
+                  <p className="mt-1">
+                    {cardType === "loyalty"
+                      ? "Pemegangnya dibawa ke halaman membernya sendiri. Kartu yang belum dipegang siapa pun membuka pendaftaran member lebih dulu."
+                      : cardType === "attendance"
+                        ? "Layar absensi staf terbuka di titik tempat kartu ini dipasang."
+                        : "Halaman tombol Smart Touch terbuka. Tombolnya kamu susun sendiri dari dasbor setelah kartu aktif."}
+                  </p>
+                  <p className="mt-2">
+                    Layanannya masih bisa dipindah dari dasbor kalau kartu ini ternyata salah
+                    peruntukan — selama layanan lamanya belum menyimpan apa-apa.
+                  </p>
+                </div>
+              )}
+
               {/* Search Box */}
-              {!isLink && (!isManualInput ? (
+              {pakaiGoogle && (!isManualInput ? (
                 <div className="space-y-3">
                   <div className="relative">
                     <Search className="absolute left-3.5 top-3.5 text-[#7b7b8e]" size={16} />
@@ -473,7 +537,13 @@ export default function CardActivationPage({ params }: { params: Promise<{ code:
                 <button
                   type="button"
                   onClick={() => setStep(3)}
-                  disabled={isLink ? !customUrl.trim() : !selectedPlace && !customPlaceId}
+                  disabled={
+                    isLink
+                      ? !customUrl.trim()
+                      : pakaiGoogle
+                        ? !selectedPlace && !customPlaceId
+                        : !label.trim()
+                  }
                   className="btn-tactile flex-[2] rounded-2xl border-2 border-[#232331] bg-[#7958d8] py-3 text-xs font-extrabold text-white shadow-ink-md disabled:opacity-50"
                 >
                   Pratinjau &amp; Lanjut
@@ -496,7 +566,9 @@ export default function CardActivationPage({ params }: { params: Promise<{ code:
                     Pratinjau Aktivasi Kartu
                   </h2>
                   <p className="text-xs text-[#7b7b8e]">
-                    Pastikan informasi tujuan Google Review sudah sesuai sebelum mengunci kartu.
+                    {memakaiTujuan
+                      ? "Pastikan informasi tujuan sudah sesuai sebelum mengunci kartu."
+                      : "Pastikan layanan kartunya sudah sesuai sebelum mengunci kartu."}
                   </p>
                 </div>
               </div>
@@ -511,7 +583,14 @@ export default function CardActivationPage({ params }: { params: Promise<{ code:
                   <span className="text-[#7b7b8e]">LABEL PENEMPATAN:</span>
                   <span className="font-extrabold text-[#232331]">{label}</span>
                 </div>
-                {!isLink && (
+                {/* Layanan kartu ditulis terang-terangan: satu kartu, satu ini saja. */}
+                <div className="flex items-center justify-between border-b border-[#dedee8] pb-2">
+                  <span className="text-[#7b7b8e]">LAYANAN KARTU:</span>
+                  <span className="font-extrabold text-[#232331]">
+                    {CARD_SERVICE_LABEL[cardType]}
+                  </span>
+                </div>
+                {pakaiGoogle && (
                   <div className="space-y-1 border-b border-[#dedee8] pb-2">
                     <span className="text-[#7b7b8e] block">TUJUAN GOOGLE MAPS:</span>
                     <p className="font-sans text-sm font-extrabold text-[#232331]">
@@ -522,16 +601,23 @@ export default function CardActivationPage({ params }: { params: Promise<{ code:
                     </p>
                   </div>
                 )}
-                <div className="space-y-1">
-                  <span className="text-[#7b7b8e] block">
-                    {isLink ? "ALAMAT TUJUAN:" : "GENERATED DIRECT REVIEW URL:"}
-                  </span>
-                  <p className="text-[10.5px] text-[#16a34a] break-all bg-white p-2 rounded-lg border border-[#dedee8]">
-                    {isLink
-                      ? customUrl.trim()
-                      : buildGoogleReviewUrl(selectedPlace?.placeId || customPlaceId)}
+                {memakaiTujuan ? (
+                  <div className="space-y-1">
+                    <span className="text-[#7b7b8e] block">
+                      {isLink ? "ALAMAT TUJUAN:" : "GENERATED DIRECT REVIEW URL:"}
+                    </span>
+                    <p className="text-[10.5px] text-[#16a34a] break-all bg-white p-2 rounded-lg border border-[#dedee8]">
+                      {isLink
+                        ? customUrl.trim()
+                        : buildGoogleReviewUrl(selectedPlace?.placeId || customPlaceId)}
+                    </p>
+                  </div>
+                ) : (
+                  <p className="font-sans text-[11px] leading-relaxed text-[#7b7b8e]">
+                    Kartu ini tidak menyimpan alamat tujuan. Tujuannya ditentukan layanannya
+                    sendiri setiap kali di-tap.
                   </p>
-                </div>
+                )}
               </div>
 
               {/* Actions */}

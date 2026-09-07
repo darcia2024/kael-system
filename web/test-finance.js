@@ -3,6 +3,7 @@ import {
   roundUpTo500, 
   calculatePriceFromTargetProfit 
 } from "./src/lib/finance-engine.ts";
+import { calculateBusinessPrice } from "./src/lib/business-calculator.ts";
 
 console.log("=== KAEL FINANCE & HPP ENGINE UNIT TESTS ===");
 
@@ -68,4 +69,25 @@ console.log("✓ TEST 3 PASSED: Rekomendasi harga jual dibulatkan ke atas ke kel
 if (!marginTest.is_under_target) throw new Error("Should flag as under target margin (33% < 50%)");
 console.log("✓ TEST 4 PASSED: Deteksi margin di bawah target berhasil terpicu.");
 
-console.log("\n=== ALL KAEL FINANCE TESTS PASSED (4/4) ===\n");
+// 5. Retail harus memasukkan ongkir, packing, diskon, dan fee kanal sebelum
+//    menyebut sebuah harga sebagai laba bersih.
+const retailTest = calculateBusinessPrice({
+  mode: "retail", direct_cost: 20000, supporting_cost: 2000, operational_cost: 1000,
+  selling_price: 40000, discount_pct: 5, payment_fee_pct: 1, channel_fee_pct: 10,
+  tax_reserve_pct: 0, target_margin_pct: 30, monthly_fixed_cost: 3000000, monthly_profit_target: 2000000,
+});
+if (retailTest.cost_per_sale !== 23000) throw new Error("Retail cost per sale failed");
+if (retailTest.profit_per_sale !== 10600) throw new Error("Retail profit must include discount and every fee");
+if (retailTest.recommended_price !== 43000) throw new Error(`Expected retail recommended price 43000, got ${retailTest.recommended_price}`);
+console.log("✓ TEST 5 PASSED: Retail memasukkan modal, ongkir, diskon, dan fee kanal.");
+
+// 6. Jasa dengan laba negatif tidak boleh diberi target transaksi palsu.
+const serviceLossTest = calculateBusinessPrice({
+  mode: "jasa", direct_cost: 50000, supporting_cost: 5000, operational_cost: 5000,
+  selling_price: 50000, discount_pct: 0, payment_fee_pct: 0, channel_fee_pct: 0,
+  tax_reserve_pct: 0, target_margin_pct: 40, monthly_fixed_cost: 1000000, monthly_profit_target: 1000000,
+});
+if (serviceLossTest.profit_per_sale >= 0 || serviceLossTest.target_units !== null) throw new Error("Loss-making service must not show a sales target");
+console.log("✓ TEST 6 PASSED: Target bulanan ditahan saat laba per transaksi belum positif.");
+
+console.log("\n=== ALL KAEL FINANCE TESTS PASSED (6/6) ===\n");

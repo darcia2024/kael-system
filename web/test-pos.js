@@ -2,7 +2,8 @@ import {
   calculateCartTotals, 
   calculateCashChange, 
   calculateShiftReconciliation, 
-  generateEscPosReceiptText 
+  generateEscPosReceiptText,
+  generateWhatsAppReceiptMessage
 } from "./src/lib/pos-engine.ts";
 
 console.log("=== KAEL POS & ORDERING ENGINE UNIT TESTS ===");
@@ -83,4 +84,18 @@ if (!receiptText.includes("SENJA COFFEE") || !receiptText.includes("A-001") || !
 }
 console.log("✓ TEST 4 PASSED: Format struk cetak 58mm monospace ESC/POS standar.");
 
-console.log("\n=== ALL KAEL POS TESTS PASSED (4/4) ===\n");
+// 5. Pesan WhatsApp harus membawa rincian yang cukup tanpa mengandalkan
+//    tampilan halaman struk, termasuk potongan dan tautan struk digital.
+const whatsappReceipt = generateWhatsAppReceiptMessage({
+  businessName: "Senja Coffee", orderNo: "A-001", createdAtLabel: "6 Sep 2026, 20.40",
+  serviceLabel: "Dine-in · Meja 4", cashierName: "Budi",
+  items: [{ name: "Iced *Latte*", qty: 1, price: 28000, note: "Less sugar" }],
+  subtotal: 28000, discount: 3000, tax: 2500, serviceCharge: 0, total: 27500,
+  paymentMethod: "qris", receiptUrl: "https://kaels.site/receipt/order-1", memberCardUrl: "https://kaels.site/m/member-token",
+});
+if (!whatsappReceipt.includes("*TOTAL DIBAYAR: Rp 27.500*") || !whatsappReceipt.includes("Diskon: -Rp 3.000") || !whatsappReceipt.includes("https://kaels.site/receipt/order-1") || !whatsappReceipt.includes("https://kaels.site/m/member-token") || whatsappReceipt.includes("*Latte*")) {
+  throw new Error("WhatsApp receipt format is incomplete or allows markup injection");
+}
+console.log("✓ TEST 5 PASSED: Template WhatsApp memuat rincian, total, dan tautan struk digital.");
+
+console.log("\n=== ALL KAEL POS TESTS PASSED (5/5) ===\n");

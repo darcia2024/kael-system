@@ -26,7 +26,7 @@ import type { LicenseState, ModuleStatus } from "@/lib/licensing";
 import { rupiah, type ModuleKey } from "@/lib/modules-catalog";
 import { waLink } from "@/lib/site";
 import {
-  createStaffAction, deactivateStaffAction, setStaffPermissionsAction, resetStaffPinAction, logout,
+  createStaffAction, deactivateStaffAction, setStaffActiveAction, setStaffPermissionsAction, resetStaffPinAction, logout,
 } from "@/lib/actions";
 import { STAFF_PERMISSIONS, type StaffPermission } from "@/lib/types";
 import { formatBusinessDate } from "@/lib/formatters";
@@ -174,7 +174,9 @@ export default function AppPortalHub({
 
   const toggleStaffActive = async (userId: string, currentStatus: boolean) => {
     if (!currentStatus) {
-      alert("Mengaktifkan kembali staf belum tersedia. Buat akun baru untuk sementara.");
+      const res = await setStaffActiveAction(userId, true);
+      if (!res.ok) alert(res.error);
+      else router.refresh();
       return;
     }
     const res = await deactivateStaffAction(userId);

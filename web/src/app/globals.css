@@ -66,6 +66,179 @@ html {
   }
 }
 
+/* Workspace demo: dense on a phone, expansive once the screen permits it. */
+@media (max-width: 640px) {
+  .kael-demo > header {
+    padding-top: 0.55rem;
+    padding-bottom: 0.55rem;
+  }
+
+  .kael-demo > div {
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+    padding-top: 0.75rem;
+  }
+
+  .kael-demo .demo-hero {
+    border-radius: 0.875rem;
+    padding: 1rem;
+  }
+
+  .kael-demo .demo-hero h1 {
+    font-size: 1.25rem;
+    line-height: 1.2;
+  }
+
+  .kael-demo .demo-hero p:last-child {
+    font-size: 0.75rem;
+    line-height: 1.35rem;
+  }
+
+  .kael-demo .demo-nav {
+    margin-top: 0.75rem;
+    margin-left: -0.75rem;
+    margin-right: -0.75rem;
+    padding: 0 0.75rem 0.25rem;
+    scrollbar-width: thin;
+  }
+
+  .kael-demo .demo-nav button {
+    min-width: 4.4rem;
+    min-height: 3.45rem;
+    border-radius: 0.7rem;
+    font-size: 0.68rem;
+  }
+
+  .kael-demo .demo-panel,
+  .kael-demo .demo-metric {
+    border-radius: 0.875rem;
+  }
+
+  .kael-demo .demo-panel {
+    padding: 0.875rem;
+  }
+
+  .kael-demo .demo-panel h2 {
+    font-size: 1rem;
+    line-height: 1.25rem;
+  }
+
+  .kael-demo .demo-metric {
+    padding: 0.7rem;
+  }
+
+  .kael-demo .demo-metric > p:nth-child(2) {
+    margin-top: 0.3rem;
+    font-size: 1rem;
+    line-height: 1.2rem;
+  }
+
+  .kael-demo .demo-metric > p:last-child {
+    font-size: 0.64rem;
+    line-height: 0.9rem;
+  }
+
+  .kael-demo .demo-tip {
+    padding: 0.7rem;
+  }
+
+  .kael-demo .demo-tip p:first-child {
+    font-size: 0.8rem;
+  }
+
+  .kael-demo input,
+  .kael-demo textarea,
+  .kael-demo select {
+    font-size: 16px;
+  }
+}
+
+.kael-demo .field {
+  margin-top: .4rem;
+  min-height: 2.7rem;
+  width: 100%;
+  border: 2px solid #232331;
+  border-radius: .7rem;
+  background: #fff;
+  padding: .55rem .7rem;
+  font-size: .875rem;
+  outline: none;
+}
+
+.kael-demo .field:focus {
+  box-shadow: 0 0 0 3px #d9ff57;
+}
+
+.kael-demo .primary,
+.kael-demo .secondary,
+.kael-demo .icon {
+  border: 2px solid #232331;
+  font-weight: 800;
+  transition: transform 120ms ease, background-color 120ms ease;
+}
+
+.kael-demo .primary {
+  margin-top: .9rem;
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
+  justify-content: center;
+  gap: .5rem;
+  border-radius: .75rem;
+  background: #d9ff57;
+  padding: .55rem .9rem;
+  font-size: .875rem;
+}
+
+.kael-demo .secondary {
+  display: inline-flex;
+  min-height: 2.7rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: .7rem;
+  background: #fff;
+  padding: .45rem .75rem;
+  font-size: .75rem;
+}
+
+.kael-demo .icon {
+  display: inline-flex;
+  height: 2rem;
+  width: 2rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: .55rem;
+  background: #fff;
+}
+
+.kael-demo .primary:hover:not(:disabled),
+.kael-demo .secondary:hover,
+.kael-demo .icon:hover {
+  transform: translateY(-1px);
+}
+
+.kael-demo .primary:disabled {
+  cursor: not-allowed;
+  opacity: .45;
+}
+
+@layer components {
+  .kael-hr .field { @apply mt-1 min-h-11 w-full rounded-lg border border-[#232331] bg-white p-2 text-sm outline-none focus:ring-2 focus:ring-[#7958d8]; }
+  .kael-hr .primary { @apply mt-3 inline-flex min-h-11 items-center justify-center gap-2 rounded-xl border-2 border-[#232331] bg-[#d9ff57] px-3 text-sm font-black disabled:opacity-50; }
+  .kael-hr .secondary { @apply inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border-2 border-[#232331] bg-white px-3 text-xs font-black disabled:opacity-50; }
+  .kael-hr .small { @apply inline-flex min-h-9 items-center justify-center gap-1 rounded-lg border border-[#232331] bg-white px-2 text-xs font-bold; }
+  .kael-hr .danger { @apply inline-flex min-h-9 items-center justify-center rounded-lg border border-[#b91c1c] bg-white px-2 text-xs font-bold text-[#b91c1c]; }
+  .kael-hr .ok { @apply inline-flex min-h-9 items-center justify-center rounded-lg border border-[#15803d] bg-white px-2 text-xs font-bold text-[#15803d]; }
+  .kael-hr .row { @apply flex flex-wrap items-start justify-between gap-3 rounded-xl border border-[#dedee8] p-3 text-sm; }
+  .kael-hr .row small, .kael-hr .period small { @apply mt-1 block text-xs font-normal text-[#66667a]; }
+  .kael-hr .period { @apply min-h-11 shrink-0 rounded-xl border border-[#dedee8] bg-white px-3 py-2 text-left text-xs font-bold; }
+  .kael-hr .period.active { @apply border-[#232331] bg-[#232331] text-white; }
+  .kael-hr .period.active small { @apply text-white/70; }
+  .kael-hr .money { @apply w-24 rounded-lg border border-[#dedee8] p-2 text-right outline-none focus:ring-2 focus:ring-[#7958d8] disabled:bg-[#f7f6fc]; }
+  .kael-hr table th { @apply border-y border-[#dedee8] py-2 text-left text-xs text-[#66667a]; }
+  .kael-hr table td { @apply border-b border-[#eee] py-2; }
+}
+
 body {
   background-color: var(--paper);
   color: var(--ink);

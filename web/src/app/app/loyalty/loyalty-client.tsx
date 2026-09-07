@@ -44,7 +44,7 @@ import {
   anonymizeCustomerAction, updateLoyaltyProgramAction, searchCustomersAction,
   customerDetailAction, createLoyaltyCampaignAction, expireDuePointsAction, getLoyaltyCampaignRecipientsAction, updateLoyaltyCampaignRecipientStatusAction,
   lookupRedemptionAction, consumeRedemptionAction,
-  redeemCodeAction, saveTierAction, deleteTierAction,
+  redeemCodeAction, saveTierAction, deleteTierAction, exportLoyaltyCustomersAction,
 } from "@/lib/actions";
 import {
   normalizePhoneNumber,
@@ -98,6 +98,7 @@ export default function KaelLoyaltyDashboard({
 }) {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<"cashier" | "customers" | "segments" | "campaigns" | "rewards" | "settings" | "audit">("cashier");
+  const [exportingCustomers, setExportingCustomers] = useState(false);
   const [selectedSegment, setSelectedSegment] = useState<MemberSegment | "all">("all");
   const [campaignName, setCampaignName] = useState("");
   const [campaigns, setCampaigns] = useState(initialCampaigns);
@@ -567,6 +568,29 @@ export default function KaelLoyaltyDashboard({
     }
   };
 
+  const exportCustomers = async () => {
+    setExportingCustomers(true);
+    const result = await exportLoyaltyCustomersAction();
+    setExportingCustomers(false);
+    if (!result.ok) {
+      alert(result.error);
+      return;
+    }
+    const escapeCsv = (value: unknown) => `"${String(value ?? "").replaceAll('"', '""')}"`;
+    const rows = [
+      ["Nama", "WhatsApp", "Saldo poin", "Setuju promo", "Tanggal gabung"],
+      ...result.data.map((customer) => [customer.name ?? "Member", customer.phone, customer.point_balance, customer.marketing_opt_in ? "Ya" : "Tidak", customer.created_at]),
+    ];
+    const blob = new Blob(["\uFEFF" + rows.map((row) => row.map(escapeCsv).join(",")).join("\n")], { type: "text/csv;charset=utf-8" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = `member-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(link.href);
+  };
+
   const handleSaveProgramSettings = async (e: React.FormEvent) => {
     e.preventDefault();
     const res = await updateLoyaltyProgramAction({
@@ -820,18 +844,18 @@ export default function KaelLoyaltyDashboard({
                 <div className="flex items-center gap-2">
                   <Receipt size={18} className="text-[#7958d8]" />
                   <h3 className="font-extrabold text-sm sm:text-base text-[#232331]">
-                    Layar Kasir Loyalitas Cepat
+                    Kasir Member: Poin dan Hadiah
                   </h3>
                 </div>
                 <span className="text-[10px] sm:text-[11px] font-mono text-[#16a34a] font-bold">
-                  ● Target &lt;10 Detik
+                  ● Selesai dalam beberapa detik
                 </span>
               </div>
 
               {/* 4-Digit WA Search Bar */}
               <div className="space-y-1.5">
                 <label className="block font-mono font-bold text-xs text-[#232331]">
-                  Cari 4 Digit Terakhir No WA / Nama Pelanggan:
+                  1. Cari pelanggan member
                 </label>
                 <div className="relative">
                   <Search className="absolute left-3.5 top-3 text-[#7b7b8e]" size={16} />
@@ -839,13 +863,13 @@ export default function KaelLoyaltyDashboard({
                     type="text"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Ketik 4 digit WA (misal: 7812) atau nama..."
+                    placeholder="Ketik nama atau 4 angka belakang WA, misal 7812"
                     className="w-full rounded-2xl border-2 border-[#232331] pl-10 pr-4 py-2.5 font-bold text-sm text-[#232331] focus:outline-none focus:ring-2 focus:ring-[#7958d8]"
                     autoFocus
                   />
                 </div>
                 <span className="text-[10px] text-[#7b7b8e] font-mono block">
-                  Tip antrean: Pelanggan cukup sebut 4 digit terakhir tanpa perlu mendikte 12 digit.
+                  Pelanggan cukup sebut nama atau 4 angka terakhir WhatsApp. Nomor lengkap tidak perlu diketik.
                 </span>
               </div>
 
@@ -883,6 +907,17 @@ export default function KaelLoyaltyDashboard({
                 </div>
               )}
 
+              {!selectedCustomer && !searchQuery && (
+                <div className="rounded-xl border border-dashed border-[#7958d8] bg-[#f7f4ff] p-3 font-sans">
+                  <p className="font-bold text-[#232331]">Alur kasir yang paling mudah</p>
+                  <ol className="mt-2 grid gap-2 text-[11px] leading-relaxed text-[#5c5c70] sm:grid-cols-3">
+                    <li><strong className="text-[#7958d8]">1. Cari</strong><br />Cari nama atau 4 angka WA.</li>
+                    <li><strong className="text-[#7958d8]">2. Pilih</strong><br />Pastikan nama dan saldo member benar.</li>
+                    <li><strong className="text-[#7958d8]">3. Proses</strong><br />Tambah poin atau tukar hadiah.</li>
+                  </ol>
+                </div>
+              )}
+
               {/* Selected Customer Active Card */}
               {selectedCustomer && (
                 <div className="rounded-2xl border-2 border-[#232331] bg-[#fcfcfe] p-4 space-y-3 font-mono text-xs animate-in zoom-in-95">
@@ -911,10 +946,10 @@ export default function KaelLoyaltyDashboard({
                   <form onSubmit={handleAddPoints} className="border-t border-[#dedee8] pt-3 space-y-2.5">
                     <div className="flex items-center justify-between">
                       <label className="font-bold text-[#232331]">
-                        1. Tambah Poin Belanja ({program.mode === "stamp" ? "Stamp" : "Rupiah"}):
+                        2. Catat belanja dan beri poin ({program.mode === "stamp" ? "pakai stamp" : "pakai nominal belanja"})
                       </label>
                       <span className="text-[10px] text-[#7958d8] font-bold">
-                        Kurs: {formatRupiah(program.earn_rate)} = 1 Poin
+                        Setiap {formatRupiah(program.earn_rate)} dapat 1 poin
                       </span>
                     </div>
 
@@ -964,7 +999,7 @@ export default function KaelLoyaltyDashboard({
                   {/* Redeem Reward Section */}
                   <div className="border-t border-[#dedee8] pt-3 space-y-2">
                     <label className="block font-bold text-[#232331]">
-                      2. Tukar Voucher Reward di Kasir:
+                      3. Tukar hadiah dengan poin (bila pelanggan minta)
                     </label>
                     <div className="flex items-center gap-2">
                       <select
@@ -972,7 +1007,7 @@ export default function KaelLoyaltyDashboard({
                         onChange={(e) => setSelectedRewardId(e.target.value)}
                         className="flex-1 rounded-xl border border-[#232331] bg-white p-2 font-bold text-xs text-[#232331]"
                       >
-                        <option value="">-- Pilih Hadiah Tersedia --</option>
+                        <option value="">Pilih hadiah yang ingin ditukar</option>
                         {rewards.filter((r) => r.is_active).map((rw) => (
                           <option key={rw.id} value={rw.id} disabled={activeCustomerBalance < rw.point_cost}>
                             {rw.name} ({rw.point_cost} Pts) {activeCustomerBalance < rw.point_cost ? "· Poin Kurang" : "· Cukup ✓"}
@@ -994,7 +1029,7 @@ export default function KaelLoyaltyDashboard({
                   {/* Redeem Promo Code Section */}
                   <div className="border-t border-[#dedee8] pt-3 space-y-2">
                     <label className="block font-bold text-[#232331]">
-                      3. Tukar Kode Promo:
+                      4. Pakai kode promo (bila ada)
                     </label>
                     <div className="flex items-center gap-2">
                       <input
@@ -1018,7 +1053,7 @@ export default function KaelLoyaltyDashboard({
 
                   <div className="border-t border-[#dedee8] pt-3 space-y-2">
                     <label className="block font-bold text-[#232331]">
-                      4. Cek Voucher Reward:
+                      5. Cek voucher dari pelanggan
                     </label>
                     <div className="flex items-center gap-2">
                       <input
@@ -1084,10 +1119,10 @@ export default function KaelLoyaltyDashboard({
               
               <div className="border-b border-[#dedee8] pb-3">
                 <span className="font-mono text-[10px] font-bold uppercase text-[#7958d8] block">
-                  STAND MEJA &amp; QR PENDAFTARAN
+                  UNTUK PELANGGAN BARU
                 </span>
                 <h3 className="font-extrabold text-sm sm:text-base text-[#232331] font-sans mt-0.5">
-                  Scan / Tap Kartu Member Meja
+                  Daftar Member lewat QR di Meja Kasir
                 </h3>
               </div>
 
@@ -1098,7 +1133,7 @@ export default function KaelLoyaltyDashboard({
 
                 <div className="space-y-1 font-mono text-xs">
                   <span className="font-extrabold text-[#232331] block">
-                    URL Pendaftaran Member Meja:
+                    Link pendaftaran member
                   </span>
                   <Link
                     href={`/loyalty/register?toko=${encodeURIComponent(business?.store_code ?? "")}`}
@@ -1109,7 +1144,7 @@ export default function KaelLoyaltyDashboard({
                     <ExternalLink size={11} />
                   </Link>
                   <p className="text-[10px] text-[#7b7b8e] font-sans pt-1">
-                    Ditaruh di meja kasir / standee acrylic agar pelanggan bisa mendaftar sendiri sambil menunggu pesanan.
+                    Pelanggan scan QR ini, isi nama dan WhatsApp sendiri, lalu kembali ke kasir untuk mendapat poin pertama.
                   </p>
                 </div>
 
@@ -1121,6 +1156,11 @@ export default function KaelLoyaltyDashboard({
                   <UserPlus size={13} />
                   <span>Buka Form Pendaftaran Member Baru</span>
                 </Link>
+
+                <div className="rounded-xl border border-[#dedee8] bg-[#f8f8fc] p-3 text-left font-sans text-[11px] leading-relaxed text-[#5c5c70]">
+                  <p className="font-bold text-[#232331]">Cara pakai di kasir</p>
+                  <p className="mt-1">Arahkan pelanggan baru ke QR. Setelah selesai daftar, cari namanya di panel kiri lalu catat belanjanya. Isi kartu member dapat diatur dari tombol di bawah.</p>
+                </div>
 
                 {/* Isi kartu yang dipegang pelanggan: sapaan, jam buka, kabar,
                     dan nomor WhatsApp yang menyalakan tombol simpan kartu. */}
@@ -1157,11 +1197,13 @@ export default function KaelLoyaltyDashboard({
               <div className="flex items-center gap-2 font-mono text-xs">
                 <button
                   type="button"
-                  onClick={() => alert("Data pelanggan berhasil diekspor ke CSV!")}
-                  className="btn-tactile inline-flex items-center gap-1 rounded-xl border border-[#232331] bg-white px-3 py-1.5 text-xs font-bold text-[#232331] shadow-ink-xs"
+                  onClick={exportCustomers}
+                  disabled={exportingCustomers || sessionRole !== "owner"}
+                  title={sessionRole !== "owner" ? "Hanya owner yang dapat mengekspor data kontak member" : undefined}
+                  className="btn-tactile inline-flex min-h-11 items-center gap-1 rounded-xl border border-[#232331] bg-white px-3 py-1.5 text-xs font-bold text-[#232331] shadow-ink-xs disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <Download size={13} />
-                  <span>Ekspor CSV</span>
+                  <span>{exportingCustomers ? "Menyiapkan..." : "Ekspor CSV"}</span>
                 </button>
               </div>
             </div>

@@ -71,17 +71,30 @@ export async function GET(
   }
 
   /**
-   * Kartu tautan bebas berujung ke alamat yang disimpan pemiliknya, atau ke
-   * halaman Smart Touch kalau kartunya sudah punya daftar tombol.
+   * Kartu tautan bebas: SATU alamat, titik.
+   *
+   * Dulu di sini ada cabang "kalau kartunya punya Smart Touch, ke sana saja"
+   * yang menang lebih dulu. Artinya tautan yang sudah diisi pemiliknya bisa
+   * berhenti dipakai diam-diam begitu dia menambah tombol Smart Touch, dan
+   * tidak ada satu pun layar yang memberitahukannya. Smart Touch sekarang
+   * jenis kartunya sendiri; kartu `link` tidak lagi punya jalur cadangan.
    */
   if (card.type === "link") {
-    if (await db.getSmartTouchByCode(card.card_code)) {
-      return NextResponse.redirect(new URL(`/touch/${card.card_code}`, request.url), 302);
-    }
     if (!card.destination_url) {
       return NextResponse.redirect(new URL("/r/status?type=no_destination", request.url), 302);
     }
     return NextResponse.redirect(card.destination_url, 302);
+  }
+
+  /**
+   * Kartu Smart Touch selalu mendarat di halaman tombolnya, dan TIDAK pernah
+   * jatuh ke destination_url — kartu ini memang tidak memakainya.
+   */
+  if (card.type === "smart_touch") {
+    if (!(await db.getSmartTouchByCode(card.card_code))) {
+      return NextResponse.redirect(new URL("/r/status?type=no_destination", request.url), 302);
+    }
+    return NextResponse.redirect(new URL(`/touch/${card.card_code}`, request.url), 302);
   }
 
   if (card.type === "loyalty") {

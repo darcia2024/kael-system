@@ -1,31 +1,22 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { Star, Check, Copy, ExternalLink, Loader2 } from "lucide-react";
+import { useState } from "react";
+import { Star, Check, ExternalLink, Loader2, MessageSquare } from "lucide-react";
 
 import { BusinessMark } from "@/components/business-mark";
 import { brandSurface, normalizeBrandColor } from "@/lib/branding";
 import { submitCardFeedbackAction, attachCardFeedbackAction } from "@/lib/actions";
-import {
-  FEEDBACK_REASONS,
-  PRAISE_TEMPLATES,
-  RATING_TINGGI,
-  type FeedbackReasonCode,
-} from "@/lib/types";
+import { FEEDBACK_REASONS, type FeedbackReasonCode } from "@/lib/types";
 
 /**
- * Tiga layar dalam satu halaman.
+ * Empat layar dalam satu halaman.
  *
  * `bintang`  - lima bintang, belum ada yang dipilih.
- * `puji`     - rating >= RATING_TINGGI. Menyiapkan kalimat lalu ke Google.
- * `keluhan`  - rating di bawahnya. Tidak pernah menyebut Google sama sekali.
- * `selesai`  - ucapan terima kasih, tetap di KAEL.
- *
- * Percabangannya terjadi SETELAH rating tersimpan, bukan sebelumnya. Bintang
- * satu yang orangnya lalu menutup ponsel tetap terhitung: pemilik kafe justru
- * paling butuh tahu yang seperti itu.
+ * `apresiasi` - apresiasi untuk rating 4-5, dengan pilihan Google yang netral.
+ * `keluhan`  - masukan privat yang dibaca pemilik usaha.
+ * `selesai`  - ucapan terima kasih dan pilihan Google setelah masukan terkirim.
  */
-type Layar = "bintang" | "puji" | "keluhan" | "selesai";
+type Layar = "bintang" | "apresiasi" | "keluhan" | "selesai";
 
 export default function RatingClient({
   cardCode,
@@ -44,29 +35,17 @@ export default function RatingClient({
   const [layar, setLayar] = useState<Layar>("bintang");
   const [bintang, setBintang] = useState<number | null>(null);
   const [hoverBintang, setHoverBintang] = useState<number | null>(null);
-  const [pujianDipilih, setPujianDipilih] = useState<string[]>([]);
   const [alasan, setAlasan] = useState<FeedbackReasonCode | null>(null);
   const [komentar, setKomentar] = useState("");
-  const [tulisSendiri, setTulisSendiri] = useState("");
   const [urlGoogle, setUrlGoogle] = useState<string | null>(null);
   const [idPenilaian, setIdPenilaian] = useState<string | null>(null);
   const [sedangKirim, setSedangKirim] = useState(false);
   const [galat, setGalat] = useState<string | null>(null);
-  const [tersalin, setTersalin] = useState(false);
+  const bukaGoogle = () => {
+    if (urlGoogle) window.open(urlGoogle, "_blank", "noopener,noreferrer");
+  };
 
-  /**
-   * Kalimat yang akan disalin: gabungan template yang dicentang, lalu tambahan
-   * yang diketik sendiri. Pelanggan boleh tidak memilih apa pun dan langsung
-   * mengetik; boleh juga sebaliknya.
-   */
-  const kalimatPujian = useMemo(() => {
-    const dariTemplate = PRAISE_TEMPLATES.filter((p) => pujianDipilih.includes(p.key)).map(
-      (p) => p.text,
-    );
-    return [...dariTemplate, tulisSendiri.trim()].filter(Boolean).join(" ");
-  }, [pujianDipilih, tulisSendiri]);
-
-  /** Menyimpan rating, lalu memutuskan layar berikutnya dari jawaban server. */
+  /** Menyimpan rating sebelum pelanggan memilih langkah berikutnya. */
   const pilihBintang = async (nilai: number) => {
     if (sedangKirim) return;
     setBintang(nilai);
@@ -83,12 +62,8 @@ export default function RatingClient({
     }
 
     setIdPenilaian(res.data.feedbackId);
-    if (nilai >= RATING_TINGGI) {
-      setUrlGoogle(res.data.reviewUrl);
-      setLayar("puji");
-      return;
-    }
-    setLayar("keluhan");
+    setUrlGoogle(res.data.reviewUrl);
+    setLayar(nilai <= 3 ? "keluhan" : "apresiasi");
   };
 
   /** Melengkapi baris yang sudah tersimpan, bukan menambah baris baru. */
@@ -111,26 +86,6 @@ export default function RatingClient({
       return;
     }
     setLayar("selesai");
-  };
-
-  /**
-   * Kalimatnya disalin ke papan klip lalu Google dibuka. Google tidak menerima
-   * teks ulasan lewat URL — tidak ada parameter untuk itu — jadi menempelkan
-   * sendiri adalah satu-satunya cara, dan pelanggan tetap bisa mengubahnya di
-   * sana sebelum mengirim.
-   */
-  const salinLaluBuka = async () => {
-    if (kalimatPujian) {
-      try {
-        await navigator.clipboard.writeText(kalimatPujian);
-        setTersalin(true);
-      } catch {
-        // Peramban yang menolak papan klip tidak menghentikan langkahnya:
-        // kalimatnya tetap terlihat di layar dan bisa disalin manual.
-        setTersalin(false);
-      }
-    }
-    if (urlGoogle) window.location.href = urlGoogle;
   };
 
   return (
@@ -185,85 +140,38 @@ export default function RatingClient({
           </div>
         )}
 
-        {layar === "puji" && (
-          <div className="mt-8">
+        {layar === "apresiasi" && (
+          <div className="mt-8 text-center">
             <p className="text-center text-sm font-bold text-[#66667a]">
-              Makasih banyak! Mau bantu tulis di Google?
+              Makasih banyak. Senang pengalamanmu di {businessName} menyenangkan.
             </p>
-
-            <p className="mt-5 font-mono text-[11px] font-bold uppercase text-[#7b7b8e]">
-              Pilih yang paling pas
+            <p className="mt-2 text-sm leading-relaxed text-[#66667a]">
+              Kamu boleh membagikan pengalamanmu di Google.
             </p>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {PRAISE_TEMPLATES.map((p) => {
-                const aktif = pujianDipilih.includes(p.key);
-                return (
-                  <button
-                    key={p.key}
-                    type="button"
-                    onClick={() =>
-                      setPujianDipilih((prev) =>
-                        aktif ? prev.filter((k) => k !== p.key) : [...prev, p.key],
-                      )
-                    }
-                    style={aktif ? tombolUtama : undefined}
-                    className={`inline-flex items-center gap-1.5 rounded-full border-2 border-[#232331] px-3 py-1.5 text-xs font-bold ${
-                      aktif ? "" : "bg-white"
-                    }`}
-                  >
-                    {aktif && <Check size={13} />}
-                    {p.label}
-                  </button>
-                );
-              })}
-            </div>
-
-            <label className="mt-5 block font-mono text-[11px] font-bold uppercase text-[#7b7b8e]">
-              Atau tulis sendiri
-              <textarea
-                value={tulisSendiri}
-                onChange={(e) => setTulisSendiri(e.target.value.slice(0, 400))}
-                rows={3}
-                placeholder="Tambahkan kalimatmu sendiri (opsional)"
-                className="mt-1.5 w-full rounded-xl border-2 border-[#232331] p-3 font-sans text-sm font-normal normal-case text-[#232331] focus:outline-none"
-              />
-            </label>
-
-            {kalimatPujian && (
-              <div className="mt-4 rounded-xl border border-[#dedee8] bg-white p-3">
-                <p className="font-mono text-[10px] font-bold uppercase text-[#7b7b8e]">
-                  Yang akan disalin
-                </p>
-                <p className="mt-1 break-words text-sm">{kalimatPujian}</p>
-              </div>
-            )}
 
             {urlGoogle ? (
               <button
                 type="button"
-                onClick={salinLaluBuka}
+                onClick={bukaGoogle}
                 style={tombolUtama}
-                className="mt-5 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border-2 border-[#232331] px-4 py-3 text-sm font-black"
+                className="mt-6 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border-2 border-[#232331] px-4 py-3 text-sm font-black"
               >
-                {tersalin ? <Check size={17} /> : <Copy size={17} />}
-                {kalimatPujian ? "Salin & buka Google" : "Buka Google Review"}
-                <ExternalLink size={15} />
+                <ExternalLink size={17} /> Tulis ulasan di Google
               </button>
             ) : (
-              /*
-               * Kartu yang belum diisi alamat ulasannya tidak boleh membuat
-               * halaman ini buntu. Ratingnya sudah tersimpan; yang hilang cuma
-               * langkah terakhirnya, dan itu urusan pemilik kafe, bukan
-               * pelanggan yang sedang memegang ponselnya.
-               */
-              <p className="mt-5 rounded-xl border border-[#dedee8] bg-white p-4 text-center text-sm">
-                Penilaianmu sudah tersimpan. Makasih banyak!
+              <p className="mt-3 rounded-xl border border-[#dedee8] bg-white p-4 text-sm">
+                Tautan Google untuk tempat ini belum tersedia.
               </p>
             )}
-
-            <p className="mt-3 text-center text-[11px] leading-relaxed text-[#7b7b8e]">
-              Kalimat di atas cuma bahan. Kamu tetap bisa mengubah atau
-              menghapusnya di halaman Google sebelum mengirim.
+            <button
+              type="button"
+              onClick={() => setLayar("keluhan")}
+              className="mt-3 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border-2 border-[#232331] bg-white px-4 py-3 text-sm font-black"
+            >
+              <MessageSquare size={17} /> Kirim masukan ke pemilik
+            </button>
+            <p className="mt-4 text-[11px] leading-relaxed text-[#7b7b8e]">
+              Ulasan Google bersifat publik. Masukan ke pemilik hanya masuk ke dashboard usaha ini.
             </p>
           </div>
         )}
@@ -271,7 +179,10 @@ export default function RatingClient({
         {layar === "keluhan" && (
           <div className="mt-8">
             <p className="text-center text-sm font-bold text-[#66667a]">
-              Maaf ya. Boleh cerita apa yang kurang?
+              Wah, kayaknya ada yang belum sesuai.
+            </p>
+            <p className="mt-2 text-center text-sm leading-relaxed text-[#66667a]">
+              Ceritain ke kami supaya tim {businessName} bisa memperbaikinya.
             </p>
 
             <p className="mt-5 font-mono text-[11px] font-bold uppercase text-[#7b7b8e]">
@@ -303,7 +214,7 @@ export default function RatingClient({
                 value={komentar}
                 onChange={(e) => setKomentar(e.target.value.slice(0, 500))}
                 rows={4}
-                placeholder="Yang kamu tulis di sini cuma dibaca pemilik tempat ini."
+                placeholder="Masukan ini hanya masuk ke dashboard pemilik tempat ini."
                 className="mt-1.5 w-full rounded-xl border-2 border-[#232331] p-3 font-sans text-sm font-normal normal-case text-[#232331] focus:outline-none"
               />
             </label>
@@ -319,8 +230,17 @@ export default function RatingClient({
               Kirim ke pemilik
             </button>
 
+            {urlGoogle && (
+              <button
+                type="button"
+                onClick={bukaGoogle}
+                className="mt-3 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border-2 border-[#232331] bg-white px-4 py-3 text-sm font-black"
+              >
+                <ExternalLink size={17} /> Bagikan pengalaman di Google
+              </button>
+            )}
             <p className="mt-3 text-center text-[11px] leading-relaxed text-[#7b7b8e]">
-              Tidak dipublikasikan ke mana pun.
+              Masukan privat hanya masuk ke dashboard pemilik. Ulasan Google bersifat publik.
             </p>
           </div>
         )}
@@ -333,9 +253,22 @@ export default function RatingClient({
             >
               <Check size={26} />
             </div>
-            <p className="mt-4 text-lg font-black">Makasih udah cerita.</p>
+            <p className="mt-4 text-lg font-black">Terima kasih sudah kasih masukan.</p>
             <p className="mt-2 text-sm leading-relaxed text-[#66667a]">
-              Masukanmu langsung masuk ke dashboard pemilik {businessName}.
+              Tim {businessName} akan menggunakan masukanmu untuk memperbaiki layanan.
+            </p>
+            {urlGoogle && (
+              <button
+                type="button"
+                onClick={bukaGoogle}
+                style={tombolUtama}
+                className="mt-6 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border-2 border-[#232331] px-4 py-3 text-sm font-black"
+              >
+                <ExternalLink size={17} /> Bagikan pengalaman di Google
+              </button>
+            )}
+            <p className="mt-3 text-[11px] leading-relaxed text-[#7b7b8e]">
+              Ulasan Google bersifat publik dan sepenuhnya pilihanmu.
             </p>
           </div>
         )}

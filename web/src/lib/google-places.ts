@@ -97,6 +97,35 @@ export async function getGoogleReviewSnapshot(placeId: string): Promise<{
   }
 }
 
+/** Mengambil koordinat resmi sebuah Place ID untuk geofence absensi. */
+export async function getGooglePlaceLocation(placeId: string): Promise<{
+  placeId: string;
+  name: string;
+  address: string;
+  latitude: number;
+  longitude: number;
+} | null> {
+  const key = process.env.GOOGLE_PLACES_API_KEY;
+  const id = placeId.trim();
+  if (!key || !/^[A-Za-z0-9_-]{20,80}$/.test(id)) return null;
+  try {
+    const response = await fetch(`https://places.googleapis.com/v1/places/${encodeURIComponent(id)}`, {
+      headers: {
+        "X-Goog-Api-Key": key,
+        "X-Goog-FieldMask": "id,displayName,formattedAddress,location",
+      },
+      cache: "no-store",
+    });
+    if (!response.ok) return null;
+    const data = await response.json() as { id?: string; displayName?: { text?: string }; formattedAddress?: string; location?: { latitude?: number; longitude?: number } };
+    if (!data.id || !Number.isFinite(data.location?.latitude) || !Number.isFinite(data.location?.longitude)) return null;
+    return { placeId: data.id, name: data.displayName?.text ?? "Lokasi Google Maps", address: data.formattedAddress ?? "", latitude: Number(data.location?.latitude), longitude: Number(data.location?.longitude) };
+  } catch (error) {
+    console.error("[KAEL] Place Details gagal mengambil lokasi absensi", error);
+    return null;
+  }
+}
+
 /**
  * Mencari bisnis lewat Google Places API (Text Search v1).
  *

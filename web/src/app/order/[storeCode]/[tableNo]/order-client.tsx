@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { 
@@ -49,6 +49,17 @@ export default function CustomerQrOrderPage({
    */
   const [caraBayar, setCaraBayar] = useState<"qris" | "cash">("qris");
   const [pesananSelesai, setPesananSelesai] = useState<{ no: string; total: number } | null>(null);
+  const [lastOrder, setLastOrder] = useState<{ name: string; phone: string; items: { menuId: string; qty: number; note: string }[] } | null>(null);
+
+  useEffect(() => {
+    if (!business) return;
+    try {
+      const saved = localStorage.getItem(`kael-last-order:${business.id}`);
+      if (saved) setLastOrder(JSON.parse(saved));
+    } catch {
+      setLastOrder(null);
+    }
+  }, [business]);
 
   // Filtered menu
   const filteredMenu = useMemo(() => {
@@ -134,7 +145,23 @@ export default function CustomerQrOrderPage({
       return;
     }
     setPesananSelesai({ no: res.data.orderNo, total: res.data.total });
+    try {
+      localStorage.setItem(`kael-last-order:${business.id}`, JSON.stringify({ name: customerName, phone: customerPhone, items: cartList.map((line) => ({ menuId: line.item.id, qty: line.qty, note: line.note })) }));
+    } catch {
+      // Pesanan tetap selesai meski browser menolak penyimpanan lokal.
+    }
     setCart({});
+  };
+
+  const reorderLast = () => {
+    if (!lastOrder) return;
+    const next: Record<string, { item: MenuItem; qty: number; note: string }> = {};
+    for (const line of lastOrder.items) {
+      const item = menuItems.find((menu) => menu.id === line.menuId && menu.is_available);
+      if (item) next[item.id] = { item, qty: Math.max(1, line.qty), note: line.note || "" };
+    }
+    if (!Object.keys(next).length) return alert("Menu pesanan sebelumnya sudah tidak tersedia.");
+    setCart(next); setCustomerName(lastOrder.name); setCustomerPhone(lastOrder.phone);
   };
 
   if (pesananSelesai) {
@@ -260,6 +287,7 @@ export default function CustomerQrOrderPage({
 
       {/* Main Container */}
       <main className="flex-1 p-4 space-y-4">
+        {lastOrder && <button type="button" onClick={reorderLast} className="flex min-h-11 w-full items-center justify-between rounded-xl border-2 border-[#232331] bg-[#f0edff] px-3 text-left text-xs font-bold"><span>Pesan lagi seperti terakhir kali</span><span className="text-[#7958d8]">Gunakan ulang</span></button>}
         
         {/* Category Pills Bar */}
         <div className="flex items-center overflow-x-auto scrollbar-none gap-1.5 font-mono text-xs font-bold">

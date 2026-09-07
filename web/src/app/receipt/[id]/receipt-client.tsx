@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import type { Order, OrderItem, Customer, Business, FeedbackReasonCode } from "@/lib/types";
 import { FEEDBACK_REASONS } from "@/lib/types";
-import { serviceTypeLabel } from "@/lib/pos-engine";
+import { generateWhatsAppReceiptMessage, serviceTypeLabel } from "@/lib/pos-engine";
 import { formatRupiah, formatBusinessDateTime } from "@/lib/formatters";
 import { generateEscPosReceiptText } from "@/lib/pos-engine";
 import { BusinessMark } from "@/components/business-mark";
@@ -50,9 +50,11 @@ export interface ReceiptPageData {
   reviewUrl: string | null;
   /** Alamat struk ini, dibangun di server supaya sama persis di HTML awal dan sesudah hydrate. */
   receiptUrl: string;
+  /** Hanya ada untuk transaksi yang memang terikat pada member. */
+  memberCardUrl: string | null;
 }
 
-export default function DigitalReceiptPage({ data, staffName, hasFeedback, reviewUrl, receiptUrl }: ReceiptPageData) {
+export default function DigitalReceiptPage({ data, staffName, hasFeedback, reviewUrl, receiptUrl, memberCardUrl }: ReceiptPageData) {
   const [copied, setCopied] = useState(false);
   const [rating, setRating] = useState<number | null>(null);
   const [reasonCode, setReasonCode] = useState<FeedbackReasonCode | null>(null);
@@ -87,9 +89,25 @@ export default function DigitalReceiptPage({ data, staffName, hasFeedback, revie
 
   const { order, items, customer, business } = data;
 
-  const waShareMessage = encodeURIComponent(
-    `Terima kasih telah berkunjung ke *${business.name}*!\nBerikut struk digital pesanan #${order.order_no}:\n${receiptUrl}`
-  );
+  const waShareMessage = encodeURIComponent(generateWhatsAppReceiptMessage({
+    businessName: business.name,
+    orderNo: order.order_no,
+    createdAtLabel: formatBusinessDateTime(order.created_at, business.timezone),
+    serviceLabel: serviceTypeLabel(order.service_type, order.table_no),
+    cashierName: staffName,
+    items: items.map((item) => ({ name: item.name_snapshot, qty: item.qty, price: item.price_snapshot, note: item.note })),
+    subtotal: order.subtotal,
+    discount: order.discount,
+    tax: order.tax,
+    serviceCharge: order.service_charge,
+    deliveryFee: order.delivery_fee,
+    total: order.total,
+    paymentMethod: order.payment_method,
+    cashGiven: order.cash_given,
+    cashChange: order.cash_change,
+    receiptUrl,
+    memberCardUrl,
+  }));
 
   const handlePrint = () => {
     window.print();
