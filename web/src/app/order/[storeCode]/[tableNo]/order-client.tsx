@@ -1,18 +1,19 @@
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
-import { useParams, useRouter } from "next/navigation";
-import Link from "next/link";
-import { 
-  ShoppingBag, 
-  Plus, 
-  Minus, 
-  Trash2, 
-  Check, 
-  CheckCircle2, 
-  Sparkles, 
-  ArrowRight, 
-  Clock, 
+import {
+  CheckCircle2,
+  Coffee,
+  CupSoda,
+  Minus,
+  Package,
+  Plus,
+  Search,
+  ShoppingBag,
+  Soup,
+  UtensilsCrossed,
+  X,
+  type LucideIcon,
 } from "lucide-react";
 import type { Business, Category, MenuItem } from "@/lib/types";
 import { PLACEHOLDER_MENU } from "@/lib/types";
@@ -22,21 +23,42 @@ import { buildDynamicQris } from "@/lib/qris-engine";
 import { formatRupiah } from "@/lib/formatters";
 import { BusinessMark } from "@/components/business-mark";
 
+function getCategoryIcon(categoryName: string): LucideIcon {
+  const name = categoryName.toLowerCase();
+
+  if (name.includes("coffee") || name.includes("kopi")) return Coffee;
+  if (name.includes("mie") || name.includes("sup") || name.includes("berkuah")) return Soup;
+  if (
+    name.includes("minuman") ||
+    name.includes("dalgona") ||
+    name.includes("mojito") ||
+    name.includes("milkshake") ||
+    name.includes("float") ||
+    name.includes("jus")
+  ) {
+    return CupSoda;
+  }
+  if (name.includes("cemilan") || name.includes("tambahan")) return Package;
+
+  return UtensilsCrossed;
+}
+
 export default function CustomerQrOrderPage({
   tableNo,
   business,
   categories,
   menuItems,
+  fontClassName,
 }: {
   tableNo: string;
   business: Business | null;
   categories: Category[];
   menuItems: MenuItem[];
+  fontClassName: string;
 }) {
-  const router = useRouter();
-
-
-  const [activeCategory, setActiveCategory] = useState<string>("all");
+  const [activeCategory, setActiveCategory] = useState<string>(categories[0]?.id ?? "");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [isCartOpen, setIsCartOpen] = useState(false);
   const [cart, setCart] = useState<Record<string, { item: MenuItem; qty: number; note: string }>>({});
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
@@ -61,17 +83,61 @@ export default function CustomerQrOrderPage({
     }
   }, [business]);
 
-  // Filtered menu
-  const filteredMenu = useMemo(() => {
-    return menuItems.filter((m) => {
-      if (activeCategory === "all") return true;
-      return m.category_id === activeCategory;
+  useEffect(() => {
+    if (!isCartOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [isCartOpen]);
+
+  const categorizedMenu = useMemo(
+    () =>
+      categories
+        .map((category) => ({
+          category,
+          items: menuItems.filter((item) => item.category_id === category.id),
+        }))
+        .filter((group) => group.items.length > 0),
+    [categories, menuItems],
+  );
+
+  const activeMenuGroup =
+    categorizedMenu.find((group) => group.category.id === activeCategory) ??
+    categorizedMenu[0];
+
+  const normalizedSearch = searchQuery.trim().toLowerCase();
+  const visibleItems = normalizedSearch
+    ? menuItems.filter((item) => {
+        const categoryName = categories.find((category) => category.id === item.category_id)?.name ?? "";
+        return `${item.name} ${item.description ?? ""} ${categoryName}`
+          .toLowerCase()
+          .includes(normalizedSearch);
+      })
+    : activeMenuGroup?.items ?? [];
+
+  const visibleSectionTitle = normalizedSearch
+    ? `Hasil pencarian: ${searchQuery.trim()}`
+    : activeMenuGroup?.category.name ?? "Menu";
+
+  const selectCategory = (categoryId: string) => {
+    setActiveCategory(categoryId);
+    requestAnimationFrame(() => {
+      document.getElementById("menu-results")?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
     });
-  }, [menuItems, activeCategory]);
+  };
 
   const cartList = Object.values(cart);
   const cartTotal = cartList.reduce((sum, c) => sum + c.item.price * c.qty, 0);
   const totalItemCount = cartList.reduce((sum, c) => sum + c.qty, 0);
+
+  useEffect(() => {
+    if (cartList.length === 0 && isCartOpen) setIsCartOpen(false);
+  }, [cartList.length, isCartOpen]);
 
   const handleAddToCart = (item: MenuItem) => {
     if (!item.is_available) return;
@@ -118,8 +184,7 @@ export default function CustomerQrOrderPage({
     });
   };
 
-  const handleCheckout = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleCheckout = async () => {
     if (cartList.length === 0) return;
     setIsSubmitting(true);
 
@@ -145,6 +210,7 @@ export default function CustomerQrOrderPage({
       return;
     }
     setPesananSelesai({ no: res.data.orderNo, total: res.data.total });
+    setIsCartOpen(false);
     try {
       localStorage.setItem(`kael-last-order:${business.id}`, JSON.stringify({ name: customerName, phone: customerPhone, items: cartList.map((line) => ({ menuId: line.item.id, qty: line.qty, note: line.note })) }));
     } catch {
@@ -171,25 +237,25 @@ export default function CustomerQrOrderPage({
         : null;
 
     return (
-      <div className="min-h-screen bg-[#f7f6fc] text-[#232331] font-sans flex items-center justify-center p-4">
-        <div className="w-full max-w-md rounded-3xl border-2 border-[#232331] bg-white p-6 shadow-ink-lg text-center space-y-4 animate-in zoom-in-95">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-[#dcfce7] text-[#16a34a] border-2 border-[#16a34a]">
+      <div className={`${fontClassName} flex min-h-screen items-center justify-center bg-[#f3f0e8] p-4 text-[#1d2823]`}>
+        <div className="w-full max-w-md space-y-4 rounded-2xl border border-[#d5d0c5] bg-[#fffefb] p-6 text-center shadow-[0_16px_45px_rgba(32,42,36,0.12)] animate-in zoom-in-95">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-[#2f6b55] bg-[#e7f0eb] text-[#2f6b55]">
             <CheckCircle2 size={30} />
           </div>
 
           <div className="space-y-1">
-            <span className="text-[11px] font-mono font-bold text-[#7958d8] uppercase tracking-wider block">
+            <span className="block text-[11px] font-bold uppercase text-[#587064]">
               PESANAN MEJA {tableNo} MASUK
             </span>
-            <h1 className="text-3xl font-black font-mono">#{pesananSelesai.no}</h1>
-            <p className="text-2xl font-black text-[#232331]">
+            <h1 className="text-3xl font-semibold">#{pesananSelesai.no}</h1>
+            <p className="text-2xl font-bold text-[#1d2823]">
               {formatRupiah(pesananSelesai.total)}
             </p>
           </div>
 
           {qris?.ok ? (
             <div className="space-y-3">
-              <div className="mx-auto inline-block rounded-2xl border-2 border-[#232331] bg-white p-3 shadow-ink-xs">
+              <div className="mx-auto inline-block rounded-xl border border-[#d5d0c5] bg-white p-3">
                 <QrCode
                   value={qris.payload}
                   size={220}
@@ -200,32 +266,32 @@ export default function CustomerQrOrderPage({
               {/*
                 QR-nya muncul di HP yang sama dengan yang dipakai memesan, jadi
                 pelanggan tidak bisa memindainya langsung. Semua dompet digital
-                di Indonesia bisa membaca QR dari galeri, dan itulah jalannya —
+                di Indonesia bisa membaca QR dari galeri, dan itulah jalannya.
                 tapi hanya kalau diberitahukan. Tanpa kalimat ini, pelanggan
                 pertama akan berhenti di sini.
               */}
-              <div className="rounded-2xl border-2 border-[#232331] bg-[#fff8e1] p-3 text-left space-y-1.5">
-                <p className="font-mono text-[11px] font-black text-[#8a6d00]">
+              <div className="space-y-1.5 rounded-xl border border-[#dfc982] bg-[#fff9e8] p-3 text-left">
+                <p className="text-[11px] font-bold text-[#725b1d]">
                   Cara bayar dari HP ini:
                 </p>
-                <ol className="font-mono text-[11px] text-[#8a6d00] space-y-0.5 list-decimal list-inside">
+                <ol className="list-inside list-decimal space-y-0.5 text-[11px] text-[#725b1d]">
                   <li>Screenshot QR di atas</li>
                   <li>Buka GoPay / DANA / OVO / m-banking</li>
                   <li>Pilih Scan, lalu ambil dari Galeri</li>
                 </ol>
-                <p className="font-mono text-[10px] text-[#8a6d00] pt-1 border-t border-[#e5b800]">
+                <p className="border-t border-[#dfc982] pt-1 text-[10px] text-[#725b1d]">
                   Nominalnya sudah terisi otomatis. Tunjukkan bukti bayar ke kasir.
                 </p>
               </div>
             </div>
           ) : (
-            <div className="rounded-2xl border border-[#dedee8] bg-[#fcfcfe] p-3 font-mono text-xs space-y-1">
-              <p className="font-bold text-[#232331]">
+            <div className="space-y-1 rounded-xl border border-[#d5d0c5] bg-[#f8f6f0] p-3 text-xs">
+              <p className="font-bold text-[#1d2823]">
                 {caraBayar === "qris"
                   ? "Bayar lewat QRIS yang ada di meja."
                   : "Bayar tunai di kasir."}
               </p>
-              <p className="text-[11px] text-[#7b7b8e]">
+              <p className="text-[11px] text-[#68736d]">
                 Sebutkan nomor pesanan #{pesananSelesai.no}.
               </p>
             </div>
@@ -236,7 +302,7 @@ export default function CustomerQrOrderPage({
             kasir memastikan uangnya masuk, dan menuliskan "sedang disiapkan"
             di sini membuat pelanggan menunggu sesuatu yang belum berjalan.
           */}
-          <p className="font-mono text-[11px] text-[#7b7b8e]">
+          <p className="text-[11px] text-[#68736d]">
             Pesanan mulai disiapkan setelah pembayaran dipastikan kasir.
           </p>
 
@@ -245,7 +311,7 @@ export default function CustomerQrOrderPage({
             onClick={() => {
               setPesananSelesai(null);
             }}
-            className="btn-tactile w-full py-3 rounded-2xl border-2 border-[#232331] bg-[#232331] text-white font-mono text-xs font-black"
+            className="min-h-11 w-full rounded-lg bg-[#173d32] px-4 text-xs font-bold text-white transition-colors hover:bg-[#214f41]"
           >
             Pesan Menu Tambahan
           </button>
@@ -254,243 +320,403 @@ export default function CustomerQrOrderPage({
     );
   }
 
+  const renderCartContent = (showCloseButton: boolean) => (
+    <div className="flex min-h-0 flex-col">
+      <div className="flex items-start justify-between border-b border-[#dce5e0] pb-4">
+        <div>
+          <p className="text-[11px] font-bold uppercase text-[#6b7972]">Pesanan saat ini</p>
+          <h2 className="mt-1 text-lg font-extrabold text-[#18392f]">Meja {tableNo}</h2>
+          <p className="text-xs text-[#75827b]">{totalItemCount} item dipilih</p>
+        </div>
+        {showCloseButton && (
+          <button
+            type="button"
+            aria-label="Tutup pesanan"
+            onClick={() => setIsCartOpen(false)}
+            className="flex h-11 w-11 items-center justify-center rounded-lg border border-[#d5ded9] text-[#53635b]"
+          >
+            <X size={20} aria-hidden="true" />
+          </button>
+        )}
+      </div>
+
+      <div className="divide-y divide-[#e2e8e5]">
+        {cartList.map(({ item, qty, note }) => (
+          <div key={item.id} className="space-y-2 py-3">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h3 className="text-sm font-bold leading-snug text-[#20352d]">{item.name}</h3>
+                <p className="mt-0.5 text-xs font-semibold text-[#8c5437]">
+                  {formatRupiah(item.price * qty)}
+                </p>
+              </div>
+              <div className="grid shrink-0 grid-cols-[44px_32px_44px] items-center">
+                <button
+                  type="button"
+                  aria-label={`Kurangi ${item.name}`}
+                  onClick={() => handleUpdateQty(item.id, -1)}
+                  className="flex h-11 w-11 items-center justify-center rounded-lg border border-[#cad6d0] text-[#20483a]"
+                >
+                  <Minus size={14} aria-hidden="true" />
+                </button>
+                <span className="text-center text-sm font-extrabold">{qty}</span>
+                <button
+                  type="button"
+                  aria-label={`Tambah ${item.name}`}
+                  onClick={() => handleUpdateQty(item.id, 1)}
+                  className="flex h-11 w-11 items-center justify-center rounded-lg bg-[#176c4f] text-white"
+                >
+                  <Plus size={14} aria-hidden="true" />
+                </button>
+              </div>
+            </div>
+            <input
+              type="text"
+              placeholder="Tambahkan catatan"
+              value={note}
+              onChange={(event) => handleUpdateNote(item.id, event.target.value)}
+              className="min-h-11 w-full rounded-lg border border-[#d5ded9] bg-[#f8faf9] px-3 text-xs text-[#263b33] outline-none focus:border-[#176c4f]"
+            />
+          </div>
+        ))}
+      </div>
+
+      <div className="space-y-3 border-t border-[#dce5e0] pt-4">
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-1">
+          <label className="space-y-1 text-xs font-semibold text-[#35483f]">
+            <span>Nama pemesan</span>
+            <input
+              type="text"
+              required
+              placeholder="Masukkan nama"
+              value={customerName}
+              onChange={(event) => setCustomerName(event.target.value)}
+              className="min-h-11 w-full rounded-lg border border-[#cfd9d4] bg-white px-3 text-sm outline-none focus:border-[#176c4f]"
+            />
+          </label>
+          <label className="space-y-1 text-xs font-semibold text-[#35483f]">
+            <span>Nomor WhatsApp <span className="font-normal text-[#849089]">(opsional)</span></span>
+            <input
+              type="tel"
+              placeholder="08xxxxxxxxxx"
+              value={customerPhone}
+              onChange={(event) => setCustomerPhone(event.target.value)}
+              className="min-h-11 w-full rounded-lg border border-[#cfd9d4] bg-white px-3 text-sm outline-none focus:border-[#176c4f]"
+            />
+          </label>
+        </div>
+
+        <fieldset>
+          <legend className="mb-1.5 text-xs font-semibold text-[#35483f]">Cara bayar</legend>
+          <div className="grid grid-cols-2 gap-2">
+            {[
+              { id: "qris" as const, label: "QRIS", hint: "Bayar dari HP" },
+              { id: "cash" as const, label: "Tunai", hint: "Bayar di kasir" },
+            ].map((method) => (
+              <button
+                key={method.id}
+                type="button"
+                onClick={() => setCaraBayar(method.id)}
+                className={`min-h-11 rounded-lg border px-3 py-2 text-left transition-colors ${
+                  caraBayar === method.id
+                    ? "border-[#176c4f] bg-[#e7f4ee] text-[#174a38]"
+                    : "border-[#d5ded9] bg-white text-[#5e6c65]"
+                }`}
+              >
+                <span className="block text-xs font-extrabold">{method.label}</span>
+                <span className="block text-[10px]">{method.hint}</span>
+              </button>
+            ))}
+          </div>
+        </fieldset>
+
+        <div className="flex items-center justify-between border-t border-[#dce5e0] pt-3">
+          <div>
+            <span className="block text-[10px] font-semibold uppercase text-[#78857e]">Total</span>
+            <span className="text-xl font-extrabold text-[#18392f]">{formatRupiah(cartTotal)}</span>
+          </div>
+          <button
+            type="button"
+            onClick={handleCheckout}
+            disabled={isSubmitting || !customerName.trim()}
+            className="min-h-11 rounded-lg bg-[#0aae6f] px-5 text-sm font-extrabold text-white transition-colors hover:bg-[#079760] disabled:cursor-not-allowed disabled:opacity-45"
+          >
+            {isSubmitting ? "Mengirim..." : "Kirim pesanan"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
   return (
-    <div className="min-h-screen bg-[#f7f6fc] text-[#232331] font-sans flex flex-col justify-between max-w-md mx-auto border-x border-[#dedee8] pb-28">
-      {business?.is_demo && <p className="bg-amber-100 p-2 text-center text-xs font-bold text-amber-950">DEMO - tidak untuk pembayaran sungguhan</p>}
-      
-      {/* Top Header */}
-      <header className="sticky top-0 z-30 border-b-2 border-[#232331] bg-white/95 backdrop-blur-md px-4 py-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2.5 min-w-0">
+    <div className={`${fontClassName} min-h-screen bg-[#edf4f0] pb-24 text-[#1c2d26] lg:pb-0`}>
+      {business?.is_demo && (
+        <p className="bg-[#f1e5b9] px-4 py-2 text-center text-[10px] font-bold uppercase text-[#6d5520]">
+          Demo, tidak untuk pembayaran sungguhan
+        </p>
+      )}
+
+      <header className="sticky top-0 z-30 border-b border-[#d8e1dc] bg-white/95 backdrop-blur-md">
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3 lg:px-6">
+          <div className="flex min-w-0 items-center gap-3">
             <BusinessMark
               name={business?.name}
               logoUrl={business?.logo_url}
               brandColor={business?.brand_color}
-              className="rounded-xl border border-[#232331]"
+              className="rounded-lg border border-[#cdd8d2]"
             />
             <div className="min-w-0">
-              <h1 className="font-black text-sm text-[#232331] truncate">
+              <h1 className="truncate text-base font-extrabold text-[#18392f]">
                 {business?.name || "Toko Kami"}
               </h1>
-              <span className="text-[10.5px] text-[#7958d8] font-mono font-bold block">
-                Pemesanan Mandiri · Meja {tableNo}
+              <span className="block text-[11px] font-medium text-[#718078]">
+                Menu digital, meja {tableNo}
               </span>
             </div>
           </div>
 
-          <div className="rounded-xl border border-[#232331] bg-[#f0edff] px-2.5 py-1 text-center">
-            <span className="text-[9px] font-mono text-[#7958d8] font-bold block uppercase">MEJA</span>
-            <span className="text-sm font-black font-mono text-[#232331] block">{tableNo}</span>
+          <div className="flex h-11 min-w-14 flex-col items-center justify-center rounded-lg border border-[#c8d4ce] bg-[#f5f8f6] px-3">
+            <span className="text-[8px] font-bold uppercase text-[#728078]">Meja</span>
+            <span className="text-sm font-extrabold text-[#18392f]">{tableNo}</span>
           </div>
         </div>
       </header>
 
-      {/* Main Container */}
-      <main className="flex-1 p-4 space-y-4">
-        {lastOrder && <button type="button" onClick={reorderLast} className="flex min-h-11 w-full items-center justify-between rounded-xl border-2 border-[#232331] bg-[#f0edff] px-3 text-left text-xs font-bold"><span>Pesan lagi seperti terakhir kali</span><span className="text-[#7958d8]">Gunakan ulang</span></button>}
-        
-        {/* Category Pills Bar */}
-        <div className="flex items-center overflow-x-auto scrollbar-none gap-1.5 font-mono text-xs font-bold">
-          <button
-            type="button"
-            onClick={() => setActiveCategory("all")}
-            className={`px-3 py-1.5 rounded-xl border transition-all whitespace-nowrap ${
-              activeCategory === "all"
-                ? "bg-[#232331] text-[#d9ff57] border-[#232331]"
-                : "bg-white text-[#7b7b8e] border-[#dedee8]"
-            }`}
-          >
-            Semua Menu
-          </button>
-          {categories.map((cat) => (
-            <button
-              key={cat.id}
-              type="button"
-              onClick={() => setActiveCategory(cat.id)}
-              className={`px-3 py-1.5 rounded-xl border transition-all whitespace-nowrap ${
-                activeCategory === cat.id
-                  ? "bg-[#232331] text-[#d9ff57] border-[#232331]"
-                  : "bg-white text-[#7b7b8e] border-[#dedee8]"
-              }`}
-            >
-              {cat.name}
-            </button>
-          ))}
-        </div>
-
-        {/* Menu Items Grid */}
-        <div className="grid gap-3">
-          {filteredMenu.map((item) => {
-            const inCart = cart[item.id];
-            return (
-              <div
-                key={item.id}
-                className={`card-tactile rounded-2xl border-2 p-3.5 space-y-2 transition-all ${
-                  item.is_available
-                    ? "border-[#232331] bg-white shadow-ink-xs"
-                    : "border-[#dedee8] bg-[#fcfcfe] opacity-60"
-                }`}
+      <main className="mx-auto grid max-w-6xl gap-5 px-3 py-4 lg:grid-cols-[minmax(0,1fr)_340px] lg:px-6 lg:py-6">
+        <div className="min-w-0 space-y-5">
+          <div className="relative">
+            <Search
+              size={19}
+              aria-hidden="true"
+              className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[#697870]"
+            />
+            <input
+              type="search"
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              placeholder="Cari menu atau kategori"
+              aria-label="Cari menu atau kategori"
+              className="min-h-12 w-full rounded-lg border border-[#cfdad4] bg-white pl-11 pr-11 text-sm outline-none transition-colors placeholder:text-[#929d97] focus:border-[#176c4f]"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                aria-label="Hapus pencarian"
+                onClick={() => setSearchQuery("")}
+                className="absolute right-0 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center text-[#68766f]"
               >
-                <div className="flex justify-between items-start gap-2.5">
-                  {/*
-                    Foto menu, kalau pemiliknya sudah mengisinya. Bukan Next
-                    <Image>: alamatnya diketik pemilik usaha ke domain mana
-                    pun, dan pengoptimal Next menolak host yang tidak terdaftar
-                    di next.config — menu bergambar akan gagal dimuat begitu
-                    ada pemilik yang memakai layanan gambar baru.
-                  */}
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={item.photo_url || PLACEHOLDER_MENU}
-                    alt=""
-                    loading="lazy"
-                    className="h-20 w-20 shrink-0 rounded-xl border border-[#dedee8] object-cover"
-                  />
-                  <div className="min-w-0 flex-1">
-                    <h3 className="font-extrabold text-sm text-[#232331] font-sans">
-                      {item.name}
-                    </h3>
-                    {item.description && (
-                      <p className="mt-0.5 text-[11px] leading-relaxed text-[#7b7b8e] font-sans">
-                        {item.description}
-                      </p>
-                    )}
-                    <span className="font-black text-sm font-mono text-[#c2410c] block mt-0.5">
-                      {formatRupiah(item.price)}
-                    </span>
-                  </div>
+                <X size={18} aria-hidden="true" />
+              </button>
+            )}
+          </div>
 
-                  {item.is_available ? (
-                    inCart ? (
-                      <div className="flex items-center gap-1.5 font-mono text-xs">
-                        <button
-                          type="button"
-                          onClick={() => handleUpdateQty(item.id, -1)}
-                          className="h-8 w-8 rounded-lg bg-[#f0edff] text-[#7958d8] border border-[#7958d8] font-black flex items-center justify-center"
-                        >
-                          <Minus size={13} />
-                        </button>
-                        <span className="w-6 text-center font-black text-sm">{inCart.qty}</span>
-                        <button
-                          type="button"
-                          onClick={() => handleUpdateQty(item.id, 1)}
-                          className="h-8 w-8 rounded-lg bg-[#232331] text-[#d9ff57] font-black flex items-center justify-center"
-                        >
-                          <Plus size={13} />
-                        </button>
+          {lastOrder && (
+            <button
+              type="button"
+              onClick={reorderLast}
+              className="flex min-h-11 w-full items-center justify-between rounded-lg border border-[#bad0c5] bg-[#e5f2ec] px-3 text-left text-xs font-semibold text-[#24513f]"
+            >
+              <span>Pesan lagi seperti terakhir kali</span>
+              <span className="font-extrabold">Pilih</span>
+            </button>
+          )}
+
+          <section aria-labelledby="category-title" className="space-y-2.5">
+            <div className="flex items-end justify-between">
+              <h2 id="category-title" className="text-sm font-extrabold text-[#20372e]">Kategori</h2>
+              <span className="text-[10px] font-medium text-[#7b8881]">Geser untuk melihat lainnya</span>
+            </div>
+            <nav
+              aria-label="Kategori menu"
+              className="-mx-3 flex gap-2 overflow-x-auto px-3 pb-1 scrollbar-none lg:mx-0 lg:px-0"
+            >
+              {categorizedMenu.map(({ category }) => {
+                const CategoryIcon = getCategoryIcon(category.name);
+                const isActive = activeCategory === category.id && !normalizedSearch;
+                return (
+                  <button
+                    key={category.id}
+                    type="button"
+                    onClick={() => {
+                      setSearchQuery("");
+                      selectCategory(category.id);
+                    }}
+                    className={`flex h-[82px] w-[104px] min-w-[104px] flex-col items-center justify-center gap-1.5 rounded-lg border px-2 text-center transition-colors ${
+                      isActive
+                        ? "border-[#176c4f] bg-[#e4f4ed] text-[#14523d]"
+                        : "border-[#d5ded9] bg-white text-[#526159]"
+                    }`}
+                  >
+                    <CategoryIcon size={22} strokeWidth={1.8} aria-hidden="true" />
+                    <span className="line-clamp-2 text-[10px] font-bold leading-tight">{category.name}</span>
+                  </button>
+                );
+              })}
+            </nav>
+          </section>
+
+          <section id="menu-results" className="scroll-mt-24 space-y-3">
+            <div className="flex items-end justify-between border-b border-[#cbd7d1] pb-2">
+              <h2 className="min-w-0 pr-3 text-xl font-extrabold leading-tight text-[#18392f]">
+                {visibleSectionTitle}
+              </h2>
+              <span className="shrink-0 text-[10px] font-medium text-[#78857e]">
+                {visibleItems.length} pilihan
+              </span>
+            </div>
+
+            {visibleItems.length > 0 ? (
+              <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 xl:grid-cols-4">
+                {visibleItems.map((item) => {
+                  const inCart = cart[item.id];
+                  const categoryName = categories.find((category) => category.id === item.category_id)?.name ?? "Menu";
+                  const CategoryIcon = getCategoryIcon(categoryName);
+                  const hasPhoto = item.photo_url && item.photo_url !== PLACEHOLDER_MENU;
+
+                  return (
+                    <article
+                      key={item.id}
+                      className="flex min-h-[250px] min-w-0 flex-col overflow-hidden rounded-lg border border-[#d7e0db] bg-white shadow-[0_5px_18px_rgba(25,67,52,0.06)]"
+                    >
+                      <div className="relative aspect-[4/3] w-full overflow-hidden border-b border-[#e0e7e3] bg-[#e8f2ed]">
+                        {hasPhoto ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={item.photo_url ?? undefined}
+                            alt={item.name}
+                            loading="lazy"
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          <div className="flex h-full flex-col items-center justify-center gap-2 text-[#34745c]">
+                            <CategoryIcon size={36} strokeWidth={1.5} aria-hidden="true" />
+                            <span className="max-w-[85%] text-center text-[9px] font-bold uppercase leading-tight text-[#698278]">
+                              {categoryName}
+                            </span>
+                          </div>
+                        )}
                       </div>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => handleAddToCart(item)}
-                        className="btn-tactile rounded-xl border border-[#232331] bg-[#d9ff57] px-3 py-1.5 font-mono text-xs font-black text-[#232331] shadow-ink-xs"
-                      >
-                        + Pesan
-                      </button>
-                    )
-                  ) : (
-                    <span className="rounded-lg bg-[#feebee] text-[#ef4444] px-2 py-1 font-mono text-[10px] font-bold">
-                      Habis
-                    </span>
-                  )}
-                </div>
 
-                {/* Custom Note input if item in cart */}
-                {inCart && (
-                  <div className="pt-2 border-t border-[#dedee8]">
-                    <input
-                      type="text"
-                      placeholder="Catatan khusus (misal: less sugar, es sedikit)..."
-                      value={inCart.note}
-                      onChange={(e) => handleUpdateNote(item.id, e.target.value)}
-                      className="w-full rounded-lg border border-[#dedee8] bg-[#fcfcfe] px-2.5 py-1 text-xs text-[#232331] font-sans"
-                    />
-                  </div>
-                )}
+                      <div className="flex flex-1 flex-col p-2.5">
+                        <h3 className="break-words text-[14px] font-extrabold leading-tight text-[#18392f]">
+                          {item.name}
+                        </h3>
+                        {item.description && (
+                          <p className="mt-1 line-clamp-2 text-[10px] leading-relaxed text-[#78857e]">
+                            {item.description}
+                          </p>
+                        )}
+
+                        <div className="mt-auto pt-3">
+                          {inCart ? (
+                            <>
+                              <span className="block text-[13px] font-extrabold text-[#8f5032]">
+                                {formatRupiah(item.price)}
+                              </span>
+                              <div className="mt-2 grid w-full grid-cols-[44px_minmax(0,1fr)_44px] items-center">
+                                <button
+                                  type="button"
+                                  aria-label={`Kurangi ${item.name}`}
+                                  onClick={() => handleUpdateQty(item.id, -1)}
+                                  className="flex h-11 w-11 items-center justify-center rounded-lg border border-[#b8cdc3] text-[#1b5f47]"
+                                >
+                                  <Minus size={14} aria-hidden="true" />
+                                </button>
+                                <span className="text-center text-xs font-extrabold">{inCart.qty}</span>
+                                <button
+                                  type="button"
+                                  aria-label={`Tambah ${item.name}`}
+                                  onClick={() => handleUpdateQty(item.id, 1)}
+                                  className="flex h-11 w-11 items-center justify-center rounded-lg bg-[#0aae6f] text-white"
+                                >
+                                  <Plus size={15} aria-hidden="true" />
+                                </button>
+                              </div>
+                            </>
+                          ) : (
+                            <div className="flex items-end justify-between gap-2">
+                              <span className="min-w-0 text-[13px] font-extrabold text-[#8f5032]">
+                                {formatRupiah(item.price)}
+                              </span>
+                              <button
+                                type="button"
+                                aria-label={`Tambah ${item.name} ke pesanan`}
+                                title={`Tambah ${item.name}`}
+                                onClick={() => handleAddToCart(item)}
+                                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-[#0aae6f] text-white transition-colors hover:bg-[#079760] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#176c4f]"
+                              >
+                                <Plus size={19} strokeWidth={2.5} aria-hidden="true" />
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </article>
+                  );
+                })}
               </div>
-            );
-          })}
+            ) : (
+              <div className="rounded-lg border border-[#d5ded9] bg-white px-5 py-10 text-center">
+                <p className="text-sm font-extrabold text-[#284238]">Menu tidak ditemukan</p>
+                <p className="mt-1 text-xs text-[#78857e]">Coba nama menu atau kategori lain.</p>
+              </div>
+            )}
+          </section>
         </div>
 
+        <aside className="hidden self-start rounded-lg border border-[#d5ded9] bg-white p-4 shadow-[0_8px_24px_rgba(25,67,52,0.07)] lg:sticky lg:top-24 lg:block">
+          {cartList.length > 0 ? (
+            renderCartContent(false)
+          ) : (
+            <div className="py-12 text-center">
+              <ShoppingBag size={28} aria-hidden="true" className="mx-auto text-[#759087]" />
+              <h2 className="mt-3 text-sm font-extrabold text-[#284238]">Pesanan masih kosong</h2>
+              <p className="mx-auto mt-1 max-w-48 text-xs leading-relaxed text-[#7a8780]">
+                Tekan tombol tambah pada menu yang ingin dipesan.
+              </p>
+            </div>
+          )}
+        </aside>
       </main>
 
-      {/* FIXED BOTTOM CART & CHECKOUT BAR */}
       {cartList.length > 0 && (
-        <div className="fixed bottom-0 inset-x-0 z-40 bg-[#232331] text-white border-t-2 border-[#232331] p-3.5 shadow-ink-xl max-w-md mx-auto">
-          
-          {/* Identity input expandable before submit */}
-          <div className="space-y-2 font-mono text-xs mb-2">
-            <div className="grid grid-cols-2 gap-2">
-              <input
-                type="text"
-                required
-                placeholder="Nama Pemesan"
-                value={customerName}
-                onChange={(e) => setCustomerName(e.target.value)}
-                className="rounded-xl border border-white/20 bg-white/10 px-2.5 py-1.5 text-white placeholder-white/50 text-xs font-sans"
-              />
-              <input
-                type="tel"
-                placeholder="No. WhatsApp (Loyalty)"
-                value={customerPhone}
-                onChange={(e) => setCustomerPhone(e.target.value)}
-                className="rounded-xl border border-white/20 bg-white/10 px-2.5 py-1.5 text-white placeholder-white/50 text-xs font-sans"
-              />
-            </div>
-          </div>
-
-          {/*
-            Cara bayar dipilih di sini, dari HP pelanggan sendiri. Kasir tidak
-            menanyakannya lagi: menanyakan ulang berarti meminta orang yang
-            sama membayar dua kali.
-          */}
-          <div className="space-y-1.5 font-mono text-xs">
-            <span className="text-[10px] text-[#dedee8] block">Cara bayar:</span>
-            <div className="grid grid-cols-2 gap-2">
-              {[
-                { id: "qris" as const, label: "QRIS", hint: "Scan & bayar sekarang" },
-                { id: "cash" as const, label: "Tunai", hint: "Bayar di kasir" },
-              ].map((m) => (
-                <button
-                  key={m.id}
-                  type="button"
-                  onClick={() => setCaraBayar(m.id)}
-                  className={`rounded-xl border-2 p-2 text-left ${
-                    caraBayar === m.id
-                      ? "border-[#d9ff57] bg-[#d9ff57] text-[#232331]"
-                      : "border-white/20 bg-white/10 text-white"
-                  }`}
-                >
-                  <span className="block font-black text-xs">{m.label}</span>
-                  <span className="block text-[10px] opacity-80">{m.hint}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between gap-3 font-mono text-xs">
-            <div>
-              <span className="text-[10px] text-[#dedee8] block">
-                {totalItemCount} Menu di Meja {tableNo}
+        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-[#d1ddd7] bg-white px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 shadow-[0_-8px_24px_rgba(25,67,52,0.12)] lg:hidden">
+          <button
+            type="button"
+            onClick={() => setIsCartOpen(true)}
+            className="mx-auto flex min-h-12 w-full max-w-md items-center justify-between rounded-lg bg-[#176c4f] px-4 text-white"
+          >
+            <span className="flex items-center gap-2 text-left">
+              <span className="relative flex h-8 w-8 items-center justify-center rounded-lg bg-white/12">
+                <ShoppingBag size={18} aria-hidden="true" />
+                <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#d9f52a] px-1 text-[9px] font-extrabold text-[#18392f]">
+                  {totalItemCount}
+                </span>
               </span>
-              <span className="text-lg font-black text-[#d9ff57]">
-                {formatRupiah(cartTotal)}
+              <span>
+                <span className="block text-xs font-extrabold">Lihat pesanan</span>
+                <span className="block text-[10px] text-white/75">Meja {tableNo}</span>
               </span>
-            </div>
-
-            <button
-              type="button"
-              onClick={handleCheckout}
-              disabled={isSubmitting || !customerName.trim()}
-              className="btn-tactile rounded-xl bg-[#d9ff57] px-5 py-2.5 font-mono text-xs font-black text-[#232331] shadow-ink-xs disabled:opacity-50"
-            >
-              {isSubmitting ? "Mengirim..." : "Kirim Pesanan ➔"}
-            </button>
-          </div>
-
+            </span>
+            <span className="text-sm font-extrabold">{formatRupiah(cartTotal)}</span>
+          </button>
         </div>
       )}
 
+      {isCartOpen && cartList.length > 0 && (
+        <div className="fixed inset-0 z-50 flex items-end bg-[#112a21]/45 lg:hidden" role="dialog" aria-modal="true" aria-label="Rincian pesanan">
+          <button
+            type="button"
+            aria-label="Tutup rincian pesanan"
+            onClick={() => setIsCartOpen(false)}
+            className="absolute inset-0 cursor-default"
+          />
+          <div className="relative max-h-[88dvh] w-full overflow-y-auto rounded-t-2xl bg-white p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-[0_-16px_40px_rgba(17,42,33,0.2)]">
+            <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-[#cbd6d0]" />
+            {renderCartContent(true)}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

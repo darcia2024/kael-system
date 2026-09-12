@@ -1,8 +1,14 @@
 import type { Metadata } from "next";
+import { Plus_Jakarta_Sans } from "next/font/google";
 
 import { db } from "@/lib/db";
 import { moduleLock } from "@/lib/licensing";
 import OrderClient from "./order-client";
+
+const plusJakartaSans = Plus_Jakarta_Sans({
+  subsets: ["latin"],
+  display: "swap",
+});
 
 /**
  * Menu digital per meja. Pelanggan memindai QR di meja, jadi tanpa login.
@@ -28,7 +34,7 @@ export const dynamic = "force-dynamic";
 
 function Pesan({ judul, isi }: { judul: string; isi: string }) {
   return (
-    <div className="min-h-screen bg-[#f7f6fc] text-[#232331] font-sans flex items-center justify-center p-5">
+    <div className={`${plusJakartaSans.className} min-h-screen bg-[#f7f6fc] text-[#232331] flex items-center justify-center p-5`}>
       <div className="w-full max-w-sm rounded-3xl border-2 border-[#232331] bg-white p-7 shadow-ink-md text-center space-y-3">
         <h1 className="text-lg font-extrabold">{judul}</h1>
         <p className="text-sm text-[#7b7b8e] leading-relaxed">{isi}</p>
@@ -81,6 +87,7 @@ export default async function QrOrderPage({
       tableNo={decodeURIComponent(tableNo)}
       business={business}
       categories={categories}
+      fontClassName={plusJakartaSans.className}
       // Menu yang sedang habis tidak perlu sampai ke pelanggan.
       menuItems={menuItems.filter((m) => m.is_available)}
     />
