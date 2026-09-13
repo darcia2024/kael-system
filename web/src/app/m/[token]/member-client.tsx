@@ -19,6 +19,8 @@ import { BusinessMark } from "@/components/business-mark";
 import { brandSurface, normalizeBrandColor, readableInkOn } from "@/lib/branding";
 import { updateMarketingPreferenceAction, updateCustomerBirthdayAction } from "@/lib/actions";
 import { siteHost } from "@/lib/site";
+import { isMochiBusiness } from "@/lib/mochi-brand";
+import MochiMemberView from "./mochi-member-view";
 
 /**
  * Kartu member yang dipegang pelanggan.
@@ -201,6 +203,26 @@ export default function CustomerMemberProgressPage({
           </Link>
         </div>
       </div>
+    );
+  }
+
+  if (isMochiBusiness(business)) {
+    return (
+      <MochiMemberView
+        customer={customer}
+        business={business}
+        program={program}
+        rewards={rewards}
+        balance={balance}
+        ledger={ledger}
+        redemptions={redemptions}
+        referralCode={referralCode}
+        tiers={tiers}
+        lifetimeSpend={lifetimeSpend}
+        cardSettings={cardSettings}
+        menuItems={menuItems}
+        visitCount={visitCount}
+      />
     );
   }
 
