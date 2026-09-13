@@ -63,18 +63,18 @@ html {
 /* Theme khusus Mochi dan tenant demo KAEL Cafe yang memakai menu Mochi. */
 .mochi-ui {
   --mochi-ink: #18392f;
-  --mochi-forest: #176c4f;
-  --mochi-forest-deep: #0b3d2e;
+  --mochi-forest: #0b3d2e;
+  --mochi-forest-deep: #07281e;
   --mochi-emerald: #0b3d2e;
   --mochi-emerald-deep: #07281e;
   --mochi-lime: #c8f53a;
   --mochi-lime-hover: #d9ff57;
   --mochi-sheet: #f8faf9;
-  --mochi-cream: #f3f0e7;
-  --mochi-paper: #fffdf7;
-  --mochi-line: #d8ddd3;
+  --mochi-cream: #f0f5f2;
+  --mochi-paper: #ffffff;
+  --mochi-line: #d8e3de;
   --mochi-muted: #718078;
-  --mochi-price: #9b5332;
+  --mochi-price: #0b3d2e;
   color: var(--mochi-ink);
 }
 

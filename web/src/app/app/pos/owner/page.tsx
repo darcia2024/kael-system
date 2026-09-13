@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 
 import { db } from "@/lib/db";
 import { guardModulePage } from "@/lib/licensing";
+import { mochiThemeClass } from "@/lib/mochi-theme";
 import OwnerDashboardClient from "./owner-dashboard-client";
 
 export const metadata: Metadata = {
@@ -22,5 +23,5 @@ export default async function PosOwnerDashboardPage() {
     db.getPendingOrderSync(session.businessId),
   ]);
 
-  return <OwnerDashboardClient business={business} dashboard={dashboard} pendingSync={pendingSync} />;
+  return <OwnerDashboardClient business={business} dashboard={dashboard} pendingSync={pendingSync} themeClassName={mochiThemeClass(business)} />;
 }

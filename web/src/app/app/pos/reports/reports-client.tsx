@@ -59,6 +59,7 @@ export default function PosOwnerReportsPage({
   shifts,
   feedbackSummary,
   recentFeedback,
+  themeClassName = "",
 }: {
   business: Business | null;
   reports: PosReports;
@@ -66,6 +67,7 @@ export default function PosOwnerReportsPage({
   shifts: ShiftReport[];
   feedbackSummary: FeedbackSummary;
   recentFeedback: FeedbackRow[];
+  themeClassName?: string;
 }) {
   const router = useRouter();
 
@@ -100,10 +102,10 @@ export default function PosOwnerReportsPage({
   };
 
   return (
-    <div className="min-h-screen bg-[#f7f6fc] text-[#232331] font-sans flex flex-col pb-16 sm:pb-8">
+    <div className={`${themeClassName} mochi-shell min-h-screen bg-[#f7f6fc] text-[#232331] font-sans flex flex-col pb-16 sm:pb-8`}>
       
       {/* Top Header */}
-      <header className="sticky top-0 z-30 border-b-2 border-[#232331] bg-white/95 backdrop-blur-md px-3 sm:px-8 py-2.5 sm:py-3.5">
+      <header className="mochi-header sticky top-0 z-30 border-b-2 border-[#232331] bg-white/95 backdrop-blur-md px-3 sm:px-8 py-2.5 sm:py-3.5">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-2">
           <div className="flex items-center gap-2 sm:gap-3 min-w-0">
             <Link

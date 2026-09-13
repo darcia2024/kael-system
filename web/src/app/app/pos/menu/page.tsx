@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 
 import { db } from "@/lib/db";
 import { guardOwnerPage } from "@/lib/licensing";
+import { mochiThemeClass } from "@/lib/mochi-theme";
 import MenuClient from "./menu-client";
 
 /**
@@ -22,7 +23,8 @@ export const metadata: Metadata = {
 export default async function MenuPage() {
   const session = await guardOwnerPage("/app/pos/menu");
 
-  const [categories, menuItems, recipes] = await Promise.all([
+  const [business, categories, menuItems, recipes] = await Promise.all([
+    db.getBusiness(session.businessId),
     db.getCategories(session.businessId),
     db.getMenuItems(session.businessId),
     // Menautkan menu ke resep membuat HPP dan potongan stok ikut jalan. Boleh
@@ -35,6 +37,7 @@ export default async function MenuPage() {
       categories={categories}
       menuItems={menuItems}
       recipes={recipes.map((r) => ({ id: r.id, name: r.name }))}
+      themeClassName={mochiThemeClass(business)}
     />
   );
 }

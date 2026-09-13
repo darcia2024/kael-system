@@ -46,10 +46,12 @@ export default function MenuClient({
   categories,
   menuItems,
   recipes,
+  themeClassName = "",
 }: {
   categories: Category[];
   menuItems: MenuItem[];
   recipes: { id: string; name: string }[];
+  themeClassName?: string;
 }) {
   const router = useRouter();
   const [draf, setDraf] = useState<Draf | null>(null);
@@ -158,7 +160,7 @@ export default function MenuClient({
   };
 
   return (
-    <main className="min-h-screen bg-[#f7f6fc] p-4 text-[#232331] sm:p-8">
+    <main className={`${themeClassName} mochi-shell min-h-screen bg-[#f7f6fc] p-4 text-[#232331] sm:p-8`}>
       <div className="mx-auto max-w-4xl space-y-5">
         <Link
           href="/app/pos"
@@ -168,7 +170,7 @@ export default function MenuClient({
           <ArrowLeft size={17} />
         </Link>
 
-        <header>
+        <header className="rounded-lg border border-transparent px-1 py-2">
           <p className="font-mono text-[11px] font-bold text-[#7958d8]">KAEL POS</p>
           <h1 className="text-2xl font-black">Kelola Menu</h1>
           <p className="mt-1 text-xs text-[#7b7b8e]">
@@ -191,7 +193,7 @@ export default function MenuClient({
         )}
 
         {/* ------------------------------------------------------- KATEGORI */}
-        <section className="rounded-2xl border-2 border-[#232331] bg-white p-5 shadow-ink-md">
+        <section className="mochi-panel rounded-2xl border-2 border-[#232331] bg-white p-5 shadow-ink-md">
           <h2 className="text-sm font-black">Kategori</h2>
           <p className="mt-0.5 text-[11px] text-[#7b7b8e]">
             Dipakai jadi tab di halaman pesan. Boleh kosong kalau menunya sedikit.
@@ -230,7 +232,7 @@ export default function MenuClient({
             <button
               type="button"
               onClick={tambahKategori}
-              className="shrink-0 rounded-lg border-2 border-[#232331] bg-[#d9ff57] px-4 py-2 text-sm font-black"
+              className="mochi-primary shrink-0 rounded-lg border-2 border-[#232331] px-4 py-2 text-sm font-black"
             >
               Tambah
             </button>
@@ -238,7 +240,7 @@ export default function MenuClient({
         </section>
 
         {/* ----------------------------------------------------- DAFTAR MENU */}
-        <section className="rounded-2xl border-2 border-[#232331] bg-white p-5 shadow-ink-md">
+        <section className="mochi-panel rounded-2xl border-2 border-[#232331] bg-white p-5 shadow-ink-md">
           <div className="flex items-center justify-between gap-3">
             <div>
               <h2 className="text-sm font-black">Daftar menu</h2>
@@ -250,7 +252,7 @@ export default function MenuClient({
                 setDraf({ ...DRAF_KOSONG });
                 setGalat(null);
               }}
-              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border-2 border-[#232331] bg-[#7958d8] px-3 py-2 text-sm font-black text-white"
+              className="mochi-primary inline-flex shrink-0 items-center gap-1.5 rounded-lg border-2 border-[#232331] px-3 py-2 text-sm font-black"
             >
               <Plus size={16} /> Menu baru
             </button>

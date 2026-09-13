@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 
 import { db } from "@/lib/db";
 import { guardModulePage } from "@/lib/licensing";
+import { mochiThemeClass } from "@/lib/mochi-theme";
+import { isMochiBusiness } from "@/lib/mochi-brand";
 import PosClient from "./pos-client";
 
 export const metadata: Metadata = {
@@ -25,6 +27,8 @@ export default async function PosPage() {
     db.getLoyaltyProgram(session.businessId),
   ]);
 
+  const isMochi = isMochiBusiness(business);
+
   return (
     <PosClient
       business={business}
@@ -40,6 +44,8 @@ export default async function PosPage() {
       loyaltyProgram={loyaltyProgram}
       taxRatePct={Number(business?.pos_tax_rate ?? 0)}
       serviceChargePct={Number(business?.pos_service_charge_rate ?? 0)}
+      themeClassName={mochiThemeClass(business)}
+      isMochi={isMochi}
     />
   );
 }

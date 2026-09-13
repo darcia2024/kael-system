@@ -5,8 +5,19 @@ import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 
 import { db } from "./db";
-import type { LoyaltyCampaignStatus, LoyaltyCampaignSegment, StaffPermission, FeedbackReasonCode, FinanceCalculatorPreset, CardService } from "./types";
-import { FEEDBACK_REASONS, CARD_SERVICE_LABEL, CARD_SERVICE_DESTINATION } from "./types";
+import type {
+  LoyaltyCampaignStatus,
+  LoyaltyCampaignSegment,
+  StaffPermission,
+  FeedbackReasonCode,
+  FinanceCalculatorPreset,
+  CardService,
+} from "./types";
+import {
+  FEEDBACK_REASONS,
+  CARD_SERVICE_LABEL,
+  CARD_SERVICE_DESTINATION,
+} from "./types";
 import {
   searchPlaces,
   isPlacesSearchConfigured,
@@ -21,13 +32,24 @@ import { parseBrandColor } from "./branding";
 import { readQris, buildDynamicQris } from "./qris-engine";
 import { calculateCartTotals } from "./pos-engine";
 import { normalizeLoyaltyCode } from "./loyalty-code";
-import { isValidIndonesianPhoneNumber, normalizePhoneNumber } from "./loyalty-engine";
+import {
+  isValidIndonesianPhoneNumber,
+  normalizePhoneNumber,
+} from "./loyalty-engine";
 import { hashClientIp } from "./auth-security";
 import { normalizeCardCode } from "./card-code";
 import { CAMPAIGN_GOALS, type CampaignGoalKey } from "./campaign-templates";
 import {
-  requireStaff, requireOwner, requireKaelAdmin, requirePermission,
-  createSession, destroySession, getSession, verifyPin, isLegacyPinHash, hashPin,
+  requireStaff,
+  requireOwner,
+  requireKaelAdmin,
+  requirePermission,
+  createSession,
+  destroySession,
+  getSession,
+  verifyPin,
+  isLegacyPinHash,
+  hashPin,
 } from "./auth";
 
 /**
@@ -45,7 +67,7 @@ export type ActionResult<T = void> =
   | { ok: false; error: string };
 
 const fail = (error: string): ActionResult<never> => ({ ok: false, error });
-const done = <T,>(data: T): ActionResult<T> => ({ ok: true, data });
+const done = <T>(data: T): ActionResult<T> => ({ ok: true, data });
 
 // ===========================================================================
 // Sesi
@@ -65,7 +87,9 @@ export async function loginOwner(
     role: user.role,
     name: user.name,
   });
-  return done({ next: user.role === "kael_admin" ? "/admin/businesses" : "/app" });
+  return done({
+    next: user.role === "kael_admin" ? "/admin/businesses" : "/app",
+  });
 }
 
 export async function loginStaff(
@@ -135,7 +159,8 @@ export async function openStoreByCodeAction(code: string): Promise<{
   staffList?: { id: string; name: string }[];
 }> {
   const clean = (code || "").trim().toUpperCase();
-  if (clean.length < 3) return { ok: false, error: "Kode toko terlalu pendek." };
+  if (clean.length < 3)
+    return { ok: false, error: "Kode toko terlalu pendek." };
 
   const business = await db.getBusinessByStoreCode(clean);
   if (!business) return { ok: false, error: "Kode toko tidak dikenali." };
@@ -177,7 +202,7 @@ export async function activateCardAction(
   if (card.status === "active") return fail("Kartu sudah pernah diaktivasi.");
 
   const session = await getSession();
-  
+
   let businessId: string;
 
   if (session?.role === "owner" && session.businessId) {
@@ -229,12 +254,19 @@ export async function activateCardAction(
     } catch {
       return fail("Tautan tujuan tidak valid.");
     }
-    if (url.protocol !== "https:") return fail("Tautan tujuan harus memakai https.");
+    if (url.protocol !== "https:")
+      return fail("Tautan tujuan harus memakai https.");
     tujuan = url.toString();
   }
 
   const cardLabel = label?.trim() || placeDetails?.name || "Meja Kasir";
-  const result = await db.activateCard(code, pin, businessId, tujuan, cardLabel);
+  const result = await db.activateCard(
+    code,
+    pin,
+    businessId,
+    tujuan,
+    cardLabel,
+  );
   if (!result.success) return fail(result.error!);
 
   revalidatePath("/app/review");
@@ -261,7 +293,8 @@ export async function checkCardAction(code: string): Promise<
 > {
   const card = await db.getCardByCode(code);
   if (!card) return fail(`Kartu ${code} tidak dikenali.`);
-  if (card.status === "active") return fail("Kartu ini sudah pernah diaktivasi.");
+  if (card.status === "active")
+    return fail("Kartu ini sudah pernah diaktivasi.");
   if (card.status === "suspended") return fail("Kartu ini tidak aktif.");
   return done({ status: card.status, type: card.type });
 }
@@ -284,7 +317,11 @@ export async function searchPlacesAction(query: string): Promise<{
 
 export async function updateCardAction(
   cardId: string,
-  updates: { destination_url?: string; label?: string; status?: "active" | "suspended" },
+  updates: {
+    destination_url?: string;
+    label?: string;
+    status?: "active" | "suspended";
+  },
 ): Promise<ActionResult<null>> {
   const { businessId } = await requireOwner();
   const locked = await moduleLock(businessId, "review", "write");
@@ -293,7 +330,8 @@ export async function updateCardAction(
   if (updates.destination_url) {
     try {
       const u = new URL(updates.destination_url);
-      if (u.protocol !== "https:") return fail("Tautan tujuan harus memakai https.");
+      if (u.protocol !== "https:")
+        return fail("Tautan tujuan harus memakai https.");
     } catch {
       return fail("Tautan tujuan tidak valid.");
     }
@@ -305,7 +343,9 @@ export async function updateCardAction(
      * Google yang tidak pernah dipakai rute mana pun, tapi tetap tampil di
      * dashboard seolah berarti.
      */
-    const existing = (await db.getCards(businessId)).find((c) => c.id === cardId);
+    const existing = (await db.getCards(businessId)).find(
+      (c) => c.id === cardId,
+    );
     if (!existing) return fail("Kartu tidak ditemukan pada bisnis ini.");
     if (!CARD_SERVICE_DESTINATION[existing.type]) {
       return fail(
@@ -342,7 +382,8 @@ export async function setCardServiceAction(
   const locked = await moduleLock(businessId, "review", "write");
   if (locked) return fail(locked);
 
-  if (!CARD_SERVICE_LABEL[service]) return fail("Layanan kartu tidak dikenali.");
+  if (!CARD_SERVICE_LABEL[service])
+    return fail("Layanan kartu tidak dikenali.");
 
   const res = await db.setCardService(cardId, businessId, service);
   if (!res.ok) return fail(res.error!);
@@ -352,20 +393,59 @@ export async function setCardServiceAction(
   return done(null);
 }
 
+/**
+ * Jalur sadar-data untuk pemilik yang ingin memakai ulang kartu Smart Touch.
+ * Cadangan konfigurasi dibuat dulu di database, sehingga pindah layanan tidak
+ * berubah menjadi penghapusan tombol yang tidak bisa dijelaskan.
+ */
+export async function archiveSmartTouchAndSetCardServiceAction(
+  cardId: string,
+  service: Exclude<CardService, "smart_touch">,
+): Promise<ActionResult<null>> {
+  const session = await requireOwner();
+  const locked = await moduleLock(session.businessId, "review", "write");
+  if (locked) return fail(locked);
+  if (!CARD_SERVICE_LABEL[service])
+    return fail("Layanan kartu tidak dikenali.");
+
+  const res = await db.archiveSmartTouchAndSetCardService(
+    cardId,
+    session.businessId,
+    session.userId,
+    service,
+  );
+  if (!res.ok) return fail(res.error!);
+
+  await db.recordAuditEvent({
+    businessId: session.businessId,
+    actorUserId: session.userId,
+    action: "smart_touch.archived_for_service_change",
+    entityType: "card",
+    entityId: cardId,
+    metadata: { nextService: service },
+  });
+  revalidatePath("/app/review");
+  if (res.card) revalidatePath(`/r/${res.card.card_code}`);
+  return done(null);
+}
+
 /** Penerbitan batch hanya untuk tim KAEL. */
 export async function issueCardsAction(
   count: number,
   type: "review" | "loyalty" | "attendance" | "link" | "smart_touch",
 ): Promise<ActionResult<{ card_code: string; activation_pin: string }[]>> {
   await requireKaelAdmin();
-  if (count < 1 || count > 200) return fail("Jumlah kartu harus antara 1 dan 200.");
+  if (count < 1 || count > 200)
+    return fail("Jumlah kartu harus antara 1 dan 200.");
   const issued = await db.createBatchCards(count, type);
   revalidatePath("/admin/cards");
   return done(issued);
 }
 
 /** Cabut akses kartu dan reset ke status unactivated (hanya untuk Admin KAEL) */
-export async function adminResetCardAction(cardId: string): Promise<ActionResult<null>> {
+export async function adminResetCardAction(
+  cardId: string,
+): Promise<ActionResult<null>> {
   await requireKaelAdmin();
   const res = await db.adminResetCard(cardId);
   if (!res) return fail("Kartu tidak ditemukan.");
@@ -388,7 +468,9 @@ export async function adminSetCardStatusAction(
 }
 
 /** Hapus kartu permanen dari master database (hanya untuk Admin KAEL) */
-export async function adminDeleteCardAction(cardId: string): Promise<ActionResult<null>> {
+export async function adminDeleteCardAction(
+  cardId: string,
+): Promise<ActionResult<null>> {
   await requireKaelAdmin();
   const ok = await db.adminDeleteCard(cardId);
   if (!ok) return fail("Gagal menghapus kartu.");
@@ -411,10 +493,15 @@ export async function registerCustomerAction(
   referralCode?: string,
 ): Promise<ActionResult<{ token: string | null; alreadyMember: boolean }>> {
   // UU PDP: persetujuan harus diberikan aktif, bukan kotak yang sudah tercentang.
-  if (!consent) return fail("Persetujuan penyimpanan data diperlukan untuk mendaftar.");
+  if (!consent)
+    return fail("Persetujuan penyimpanan data diperlukan untuk mendaftar.");
   const cleanName = name.trim().replace(/\s+/g, " ");
-  if (cleanName.length < 2 || cleanName.length > 80) return fail("Nama harus berisi 2 sampai 80 karakter.");
-  if (!isValidIndonesianPhoneNumber(phone)) return fail("Nomor WhatsApp tidak valid. Gunakan nomor Indonesia yang aktif.");
+  if (cleanName.length < 2 || cleanName.length > 80)
+    return fail("Nama harus berisi 2 sampai 80 karakter.");
+  if (!isValidIndonesianPhoneNumber(phone))
+    return fail(
+      "Nomor WhatsApp tidak valid. Gunakan nomor Indonesia yang aktif.",
+    );
 
   /**
    * Jalur publik: yang memanggil ini pelanggan, bukan staf. Kalau modul
@@ -428,9 +515,18 @@ export async function registerCustomerAction(
 
   const requestHeaders = await headers();
   const forwarded = requestHeaders.get("x-forwarded-for");
-  const clientIp = forwarded?.split(",")[0]?.trim() || requestHeaders.get("x-real-ip");
-  if (clientIp && !(await db.allowPublicLoyaltyRegistration(businessId, await hashClientIp(clientIp)))) {
-    return fail("Terlalu banyak pendaftaran dari jaringan ini. Coba lagi dalam satu jam.");
+  const clientIp =
+    forwarded?.split(",")[0]?.trim() || requestHeaders.get("x-real-ip");
+  if (
+    clientIp &&
+    !(await db.allowPublicLoyaltyRegistration(
+      businessId,
+      await hashClientIp(clientIp),
+    ))
+  ) {
+    return fail(
+      "Terlalu banyak pendaftaran dari jaringan ini. Coba lagi dalam satu jam.",
+    );
   }
 
   /**
@@ -439,33 +535,54 @@ export async function registerCustomerAction(
    * diam-diam — pendaftaran tetap jalan, cuma tanpa mengaitkan siapa pun.
    */
   const referrer = referralCode?.trim()
-    ? await db.resolveReferralCode(businessId, normalizeLoyaltyCode(referralCode))
+    ? await db.resolveReferralCode(
+        businessId,
+        normalizeLoyaltyCode(referralCode),
+      )
     : null;
 
   const result = await db.registerCustomer(
-    businessId, cleanName, phone, birthday, marketingOptIn, referrer?.customerId ?? null,
+    businessId,
+    cleanName,
+    phone,
+    birthday,
+    marketingOptIn,
+    referrer?.customerId ?? null,
   );
   if (!result.success) return fail(result.error);
   // Nomor yang sudah terdaftar tidak boleh pernah mengembalikan token kartu.
-  return done({ token: result.alreadyMember ? null : result.customer.token, alreadyMember: result.alreadyMember });
+  return done({
+    token: result.alreadyMember ? null : result.customer.token,
+    alreadyMember: result.alreadyMember,
+  });
 }
 
 /** Owner menyimpan snapshot Google sekarang. Cron memakai helper yang sama. */
-export async function syncGoogleReviewSnapshotAction(): Promise<ActionResult<{ rating: number; reviewCount: number }>> {
+export async function syncGoogleReviewSnapshotAction(): Promise<
+  ActionResult<{ rating: number; reviewCount: number }>
+> {
   const { businessId, userId } = await requireOwner();
   const locked = await moduleLock(businessId, "review", "write");
   if (locked) return fail(locked);
   const business = await db.getBusiness(businessId);
-  if (!business?.google_place_id) return fail("Place ID Google belum diisi pada usaha ini.");
+  if (!business?.google_place_id)
+    return fail("Place ID Google belum diisi pada usaha ini.");
   const snapshot = await getGoogleReviewSnapshot(business.google_place_id);
-  if (!snapshot) return fail("Google Places belum terhubung atau tidak bisa membaca rating toko ini.");
+  if (!snapshot)
+    return fail(
+      "Google Places belum terhubung atau tidak bisa membaca rating toko ini.",
+    );
   await db.createGoogleReviewSnapshot(businessId, {
     googlePlaceId: business.google_place_id,
     rating: snapshot.rating,
     reviewCount: snapshot.reviewCount,
   });
   await db.recordAuditEvent({
-    businessId, actorUserId: userId, action: "review.snapshot_sync", entityType: "business", entityId: businessId,
+    businessId,
+    actorUserId: userId,
+    action: "review.snapshot_sync",
+    entityType: "business",
+    entityId: businessId,
     metadata: snapshot,
   });
   revalidatePath("/app/review");
@@ -479,20 +596,46 @@ export async function saveReviewStandeeAction(
   const { businessId, userId } = await requireOwner();
   const locked = await moduleLock(businessId, "review", "write");
   if (locked) return fail(locked);
-  if (data.headline.trim().length < 3 || data.headline.trim().length > 120) return fail("Judul standee harus 3 sampai 120 karakter.");
-  if (data.body.trim().length < 3 || data.body.trim().length > 300) return fail("Isi standee harus 3 sampai 300 karakter.");
+  if (data.headline.trim().length < 3 || data.headline.trim().length > 120)
+    return fail("Judul standee harus 3 sampai 120 karakter.");
+  if (data.body.trim().length < 3 || data.body.trim().length > 300)
+    return fail("Isi standee harus 3 sampai 300 karakter.");
   const saved = await db.saveReviewStandee(cardId, businessId, {
-    headline: data.headline.trim(), body: data.body.trim(), printSize: data.printSize,
+    headline: data.headline.trim(),
+    body: data.body.trim(),
+    printSize: data.printSize,
   });
   if (!saved) return fail("Kartu review tidak ditemukan.");
-  await db.recordAuditEvent({ businessId, actorUserId: userId, action: "review.standee_saved", entityType: "card", entityId: cardId });
+  await db.recordAuditEvent({
+    businessId,
+    actorUserId: userId,
+    action: "review.standee_saved",
+    entityType: "card",
+    entityId: cardId,
+  });
   revalidatePath(`/app/review/standee/${cardId}`);
   return done(null);
 }
 
 export async function saveSmartTouchAction(
   cardId: string,
-  data: { title: string; subtitle?: string; buttons: { actionKey: "review" | "whatsapp" | "menu" | "member" | "location" | "booking" | "custom"; label: string; targetUrl: string; enabled: boolean }[] },
+  data: {
+    title: string;
+    subtitle?: string;
+    buttons: {
+      actionKey:
+        | "review"
+        | "whatsapp"
+        | "menu"
+        | "member"
+        | "location"
+        | "booking"
+        | "custom";
+      label: string;
+      targetUrl: string;
+      enabled: boolean;
+    }[];
+  },
 ): Promise<ActionResult<null>> {
   const { businessId, userId } = await requireOwner();
   const locked = await moduleLock(businessId, "review", "write");
@@ -504,7 +647,9 @@ export async function saveSmartTouchAction(
    * dan dulu itulah yang membuat kartu `link` diam-diam berhenti memakai
    * tautan tujuannya.
    */
-  const targetCard = (await db.getCards(businessId)).find((c) => c.id === cardId);
+  const targetCard = (await db.getCards(businessId)).find(
+    (c) => c.id === cardId,
+  );
   if (!targetCard) return fail("Kartu tidak ditemukan pada bisnis ini.");
   if (targetCard.type !== "smart_touch") {
     return fail(
@@ -514,35 +659,62 @@ export async function saveSmartTouchAction(
 
   const business = await db.getBusiness(businessId);
   if (!business) return fail("Usaha tidak ditemukan.");
-  if (data.title.trim().length < 2 || data.title.trim().length > 80) return fail("Judul halaman harus 2 sampai 80 karakter.");
-  if (!data.buttons.length || data.buttons.length > 7) return fail("Isi 1 sampai 7 tombol aksi.");
+  if (data.title.trim().length < 2 || data.title.trim().length > 80)
+    return fail("Judul halaman harus 2 sampai 80 karakter.");
+  if (!data.buttons.length || data.buttons.length > 7)
+    return fail("Isi 1 sampai 7 tombol aksi.");
   const seen = new Set<string>();
   for (const button of data.buttons) {
-    if (seen.has(button.actionKey)) return fail("Satu jenis aksi hanya boleh satu tombol.");
+    if (seen.has(button.actionKey))
+      return fail("Satu jenis aksi hanya boleh satu tombol.");
     seen.add(button.actionKey);
-    if (button.label.trim().length < 2 || button.label.trim().length > 50) return fail("Label tombol harus 2 sampai 50 karakter.");
+    if (button.label.trim().length < 2 || button.label.trim().length > 50)
+      return fail("Label tombol harus 2 sampai 50 karakter.");
     if (button.enabled && button.actionKey !== "review") {
-      try { if (new URL(button.targetUrl).protocol !== "https:") return fail("Tujuan tombol yang tampil harus memakai https."); } catch { return fail("Ada tujuan tombol yang tampil tidak valid."); }
+      try {
+        if (new URL(button.targetUrl).protocol !== "https:")
+          return fail("Tujuan tombol yang tampil harus memakai https.");
+      } catch {
+        return fail("Ada tujuan tombol yang tampil tidak valid.");
+      }
     }
   }
-  const reviewIsEnabled = data.buttons.some((button) => button.actionKey === "review" && button.enabled);
+  const reviewIsEnabled = data.buttons.some(
+    (button) => button.actionKey === "review" && button.enabled,
+  );
   if (reviewIsEnabled && !business.google_place_id?.trim()) {
-    return fail("Isi Place ID Google di pengaturan usaha sebelum menampilkan tombol ulasan Google.");
+    return fail(
+      "Isi Place ID Google di pengaturan usaha sebelum menampilkan tombol ulasan Google.",
+    );
   }
-  const reviewUrl = business.google_place_id ? buildGoogleReviewUrl(business.google_place_id) : null;
+  const reviewUrl = business.google_place_id
+    ? buildGoogleReviewUrl(business.google_place_id)
+    : null;
   const saved = await db.saveSmartTouch(cardId, businessId, {
     title: data.title.trim(),
     subtitle: data.subtitle?.trim() || null,
     buttons: data.buttons.map((button, index) => ({
       actionKey: button.actionKey,
       label: button.label.trim(),
-      targetUrl: button.actionKey === "review" && reviewUrl ? reviewUrl : button.targetUrl.trim(),
+      targetUrl:
+        button.actionKey === "review" && reviewUrl
+          ? reviewUrl
+          : button.targetUrl.trim(),
       enabled: button.enabled,
       sortOrder: index,
     })),
   });
-  if (!saved) return fail("Kartu Smart Touch tidak ditemukan. Gunakan kartu jenis Link yang sudah aktif.");
-  await db.recordAuditEvent({ businessId, actorUserId: userId, action: "smart_touch.saved", entityType: "card", entityId: cardId });
+  if (!saved)
+    return fail(
+      "Kartu Smart Touch tidak ditemukan. Gunakan kartu jenis Link yang sudah aktif.",
+    );
+  await db.recordAuditEvent({
+    businessId,
+    actorUserId: userId,
+    action: "smart_touch.saved",
+    entityType: "card",
+    entityId: cardId,
+  });
   revalidatePath(`/touch/${saved.card_code}`);
   revalidatePath("/app/review");
   return done(null);
@@ -554,7 +726,10 @@ export async function updateMarketingPreferenceAction(
   marketingOptIn: boolean,
 ): Promise<ActionResult<null>> {
   if (!token || token.length < 16) return fail("Kartu member tidak valid.");
-  const updated = await db.updateCustomerMarketingPreference(token, marketingOptIn);
+  const updated = await db.updateCustomerMarketingPreference(
+    token,
+    marketingOptIn,
+  );
   if (!updated) return fail("Kartu member tidak ditemukan.");
   revalidatePath(`/m/${token}`);
   return done(null);
@@ -564,9 +739,13 @@ export async function updateMarketingPreferenceAction(
  * Member melengkapi tanggal lahirnya sendiri dari kartu member. Jalur publik,
  * sama seperti updateMarketingPreferenceAction — dijaga token, bukan login.
  */
-export async function updateCustomerBirthdayAction(token: string, birthday: string): Promise<ActionResult<null>> {
+export async function updateCustomerBirthdayAction(
+  token: string,
+  birthday: string,
+): Promise<ActionResult<null>> {
   if (!token || token.length < 16) return fail("Kartu member tidak valid.");
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(birthday)) return fail("Tanggal lahir tidak valid.");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(birthday))
+    return fail("Tanggal lahir tidak valid.");
   const parsed = new Date(birthday);
   /**
    * Kelonggaran 24 jam, bukan Date.now() presis. `birthday` cuma tanggal
@@ -574,11 +753,17 @@ export async function updateCustomerBirthdayAction(token: string, birthday: stri
    * Tanpa kelonggaran, pelanggan yang harinya sudah berganti di WIB
    * (UTC+7) tapi UTC server belum akan ditolak mengisi tanggal "hari ini".
    */
-  if (Number.isNaN(parsed.getTime()) || parsed.getTime() > Date.now() + 24 * 60 * 60 * 1000) {
+  if (
+    Number.isNaN(parsed.getTime()) ||
+    parsed.getTime() > Date.now() + 24 * 60 * 60 * 1000
+  ) {
     return fail("Tanggal lahir tidak valid.");
   }
   const updated = await db.updateCustomerBirthday(token, birthday);
-  if (!updated) return fail("Tanggal lahir sudah tersimpan sebelumnya, atau kartu member tidak ditemukan.");
+  if (!updated)
+    return fail(
+      "Tanggal lahir sudah tersimpan sebelumnya, atau kartu member tidak ditemukan.",
+    );
   revalidatePath(`/m/${token}`);
   return done(null);
 }
@@ -596,12 +781,23 @@ export async function submitFeedbackAction(input: {
   comment?: string;
 }): Promise<ActionResult<null>> {
   if (!input.orderId) return fail("Pesanan tidak dikenali.");
-  if (!Number.isInteger(input.rating) || input.rating < 1 || input.rating > 5) return fail("Rating tidak valid.");
-  if (input.reasonCode && !FEEDBACK_REASONS.some((r) => r.key === input.reasonCode)) return fail("Alasan tidak dikenal.");
+  if (!Number.isInteger(input.rating) || input.rating < 1 || input.rating > 5)
+    return fail("Rating tidak valid.");
+  if (
+    input.reasonCode &&
+    !FEEDBACK_REASONS.some((r) => r.key === input.reasonCode)
+  )
+    return fail("Alasan tidak dikenal.");
   const comment = input.comment?.trim() || null;
-  if (comment && comment.length > 500) return fail("Komentar maksimal 500 karakter.");
+  if (comment && comment.length > 500)
+    return fail("Komentar maksimal 500 karakter.");
 
-  const result = await db.submitFeedback(input.orderId, input.rating, input.reasonCode ?? null, comment);
+  const result = await db.submitFeedback(
+    input.orderId,
+    input.rating,
+    input.reasonCode ?? null,
+    comment,
+  );
   if (!result.success) return fail(result.error);
   revalidatePath(`/receipt/${input.orderId}`);
   return done(null);
@@ -635,9 +831,18 @@ export async function submitCardFeedbackAction(input: {
 
   const requestHeaders = await headers();
   const forwarded = requestHeaders.get("x-forwarded-for");
-  const clientIp = forwarded?.split(",")[0]?.trim() || requestHeaders.get("x-real-ip");
-  if (clientIp && !(await db.allowCardFeedback(card.business_id, await hashClientIp(clientIp)))) {
-    return fail("Terlalu banyak penilaian dari jaringan ini. Coba lagi dalam satu jam.");
+  const clientIp =
+    forwarded?.split(",")[0]?.trim() || requestHeaders.get("x-real-ip");
+  if (
+    clientIp &&
+    !(await db.allowCardFeedback(
+      card.business_id,
+      await hashClientIp(clientIp),
+    ))
+  ) {
+    return fail(
+      "Terlalu banyak penilaian dari jaringan ini. Coba lagi dalam satu jam.",
+    );
   }
 
   const result = await db.submitCardFeedback(cardCode, input.rating);
@@ -656,14 +861,23 @@ export async function attachCardFeedbackAction(input: {
   comment?: string;
 }): Promise<ActionResult<null>> {
   if (!input.feedbackId) return fail("Penilaian tidak dikenali.");
-  if (input.reasonCode && !FEEDBACK_REASONS.some((r) => r.key === input.reasonCode)) {
+  if (
+    input.reasonCode &&
+    !FEEDBACK_REASONS.some((r) => r.key === input.reasonCode)
+  ) {
     return fail("Alasan tidak dikenal.");
   }
   const comment = input.comment?.trim() || null;
-  if (comment && comment.length > 500) return fail("Komentar maksimal 500 karakter.");
-  if (!input.reasonCode && !comment) return fail("Pilih bagian yang kurang atau tulis ceritanya.");
+  if (comment && comment.length > 500)
+    return fail("Komentar maksimal 500 karakter.");
+  if (!input.reasonCode && !comment)
+    return fail("Pilih bagian yang kurang atau tulis ceritanya.");
 
-  const ok = await db.attachCardFeedbackDetail(input.feedbackId, input.reasonCode ?? null, comment);
+  const ok = await db.attachCardFeedbackDetail(
+    input.feedbackId,
+    input.reasonCode ?? null,
+    comment,
+  );
   if (!ok) return fail("Penilaian ini sudah dikirim sebelumnya.");
   return done(null);
 }
@@ -712,37 +926,72 @@ export async function updateLoyaltyProgramAction(updates: {
   if (updates.earn_rate !== undefined && updates.earn_rate <= 0) {
     return fail("Kurs poin harus lebih dari nol.");
   }
-  if (updates.unit_name !== undefined && (updates.unit_name.trim().length < 2 || updates.unit_name.trim().length > 30)) {
+  if (
+    updates.unit_name !== undefined &&
+    (updates.unit_name.trim().length < 2 ||
+      updates.unit_name.trim().length > 30)
+  ) {
     return fail("Nama unit loyalty harus 2 sampai 30 karakter.");
   }
-  if (updates.minimum_purchase !== undefined && (!Number.isInteger(updates.minimum_purchase) || updates.minimum_purchase < 0)) {
+  if (
+    updates.minimum_purchase !== undefined &&
+    (!Number.isInteger(updates.minimum_purchase) ||
+      updates.minimum_purchase < 0)
+  ) {
     return fail("Minimum belanja tidak valid.");
   }
-  if (updates.max_earn_per_transaction !== undefined && updates.max_earn_per_transaction !== null && (!Number.isInteger(updates.max_earn_per_transaction) || updates.max_earn_per_transaction < 1)) {
+  if (
+    updates.max_earn_per_transaction !== undefined &&
+    updates.max_earn_per_transaction !== null &&
+    (!Number.isInteger(updates.max_earn_per_transaction) ||
+      updates.max_earn_per_transaction < 1)
+  ) {
     return fail("Batas poin per transaksi harus bilangan bulat positif.");
   }
-  if (updates.point_expiry_months !== undefined && updates.point_expiry_months !== null &&
-    (!Number.isInteger(updates.point_expiry_months) || updates.point_expiry_months < 1 || updates.point_expiry_months > 120)) {
+  if (
+    updates.point_expiry_months !== undefined &&
+    updates.point_expiry_months !== null &&
+    (!Number.isInteger(updates.point_expiry_months) ||
+      updates.point_expiry_months < 1 ||
+      updates.point_expiry_months > 120)
+  ) {
     return fail("Masa berlaku poin harus 1 sampai 120 bulan.");
   }
-  if (updates.referral_referrer_points !== undefined &&
-    (!Number.isInteger(updates.referral_referrer_points) || updates.referral_referrer_points < 0)) {
+  if (
+    updates.referral_referrer_points !== undefined &&
+    (!Number.isInteger(updates.referral_referrer_points) ||
+      updates.referral_referrer_points < 0)
+  ) {
     return fail("Poin bonus untuk pengajak tidak valid.");
   }
-  if (updates.referral_referee_points !== undefined &&
-    (!Number.isInteger(updates.referral_referee_points) || updates.referral_referee_points < 0)) {
+  if (
+    updates.referral_referee_points !== undefined &&
+    (!Number.isInteger(updates.referral_referee_points) ||
+      updates.referral_referee_points < 0)
+  ) {
     return fail("Poin bonus untuk teman baru tidak valid.");
   }
-  if (updates.referral_monthly_cap !== undefined &&
-    (!Number.isInteger(updates.referral_monthly_cap) || updates.referral_monthly_cap < 1 || updates.referral_monthly_cap > 1000)) {
+  if (
+    updates.referral_monthly_cap !== undefined &&
+    (!Number.isInteger(updates.referral_monthly_cap) ||
+      updates.referral_monthly_cap < 1 ||
+      updates.referral_monthly_cap > 1000)
+  ) {
     return fail("Batas bulanan referral harus 1 sampai 1.000.");
   }
-  if (updates.birthday_bonus_points !== undefined &&
-    (!Number.isInteger(updates.birthday_bonus_points) || updates.birthday_bonus_points < 0)) {
+  if (
+    updates.birthday_bonus_points !== undefined &&
+    (!Number.isInteger(updates.birthday_bonus_points) ||
+      updates.birthday_bonus_points < 0)
+  ) {
     return fail("Poin bonus ulang tahun tidak valid.");
   }
-  if (updates.birthday_window_days !== undefined &&
-    (!Number.isInteger(updates.birthday_window_days) || updates.birthday_window_days < 1 || updates.birthday_window_days > 30)) {
+  if (
+    updates.birthday_window_days !== undefined &&
+    (!Number.isInteger(updates.birthday_window_days) ||
+      updates.birthday_window_days < 1 ||
+      updates.birthday_window_days > 30)
+  ) {
     return fail("Jendela deteksi ulang tahun harus 1 sampai 30 hari.");
   }
   await db.updateLoyaltyProgram(businessId, updates);
@@ -753,13 +1002,20 @@ export async function updateLoyaltyProgramAction(updates: {
 }
 
 /** Menerapkan poin kedaluwarsa yang sudah jatuh tempo, setelah owner meninjau daftarnya. */
-export async function expireDuePointsAction(): Promise<ActionResult<{ points: number }>> {
+export async function expireDuePointsAction(): Promise<
+  ActionResult<{ points: number }>
+> {
   const { businessId, userId } = await requireOwner();
   const locked = await moduleLock(businessId, "loyalty", "write");
   if (locked) return fail(locked);
   const program = await db.getLoyaltyProgram(businessId);
-  if (!program?.point_expiry_months) return fail("Atur masa berlaku poin terlebih dahulu.");
-  const points = await db.expireDuePoints(businessId, userId, program.point_expiry_months);
+  if (!program?.point_expiry_months)
+    return fail("Atur masa berlaku poin terlebih dahulu.");
+  const points = await db.expireDuePoints(
+    businessId,
+    userId,
+    program.point_expiry_months,
+  );
   revalidatePath("/app/loyalty");
   return done({ points });
 }
@@ -773,12 +1029,18 @@ export async function addPointsAction(
   if (locked) return fail(locked);
   if (amountSpent <= 0) return fail("Nominal belanja harus lebih dari nol.");
   // Batas kewajaran. Nominal di luar ini hampir pasti salah ketik.
-  if (amountSpent > 50_000_000) return fail("Nominal terlalu besar. Periksa kembali.");
+  if (amountSpent > 50_000_000)
+    return fail("Nominal terlalu besar. Periksa kembali.");
 
   const customer = await db.getCustomerById(customerId, businessId);
   if (!customer) return fail("Pelanggan tidak ditemukan pada bisnis ini.");
 
-  const entry = await db.earnPointsFromPurchase(businessId, customerId, amountSpent, userId);
+  const entry = await db.earnPointsFromPurchase(
+    businessId,
+    customerId,
+    amountSpent,
+    userId,
+  );
   const balance = await db.getCustomerPointBalance(customerId);
   revalidatePath("/app/loyalty");
   return done({ earned: entry?.delta ?? 0, balance });
@@ -826,7 +1088,13 @@ export async function registerCustomerByStaffAction(input: {
    * orangnya sendiri; kasir yang mencentangkannya atas nama pelanggan bukan
    * persetujuan, dan UU PDP tidak membedakan niat baik dari pelanggaran.
    */
-  const result = await db.registerCustomer(businessId, name, input.phone, undefined, false);
+  const result = await db.registerCustomer(
+    businessId,
+    name,
+    input.phone,
+    undefined,
+    false,
+  );
   if (!result.success) return fail(result.error);
 
   /**
@@ -904,14 +1172,24 @@ export async function addManualPointsAction(
   const { businessId, userId } = await requirePermission("loyalty");
   const locked = await moduleLock(businessId, "loyalty", "write");
   if (locked) return fail(locked);
-  if (!Number.isInteger(delta) || delta === 0) return fail("Jumlah poin tidak valid.");
-  if (Math.abs(delta) > 1000) return fail("Penyesuaian manual dibatasi 1000 poin.");
+  if (!Number.isInteger(delta) || delta === 0)
+    return fail("Jumlah poin tidak valid.");
+  if (Math.abs(delta) > 1000)
+    return fail("Penyesuaian manual dibatasi 1000 poin.");
   if (!note.trim()) return fail("Alasan penyesuaian wajib diisi.");
 
   const customer = await db.getCustomerById(customerId, businessId);
   if (!customer) return fail("Pelanggan tidak ditemukan pada bisnis ini.");
 
-  await db.addPointTransaction(businessId, customerId, delta, "manual", note.trim(), null, userId);
+  await db.addPointTransaction(
+    businessId,
+    customerId,
+    delta,
+    "manual",
+    note.trim(),
+    null,
+    userId,
+  );
   const balance = await db.getCustomerPointBalance(customerId);
   revalidatePath("/app/loyalty");
   return done({ balance });
@@ -927,19 +1205,29 @@ export async function redeemRewardAction(
   const customer = await db.getCustomerById(customerId, businessId);
   if (!customer) return fail("Pelanggan tidak ditemukan pada bisnis ini.");
 
-  const result = await db.issueRedemption(businessId, customerId, rewardId, userId);
+  const result = await db.issueRedemption(
+    businessId,
+    customerId,
+    rewardId,
+    userId,
+  );
   if (!result.success) return fail(result.error);
   revalidatePath("/app/loyalty");
   return done({ code: result.redemption.code, rewardName: result.reward.name });
 }
 
-const normalizeVoucherCode = (value: string) => value.trim().toUpperCase().replace(/\s+/g, "");
+const normalizeVoucherCode = (value: string) =>
+  value.trim().toUpperCase().replace(/\s+/g, "");
 
 /** Cari voucher sebelum kasir menyerahkan reward fisik. */
 export async function lookupRedemptionAction(codeInput: string) {
   const { businessId } = await requirePermission("loyalty");
   const code = normalizeVoucherCode(codeInput);
-  if (!/^RW-[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{3}-[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{3}$/.test(code)) {
+  if (
+    !/^RW-[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{3}-[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{3}$/.test(
+      code,
+    )
+  ) {
     return fail("Format voucher belum benar. Contoh: RW-ABC-123.");
   }
   const voucher = await db.lookupRedemptionByCode(businessId, code);
@@ -948,54 +1236,85 @@ export async function lookupRedemptionAction(codeInput: string) {
 }
 
 /** Tandai voucher dipakai. Database mengunci voucher agar tidak dapat dipakai dua kali. */
-export async function consumeRedemptionAction(codeInput: string): Promise<ActionResult<{ rewardName: string; customerName: string | null }>> {
+export async function consumeRedemptionAction(
+  codeInput: string,
+): Promise<ActionResult<{ rewardName: string; customerName: string | null }>> {
   const { businessId, userId } = await requirePermission("loyalty");
   const code = normalizeVoucherCode(codeInput);
-  if (!/^RW-[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{3}-[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{3}$/.test(code)) {
+  if (
+    !/^RW-[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{3}-[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{3}$/.test(
+      code,
+    )
+  ) {
     return fail("Format voucher belum benar.");
   }
   const result = await db.consumeRedemption(businessId, code, userId);
   if (!result.success) return fail(result.error);
   revalidatePath("/app/loyalty");
-  return done({ rewardName: result.voucher.reward_name, customerName: result.voucher.customer_name });
+  return done({
+    rewardName: result.voucher.reward_name,
+    customerName: result.voucher.customer_name,
+  });
 }
 
 export async function saveRewardAction(data: {
-  id?: string; name: string; point_cost: number; market_value: number; stock: number | null; is_active: boolean;
+  id?: string;
+  name: string;
+  point_cost: number;
+  market_value: number;
+  stock: number | null;
+  is_active: boolean;
 }): Promise<ActionResult<null>> {
   const { businessId } = await requireOwner();
   const locked = await moduleLock(businessId, "loyalty", "write");
   if (locked) return fail(locked);
   if (!data.name.trim()) return fail("Nama reward belum diisi.");
   if (data.point_cost <= 0) return fail("Biaya poin harus lebih dari nol.");
-  if (!Number.isInteger(data.market_value) || data.market_value < 0) return fail("Nilai jual reward tidak valid.");
+  if (!Number.isInteger(data.market_value) || data.market_value < 0)
+    return fail("Nilai jual reward tidak valid.");
   await db.saveReward(businessId, data);
   revalidatePath("/app/loyalty");
   return done(null);
 }
 
 export async function saveTierAction(data: {
-  id?: string; name: string; min_lifetime_spend: number; earn_multiplier: number; benefit_note: string; sort_order: number;
+  id?: string;
+  name: string;
+  min_lifetime_spend: number;
+  earn_multiplier: number;
+  benefit_note: string;
+  sort_order: number;
 }): Promise<ActionResult<import("./types").LoyaltyTier>> {
   const { businessId } = await requireOwner();
   const locked = await moduleLock(businessId, "loyalty", "write");
   if (locked) return fail(locked);
-  if (!data.name.trim() || data.name.trim().length > 40) return fail("Nama level wajib diisi, maksimal 40 karakter.");
-  if (!Number.isInteger(data.min_lifetime_spend) || data.min_lifetime_spend < 0) return fail("Syarat belanja tidak valid.");
-  if (!Number.isFinite(data.earn_multiplier) || data.earn_multiplier < 1 || data.earn_multiplier > 5) {
+  if (!data.name.trim() || data.name.trim().length > 40)
+    return fail("Nama level wajib diisi, maksimal 40 karakter.");
+  if (!Number.isInteger(data.min_lifetime_spend) || data.min_lifetime_spend < 0)
+    return fail("Syarat belanja tidak valid.");
+  if (
+    !Number.isFinite(data.earn_multiplier) ||
+    data.earn_multiplier < 1 ||
+    data.earn_multiplier > 5
+  ) {
     return fail("Pengali poin harus antara 1x sampai 5x.");
   }
   const benefitNote = data.benefit_note.trim();
-  if (benefitNote.length > 200) return fail("Catatan manfaat maksimal 200 karakter.");
+  if (benefitNote.length > 200)
+    return fail("Catatan manfaat maksimal 200 karakter.");
 
   const tier = await db.saveTier(businessId, {
-    ...data, name: data.name.trim(), benefit_note: benefitNote || null,
+    ...data,
+    name: data.name.trim(),
+    benefit_note: benefitNote || null,
   });
   revalidatePath("/app/loyalty");
   return done(tier);
 }
 
-export async function deleteTierAction(id: string): Promise<ActionResult<null>> {
+export async function deleteTierAction(
+  id: string,
+): Promise<ActionResult<null>> {
   const { businessId } = await requireOwner();
   const locked = await moduleLock(businessId, "loyalty", "write");
   if (locked) return fail(locked);
@@ -1014,15 +1333,29 @@ export async function createLoyaltyCampaignAction(input: {
   goal?: CampaignGoalKey;
   /** Kalau diisi (termasuk 0), campaign ini mencetak kode promo. Undefined = tidak ada kode. */
   codeRewardPoints?: number;
-}): Promise<ActionResult<NonNullable<Awaited<ReturnType<typeof db.createLoyaltyCampaign>>>>> {
+}): Promise<
+  ActionResult<
+    NonNullable<Awaited<ReturnType<typeof db.createLoyaltyCampaign>>>
+  >
+> {
   const { businessId, userId } = await requireOwner();
   const locked = await moduleLock(businessId, "loyalty", "write");
   if (locked) return fail(locked);
-  if (!input.name.trim() || input.name.trim().length > 120) return fail("Nama campaign wajib diisi, maksimal 120 karakter.");
-  if (!input.messageTemplate.trim() || input.messageTemplate.trim().length > 2000) return fail("Pesan campaign wajib diisi, maksimal 2.000 karakter.");
-  if (!input.customerIds.length || input.customerIds.length > 5_000) return fail("Pilih minimal satu, maksimal 5.000 member.");
-  if (input.goal && !CAMPAIGN_GOALS.some((g) => g.key === input.goal)) return fail("Tujuan campaign tidak dikenal.");
-  if (input.codeRewardPoints !== undefined && (!Number.isInteger(input.codeRewardPoints) || input.codeRewardPoints < 0)) {
+  if (!input.name.trim() || input.name.trim().length > 120)
+    return fail("Nama campaign wajib diisi, maksimal 120 karakter.");
+  if (
+    !input.messageTemplate.trim() ||
+    input.messageTemplate.trim().length > 2000
+  )
+    return fail("Pesan campaign wajib diisi, maksimal 2.000 karakter.");
+  if (!input.customerIds.length || input.customerIds.length > 5_000)
+    return fail("Pilih minimal satu, maksimal 5.000 member.");
+  if (input.goal && !CAMPAIGN_GOALS.some((g) => g.key === input.goal))
+    return fail("Tujuan campaign tidak dikenal.");
+  if (
+    input.codeRewardPoints !== undefined &&
+    (!Number.isInteger(input.codeRewardPoints) || input.codeRewardPoints < 0)
+  ) {
     return fail("Bonus poin kode tidak valid.");
   }
 
@@ -1032,7 +1365,10 @@ export async function createLoyaltyCampaignAction(input: {
     messageTemplate: input.messageTemplate.trim(),
     customerIds: [...new Set(input.customerIds)],
   });
-  if (!result) return fail("Tidak ada member yang menyetujui menerima promo di daftar ini.");
+  if (!result)
+    return fail(
+      "Tidak ada member yang menyetujui menerima promo di daftar ini.",
+    );
   revalidatePath("/app/loyalty");
   return done(result);
 }
@@ -1058,7 +1394,10 @@ export async function redeemCodeAction(
   const result = await db.redeemCode(businessId, code, customerId, userId);
   if (!result.success) return fail(result.error);
   revalidatePath("/app/loyalty");
-  return done({ pointsAwarded: result.pointsAwarded, campaignName: result.campaignName });
+  return done({
+    pointsAwarded: result.pointsAwarded,
+    campaignName: result.campaignName,
+  });
 }
 
 /** WhatsApp click-to-chat tidak memberi bukti pengiriman, jadi owner menandainya sendiri. */
@@ -1069,8 +1408,15 @@ export async function updateLoyaltyCampaignRecipientStatusAction(
   const { businessId, userId } = await requireOwner();
   const locked = await moduleLock(businessId, "loyalty", "write");
   if (locked) return fail(locked);
-  if (!(["opened", "sent", "skipped"] as LoyaltyCampaignStatus[]).includes(status)) return fail("Status campaign tidak dikenal.");
-  const recipient = await db.updateLoyaltyCampaignRecipientStatus(recipientId, businessId, status);
+  if (
+    !(["opened", "sent", "skipped"] as LoyaltyCampaignStatus[]).includes(status)
+  )
+    return fail("Status campaign tidak dikenal.");
+  const recipient = await db.updateLoyaltyCampaignRecipientStatus(
+    recipientId,
+    businessId,
+    status,
+  );
   if (!recipient) return fail("Target campaign tidak ditemukan.");
 
   /**
@@ -1095,7 +1441,9 @@ export async function getLoyaltyCampaignRecipientsAction(campaignId: string) {
   return done(await db.getLoyaltyCampaignRecipients(campaignId, businessId));
 }
 
-export async function deleteRewardAction(id: string): Promise<ActionResult<null>> {
+export async function deleteRewardAction(
+  id: string,
+): Promise<ActionResult<null>> {
   const { businessId } = await requireOwner();
   const locked = await moduleLock(businessId, "loyalty", "write");
   if (locked) return fail(locked);
@@ -1106,7 +1454,9 @@ export async function deleteRewardAction(id: string): Promise<ActionResult<null>
 }
 
 /** Hak penghapusan data menurut UU PDP. Hanya owner. */
-export async function anonymizeCustomerAction(customerId: string): Promise<ActionResult<null>> {
+export async function anonymizeCustomerAction(
+  customerId: string,
+): Promise<ActionResult<null>> {
   const { businessId } = await requireOwner();
   const locked = await moduleLock(businessId, "loyalty", "write");
   if (locked) return fail(locked);
@@ -1120,7 +1470,10 @@ export async function anonymizeCustomerAction(customerId: string): Promise<Actio
 // POS dan Ordering
 // ===========================================================================
 
-export async function openShiftAction(openingCash: number, notes?: string): Promise<ActionResult<null>> {
+export async function openShiftAction(
+  openingCash: number,
+  notes?: string,
+): Promise<ActionResult<null>> {
   const { businessId, userId } = await requirePermission("pos");
   const locked = await moduleLock(businessId, "pos", "write");
   if (locked) return fail(locked);
@@ -1150,12 +1503,30 @@ export async function createOrderAction(input: {
   service_type: "dine_in" | "takeaway" | "delivery";
   table_no?: string | null;
   payment_method: "cash" | "qris" | "transfer";
-  delivery?: { name: string; phone: string; address: string; fee: number; note?: string } | null;
+  delivery?: {
+    name: string;
+    phone: string;
+    address: string;
+    fee: number;
+    note?: string;
+  } | null;
   discount?: number;
   cash_given?: number | null;
   customer_id?: string | null;
   items: { menu_item_id: string; qty: number; note?: string }[];
-}): Promise<ActionResult<{ orderId: string; orderNo: string; total: number; change: number; subtotal: number; discount: number; tax: number; serviceCharge: number; deliveryFee: number }>> {
+}): Promise<
+  ActionResult<{
+    orderId: string;
+    orderNo: string;
+    total: number;
+    change: number;
+    subtotal: number;
+    discount: number;
+    tax: number;
+    serviceCharge: number;
+    deliveryFee: number;
+  }>
+> {
   const { businessId, userId } = await requirePermission("pos");
   const locked = await moduleLock(businessId, "pos", "write");
   if (locked) return fail(locked);
@@ -1190,7 +1561,11 @@ export async function createOrderAction(input: {
   const rawDiscount = Number(input.discount ?? 0);
   if (!Number.isFinite(rawDiscount)) return fail("Diskon tidak valid.");
   const deliveryFee = Math.round(Number(input.delivery?.fee ?? 0));
-  if (!Number.isFinite(deliveryFee) || deliveryFee < 0 || deliveryFee > 100_000_000) {
+  if (
+    !Number.isFinite(deliveryFee) ||
+    deliveryFee < 0 ||
+    deliveryFee > 100_000_000
+  ) {
     return fail("Ongkir tidak valid.");
   }
   const totals = calculateCartTotals(
@@ -1202,7 +1577,8 @@ export async function createOrderAction(input: {
   const totalDue = totals.total + deliveryFee;
   const shift = await db.getActiveShift(businessId);
   if (input.payment_method === "cash") {
-    if (!shift) return fail("Buka shift kasir sebelum menerima pembayaran tunai.");
+    if (!shift)
+      return fail("Buka shift kasir sebelum menerima pembayaran tunai.");
     const cashGiven = Number(input.cash_given ?? 0);
     if (!Number.isFinite(cashGiven) || cashGiven < totalDue) {
       return fail("Uang tunai yang diterima kurang dari total tagihan.");
@@ -1224,7 +1600,8 @@ export async function createOrderAction(input: {
        */
       status: input.payment_method === "cash" ? "paid" : "open",
       payment_status: input.payment_method === "cash" ? "paid" : "pending",
-      fulfillment_status: input.payment_method === "cash" ? "completed" : "pending",
+      fulfillment_status:
+        input.payment_method === "cash" ? "completed" : "pending",
       delivery: input.delivery ? { ...input.delivery, fee: deliveryFee } : null,
       discount: totals.discount,
       tax: totals.tax,
@@ -1273,7 +1650,9 @@ export async function createQrOrderAction(
    * satu pun layar yang menghentikannya.
    */
   if (await moduleLock(businessId, "pos", "write")) {
-    return fail("Pemesanan lewat QR sedang tidak tersedia. Silakan pesan langsung ke kasir.");
+    return fail(
+      "Pemesanan lewat QR sedang tidak tersedia. Silakan pesan langsung ke kasir.",
+    );
   }
 
   const menu = await db.getMenuItems(businessId);
@@ -1282,7 +1661,8 @@ export async function createQrOrderAction(
   const lines = [];
   for (const line of items) {
     const item = byId.get(line.menu_item_id);
-    if (!item || !item.is_available) return fail("Ada menu yang sudah tidak tersedia.");
+    if (!item || !item.is_available)
+      return fail("Ada menu yang sudah tidak tersedia.");
     if (line.qty < 1 || line.qty > 99) return fail("Jumlah item tidak wajar.");
     lines.push({
       menu_item_id: item.id,
@@ -1327,7 +1707,11 @@ export async function createQrOrderAction(
     lines,
   );
   revalidatePath("/app/pos");
-  return done({ orderId: order.id, orderNo: order.order_no, total: Number(order.total) });
+  return done({
+    orderId: order.id,
+    orderNo: order.order_no,
+    total: Number(order.total),
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -1351,7 +1735,10 @@ export async function confirmPaymentAction(
 
   const result = await db.confirmOrderPayment(orderId, businessId, userId);
   if (!result.order) {
-    return fail(result.error ?? "Pesanan tidak ditemukan, atau pembayarannya sudah dikonfirmasi sebelumnya.");
+    return fail(
+      result.error ??
+        "Pesanan tidak ditemukan, atau pembayarannya sudah dikonfirmasi sebelumnya.",
+    );
   }
   const order = result.order;
 
@@ -1364,22 +1751,28 @@ export async function confirmPaymentAction(
 /** Uangnya tidak pernah masuk. Pesanan ditutup, bukan dibiarkan menggantung. */
 export async function retryOrderSyncAction(): Promise<ActionResult<null>> {
   const { businessId, userId } = await requireOwner();
-  const locked = await moduleLock(businessId, 'pos', 'write');
+  const locked = await moduleLock(businessId, "pos", "write");
   if (locked) return fail(locked);
   const pending = await db.getPendingOrderSync(businessId);
-  for (const order of pending) await db.syncPaidOrder(order.id, businessId, userId);
-  revalidatePath('/app/pos/owner');
-  revalidatePath('/app/loyalty');
+  for (const order of pending)
+    await db.syncPaidOrder(order.id, businessId, userId);
+  revalidatePath("/app/pos/owner");
+  revalidatePath("/app/loyalty");
   return done(null);
 }
 
-export async function markPaymentFailedAction(orderId: string): Promise<ActionResult<null>> {
+export async function markPaymentFailedAction(
+  orderId: string,
+): Promise<ActionResult<null>> {
   const { businessId } = await requirePermission("pos");
   const locked = await moduleLock(businessId, "pos", "write");
   if (locked) return fail(locked);
 
   const order = await db.markOrderPaymentFailed(orderId, businessId);
-  if (!order) return fail("Pesanan tidak ditemukan atau sudah tidak menunggu pembayaran.");
+  if (!order)
+    return fail(
+      "Pesanan tidak ditemukan atau sudah tidak menunggu pembayaran.",
+    );
   revalidatePath("/app/pos");
   return done(null);
 }
@@ -1394,8 +1787,61 @@ export async function setFulfillmentAction(
   if (locked) return fail(locked);
 
   const order = await db.setOrderFulfillment(orderId, businessId, status);
-  if (!order) return fail("Pesanan tidak ditemukan, atau pembayarannya belum dikonfirmasi.");
+  if (!order)
+    return fail(
+      "Pesanan tidak ditemukan, atau pembayarannya belum dikonfirmasi.",
+    );
   revalidatePath("/app/pos");
+  revalidatePath("/app/pos/station");
+  revalidatePath("/app/pos/kitchen");
+  return done(null);
+}
+
+/**
+ * Catatan cetak dilakukan setelah printer benar-benar menerima data dari
+ * perangkat kasir. Ini membuat cetak ulang dan pembukaan laci tetap bisa
+ * ditelusuri tanpa memberi browser hak membuka laci secara sembarangan.
+ */
+export async function recordReceiptPrintAction(
+  orderId: string,
+  openedCashDrawer: boolean,
+  printerName?: string,
+): Promise<ActionResult<null>> {
+  const { businessId, userId } = await requirePermission("pos");
+  const receipt = await db.getOrderById(orderId);
+  const order = receipt?.order;
+  if (!order || order.business_id !== businessId || order.payment_status !== "paid") {
+    return fail("Struk hanya dapat dicetak untuk transaksi lunas di toko ini.");
+  }
+  await db.recordAuditEvent({
+    businessId,
+    actorUserId: userId,
+    action: openedCashDrawer ? "pos.receipt_printed_cash_drawer_opened" : "pos.receipt_printed",
+    entityType: "order",
+    entityId: orderId,
+    metadata: { orderNo: order.order_no, printerName: printerName?.slice(0, 120) ?? null },
+  });
+  return done(null);
+}
+
+/** Snapshot ringan untuk tablet kasir dan layar dapur. */
+export async function getOrderStationSnapshotAction(): Promise<
+  ActionResult<{ orders: Awaited<ReturnType<typeof db.getOrderStationOrders>> }>
+> {
+  const { businessId } = await requirePermission("pos");
+  return done({ orders: await db.getOrderStationOrders(businessId) });
+}
+
+/** Staf yang menekan tombol ini tercatat sebagai penanggung jawab order. */
+export async function claimOrderAction(orderId: string): Promise<ActionResult<null>> {
+  const { businessId, userId } = await requirePermission("pos");
+  const locked = await moduleLock(businessId, "pos", "write");
+  if (locked) return fail(locked);
+  const result = await db.claimOrder(orderId, businessId, userId);
+  if (!result.order) return fail(result.error ?? "Pesanan belum lunas atau sudah tidak tersedia.");
+  revalidatePath("/app/pos");
+  revalidatePath("/app/pos/station");
+  revalidatePath("/app/pos/kitchen");
   return done(null);
 }
 
@@ -1422,7 +1868,13 @@ export async function refundOrderAction(
   const locked = await moduleLock(businessId, "pos", "write");
   if (locked) return fail(locked);
   if (!reason.trim()) return fail("Alasan refund wajib diisi.");
-  const result = await db.refundOrder(orderId, businessId, amount, reason.trim(), userId);
+  const result = await db.refundOrder(
+    orderId,
+    businessId,
+    amount,
+    reason.trim(),
+    userId,
+  );
   if (!result.success) return fail(result.error);
   revalidatePath("/app/pos/reports");
   revalidatePath("/app/pos/owner");
@@ -1439,7 +1891,9 @@ export async function refundOrderAction(
  * yang sama: keduanya bisa dipakai menitipkan isi sembarangan ke halaman yang
  * terbuka untuk umum.
  */
-function bersihkanUrlGambar(input: string | undefined | null): string | null | "invalid" {
+function bersihkanUrlGambar(
+  input: string | undefined | null,
+): string | null | "invalid" {
   const nilai = input?.trim();
   if (!nilai) return null;
 
@@ -1450,7 +1904,11 @@ function bersihkanUrlGambar(input: string | undefined | null): string | null | "
    * kalau tidak, kolom ini bisa dipakai menitipkan jalur apa pun di domain
    * yang sama ke dalam atribut src halaman publik.
    */
-  if (/^\/api\/gambar\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(nilai)) {
+  if (
+    /^\/api\/gambar\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+      nilai,
+    )
+  ) {
     return nilai;
   }
 
@@ -1481,7 +1939,9 @@ export async function uploadImageAction(
 ): Promise<ActionResult<{ url: string }>> {
   const { businessId } = await requireOwner();
 
-  const cocok = /^data:([a-z/+.-]+);base64,([A-Za-z0-9+/=]+)$/i.exec(dataUrl?.trim() ?? "");
+  const cocok = /^data:([a-z/+.-]+);base64,([A-Za-z0-9+/=]+)$/i.exec(
+    dataUrl?.trim() ?? "",
+  );
   if (!cocok) return fail("Berkas gambar tidak terbaca.");
 
   const [, mime, base64] = cocok;
@@ -1529,11 +1989,13 @@ export async function saveMenuItemAction(input: {
   const name = input.name?.trim();
   if (!name) return fail("Nama menu belum diisi.");
   if (name.length > 80) return fail("Nama menu maksimal 80 karakter.");
-  if (!Number.isFinite(input.price) || input.price < 0) return fail("Harga tidak valid.");
+  if (!Number.isFinite(input.price) || input.price < 0)
+    return fail("Harga tidak valid.");
   if (input.price > 100_000_000) return fail("Harga terlalu besar.");
 
   const description = input.description?.trim() || null;
-  if (description && description.length > 300) return fail("Deskripsi maksimal 300 karakter.");
+  if (description && description.length > 300)
+    return fail("Deskripsi maksimal 300 karakter.");
 
   const photoUrl = bersihkanUrlGambar(input.photoUrl);
   if (photoUrl === "invalid") {
@@ -1558,7 +2020,9 @@ export async function saveMenuItemAction(input: {
   return done(null);
 }
 
-export async function deleteMenuItemAction(menuItemId: string): Promise<ActionResult<{ hidden: boolean }>> {
+export async function deleteMenuItemAction(
+  menuItemId: string,
+): Promise<ActionResult<{ hidden: boolean }>> {
   const { businessId } = await requireOwner();
   const locked = await moduleLock(businessId, "pos", "write");
   if (locked) return fail(locked);
@@ -1584,7 +2048,11 @@ export async function saveCategoryAction(input: {
   if (!name) return fail("Nama kategori belum diisi.");
   if (name.length > 60) return fail("Nama kategori maksimal 60 karakter.");
 
-  const saved = await db.saveCategory(businessId, { id: input.id, name, sort_order: input.sortOrder ?? 0 });
+  const saved = await db.saveCategory(businessId, {
+    id: input.id,
+    name,
+    sort_order: input.sortOrder ?? 0,
+  });
   if (!saved) return fail("Kategori tidak ditemukan.");
 
   revalidatePath("/app/pos");
@@ -1592,7 +2060,9 @@ export async function saveCategoryAction(input: {
   return done(null);
 }
 
-export async function deleteCategoryAction(categoryId: string): Promise<ActionResult<null>> {
+export async function deleteCategoryAction(
+  categoryId: string,
+): Promise<ActionResult<null>> {
   const { businessId } = await requireOwner();
   const locked = await moduleLock(businessId, "pos", "write");
   if (locked) return fail(locked);
@@ -1612,7 +2082,11 @@ export async function setMenuAvailabilityAction(
   const { businessId } = await requirePermission("pos");
   const locked = await moduleLock(businessId, "pos", "write");
   if (locked) return fail(locked);
-  const ok = await db.updateMenuItemAvailability(menuItemId, businessId, isAvailable);
+  const ok = await db.updateMenuItemAvailability(
+    menuItemId,
+    businessId,
+    isAvailable,
+  );
   if (!ok) return fail("Menu tidak ditemukan.");
   revalidatePath("/app/pos");
   return done(null);
@@ -1623,8 +2097,16 @@ export async function setMenuAvailabilityAction(
 // ===========================================================================
 
 export async function createIngredientAction(
-  name: string, packPrice: number, packSize: number, baseUnit: "gr" | "ml" | "pcs",
-  metadata: { category?: "bahan_baku" | "kemasan" | "barang_kulakan" | "lainnya"; brand?: string; supplier_name?: string; notes?: string } = {},
+  name: string,
+  packPrice: number,
+  packSize: number,
+  baseUnit: "gr" | "ml" | "pcs",
+  metadata: {
+    category?: "bahan_baku" | "kemasan" | "barang_kulakan" | "lainnya";
+    brand?: string;
+    supplier_name?: string;
+    notes?: string;
+  } = {},
 ): Promise<ActionResult<{ id: string }>> {
   const { businessId } = await requireOwner();
   const locked = await moduleLock(businessId, "finance", "write");
@@ -1633,12 +2115,19 @@ export async function createIngredientAction(
   if (packPrice <= 0) return fail("Harga kemasan harus lebih dari nol.");
   if (packSize <= 0) return fail("Isi kemasan harus lebih dari nol.");
 
-  const ing = await db.createIngredient(businessId, name.trim(), packPrice, packSize, baseUnit, {
-    category: metadata.category ?? "bahan_baku",
-    brand: metadata.brand?.trim() || null,
-    supplier_name: metadata.supplier_name?.trim() || null,
-    notes: metadata.notes?.trim() || null,
-  });
+  const ing = await db.createIngredient(
+    businessId,
+    name.trim(),
+    packPrice,
+    packSize,
+    baseUnit,
+    {
+      category: metadata.category ?? "bahan_baku",
+      brand: metadata.brand?.trim() || null,
+      supplier_name: metadata.supplier_name?.trim() || null,
+      notes: metadata.notes?.trim() || null,
+    },
+  );
   revalidatePath("/app/finance");
   return done({ id: ing.id });
 }
@@ -1649,20 +2138,27 @@ export async function createIngredientAction(
  * berubah karena HPP dihitung, bukan disimpan.
  */
 export async function updateIngredientPriceAction(
-  ingredientId: string, newPackPrice: number,
+  ingredientId: string,
+  newPackPrice: number,
 ): Promise<ActionResult<null>> {
   const { businessId } = await requireOwner();
   const locked = await moduleLock(businessId, "finance", "write");
   if (locked) return fail(locked);
   if (newPackPrice <= 0) return fail("Harga harus lebih dari nol.");
-  const updated = await db.updateIngredientPrice(ingredientId, businessId, newPackPrice);
+  const updated = await db.updateIngredientPrice(
+    ingredientId,
+    businessId,
+    newPackPrice,
+  );
   if (!updated) return fail("Bahan tidak ditemukan pada bisnis ini.");
   revalidatePath("/app/finance");
   return done(null);
 }
 
 export async function getIngredientPriceHistoryAction(ingredientId: string) {
-  const { businessId } = await requireModuleRead("finance", { ownerOnly: true });
+  const { businessId } = await requireModuleRead("finance", {
+    ownerOnly: true,
+  });
   return db.getIngredientPriceHistory(ingredientId, businessId);
 }
 
@@ -1699,15 +2195,22 @@ export async function saveRecipeAction(data: {
   if (!Number.isFinite(data.selling_price) || data.selling_price < 0) {
     return fail("Harga jual tidak boleh minus.");
   }
-  if (!Number.isFinite(data.target_margin_pct) || data.target_margin_pct < 1 || data.target_margin_pct > 95) {
-    return fail("Target margin harus antara 1% sampai 95%. Margin 100% berarti menjual dengan modal nol rupiah.");
+  if (
+    !Number.isFinite(data.target_margin_pct) ||
+    data.target_margin_pct < 1 ||
+    data.target_margin_pct > 95
+  ) {
+    return fail(
+      "Target margin harus antara 1% sampai 95%. Margin 100% berarti menjual dengan modal nol rupiah.",
+    );
   }
 
   // Bahan harus milik bisnis yang sama, kalau tidak resep bisa menunjuk ke
   // harga bahan milik toko lain.
   const owned = new Set((await db.getIngredients(businessId)).map((i) => i.id));
   for (const i of data.ingredients) {
-    if (!owned.has(i.ingredient_id)) return fail("Ada bahan yang tidak dikenali.");
+    if (!owned.has(i.ingredient_id))
+      return fail("Ada bahan yang tidak dikenali.");
     if (i.qty <= 0) return fail("Jumlah pemakaian bahan harus lebih dari nol.");
   }
 
@@ -1746,27 +2249,49 @@ export async function saveFinanceCalculatorPresetAction(data: {
   if (!data.name.trim()) return fail("Nama produk atau layanan belum diisi.");
 
   const numericValues = [
-    data.direct_cost, data.supporting_cost, data.operational_cost, data.selling_price,
-    data.discount_pct, data.payment_fee_pct, data.channel_fee_pct, data.tax_reserve_pct,
-    data.target_margin_pct, data.monthly_fixed_cost, data.monthly_profit_target,
+    data.direct_cost,
+    data.supporting_cost,
+    data.operational_cost,
+    data.selling_price,
+    data.discount_pct,
+    data.payment_fee_pct,
+    data.channel_fee_pct,
+    data.tax_reserve_pct,
+    data.target_margin_pct,
+    data.monthly_fixed_cost,
+    data.monthly_profit_target,
   ];
   if (numericValues.some((value) => !Number.isFinite(value) || value < 0)) {
     return fail("Angka perhitungan tidak boleh kosong atau minus.");
   }
-  if (data.selling_price <= 0) return fail("Isi harga jual sebelum menyimpan perhitungan.");
+  if (data.selling_price <= 0)
+    return fail("Isi harga jual sebelum menyimpan perhitungan.");
   if (data.direct_cost + data.supporting_cost + data.operational_cost <= 0) {
     return fail("Isi minimal satu modal per transaksi sebelum menyimpan.");
   }
-  if ([data.discount_pct, data.payment_fee_pct, data.channel_fee_pct, data.tax_reserve_pct, data.target_margin_pct].some((value) => value > 100)) {
+  if (
+    [
+      data.discount_pct,
+      data.payment_fee_pct,
+      data.channel_fee_pct,
+      data.tax_reserve_pct,
+      data.target_margin_pct,
+    ].some((value) => value > 100)
+  ) {
     return fail("Persentase tidak boleh lebih dari 100%.");
   }
 
-  const preset = await db.saveFinanceCalculatorPreset(businessId, { ...data, name: data.name.trim() });
+  const preset = await db.saveFinanceCalculatorPreset(businessId, {
+    ...data,
+    name: data.name.trim(),
+  });
   revalidatePath("/app/finance");
   return done(preset);
 }
 
-export async function deleteFinanceCalculatorPresetAction(id: string): Promise<ActionResult<null>> {
+export async function deleteFinanceCalculatorPresetAction(
+  id: string,
+): Promise<ActionResult<null>> {
   const { businessId } = await requireOwner();
   const locked = await moduleLock(businessId, "finance", "write");
   if (locked) return fail(locked);
@@ -1776,7 +2301,9 @@ export async function deleteFinanceCalculatorPresetAction(id: string): Promise<A
   return done(null);
 }
 
-export async function deleteRecipeAction(id: string): Promise<ActionResult<null>> {
+export async function deleteRecipeAction(
+  id: string,
+): Promise<ActionResult<null>> {
   const { businessId } = await requireOwner();
   const locked = await moduleLock(businessId, "finance", "write");
   if (locked) return fail(locked);
@@ -1786,84 +2313,185 @@ export async function deleteRecipeAction(id: string): Promise<ActionResult<null>
   return done(null);
 }
 
-export async function saveFinancePocketAction(data: { id?: string; name: string; allocation_pct: number }): Promise<ActionResult<null>> {
+export async function saveFinancePocketAction(data: {
+  id?: string;
+  name: string;
+  allocation_pct: number;
+}): Promise<ActionResult<null>> {
   const { businessId } = await requireOwner();
   const locked = await moduleLock(businessId, "finance", "write");
   if (locked) return fail(locked);
-  if (!data.name.trim() || data.name.trim().length > 50) return fail("Nama kantong wajib diisi, maksimal 50 karakter.");
-  if (!Number.isFinite(data.allocation_pct) || data.allocation_pct < 0 || data.allocation_pct > 100) return fail("Alokasi kantong harus 0 sampai 100%.");
+  if (!data.name.trim() || data.name.trim().length > 50)
+    return fail("Nama kantong wajib diisi, maksimal 50 karakter.");
+  if (
+    !Number.isFinite(data.allocation_pct) ||
+    data.allocation_pct < 0 ||
+    data.allocation_pct > 100
+  )
+    return fail("Alokasi kantong harus 0 sampai 100%.");
   const existing = await db.getFinancePockets(businessId);
-  const otherTotal = existing.filter((pocket) => pocket.id !== data.id).reduce((sum, pocket) => sum + Number(pocket.allocation_pct), 0);
-  if (otherTotal + data.allocation_pct > 100) return fail("Total alokasi semua kantong tidak boleh lebih dari 100%.");
-  const pocket = await db.saveFinancePocket(businessId, { ...data, name: data.name.trim() });
+  const otherTotal = existing
+    .filter((pocket) => pocket.id !== data.id)
+    .reduce((sum, pocket) => sum + Number(pocket.allocation_pct), 0);
+  if (otherTotal + data.allocation_pct > 100)
+    return fail("Total alokasi semua kantong tidak boleh lebih dari 100%.");
+  const pocket = await db.saveFinancePocket(businessId, {
+    ...data,
+    name: data.name.trim(),
+  });
   if (!pocket) return fail("Kantong uang tidak ditemukan.");
   revalidatePath("/app/finance/operations");
   return done(null);
 }
 
-export async function deleteFinancePocketAction(id: string): Promise<ActionResult<null>> {
+export async function deleteFinancePocketAction(
+  id: string,
+): Promise<ActionResult<null>> {
   const { businessId } = await requireOwner();
-  if (!(await db.deleteFinancePocket(id, businessId))) return fail("Kantong uang tidak ditemukan.");
+  if (!(await db.deleteFinancePocket(id, businessId)))
+    return fail("Kantong uang tidak ditemukan.");
   revalidatePath("/app/finance/operations");
   return done(null);
 }
 
-export async function createFinanceTransactionAction(data: { type: "income" | "expense"; category: string; amount: number; occurred_on: string; note?: string; pocket_id?: string | null }): Promise<ActionResult<null>> {
+export async function createFinanceTransactionAction(data: {
+  type: "income" | "expense";
+  category: string;
+  amount: number;
+  occurred_on: string;
+  note?: string;
+  pocket_id?: string | null;
+}): Promise<ActionResult<null>> {
   const { businessId, userId } = await requireOwner();
   const locked = await moduleLock(businessId, "finance", "write");
   if (locked) return fail(locked);
-  if (!data.category.trim() || data.category.trim().length > 60) return fail("Kategori wajib diisi, maksimal 60 karakter.");
-  if (!Number.isInteger(data.amount) || data.amount < 1) return fail("Nominal harus berupa Rupiah bulat lebih dari nol.");
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(data.occurred_on)) return fail("Tanggal transaksi tidak valid.");
-  await db.createFinanceTransaction(businessId, userId, { ...data, category: data.category.trim(), note: data.note?.trim() || null, pocket_id: data.pocket_id || null });
+  if (!data.category.trim() || data.category.trim().length > 60)
+    return fail("Kategori wajib diisi, maksimal 60 karakter.");
+  if (!Number.isInteger(data.amount) || data.amount < 1)
+    return fail("Nominal harus berupa Rupiah bulat lebih dari nol.");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(data.occurred_on))
+    return fail("Tanggal transaksi tidak valid.");
+  await db.createFinanceTransaction(businessId, userId, {
+    ...data,
+    category: data.category.trim(),
+    note: data.note?.trim() || null,
+    pocket_id: data.pocket_id || null,
+  });
   revalidatePath("/app/finance/operations");
   return done(null);
 }
 
-export async function saveFinanceAssetAction(data: { id?: string; name: string; category: string; acquired_on: string; purchase_cost: number; salvage_value: number; useful_life_months: number; is_active: boolean }): Promise<ActionResult<null>> {
+export async function saveFinanceAssetAction(data: {
+  id?: string;
+  name: string;
+  category: string;
+  acquired_on: string;
+  purchase_cost: number;
+  salvage_value: number;
+  useful_life_months: number;
+  is_active: boolean;
+}): Promise<ActionResult<null>> {
   const { businessId } = await requireOwner();
   const locked = await moduleLock(businessId, "finance", "write");
   if (locked) return fail(locked);
-  if (!data.name.trim() || !data.category.trim()) return fail("Nama dan kategori aset wajib diisi.");
-  if (!Number.isInteger(data.purchase_cost) || data.purchase_cost < 1 || !Number.isInteger(data.salvage_value) || data.salvage_value < 0 || data.salvage_value > data.purchase_cost) return fail("Nilai aset tidak valid.");
-  if (!Number.isInteger(data.useful_life_months) || data.useful_life_months < 1 || data.useful_life_months > 240) return fail("Masa manfaat aset harus 1 sampai 240 bulan.");
-  const asset = await db.saveFinanceAsset(businessId, { ...data, name: data.name.trim(), category: data.category.trim() });
+  if (!data.name.trim() || !data.category.trim())
+    return fail("Nama dan kategori aset wajib diisi.");
+  if (
+    !Number.isInteger(data.purchase_cost) ||
+    data.purchase_cost < 1 ||
+    !Number.isInteger(data.salvage_value) ||
+    data.salvage_value < 0 ||
+    data.salvage_value > data.purchase_cost
+  )
+    return fail("Nilai aset tidak valid.");
+  if (
+    !Number.isInteger(data.useful_life_months) ||
+    data.useful_life_months < 1 ||
+    data.useful_life_months > 240
+  )
+    return fail("Masa manfaat aset harus 1 sampai 240 bulan.");
+  const asset = await db.saveFinanceAsset(businessId, {
+    ...data,
+    name: data.name.trim(),
+    category: data.category.trim(),
+  });
   if (!asset) return fail("Aset tidak ditemukan.");
   revalidatePath("/app/finance/operations");
   return done(null);
 }
 
-export async function saveInventoryItemAction(data: { id?: string; sku?: string | null; name: string; unit: string; reorder_level: number }): Promise<ActionResult<null>> {
+export async function saveInventoryItemAction(data: {
+  id?: string;
+  sku?: string | null;
+  name: string;
+  unit: string;
+  reorder_level: number;
+}): Promise<ActionResult<null>> {
   const { businessId } = await requireOwner();
   const locked = await moduleLock(businessId, "finance", "write");
   if (locked) return fail(locked);
-  if (!data.name.trim() || !data.unit.trim()) return fail("Nama barang dan satuan wajib diisi.");
-  if (!Number.isFinite(data.reorder_level) || data.reorder_level < 0) return fail("Stok minimum tidak valid.");
-  const item = await db.saveInventoryItem(businessId, { ...data, name: data.name.trim(), unit: data.unit.trim(), sku: data.sku?.trim() || null });
+  if (!data.name.trim() || !data.unit.trim())
+    return fail("Nama barang dan satuan wajib diisi.");
+  if (!Number.isFinite(data.reorder_level) || data.reorder_level < 0)
+    return fail("Stok minimum tidak valid.");
+  const item = await db.saveInventoryItem(businessId, {
+    ...data,
+    name: data.name.trim(),
+    unit: data.unit.trim(),
+    sku: data.sku?.trim() || null,
+  });
   if (!item) return fail("Barang tidak ditemukan.");
   revalidatePath("/app/finance/operations");
   return done(null);
 }
 
-export async function recordInventoryPurchaseAction(data: { supplier_name?: string; purchased_on: string; note?: string; items: { inventory_item_id: string; qty: number; unit_cost: number }[] }): Promise<ActionResult<null>> {
+export async function recordInventoryPurchaseAction(data: {
+  supplier_name?: string;
+  purchased_on: string;
+  note?: string;
+  items: { inventory_item_id: string; qty: number; unit_cost: number }[];
+}): Promise<ActionResult<null>> {
   const { businessId, userId } = await requireOwner();
   const locked = await moduleLock(businessId, "finance", "write");
   if (locked) return fail(locked);
-  if (!data.items.length || data.items.length > 100) return fail("Masukkan minimal satu, maksimal 100 barang.");
-  if (data.items.some((item) => !item.inventory_item_id || !Number.isFinite(item.qty) || item.qty <= 0 || !Number.isInteger(item.unit_cost) || item.unit_cost < 0)) return fail("Isi barang belanja tidak valid.");
+  if (!data.items.length || data.items.length > 100)
+    return fail("Masukkan minimal satu, maksimal 100 barang.");
+  if (
+    data.items.some(
+      (item) =>
+        !item.inventory_item_id ||
+        !Number.isFinite(item.qty) ||
+        item.qty <= 0 ||
+        !Number.isInteger(item.unit_cost) ||
+        item.unit_cost < 0,
+    )
+  )
+    return fail("Isi barang belanja tidak valid.");
   const ok = await db.recordInventoryPurchase(businessId, userId, data);
   if (!ok) return fail("Ada barang stok yang tidak ditemukan.");
   revalidatePath("/app/finance/operations");
   return done(null);
 }
 
-export async function adjustInventoryStockAction(inventoryItemId: string, deltaQty: number, reason: string): Promise<ActionResult<null>> {
+export async function adjustInventoryStockAction(
+  inventoryItemId: string,
+  deltaQty: number,
+  reason: string,
+): Promise<ActionResult<null>> {
   const { businessId, userId } = await requireOwner();
   const locked = await moduleLock(businessId, "finance", "write");
   if (locked) return fail(locked);
-  if (!Number.isFinite(deltaQty) || deltaQty === 0) return fail("Jumlah penyesuaian stok tidak valid.");
-  if (!reason.trim() || reason.trim().length > 120) return fail("Alasan penyesuaian wajib diisi, maksimal 120 karakter.");
-  const ok = await db.adjustInventoryStock(businessId, userId, inventoryItemId, deltaQty, reason.trim());
+  if (!Number.isFinite(deltaQty) || deltaQty === 0)
+    return fail("Jumlah penyesuaian stok tidak valid.");
+  if (!reason.trim() || reason.trim().length > 120)
+    return fail("Alasan penyesuaian wajib diisi, maksimal 120 karakter.");
+  const ok = await db.adjustInventoryStock(
+    businessId,
+    userId,
+    inventoryItemId,
+    deltaQty,
+    reason.trim(),
+  );
   if (!ok) return fail("Stok tidak cukup atau barang tidak ditemukan.");
   revalidatePath("/app/finance/operations");
   return done(null);
@@ -1873,7 +2501,10 @@ export async function adjustInventoryStockAction(inventoryItemId: string, deltaQ
 // Staf
 // ===========================================================================
 
-export async function createStaffAction(name: string, pin: string): Promise<ActionResult<null>> {
+export async function createStaffAction(
+  name: string,
+  pin: string,
+): Promise<ActionResult<null>> {
   const { businessId } = await requireOwner();
   if (!name.trim()) return fail("Nama staf belum diisi.");
   if (!/^\d{4,6}$/.test(pin)) return fail("PIN harus 4 sampai 6 angka.");
@@ -1882,7 +2513,10 @@ export async function createStaffAction(name: string, pin: string): Promise<Acti
   return done(null);
 }
 
-export async function resetStaffPinAction(userId: string, pin: string): Promise<ActionResult<null>> {
+export async function resetStaffPinAction(
+  userId: string,
+  pin: string,
+): Promise<ActionResult<null>> {
   const { businessId } = await requireOwner();
   if (!/^\d{4,6}$/.test(pin)) return fail("PIN harus 4 sampai 6 angka.");
   const ok = await db.setStaffPin(userId, businessId, pin);
@@ -1914,7 +2548,9 @@ export async function setStaffPermissionsAction(
   return done(null);
 }
 
-export async function deactivateStaffAction(userId: string): Promise<ActionResult<null>> {
+export async function deactivateStaffAction(
+  userId: string,
+): Promise<ActionResult<null>> {
   const { businessId } = await requireOwner();
   const ok = await db.deactivateStaff(userId, businessId);
   if (!ok) return fail("Staf tidak ditemukan.");
@@ -1922,7 +2558,10 @@ export async function deactivateStaffAction(userId: string): Promise<ActionResul
   return done(null);
 }
 
-export async function setStaffActiveAction(userId: string, isActive: boolean): Promise<ActionResult<null>> {
+export async function setStaffActiveAction(
+  userId: string,
+  isActive: boolean,
+): Promise<ActionResult<null>> {
   const { businessId } = await requireOwner();
   const updated = await db.setStaffActive(userId, businessId, isActive);
   if (!updated) return fail("Staf tidak ditemukan.");
@@ -1941,7 +2580,8 @@ const MODUL_TERSEDIA = new Set(
 
 const JENIS_USAHA = new Set(["kuliner", "jasa", "retail"]);
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -1970,7 +2610,8 @@ export async function createBusinessAction(input: {
 
   if (!input.name.trim()) return fail("Nama usaha belum diisi.");
   if (!input.ownerName.trim()) return fail("Nama pemilik belum diisi.");
-  if (!JENIS_USAHA.has(input.businessType)) return fail("Jenis usaha tidak dikenali.");
+  if (!JENIS_USAHA.has(input.businessType))
+    return fail("Jenis usaha tidak dikenali.");
 
   const storeCode = input.storeCode.trim().toUpperCase();
   if (!/^[A-Z0-9]{3,10}$/.test(storeCode)) {
@@ -1978,12 +2619,14 @@ export async function createBusinessAction(input: {
   }
 
   const email = input.ownerEmail.trim().toLowerCase();
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return fail("Email pemilik tidak valid.");
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
+    return fail("Email pemilik tidak valid.");
 
   // Kata sandi owner boleh angka pendek, dan yang menahan tebakan adalah
   // penguncian 5 percobaan di authenticateOwner, bukan panjangnya. Enam tetap
   // batas bawah yang wajar.
-  if (input.ownerPassword.length < 6) return fail("Kata sandi pemilik minimal 6 karakter.");
+  if (input.ownerPassword.length < 6)
+    return fail("Kata sandi pemilik minimal 6 karakter.");
 
   const modules = input.modules.filter((m) => MODUL_TERSEDIA.has(m.module));
   if (!modules.length) return fail("Pilih minimal satu modul yang dibeli.");
@@ -2027,7 +2670,10 @@ export async function setBusinessModuleAction(
   if (!["active", "suspended", "expired", "none"].includes(status)) {
     return fail("Status tidak dikenali.");
   }
-  if (status !== "none" && (!expiresAt || !/^\d{4}-\d{2}-\d{2}$/.test(expiresAt))) {
+  if (
+    status !== "none" &&
+    (!expiresAt || !/^\d{4}-\d{2}-\d{2}$/.test(expiresAt))
+  ) {
     return fail("Tanggal jatuh tempo belum diisi.");
   }
 
@@ -2043,11 +2689,19 @@ export async function adminResetOwnerPasswordAction(
 ): Promise<ActionResult<{ email: string }>> {
   const admin = await requireKaelAdmin();
   if (!UUID_RE.test(businessId)) return fail("Tenant tidak dikenali.");
-  if (password.length < 10) return fail("Kata sandi sementara minimal 10 karakter.");
-  const owner = await db.resetOwnerPasswordByAdmin(businessId, hashPin(password));
+  if (password.length < 10)
+    return fail("Kata sandi sementara minimal 10 karakter.");
+  const owner = await db.resetOwnerPasswordByAdmin(
+    businessId,
+    hashPin(password),
+  );
   if (!owner) return fail("Owner tenant tidak ditemukan.");
   await db.recordAuditEvent({
-    actorUserId: admin.userId, businessId, action: "admin.owner_password_reset", entityType: "user", entityId: owner.id,
+    actorUserId: admin.userId,
+    businessId,
+    action: "admin.owner_password_reset",
+    entityType: "user",
+    entityId: owner.id,
   });
   revalidatePath("/admin/control");
   return done({ email: owner.email });
@@ -2059,11 +2713,16 @@ export async function adminSetDemoExpiryAction(
 ): Promise<ActionResult<null>> {
   const admin = await requireKaelAdmin();
   if (!UUID_RE.test(businessId)) return fail("Tenant tidak dikenali.");
-  if (expiresAt && !/^\d{4}-\d{2}-\d{2}$/.test(expiresAt)) return fail("Tanggal demo tidak valid.");
+  if (expiresAt && !/^\d{4}-\d{2}-\d{2}$/.test(expiresAt))
+    return fail("Tanggal demo tidak valid.");
   const updated = await db.setAdminDemoExpiry(businessId, expiresAt);
   if (!updated) return fail("Tenant tidak ditemukan.");
   await db.recordAuditEvent({
-    actorUserId: admin.userId, businessId, action: expiresAt ? "admin.demo_extended" : "admin.demo_promoted", entityType: "business", entityId: businessId,
+    actorUserId: admin.userId,
+    businessId,
+    action: expiresAt ? "admin.demo_extended" : "admin.demo_promoted",
+    entityType: "business",
+    entityId: businessId,
     metadata: { expiresAt },
   });
   revalidatePath("/admin/control");
@@ -2094,7 +2753,8 @@ export async function createOwnerForBusinessAction(
 
   const email = input.email.trim().toLowerCase();
   if (!EMAIL_RE.test(email)) return fail("Email pemilik tidak valid.");
-  if (input.password.length < 6) return fail("Kata sandi pemilik minimal 6 karakter.");
+  if (input.password.length < 6)
+    return fail("Kata sandi pemilik minimal 6 karakter.");
 
   const res = await db.createOwnerForBusiness(businessId, {
     name: input.name,
@@ -2139,7 +2799,8 @@ export async function setBusinessBrandingAction(
      * gambar utuh. Nilai ini ikut terbaca di setiap halaman yang menampilkan
      * kepala toko, termasuk struk yang dibuka pelanggan.
      */
-    if (raw.length > 500) return fail("Tautan logo terlalu panjang, maksimal 500 karakter.");
+    if (raw.length > 500)
+      return fail("Tautan logo terlalu panjang, maksimal 500 karakter.");
 
     /**
      * Aturan yang sama persis dengan foto menu, dan sengaja lewat fungsi yang
@@ -2245,14 +2906,20 @@ export async function createLoyaltyProgramAction(input: {
   // ditolak oleh penjaga itu, dan action inilah yang menyiapkannya. Yang
   // diperiksa cukup kepemilikan dan masa aktifnya.
   const license = await getModuleView(businessId, "loyalty");
-  if (license.state === "tidak_dimiliki") return fail("Modul Loyalty belum aktif untuk usaha ini.");
-  if (!license.canWrite) return fail("Masa aktif KAEL Loyalty sudah lewat. Perpanjang lewat tim KAEL.");
+  if (license.state === "tidak_dimiliki")
+    return fail("Modul Loyalty belum aktif untuk usaha ini.");
+  if (!license.canWrite)
+    return fail(
+      "Masa aktif KAEL Loyalty sudah lewat. Perpanjang lewat tim KAEL.",
+    );
 
   if (input.mode === "point") {
     // Batas bawah 1 rupiah ditegakkan juga oleh CHECK di kolomnya. Diperiksa di
     // sini supaya pesannya kalimat, bukan galat constraint dari Postgres.
     if (!Number.isInteger(input.earnRate) || input.earnRate < 1) {
-      return fail("Kurs poin harus lebih dari nol. Contoh: Rp 10.000 untuk 1 poin.");
+      return fail(
+        "Kurs poin harus lebih dari nol. Contoh: Rp 10.000 untuk 1 poin.",
+      );
     }
     if (input.earnRate > 10_000_000) return fail("Kurs poin terlalu besar.");
   } else {

@@ -49,7 +49,7 @@ function statusStyle(order: Order) {
   return "border-[#ddd9ff] bg-[#f5f3ff] text-[#6d4cc4]";
 }
 
-export default function OwnerDashboardClient({ business, dashboard, pendingSync }: { business: Business | null; dashboard: Dashboard; pendingSync: {id: string; order_no: string; sync_error: string | null}[] }) {
+export default function OwnerDashboardClient({ business, dashboard, pendingSync, themeClassName = "" }: { business: Business | null; dashboard: Dashboard; pendingSync: {id: string; order_no: string; sync_error: string | null}[]; themeClassName?: string }) {
   const [syncing, setSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState('');
   const router = useRouter();
@@ -77,7 +77,7 @@ export default function OwnerDashboardClient({ business, dashboard, pendingSync 
   ], [dashboard.today.payment]);
 
   return (
-    <div className="min-h-screen bg-[#f7f6fc] pb-10 text-[#232331]">
+    <div className={`${themeClassName} mochi-shell min-h-screen bg-[#f7f6fc] pb-10 text-[#232331]`}>
       {pendingSync.length > 0 && <section className="border-b border-amber-300 bg-amber-50 p-4 text-sm" aria-label="Transaksi perlu diperiksa">
         <p className="font-bold">{pendingSync.length} transaksi menunggu pembaruan poin atau stok</p>
         <ul>{pendingSync.map(order => <li key={order.id}>#{order.order_no}: {order.sync_error || 'Belum selesai diproses'}</li>)}</ul>
@@ -89,7 +89,7 @@ export default function OwnerDashboardClient({ business, dashboard, pendingSync 
         }}><RefreshCw size={16}/>{syncing ? 'Memproses...' : 'Coba proses ulang'}</button>
         <p role="status">{syncMessage}</p>
       </section>}
-      <header className="sticky top-0 z-30 border-b-2 border-[#232331] bg-white/95 px-3 py-2.5 backdrop-blur sm:px-6">
+      <header className="mochi-header sticky top-0 z-30 border-b-2 border-[#232331] bg-white/95 px-3 py-2.5 backdrop-blur sm:px-6">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-2.5">
             <Link href="/app" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-[#232331] bg-[#fcfcfe] shadow-ink-xs" aria-label="Kembali ke dashboard">

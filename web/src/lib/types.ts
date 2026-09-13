@@ -633,6 +633,10 @@ export interface Order {
   shift_id: string | null;
   created_by: string;
   created_at: string;
+  /** Staf yang mengambil tanggung jawab pesanan dari antrean kasir tetap. */
+  claimed_by?: string | null;
+  claimed_at?: string | null;
+  claimed_by_name?: string | null;
   /** Akumulasi refund pada order ini, diisi oleh query laporan bila diperlukan. */
   refund_total?: number;
 }

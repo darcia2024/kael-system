@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 
 import { db } from "@/lib/db";
 import { guardModulePage } from "@/lib/licensing";
+import { mochiThemeClass } from "@/lib/mochi-theme";
 import ReportsClient from "./reports-client";
 
 /**
@@ -38,6 +39,7 @@ export default async function PosReportsPage() {
       shifts={shifts}
       feedbackSummary={feedbackSummary}
       recentFeedback={recentFeedback}
+      themeClassName={mochiThemeClass(business)}
     />
   );
 }
