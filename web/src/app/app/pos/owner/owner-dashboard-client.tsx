@@ -20,12 +20,14 @@ import {
   Timer,
   UtensilsCrossed,
   WalletCards,
+  QrCode,
 } from "lucide-react";
 
 import type { Business, Order } from "@/lib/types";
 import { formatBusinessDateTime, formatRupiah } from "@/lib/formatters";
 import { PAYMENT_STATUS_LABEL, serviceTypeLabel } from "@/lib/pos-engine";
 import { retryOrderSyncAction } from '@/lib/actions';
+import TableQrModal from "../table-qr-modal";
 
 type Dashboard = {
   timezone: string;
@@ -54,6 +56,7 @@ export default function OwnerDashboardClient({ business, dashboard, pendingSync,
   const [syncMessage, setSyncMessage] = useState('');
   const router = useRouter();
   const [refreshing, setRefreshing] = useState(false);
+  const [showTableQrModal, setShowTableQrModal] = useState(false);
   const maxHourlyRevenue = Math.max(...dashboard.hourlySales.map((item) => item.revenue), 1);
   const totalPayment = dashboard.today.payment.cash + dashboard.today.payment.qris + dashboard.today.payment.transfer;
   const latestSync = new Intl.DateTimeFormat("id-ID", { hour: "2-digit", minute: "2-digit", timeZone: dashboard.timezone }).format(new Date());
@@ -106,6 +109,14 @@ export default function OwnerDashboardClient({ business, dashboard, pendingSync,
           <div className="flex items-center gap-1.5">
             <button type="button" onClick={refresh} className="btn-tactile flex h-9 w-9 items-center justify-center rounded-xl border border-[#232331] bg-white shadow-ink-xs" title="Muat ulang data" aria-label="Muat ulang data">
               {refreshing ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowTableQrModal(true)}
+              className="btn-tactile inline-flex items-center gap-1.5 rounded-xl border-2 border-[#232331] bg-white px-3 py-2 font-mono text-xs font-black shadow-ink-xs hover:bg-[#edf8f3]"
+              title="Generator & Cetak QR Meja"
+            >
+              <QrCode size={14} /><span className="hidden sm:inline">Cetak QR Meja</span>
             </button>
             <Link href="/app/pos" className="btn-tactile inline-flex items-center gap-1.5 rounded-xl border-2 border-[#232331] bg-[#d9ff57] px-3 py-2 font-mono text-xs font-black shadow-ink-xs">
               <ShoppingBag size={14} /><span className="hidden sm:inline">Buka Kasir</span>
@@ -180,6 +191,14 @@ export default function OwnerDashboardClient({ business, dashboard, pendingSync,
           {dashboard.cashierSales.length ? <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{dashboard.cashierSales.map((cashier) => <div key={cashier.name} className="border border-[#dedee8] bg-[#fcfcfe] p-3"><div className="flex items-center justify-between gap-2"><p className="truncate text-xs font-black">{cashier.name}</p><span className="font-mono text-[10px] text-[#7b7b8e]">{cashier.orders} trx</span></div><p className="mt-1.5 font-mono text-sm font-black text-[#15803d]">{formatRupiah(cashier.revenue)}</p></div>)}</div> : <Empty text="Belum ada penjualan yang tercatat hari ini." />}
         </section>
       </main>
+
+      <TableQrModal
+        isOpen={showTableQrModal}
+        onClose={() => setShowTableQrModal(false)}
+        storeCode={business?.store_code || "MOCHIKAFE"}
+        storeName={business?.name || "Mochi Cafe n Resto"}
+        isMochi={true}
+      />
     </div>
   );
 }

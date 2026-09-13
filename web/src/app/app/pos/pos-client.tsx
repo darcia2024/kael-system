@@ -78,6 +78,7 @@ import QrisPayment from "./qris-payment";
 import OrderQueue from "./order-queue";
 import { calculateEarnedPoints } from "@/lib/loyalty-engine";
 import { PLACEHOLDER_MENU } from "@/lib/types";
+import TableQrModal from "./table-qr-modal";
 
 function getPosCategoryIcon(categoryName: string): LucideIcon {
   const normalized = categoryName.toLowerCase();
@@ -198,6 +199,7 @@ export default function PosClient({
   // Shift Modal State
   const [showQueue, setShowQueue] = useState(false);
   const [showShiftModal, setShowShiftModal] = useState(false);
+  const [showTableQrModal, setShowTableQrModal] = useState(false);
   const [shiftOpeningCashInput, setShiftOpeningCashInput] = useState<number>(100000);
   const [shiftClosingCashInput, setShiftClosingCashInput] = useState<number>(0);
 
@@ -573,6 +575,22 @@ export default function PosClient({
             </button>
           ))}
         </div>
+        {serviceType === "dine_in" && (
+          <div className="mt-2.5 flex items-center gap-2">
+            <span className="text-[11px] font-bold text-[#556b62] shrink-0 font-mono">No. Meja:</span>
+            <input
+              type="text"
+              value={selectedTableNo}
+              onChange={(e) => setSelectedTableNo(e.target.value)}
+              placeholder="Contoh: 04, Meja 2"
+              className={`flex-1 rounded-lg border px-2.5 py-1 text-xs font-mono font-bold ${
+                isMochiPos
+                  ? "border-[#ccd9d3] bg-[#edf8f3] text-[#0b3d2e] focus:border-[#167052] focus:bg-white"
+                  : "border-[#ccd7d2] bg-white text-[#21352d]"
+              } focus:outline-hidden`}
+            />
+          </div>
+        )}
       </fieldset>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4">
@@ -754,6 +772,19 @@ export default function PosClient({
             )}
             <button
               type="button"
+              aria-label="Cetak QR Meja"
+              title="Cetak QR Meja"
+              onClick={() => setShowTableQrModal(true)}
+              className={`flex h-10 w-10 sm:h-11 sm:w-11 items-center justify-center rounded-xl border transition-colors ${
+                isMochiPos
+                  ? "border-white/20 bg-white/10 text-white/80 hover:bg-white/20"
+                  : "border-[#ccd7d1] text-[#29473b] hover:bg-[#eef5f1]"
+              }`}
+            >
+              <QrCode size={17} aria-hidden="true" />
+            </button>
+            <button
+              type="button"
               aria-label={activeShift ? "Tutup shift" : "Buka shift"}
               title={activeShift ? "Shift aktif" : "Kelola shift"}
               onClick={() => setShowShiftModal(true)}
@@ -794,6 +825,19 @@ export default function PosClient({
               <TrendingUp size={20} aria-hidden="true" />
             </Link>
           )}
+          <button
+            type="button"
+            onClick={() => setShowTableQrModal(true)}
+            aria-label="Cetak QR Meja"
+            title="Cetak QR Meja"
+            className={`flex h-12 w-12 items-center justify-center rounded-xl transition-colors ${
+              isMochiPos
+                ? "text-emerald-300/80 hover:bg-white/10 hover:text-white"
+                : "text-[#66766e] hover:bg-[#edf4f0] hover:text-[#1d5d47]"
+            }`}
+          >
+            <QrCode size={20} aria-hidden="true" />
+          </button>
           {pendingQrOrders.length > 0 && (
             <button type="button" onClick={() => setShowQueue(true)} aria-label={`${pendingQrOrders.length} pesanan masuk`} title="Pesanan masuk" className="relative flex h-12 w-12 items-center justify-center rounded-xl bg-[#fff4df] text-[#a15a18]">
               <Utensils size={19} aria-hidden="true" />
@@ -1640,6 +1684,14 @@ export default function PosClient({
           </div>
         </div>
       )}
+
+      <TableQrModal
+        isOpen={showTableQrModal}
+        onClose={() => setShowTableQrModal(false)}
+        storeCode={business?.store_code || "MOCHIKAFE"}
+        storeName={business?.name || "Mochi Cafe n Resto"}
+        isMochi={isMochiPos}
+      />
 
     </div>
   );
