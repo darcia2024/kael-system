@@ -855,44 +855,107 @@ export default function PosClient({
 
           <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-24 sm:px-4 lg:pb-4">
             {filteredMenu.length > 0 ? (
-              <div className="grid grid-cols-1 gap-2.5 min-[520px]:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+              <div className="grid grid-cols-2 gap-2.5 sm:gap-3 xl:grid-cols-3 2xl:grid-cols-4">
                 {filteredMenu.map((item) => {
                   const inCart = cart[item.id];
                   const categoryName = categories.find((category) => category.id === item.category_id)?.name ?? "Menu";
                   const CategoryIcon = getPosCategoryIcon(categoryName);
                   const hasPhoto = item.photo_url && item.photo_url !== PLACEHOLDER_MENU;
                   return (
-                    <article key={item.id} className={`flex min-h-[154px] min-w-0 flex-col rounded-2xl border bg-white p-3 transition-all hover:shadow-md ${inCart ? (isMochiPos ? "border-2 border-[#167052] ring-2 ring-[#167052]/10 shadow-sm bg-[#fbfdfc]" : "border-[#167052] shadow-[0_4px_14px_rgba(22,112,82,0.1)]") : (isMochiPos ? "border-[#d8e3de]" : "border-[#d8e1dc]")} ${!item.is_available ? "opacity-55" : ""}`}>
-                      <div className="flex min-w-0 gap-2.5">
-                        <div className="flex h-[68px] w-[68px] shrink-0 items-center justify-center overflow-hidden rounded-xl bg-[#e8f2ed] text-[#34745d]">
+                    <article
+                      key={item.id}
+                      className={`flex min-w-0 flex-col justify-between rounded-2xl border bg-white p-2.5 sm:p-3 transition-all hover:shadow-md ${
+                        inCart
+                          ? (isMochiPos ? "border-2 border-[#167052] ring-2 ring-[#167052]/10 shadow-xs bg-[#fbfdfc]" : "border-[#167052] shadow-[0_4px_14px_rgba(22,112,82,0.1)]")
+                          : (isMochiPos ? "border-[#d8e3de]" : "border-[#d8e1dc]")
+                      } ${!item.is_available ? "opacity-55" : ""}`}
+                    >
+                      <div className="space-y-2">
+                        <div className="relative aspect-4/3 w-full overflow-hidden rounded-xl bg-[#e8f2ed] text-[#34745d] flex items-center justify-center">
                           {hasPhoto ? (
                             // eslint-disable-next-line @next/next/no-img-element
-                            <img src={item.photo_url ?? undefined} alt={item.name} loading="lazy" className="h-full w-full object-cover" />
+                            <img
+                              src={item.photo_url ?? undefined}
+                              alt={item.name}
+                              loading="lazy"
+                              className="h-full w-full object-cover transition-transform duration-300 hover:scale-105"
+                            />
                           ) : (
-                            <CategoryIcon size={25} strokeWidth={1.6} aria-hidden="true" />
+                            <CategoryIcon size={26} strokeWidth={1.6} aria-hidden="true" />
+                          )}
+                          {inCart && (
+                            <span className="absolute right-1.5 top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#0b3d2e] px-1 font-mono text-[9.5px] font-black text-[#c8f53a] shadow-xs">
+                              {inCart.qty}
+                            </span>
                           )}
                         </div>
-                        <div className="min-w-0 flex-1">
-                          <h3 className="line-clamp-2 text-[13px] font-extrabold leading-snug text-[#20372e]">{item.name}</h3>
-                          {item.description && <p className="mt-1 line-clamp-2 text-[10px] leading-relaxed text-[#7c8982]">{item.description}</p>}
-                          <p className="mt-1 text-[10px] font-semibold text-[#6f7d76]">{categoryName}</p>
+
+                        <div className="min-w-0">
+                          <h3 className="line-clamp-2 text-xs sm:text-[13px] font-extrabold leading-snug text-[#20372e]">
+                            {item.name}
+                          </h3>
+                          <p className="mt-0.5 truncate text-[10px] font-semibold text-[#718078]">
+                            {categoryName}
+                          </p>
                         </div>
                       </div>
 
-                      <div className="mt-auto flex items-end justify-between gap-2 pt-2">
-                        <strong className={`text-sm font-black tabular-nums font-mono ${isMochiPos ? "text-[#0b3d2e]" : "text-[#9b5332]"}`}>{formatRupiah(Number(item.price))}</strong>
+                      <div className="mt-2.5 flex items-end justify-between gap-1 border-t border-[#f0f4f2] pt-2">
+                        <strong
+                          className={`text-xs sm:text-sm font-black tabular-nums font-mono ${
+                            isMochiPos ? "text-[#0b3d2e]" : "text-[#9b5332]"
+                          }`}
+                        >
+                          {formatRupiah(Number(item.price))}
+                        </strong>
+
                         {item.is_available ? (
                           inCart ? (
-                            <div className="grid shrink-0 grid-cols-[44px_30px_44px] items-center">
-                              <button type="button" aria-label={`Kurangi ${item.name}`} onClick={() => handleUpdateQty(item.id, -1)} className={`flex h-11 w-11 items-center justify-center rounded-xl border ${isMochiPos ? "border-[#ccd9d3] bg-[#edf8f3] text-[#167052]" : "border-[#c5d4cd] text-[#315d4b]"}`}><Minus size={14} aria-hidden="true" /></button>
-                              <span className="text-center text-sm font-black tabular-nums font-mono">{inCart.qty}</span>
-                              <button type="button" aria-label={`Tambah ${item.name}`} onClick={() => handleUpdateQty(item.id, 1)} className={`flex h-11 w-11 items-center justify-center rounded-xl text-white ${isMochiPos ? "bg-[#0b3d2e]" : "bg-[#167052]"}`}><Plus size={15} aria-hidden="true" /></button>
+                            <div className="flex shrink-0 items-center gap-1">
+                              <button
+                                type="button"
+                                aria-label={`Kurangi ${item.name}`}
+                                onClick={() => handleUpdateQty(item.id, -1)}
+                                className={`flex h-8 w-8 items-center justify-center rounded-lg border transition-colors ${
+                                  isMochiPos
+                                    ? "border-[#ccd9d3] bg-[#edf8f3] text-[#167052] hover:bg-[#e0f1e8]"
+                                    : "border-[#c5d4cd] text-[#315d4b]"
+                                }`}
+                              >
+                                <Minus size={13} aria-hidden="true" />
+                              </button>
+                              <span className="w-4 text-center text-xs font-black tabular-nums font-mono">
+                                {inCart.qty}
+                              </span>
+                              <button
+                                type="button"
+                                aria-label={`Tambah ${item.name}`}
+                                onClick={() => handleUpdateQty(item.id, 1)}
+                                className={`flex h-8 w-8 items-center justify-center rounded-lg text-white transition-colors ${
+                                  isMochiPos ? "bg-[#0b3d2e] hover:bg-[#124d3b]" : "bg-[#167052]"
+                                }`}
+                              >
+                                <Plus size={13} aria-hidden="true" />
+                              </button>
                             </div>
                           ) : (
-                            <button type="button" aria-label={`Tambah ${item.name}`} onClick={() => handleAddToCart(item)} className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl transition-all active:scale-95 shadow-xs ${isMochiPos ? "bg-[#c8f53a] hover:bg-[#d9ff57] text-[#073829] font-black" : "bg-[#0aae6f] hover:bg-[#079760] text-white"}`}><Plus size={18} aria-hidden="true" /></button>
+                            <button
+                              type="button"
+                              aria-label={`Tambah ${item.name}`}
+                              onClick={() => handleAddToCart(item)}
+                              className={`flex h-8 w-8 sm:h-9 sm:w-9 shrink-0 items-center justify-center rounded-xl transition-all active:scale-95 shadow-xs ${
+                                isMochiPos
+                                  ? "bg-[#c8f53a] hover:bg-[#d9ff57] text-[#073829] font-black"
+                                  : "bg-[#0aae6f] hover:bg-[#079760] text-white"
+                              }`}
+                            >
+                              <Plus size={16} strokeWidth={2.5} aria-hidden="true" />
+                            </button>
                           )
                         ) : (
-                          <span className="flex min-h-11 items-center rounded-lg bg-[#fff0ed] px-3 text-xs font-bold text-[#a44237]">Habis</span>
+                          <span className="flex items-center rounded-lg bg-[#fff0ed] px-2 py-1 text-[10px] font-bold text-[#a44237]">
+                            Habis
+                          </span>
                         )}
                       </div>
                     </article>
