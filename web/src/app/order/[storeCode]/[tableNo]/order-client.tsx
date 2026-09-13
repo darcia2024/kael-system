@@ -72,7 +72,7 @@ export default function CustomerQrOrderPage({
    * tidak ada gerbang pembayaran yang bisa mengabarkan uangnya sudah masuk,
    * jadi yang memastikannya tetap kasir.
    */
-  const [caraBayar, setCaraBayar] = useState<"qris" | "cash">("qris");
+  const [caraBayar, setCaraBayar] = useState<"qris" | "cash">("cash");
   const [pesananSelesai, setPesananSelesai] = useState<{ no: string; total: number } | null>(null);
   const [lastOrder, setLastOrder] = useState<{ name: string; phone: string; items: { menuId: string; qty: number; note: string }[] } | null>(null);
 
@@ -291,22 +291,17 @@ export default function CustomerQrOrderPage({
             <div className="space-y-1 rounded-xl border border-[#d5d0c5] bg-[#f8f6f0] p-3 text-xs">
               <p className="font-bold text-[#1d2823]">
                 {caraBayar === "qris"
-                  ? "Bayar lewat QRIS yang ada di meja."
-                  : "Bayar tunai di kasir."}
+                  ? "Bayar lewat QRIS (Bisa sekarang atau selesai makan)."
+                  : "Bayar di kasir saat selesai makan."}
               </p>
               <p className="text-[11px] text-[#68736d]">
-                Sebutkan nomor pesanan #{pesananSelesai.no}.
+                Sebutkan nomor pesanan #{pesananSelesai.no} atau Meja {tableNo} saat pembayaran di kasir.
               </p>
             </div>
           )}
 
-          {/*
-            Tidak menjanjikan pesanan sedang dimasak. Dapur baru mulai setelah
-            kasir memastikan uangnya masuk, dan menuliskan "sedang disiapkan"
-            di sini membuat pelanggan menunggu sesuatu yang belum berjalan.
-          */}
-          <p className="text-[11px] text-[#68736d]">
-            Pesanan mulai disiapkan setelah pembayaran dipastikan kasir.
+          <p className="text-[11px] text-[#167052] font-bold">
+            🍳 Pesanan Anda sudah diteruskan ke dapur/barista untuk disiapkan. Selamat menikmati!
           </p>
 
           {business?.phone ? (
@@ -431,8 +426,8 @@ export default function CustomerQrOrderPage({
           <legend className="mb-1.5 text-xs font-semibold text-[#35483f]">Cara bayar</legend>
           <div className="grid grid-cols-2 gap-2">
             {[
-              { id: "qris" as const, label: "QRIS", hint: "Bayar dari HP" },
-              { id: "cash" as const, label: "Tunai", hint: "Bayar di kasir" },
+              { id: "cash" as const, label: "Bayar Nanti di Kasir", hint: "Makan dulu, bayar selesai" },
+              { id: "qris" as const, label: "QRIS dari HP", hint: "Bayar langsung sekarang" },
             ].map((method) => (
               <button
                 key={method.id}

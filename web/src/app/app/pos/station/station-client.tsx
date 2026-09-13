@@ -193,7 +193,7 @@ export default function OrderStationClient({
 
   const visibleOrders = mode === "cashier"
     ? orders
-    : orders.filter((order) => order.payment_status === "paid" && ["accepted", "preparing", "ready"].includes(order.fulfillment_status));
+    : orders.filter((order) => ["accepted", "preparing", "ready"].includes(order.fulfillment_status));
   const newOrders = visibleOrders.filter((order) => order.payment_status === "pending").length;
 
   if (isMochiStation) {
