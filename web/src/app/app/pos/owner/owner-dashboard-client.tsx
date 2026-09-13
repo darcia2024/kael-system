@@ -11,13 +11,17 @@ import {
   Clock3,
   Coffee,
   CreditCard,
+  Flame,
   LayoutDashboard,
+  Lightbulb,
   Loader2,
   ReceiptText,
   RefreshCw,
   ShoppingBag,
   Smartphone,
   Timer,
+  TrendingDown,
+  Trophy,
   UtensilsCrossed,
   WalletCards,
   QrCode,
@@ -28,6 +32,18 @@ import { formatBusinessDateTime, formatRupiah } from "@/lib/formatters";
 import { PAYMENT_STATUS_LABEL, serviceTypeLabel } from "@/lib/pos-engine";
 import { retryOrderSyncAction } from '@/lib/actions';
 import TableQrModal from "../table-qr-modal";
+
+type MenuItemStat = {
+  id: string;
+  name: string;
+  categoryName: string;
+  price: number;
+  isAvailable: boolean;
+  todayQty: number;
+  todayRevenue: number;
+  monthQty: number;
+  monthRevenue: number;
+};
 
 type Dashboard = {
   timezone: string;
@@ -42,6 +58,17 @@ type Dashboard = {
   hourlySales: { hour: number; orders: number; revenue: number }[];
   cashierSales: { name: string; orders: number; revenue: number }[];
   recentOrders: Order[];
+  menuAnalytics?: {
+    totalMenuItems: number;
+    today: {
+      bestSellers: MenuItemStat[];
+      slowMovers: MenuItemStat[];
+    };
+    monthly: {
+      bestSellers: MenuItemStat[];
+      slowMovers: MenuItemStat[];
+    };
+  };
 };
 
 function statusStyle(order: Order) {
@@ -57,9 +84,17 @@ export default function OwnerDashboardClient({ business, dashboard, pendingSync,
   const router = useRouter();
   const [refreshing, setRefreshing] = useState(false);
   const [showTableQrModal, setShowTableQrModal] = useState(false);
+  const [menuPeriod, setMenuPeriod] = useState<"today" | "monthly">("today");
   const maxHourlyRevenue = Math.max(...dashboard.hourlySales.map((item) => item.revenue), 1);
   const totalPayment = dashboard.today.payment.cash + dashboard.today.payment.qris + dashboard.today.payment.transfer;
   const latestSync = new Intl.DateTimeFormat("id-ID", { hour: "2-digit", minute: "2-digit", timeZone: dashboard.timezone }).format(new Date());
+
+  const currentBestSellers = dashboard.menuAnalytics?.[menuPeriod]?.bestSellers ?? [];
+  const currentSlowMovers = dashboard.menuAnalytics?.[menuPeriod]?.slowMovers ?? [];
+  const maxBestSellerQty = Math.max(
+    ...currentBestSellers.map((item) => (menuPeriod === "today" ? item.todayQty : item.monthQty)),
+    1
+  );
 
   useEffect(() => {
     const timer = window.setInterval(() => router.refresh(), 60_000);
@@ -154,6 +189,197 @@ export default function OwnerDashboardClient({ business, dashboard, pendingSync,
                 <div className="flex items-center justify-between gap-2 text-xs"><span className="flex items-center gap-1.5 font-bold"><span className={`flex h-6 w-6 items-center justify-center rounded-md ${color}`}><Icon size={13} /></span>{label}</span><span className="font-mono font-black">{formatRupiah(value)}</span></div>
                 <div className="mt-1.5 h-1.5 overflow-hidden bg-[#ecebf1]"><div className="h-full bg-[#232331]" style={{ width: `${totalPayment ? Math.round((value / totalPayment) * 100) : 0}%` }} /></div>
               </div>)}
+            </div>
+          </div>
+        </section>
+
+        {/* Analisis Menu Kasir: Paling Laku & Kurang Laku */}
+        <section className="border-2 border-[#232331] bg-white p-4 shadow-ink-md sm:p-5">
+          <div className="flex flex-col gap-3 border-b border-[#dedee8] pb-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#f0edff] text-[#6d4cc4]">
+                  <Trophy size={16} />
+                </span>
+                <h2 className="text-sm font-black sm:text-base">Analisis Performa Menu Kasir</h2>
+                <span className="rounded-md border border-[#ddd9ff] bg-[#f5f3ff] px-2 py-0.5 font-mono text-[10px] font-bold text-[#6d4cc4]">
+                  {dashboard.menuAnalytics?.totalMenuItems ?? 0} Menu
+                </span>
+              </div>
+              <p className="mt-1 text-xs text-[#7b7b8e]">
+                Perbandingan menu paling laku (Best Seller) dan menu kurang laku (Slow Moving) dari transaksi kasir lunas.
+              </p>
+            </div>
+
+            {/* Timeframe Switcher */}
+            <div className="inline-flex self-start rounded-xl border-2 border-[#232331] bg-[#ecebf1] p-1 sm:self-auto">
+              <button
+                type="button"
+                onClick={() => setMenuPeriod("today")}
+                className={`rounded-lg px-3 py-1 text-xs font-bold transition-all ${
+                  menuPeriod === "today"
+                    ? "bg-white text-[#232331] shadow-ink-xs"
+                    : "text-[#7b7b8e] hover:text-[#232331]"
+                }`}
+              >
+                Hari Ini
+              </button>
+              <button
+                type="button"
+                onClick={() => setMenuPeriod("monthly")}
+                className={`rounded-lg px-3 py-1 text-xs font-bold transition-all ${
+                  menuPeriod === "monthly"
+                    ? "bg-white text-[#232331] shadow-ink-xs"
+                    : "text-[#7b7b8e] hover:text-[#232331]"
+                }`}
+              >
+                30 Hari Terakhir
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-5 grid gap-4 lg:grid-cols-2">
+            {/* Kolom Menu Paling Laku */}
+            <div className="border border-[#bbf7d0] bg-[#f0fdf4]/60 p-3 sm:p-4">
+              <div className="flex items-center justify-between border-b border-[#bbf7d0] pb-2.5">
+                <div className="flex items-center gap-2">
+                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#dcfce7] text-[#15803d]">
+                    <Flame size={14} />
+                  </span>
+                  <div>
+                    <h3 className="text-xs font-black text-[#15803d] sm:text-sm">🏆 Menu Paling Laku</h3>
+                    <p className="text-[10px] text-[#166534]">Produk terfavorit & kontributor omzet tertinggi</p>
+                  </div>
+                </div>
+                <span className="font-mono text-[10px] font-bold text-[#166534]">
+                  Top {currentBestSellers.length}
+                </span>
+              </div>
+
+              <div className="mt-2 divide-y divide-[#dcfce7]">
+                {currentBestSellers.length > 0 ? (
+                  currentBestSellers.map((item, index) => {
+                    const qty = menuPeriod === "today" ? item.todayQty : item.monthQty;
+                    const rev = menuPeriod === "today" ? item.todayRevenue : item.monthRevenue;
+                    const pct = Math.max(8, Math.round((qty / maxBestSellerQty) * 100));
+
+                    const rankBadge =
+                      index === 0
+                        ? "bg-[#fef08a] text-[#854d0e] border-[#facc15]"
+                        : index === 1
+                        ? "bg-[#e2e8f0] text-[#334155] border-[#cbd5e1]"
+                        : index === 2
+                        ? "bg-[#fed7aa] text-[#9a3412] border-[#fdba74]"
+                        : "bg-white text-[#64748b] border-[#e2e8f0]";
+
+                    return (
+                      <div key={item.id} className="py-2.5 first:pt-2 last:pb-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex min-w-0 items-center gap-2">
+                            <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md border text-[10px] font-black ${rankBadge}`}>
+                              {index + 1}
+                            </span>
+                            <div className="min-w-0">
+                              <p className="truncate text-xs font-black text-[#232331]">{item.name}</p>
+                              <p className="truncate font-mono text-[10px] text-[#7b7b8e]">
+                                {item.categoryName} · {formatRupiah(item.price)}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <p className="font-mono text-xs font-black text-[#15803d]">
+                              {qty} <span className="text-[10px] font-normal text-[#166534]">terjual</span>
+                            </p>
+                            <p className="font-mono text-[10px] text-[#7b7b8e]">{formatRupiah(rev)}</p>
+                          </div>
+                        </div>
+                        <div className="mt-1.5 h-1.5 w-full overflow-hidden bg-[#dcfce7]">
+                          <div className="h-full bg-[#16a34a]" style={{ width: `${pct}%` }} />
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="py-8 text-center">
+                    <p className="font-mono text-xs text-[#7b7b8e]">Belum ada transaksi menu lunas pada periode ini.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Kolom Menu Kurang Laku */}
+            <div className="border border-[#fed7aa] bg-[#fffaf5] p-3 sm:p-4">
+              <div className="flex items-center justify-between border-b border-[#fed7aa] pb-2.5">
+                <div className="flex items-center gap-2">
+                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#ffedd5] text-[#c2410c]">
+                    <TrendingDown size={14} />
+                  </span>
+                  <div>
+                    <h3 className="text-xs font-black text-[#c2410c] sm:text-sm">⚠️ Menu Kurang Laku</h3>
+                    <p className="text-[10px] text-[#9a3412]">Perlu evaluasi strategi harga, promo, atau bundling</p>
+                  </div>
+                </div>
+                <span className="font-mono text-[10px] font-bold text-[#9a3412]">
+                  {currentSlowMovers.length} Menu
+                </span>
+              </div>
+
+              <div className="mt-2 divide-y divide-[#ffedd5]">
+                {currentSlowMovers.length > 0 ? (
+                  currentSlowMovers.map((item) => {
+                    const qty = menuPeriod === "today" ? item.todayQty : item.monthQty;
+                    const isZero = qty === 0;
+
+                    return (
+                      <div key={item.id} className="py-2.5 first:pt-2 last:pb-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="truncate text-xs font-black text-[#232331]">{item.name}</p>
+                            <p className="truncate font-mono text-[10px] text-[#7b7b8e]">
+                              {item.categoryName} · {formatRupiah(item.price)}
+                            </p>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <span
+                              className={`inline-block rounded-md border px-1.5 py-0.5 font-mono text-[10px] font-black ${
+                                isZero
+                                  ? "border-[#fca5a5] bg-[#fef2f2] text-[#b91c1c]"
+                                  : "border-[#fed7aa] bg-[#fff7ed] text-[#c2410c]"
+                              }`}
+                            >
+                              {qty} terjual
+                            </span>
+                          </div>
+                        </div>
+                        <div className="mt-1 flex items-center gap-1 text-[9.5px]">
+                          <span className="inline-flex items-center rounded bg-[#fff7ed] px-1.5 py-0.5 font-medium text-[#9a3412]">
+                            {isZero
+                              ? "💡 Belum dipesan: Coba bundling dengan menu best seller atau promo meja"
+                              : "📉 Gerak lambat: Pertimbangkan promo jam sepi atau cek margin harga"}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="py-8 text-center">
+                    <p className="font-mono text-xs text-[#7b7b8e]">Semua menu aktif berjalan dengan baik.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Strategic Insight Box */}
+          <div className="mt-4 flex items-start gap-2.5 border border-dashed border-[#ddd9ff] bg-[#fbfaff] p-3 sm:p-3.5">
+            <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded bg-[#ddd9ff] text-[#6d4cc4]">
+              <Lightbulb size={13} />
+            </span>
+            <div className="text-xs text-[#4b4b63]">
+              <p className="font-black text-[#232331]">Tips Pengelolaan Menu untuk Owner:</p>
+              <p className="mt-0.5 text-[11px] leading-relaxed">
+                Manfaatkan menu <strong>Paling Laku</strong> sebagai daya tarik utama (traffic puller) dan gandengkan dengan menu <strong>Kurang Laku</strong> dalam paket promo bundling atau rekomendasi kasir (upselling). Bila menu tetap 0 penjualan selama 30 hari berturut-turut, pertimbangkan untuk menonaktifkan atau memperbarui resep.
+              </p>
             </div>
           </div>
         </section>

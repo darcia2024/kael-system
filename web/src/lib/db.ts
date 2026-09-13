@@ -5154,6 +5154,7 @@ export const db = {
       hourlySales,
       cashierSales,
       recentOrders,
+      menuPerformance,
     ] = await Promise.all([
       sql`
         WITH refunded AS (SELECT order_id, SUM(amount) AS total FROM refunds GROUP BY order_id)
@@ -5220,12 +5221,82 @@ export const db = {
         ORDER BY o.created_at DESC
         LIMIT 12
       `,
+      sql`
+        WITH today_sales AS (
+          SELECT 
+            oi.menu_item_id,
+            COALESCE(SUM(oi.qty), 0)::int AS qty,
+            COALESCE(SUM(oi.subtotal), 0)::bigint AS revenue
+          FROM order_items oi
+          JOIN orders o ON o.id = oi.order_id
+          WHERE o.business_id = ${businessId}
+            AND o.status = 'paid'
+            AND (o.created_at AT TIME ZONE ${tz})::date = (NOW() AT TIME ZONE ${tz})::date
+          GROUP BY oi.menu_item_id
+        ),
+        month_sales AS (
+          SELECT 
+            oi.menu_item_id,
+            COALESCE(SUM(oi.qty), 0)::int AS qty,
+            COALESCE(SUM(oi.subtotal), 0)::bigint AS revenue
+          FROM order_items oi
+          JOIN orders o ON o.id = oi.order_id
+          WHERE o.business_id = ${businessId}
+            AND o.status = 'paid'
+            AND o.created_at >= (NOW() - interval '30 days')
+          GROUP BY oi.menu_item_id
+        )
+        SELECT 
+          m.id,
+          m.name,
+          m.price,
+          m.is_available,
+          c.name AS category_name,
+          COALESCE(ts.qty, 0)::int AS today_qty,
+          COALESCE(ts.revenue, 0)::bigint AS today_revenue,
+          COALESCE(ms.qty, 0)::int AS month_qty,
+          COALESCE(ms.revenue, 0)::bigint AS month_revenue
+        FROM menu_items m
+        LEFT JOIN categories c ON c.id = m.category_id
+        LEFT JOIN today_sales ts ON ts.menu_item_id = m.id
+        LEFT JOIN month_sales ms ON ms.menu_item_id = m.id
+        WHERE m.business_id = ${businessId}
+        ORDER BY month_qty DESC, m.name ASC
+      `,
     ]);
 
     const payment = summary[0] ?? {};
     const queueRow = queue[0] ?? {};
     const revenue = num(payment.revenue);
     const paidOrders = num(payment.paid_orders);
+
+    const mappedMenuItems = (menuPerformance as any[]).map((row) => ({
+      id: row.id as string,
+      name: row.name as string,
+      categoryName: (row.category_name as string | null) || "Lainnya",
+      price: num(row.price),
+      isAvailable: Boolean(row.is_available),
+      todayQty: num(row.today_qty),
+      todayRevenue: num(row.today_revenue),
+      monthQty: num(row.month_qty),
+      monthRevenue: num(row.month_revenue),
+    }));
+
+    // Best sellers & slow movers for TODAY
+    const todaySorted = [...mappedMenuItems].sort((a, b) => b.todayQty - a.todayQty || b.todayRevenue - a.todayRevenue);
+    const todayBestSellers = todaySorted.filter((item) => item.todayQty > 0).slice(0, 8);
+    const todaySlowMovers = [...mappedMenuItems]
+      .filter((item) => item.isAvailable)
+      .sort((a, b) => a.todayQty - b.todayQty || a.monthQty - b.monthQty)
+      .slice(0, 8);
+
+    // Best sellers & slow movers for 30 DAYS (MONTHLY)
+    const monthSorted = [...mappedMenuItems].sort((a, b) => b.monthQty - a.monthQty || b.monthRevenue - a.monthRevenue);
+    const monthBestSellers = monthSorted.filter((item) => item.monthQty > 0).slice(0, 8);
+    const monthSlowMovers = [...mappedMenuItems]
+      .filter((item) => item.isAvailable)
+      .sort((a, b) => a.monthQty - b.monthQty || a.price - b.price)
+      .slice(0, 8);
 
     return {
       timezone: tz,
@@ -5262,6 +5333,17 @@ export const db = {
         revenue: num(row.revenue),
       })),
       recentOrders: recentOrders as unknown as Order[],
+      menuAnalytics: {
+        totalMenuItems: mappedMenuItems.length,
+        today: {
+          bestSellers: todayBestSellers,
+          slowMovers: todaySlowMovers,
+        },
+        monthly: {
+          bestSellers: monthBestSellers,
+          slowMovers: monthSlowMovers,
+        },
+      },
     };
   },
   // =========================================================================
