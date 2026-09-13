@@ -12,6 +12,7 @@ import type {
   FeedbackReasonCode,
   FinanceCalculatorPreset,
   CardService,
+  CustomerDirectoryEntry,
 } from "./types";
 import {
   FEEDBACK_REASONS,
@@ -887,6 +888,93 @@ export async function searchCustomersAction(query: string) {
   const { businessId } = await requireModuleRead("loyalty");
   if (!query.trim()) return [];
   return db.searchCustomers(businessId, query);
+}
+
+/**
+ * Pencarian dan resolusi scan QR Member untuk kasir POS.
+ * Menerima token kartu QR, link kartu (/m/[token]), nomor telepon WA, atau nama.
+ */
+export async function lookupMemberAction(query: string): Promise<
+  ActionResult<{
+    found: boolean;
+    customer: CustomerDirectoryEntry | null;
+    matches: CustomerDirectoryEntry[];
+  }>
+> {
+  const session = await getSession();
+  if (!session?.businessId || (session.role !== "owner" && session.role !== "staff")) {
+    return fail("Akses tidak diizinkan.");
+  }
+  const businessId = session.businessId;
+
+  const raw = (query || "").trim();
+  if (!raw) return done({ found: false, customer: null, matches: [] });
+
+  // 1. Ekstrak token jika input adalah URL kartu member (misal: https://kaels.site/m/TOKEN atau /m/TOKEN)
+  let tokenCandidate = raw;
+  const matchUrl = raw.match(/\/m\/([a-zA-Z0-9_\-]+)/);
+  if (matchUrl && matchUrl[1]) {
+    tokenCandidate = matchUrl[1];
+  }
+
+  // 2. Coba lookup langsung berdasarkan token kartu member
+  if (tokenCandidate.length >= 8) {
+    const custByToken = await db.getCustomerByToken(tokenCandidate);
+    if (custByToken && custByToken.business_id === businessId) {
+      const balance = await db.getCustomerPointBalance(custByToken.id);
+      const last4 = custByToken.phone.slice(-4);
+      return done({
+        found: true,
+        customer: {
+          id: custByToken.id,
+          name: custByToken.name,
+          phone_masked: `+62 ***-***-${last4}`,
+          phone_last4: last4,
+          balance,
+          created_at: custByToken.created_at,
+        },
+        matches: [],
+      });
+    }
+  }
+
+  // 3. Coba lookup nomor WhatsApp persis
+  const normalizedPhone = normalizePhoneNumber(raw);
+  if (normalizedPhone) {
+    const custByPhone = await db.getCustomerByPhone(businessId, normalizedPhone);
+    if (custByPhone) {
+      const balance = await db.getCustomerPointBalance(custByPhone.id);
+      const last4 = custByPhone.phone.slice(-4);
+      return done({
+        found: true,
+        customer: {
+          id: custByPhone.id,
+          name: custByPhone.name,
+          phone_masked: `+62 ***-***-${last4}`,
+          phone_last4: last4,
+          balance,
+          created_at: custByPhone.created_at,
+        },
+        matches: [],
+      });
+    }
+  }
+
+  // 4. Pencarian teks / wildcard (nama atau potongan nomor)
+  const searchResults = await db.searchCustomers(businessId, raw);
+  if (searchResults.length === 1) {
+    return done({
+      found: true,
+      customer: searchResults[0],
+      matches: searchResults,
+    });
+  }
+
+  return done({
+    found: searchResults.length > 0,
+    customer: null,
+    matches: searchResults,
+  });
 }
 
 /** Detail satu pelanggan beserta riwayat poinnya, untuk modal di dashboard. */

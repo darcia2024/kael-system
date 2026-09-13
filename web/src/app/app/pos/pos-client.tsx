@@ -41,6 +41,7 @@ import {
   Soup,
   Package,
   X,
+  Camera,
   type LucideIcon,
 } from "lucide-react";
 import type { 
@@ -60,6 +61,7 @@ import {
   closeShiftAction,
   updateOrderStatusAction,
   searchCustomersAction,
+  lookupMemberAction,
   registerCustomerByStaffAction,
   recordReceiptPrintAction
 } from "@/lib/actions";
@@ -79,6 +81,7 @@ import OrderQueue from "./order-queue";
 import { calculateEarnedPoints } from "@/lib/loyalty-engine";
 import { PLACEHOLDER_MENU } from "@/lib/types";
 import TableQrModal from "./table-qr-modal";
+import PosMemberScannerModal from "./pos-member-scanner-modal";
 
 function getPosCategoryIcon(categoryName: string): LucideIcon {
   const normalized = categoryName.toLowerCase();
@@ -200,8 +203,22 @@ export default function PosClient({
   const [showQueue, setShowQueue] = useState(false);
   const [showShiftModal, setShowShiftModal] = useState(false);
   const [showTableQrModal, setShowTableQrModal] = useState(false);
+  const [showMemberScannerModal, setShowMemberScannerModal] = useState(false);
   const [shiftOpeningCashInput, setShiftOpeningCashInput] = useState<number>(100000);
   const [shiftClosingCashInput, setShiftClosingCashInput] = useState<number>(0);
+
+  const handleQuickSearchOrScan = async (q: string) => {
+    const clean = q.trim();
+    if (!clean) return;
+    const res = await lookupMemberAction(clean);
+    if (res.ok && res.data.found && res.data.customer) {
+      setAttachedCustomer(res.data.customer);
+      setLoyaltySearchQuery("");
+      setLoyaltySearchResults([]);
+    } else if (res.ok && res.data.matches.length > 0) {
+      setLoyaltySearchResults(res.data.matches);
+    }
+  };
 
   const refreshAll = () => {
     startTransition(() => {
@@ -593,6 +610,76 @@ export default function PosClient({
         )}
       </fieldset>
 
+      {/* Member Loyalty Bar / Attacher */}
+      <div className={`border-b px-4 py-2.5 ${isMochiPos ? "border-[#dfe6e2] bg-[#f8faf9]" : "border-[#e0ebe5] bg-[#f9fbfa]"}`}>
+        {attachedCustomer ? (
+          <div className="rounded-xl border border-[#16a34a]/40 bg-[#edfbf3] p-2.5 flex items-center justify-between gap-2 shadow-2xs">
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#0b3d2e] text-[#c8f53a] font-black text-xs shadow-xs">
+                ★
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <span className="truncate text-xs font-black text-[#14532d]">{attachedCustomer.name}</span>
+                  <span className="rounded bg-[#bbf7d0] px-1.5 py-0.2 text-[9px] font-black text-[#166534]">
+                    MEMBER
+                  </span>
+                </div>
+                <p className="text-[10px] font-mono text-[#166534] truncate">
+                  {attachedCustomer.phone_masked} · Saldo: <strong>{attachedCustomer.balance} Pts</strong>
+                  {loyaltyProgram && cartTotals.total > 0 && (
+                    <span className="text-[#15803d] font-bold ml-1">
+                      (+{loyaltyProgram.mode === "stamp" ? `${loyaltyProgram.stamp_per_visit} Stamp` : `${calculateEarnedPoints(cartTotals.total, loyaltyProgram.earn_rate)} Pts`})
+                    </span>
+                  )}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-1 shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowMemberScannerModal(true)}
+                title="Ganti / Scan Member Lain"
+                className="flex h-7 w-7 items-center justify-center rounded-lg bg-white border border-[#bbf7d0] text-[#166534] hover:bg-[#dcfce7] transition-colors"
+              >
+                <RefreshCw size={12} />
+              </button>
+              <button
+                type="button"
+                onClick={() => setAttachedCustomer(null)}
+                title="Lepas Member"
+                className="flex h-7 w-7 items-center justify-center rounded-lg bg-white border border-red-200 text-red-500 hover:bg-red-50 transition-colors"
+              >
+                <X size={13} />
+              </button>
+            </div>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setShowMemberScannerModal(true)}
+            className={`w-full flex items-center justify-between px-3 py-2 rounded-xl border text-xs font-bold transition-all group ${
+              isMochiPos
+                ? "border-emerald-700/25 bg-[#edf8f3] text-[#0b3d2e] hover:bg-[#e1f5eb] hover:border-[#167052]"
+                : "border-[#d6dfda] bg-white text-[#344d41] hover:border-[#167052]"
+            }`}
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-[#0b3d2e] text-[#c8f53a] shadow-xs">
+                <QrCode size={13} />
+              </div>
+              <span className="truncate text-left text-[11.5px] font-extrabold text-[#0b3d2e]">
+                Scan QR / No. WA Member
+              </span>
+            </div>
+            <span className="flex items-center gap-1 text-[11px] font-black text-[#167052] bg-white/80 border border-emerald-600/30 px-2 py-0.5 rounded-lg group-hover:bg-[#167052] group-hover:text-white transition-colors">
+              <Camera size={12} />
+              <span>Pindai</span>
+            </span>
+          </button>
+        )}
+      </div>
+
       <div className="min-h-0 flex-1 overflow-y-auto px-4">
         {cartList.length === 0 ? (
           <div className="flex h-full min-h-56 flex-col items-center justify-center px-5 text-center">
@@ -772,6 +859,26 @@ export default function PosClient({
             )}
             <button
               type="button"
+              aria-label="Scan QR Member"
+              title={attachedCustomer ? `Member: ${attachedCustomer.name}` : "Scan QR Member"}
+              onClick={() => setShowMemberScannerModal(true)}
+              className={`flex h-10 w-10 sm:h-11 sm:w-11 items-center justify-center rounded-xl border transition-colors relative ${
+                attachedCustomer
+                  ? "border-[#c8f53a] bg-[#c8f53a] text-[#073829] font-black shadow-xs"
+                  : isMochiPos
+                    ? "border-white/20 bg-white/10 text-white/80 hover:bg-white/20"
+                    : "border-[#ccd7d1] text-[#29473b] hover:bg-[#eef5f1]"
+              }`}
+            >
+              <Camera size={17} aria-hidden="true" />
+              {attachedCustomer && (
+                <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-[#16a34a] border border-white text-[8px] text-white font-black">
+                  ✓
+                </span>
+              )}
+            </button>
+            <button
+              type="button"
               aria-label="Cetak QR Meja"
               title="Cetak QR Meja"
               onClick={() => setShowTableQrModal(true)}
@@ -837,6 +944,26 @@ export default function PosClient({
             }`}
           >
             <QrCode size={20} aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowMemberScannerModal(true)}
+            aria-label="Scan QR Member"
+            title={attachedCustomer ? `Member: ${attachedCustomer.name}` : "Scan QR Member"}
+            className={`relative flex h-12 w-12 items-center justify-center rounded-xl transition-colors ${
+              attachedCustomer
+                ? "bg-[#c8f53a] text-[#073829] shadow-xs"
+                : isMochiPos
+                  ? "text-emerald-300/80 hover:bg-white/10 hover:text-white"
+                  : "text-[#66766e] hover:bg-[#edf4f0] hover:text-[#1d5d47]"
+            }`}
+          >
+            <Camera size={20} aria-hidden="true" />
+            {attachedCustomer && (
+              <span className="absolute -top-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-[#16a34a] border border-white text-[8px] text-white font-black">
+                ✓
+              </span>
+            )}
           </button>
           {pendingQrOrders.length > 0 && (
             <button type="button" onClick={() => setShowQueue(true)} aria-label={`${pendingQrOrders.length} pesanan masuk`} title="Pesanan masuk" className="relative flex h-12 w-12 items-center justify-center rounded-xl bg-[#fff4df] text-[#a15a18]">
@@ -1218,35 +1345,70 @@ export default function PosClient({
                 </div>
 
                 {attachedCustomer ? (
-                  <div className="rounded-xl border border-[#16a34a] bg-[#dcfce7] p-2.5 flex justify-between items-center">
-                    <div>
-                      <span className="font-bold text-sm text-[#232331] block">{attachedCustomer.name}</span>
-                      <span className="text-[10.5px] text-[#7b7b8e]">{attachedCustomer.phone_masked}</span>
+                  <div className="rounded-xl border border-[#16a34a] bg-[#dcfce7] p-2.5 flex justify-between items-center gap-2">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-bold text-sm text-[#232331] block truncate">{attachedCustomer.name}</span>
+                        <span className="rounded bg-[#bbf7d0] px-1 py-0.2 text-[9px] font-black text-[#166534]">MEMBER</span>
+                      </div>
+                      <span className="text-[10.5px] text-[#7b7b8e] font-mono">{attachedCustomer.phone_masked}</span>
                     </div>
-                    <span className="font-black text-xs text-[#16a34a]">
-                      {!loyaltyProgram
-                        ? "Member Terpasang ✓"
-                        : loyaltyProgram.tiers_is_active
-                          ? "Poin Masuk Otomatis ✓"
-                          : loyaltyProgram.mode === "stamp"
-                            ? `+${loyaltyProgram.stamp_per_visit} Stamp Masuk ✓`
-                            : `+${calculateEarnedPoints(cartTotals.total, loyaltyProgram.earn_rate)} Pts Masuk ✓`}
-                    </span>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="font-black text-xs text-[#16a34a]">
+                        {!loyaltyProgram
+                          ? "Member Terpasang ✓"
+                          : loyaltyProgram.tiers_is_active
+                            ? "Poin Masuk Otomatis ✓"
+                            : loyaltyProgram.mode === "stamp"
+                              ? `+${loyaltyProgram.stamp_per_visit} Stamp Masuk ✓`
+                              : `+${calculateEarnedPoints(cartTotals.total, loyaltyProgram.earn_rate)} Pts Masuk ✓`}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setShowMemberScannerModal(true)}
+                        title="Ganti member"
+                        className="rounded-lg border border-emerald-300 bg-white p-1 text-emerald-800 hover:bg-emerald-50"
+                      >
+                        <RefreshCw size={12} />
+                      </button>
+                    </div>
                   </div>
                 ) : (
-                  <div className="relative">
-                    <Search className="absolute left-3 top-2.5 text-[#7b7b8e]" size={14} />
-                    <input
-                      type="text"
-                      value={loyaltySearchQuery}
-                      onChange={(e) => setLoyaltySearchQuery(e.target.value)}
-                      placeholder="Ketik 4 digit WA member..."
-                      className={`w-full rounded-xl border pl-8 pr-3 py-1.5 text-xs font-bold ${
-                        isMochiPos
-                          ? "border-[#ccd9d3] text-[#0b3d2e] focus:border-[#167052]"
-                          : "border-[#dedee8] text-[#232331]"
-                      }`}
-                    />
+                  <div className="space-y-1.5">
+                    <div className="flex gap-1.5">
+                      <div className="relative flex-1">
+                        <Search className="absolute left-3 top-2.5 text-[#7b7b8e]" size={14} />
+                        <input
+                          type="text"
+                          value={loyaltySearchQuery}
+                          onChange={(e) => setLoyaltySearchQuery(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              handleQuickSearchOrScan(loyaltySearchQuery);
+                            }
+                          }}
+                          placeholder="Ketik WA, nama, atau tembak scanner..."
+                          className={`w-full rounded-xl border pl-8 pr-3 py-1.5 text-xs font-bold ${
+                            isMochiPos
+                              ? "border-[#ccd9d3] text-[#0b3d2e] focus:border-[#167052]"
+                              : "border-[#dedee8] text-[#232331]"
+                          }`}
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setShowMemberScannerModal(true)}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-black shrink-0 transition-all active:scale-95 ${
+                          isMochiPos
+                            ? "bg-[#0b3d2e] text-[#c8f53a] border-[#0b3d2e] hover:bg-[#124634]"
+                            : "bg-[#232331] text-white border-[#232331]"
+                        }`}
+                      >
+                        <Camera size={13} />
+                        <span>Scan QR</span>
+                      </button>
+                    </div>
 
                     {loyaltySearchResults.length > 0 && (
                       <div className={`mt-1 rounded-xl border bg-white p-1 space-y-1 max-h-32 overflow-y-auto ${
@@ -1691,6 +1853,13 @@ export default function PosClient({
         storeCode={business?.store_code || "MOCHIKAFE"}
         storeName={business?.name || "Mochi Cafe n Resto"}
         isMochi={isMochiPos}
+      />
+
+      <PosMemberScannerModal
+        isOpen={showMemberScannerModal}
+        onClose={() => setShowMemberScannerModal(false)}
+        onSelectCustomer={(cust) => setAttachedCustomer(cust)}
+        isMochiPos={isMochiPos}
       />
 
     </div>

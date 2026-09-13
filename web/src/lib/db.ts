@@ -2280,6 +2280,12 @@ export const db = {
     );
   },
 
+  async getCustomerByPhone(businessId: string, phone: string): Promise<Customer | null> {
+    return one<Customer>(
+      await sql`SELECT * FROM customers WHERE business_id = ${businessId} AND phone = ${phone}`,
+    );
+  },
+
   async searchCustomers(businessId: string, query: string) {
     const q = "%" + query.trim() + "%";
     return (await sql`
