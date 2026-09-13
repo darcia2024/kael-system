@@ -179,36 +179,86 @@ export default function OrderQueue({
 
                 {menungguBayar ? (
                   <div className={`space-y-2 border-t pt-2.5 ${isMochi ? "border-[#e0ebe5]" : "border-[#dedee8]"}`}>
-                    <p className="font-mono text-[11px] text-[#8a6d00]">
-                      Cek mutasi masuk {formatRupiah(Number(o.total))} lebih dulu, baru tekan
-                      tombol di bawah.
-                    </p>
-                    <div className="flex gap-2">
+                    <div className="flex items-center justify-between font-mono text-[11px]">
+                      <span className="font-bold text-amber-800 flex items-center gap-1">
+                        <span>Makan Dulu (Belum Bayar)</span>
+                      </span>
+                      <span className="font-bold text-[#718078]">Tagihan: {formatRupiah(Number(o.total))}</span>
+                    </div>
+
+                    {o.fulfillment_status === "pending" ? (
+                      <div className="rounded-xl border border-amber-300 bg-amber-50 p-2.5 space-y-1.5 font-mono text-xs">
+                        <p className="text-[11px] font-bold text-amber-900">
+                          👉 Samperin ke meja untuk pastikan pesanan benar, lalu klik tombol di bawah:
+                        </p>
+                        <button
+                          type="button"
+                          disabled={busy}
+                          onClick={() => jalankan(o.id, () => setFulfillmentAction(o.id, "accepted"))}
+                          className={`w-full flex items-center justify-center gap-1.5 rounded-xl py-2 px-3 text-xs font-black transition-all ${
+                            isMochi
+                              ? "bg-[#0b3d2e] hover:bg-[#124d3a] text-[#c8f53a] shadow-xs"
+                              : "btn-tactile border-2 border-[#232331] bg-[#232331] text-[#d9ff57]"
+                          }`}
+                        >
+                          <Check size={14} />
+                          <span>Pesanan Meja Benar · Teruskan ke Dapur 🍳</span>
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="space-y-1.5">
+                        <div className="flex items-center gap-1.5 font-mono text-[11px] font-bold text-[#16a34a]">
+                          <ChefHat size={13} className={isMochi ? "text-[#167052]" : "text-[#7958d8]"} />
+                          <span>Dapur / Barista: {o.fulfillment_status.toUpperCase()}</span>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {FULFILLMENT_FLOW.map((f) => (
+                            <button
+                              key={f.key}
+                              type="button"
+                              disabled={busy}
+                              onClick={() => jalankan(o.id, () => setFulfillmentAction(o.id, f.key))}
+                              className={`rounded-lg border px-2 py-1 font-mono text-[10.5px] font-bold disabled:opacity-50 transition-colors ${
+                                o.fulfillment_status === f.key
+                                  ? (isMochi ? "border-[#0b3d2e] bg-[#0b3d2e] text-[#c8f53a]" : "border-[#232331] bg-[#232331] text-[#d9ff57]")
+                                  : (isMochi ? "border-[#d8e3de] bg-white text-[#526159] hover:bg-[#edf8f3]" : "border-[#dedee8] bg-white text-[#7b7b8e]")
+                              }`}
+                            >
+                              {f.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Tombol Pembayaran Selesai Makan */}
+                    <div className="flex gap-2 pt-1 border-t border-[#e0ebe5]">
                       <button
                         type="button"
                         disabled={busy}
                         onClick={() => jalankan(o.id, () => confirmPaymentAction(o.id))}
-                        className={`flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl px-3 py-2.5 font-mono text-xs font-black disabled:opacity-50 transition-all ${
+                        className={`flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl px-3 py-2 font-mono text-xs font-black disabled:opacity-50 transition-all ${
                           isMochi
                             ? "bg-[#c8f53a] hover:bg-[#d9ff57] text-[#073829] shadow-xs"
                             : "btn-tactile border-2 border-[#232331] bg-[#16a34a] text-white shadow-ink-xs"
                         }`}
+                        title="Tamu selesai makan dan membayar tagihan"
                       >
                         {busy ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
-                        Uang sudah masuk
+                        Selesai Makan · Terima Bayar
                       </button>
                       <button
                         type="button"
                         disabled={busy}
                         onClick={() => jalankan(o.id, () => markPaymentFailedAction(o.id))}
-                        className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-2.5 font-mono text-xs font-bold disabled:opacity-50 ${
+                        className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-2 font-mono text-xs font-bold disabled:opacity-50 ${
                           isMochi
                             ? "border border-rose-200 bg-white text-rose-700 hover:bg-rose-50"
                             : "border border-[#c0392b] bg-white text-[#c0392b]"
                         }`}
                       >
                         <Ban size={13} />
-                        Gagal
+                        Batal
                       </button>
                     </div>
                   </div>
@@ -246,7 +296,12 @@ export default function OrderQueue({
                   {onPrintKitchenTicket && (
                     <button
                       type="button"
-                      onClick={() => onPrintKitchenTicket(o)}
+                      onClick={() => {
+                        if (o.fulfillment_status === "pending") {
+                          void jalankan(o.id, () => setFulfillmentAction(o.id, "accepted"));
+                        }
+                        onPrintKitchenTicket(o);
+                      }}
                       className={`flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl py-2 px-3 font-mono text-[11px] font-black transition-all ${
                         isMochi
                           ? "bg-[#c8f53a] hover:bg-[#d9ff57] text-[#073829] shadow-xs"

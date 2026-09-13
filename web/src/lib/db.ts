@@ -4885,7 +4885,7 @@ export const db = {
       await sql`
       UPDATE orders SET fulfillment_status = ${status}
       WHERE id = ${orderId} AND business_id = ${businessId}
-        AND payment_status = 'paid'
+        AND status = 'open'
       RETURNING *
     `,
     );

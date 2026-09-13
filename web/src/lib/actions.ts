@@ -1877,7 +1877,7 @@ export async function setFulfillmentAction(
   const order = await db.setOrderFulfillment(orderId, businessId, status);
   if (!order)
     return fail(
-      "Pesanan tidak ditemukan, atau pembayarannya belum dikonfirmasi.",
+      "Pesanan tidak ditemukan atau statusnya sudah ditutup.",
     );
   revalidatePath("/app/pos");
   revalidatePath("/app/pos/station");
