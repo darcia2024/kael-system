@@ -10,7 +10,7 @@ import {
 
 import type {
   Customer, Business, LoyaltyProgram, Reward, PointLedger, Redemption,
-  LoyaltyTier, MemberCardSettings, MenuItem,
+  LoyaltyTier, MemberCardSettings, MenuItem, Category,
 } from "@/lib/types";
 import { PLACEHOLDER_MENU } from "@/lib/types";
 import { maskPhoneNumber, resolveTier } from "@/lib/loyalty-engine";
@@ -50,6 +50,7 @@ export interface MemberPageData {
   /** Isi kartu yang dikarang pemilik usaha. Null kalau belum pernah disetel. */
   cardSettings: MemberCardSettings | null;
   menuItems: MenuItem[];
+  categories?: Category[];
   visitCount: number;
 }
 
@@ -57,7 +58,7 @@ type Tab = "hadiah" | "menu" | "info" | "riwayat";
 
 export default function CustomerMemberProgressPage({
   customer, business, program, rewards, balance, ledger, redemptions,
-  referralCode, tiers, lifetimeSpend, cardSettings, menuItems, visitCount,
+  referralCode, tiers, lifetimeSpend, cardSettings, menuItems, categories = [], visitCount,
 }: MemberPageData) {
   const [tab, setTab] = useState<Tab>("hadiah");
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
@@ -221,6 +222,7 @@ export default function CustomerMemberProgressPage({
         lifetimeSpend={lifetimeSpend}
         cardSettings={cardSettings}
         menuItems={menuItems}
+        categories={categories}
         visitCount={visitCount}
       />
     );

@@ -30,10 +30,12 @@ import {
   CheckCircle2,
   AlertCircle,
   Coffee,
-  Plus
+  Plus,
+  Search,
 } from "lucide-react";
 
 import type { MemberPageData } from "./member-client";
+import { PLACEHOLDER_MENU } from "@/lib/types";
 import { maskPhoneNumber, resolveTier } from "@/lib/loyalty-engine";
 import { formatRupiah, formatBusinessDateTime } from "@/lib/formatters";
 import QrCodeComponent from "@/components/qr-code";
@@ -52,7 +54,8 @@ export default function MochiMemberView({
   tiers,
   lifetimeSpend,
   cardSettings,
-  menuItems,
+  menuItems = [],
+  categories = [],
   visitCount,
 }: MemberPageData) {
   // Modal states
@@ -61,6 +64,10 @@ export default function MochiMemberView({
   const [showVoucherModal, setShowVoucherModal] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [activeNavTab, setActiveNavTab] = useState<"home" | "voucher" | "menu" | "profile">("home");
+
+  // Menu tab state
+  const [menuSearchQuery, setMenuSearchQuery] = useState("");
+  const [selectedMenuCategory, setSelectedMenuCategory] = useState<string>("all");
 
   // Balance visibility toggle
   const [hideBalance, setHideBalance] = useState(false);
@@ -112,6 +119,55 @@ export default function MochiMemberView({
     if (!referralCode || !business?.store_code) return null;
     return `https://${siteHost}/loyalty/register?toko=${encodeURIComponent(business.store_code)}&ref=${encodeURIComponent(referralCode)}`;
   }, [referralCode, business?.store_code]);
+
+  // Menu Categories with counts
+  const menuCategories = useMemo(() => {
+    const list: { id: string; name: string; count: number }[] = [];
+    const categoryMap = new Map<string, string>();
+    categories.forEach((c) => categoryMap.set(c.id, c.name));
+
+    const counts = new Map<string, number>();
+    menuItems.forEach((item) => {
+      const catId = item.category_id || "uncategorized";
+      counts.set(catId, (counts.get(catId) || 0) + 1);
+    });
+
+    categories.forEach((cat) => {
+      const count = counts.get(cat.id) || 0;
+      if (count > 0) {
+        list.push({ id: cat.id, name: cat.name, count });
+      }
+    });
+
+    menuItems.forEach((item) => {
+      if (item.category_id && !categoryMap.has(item.category_id) && !list.some((l) => l.id === item.category_id)) {
+        list.push({ id: item.category_id, name: "Menu Lainnya", count: counts.get(item.category_id) || 1 });
+      }
+    });
+
+    return list;
+  }, [categories, menuItems]);
+
+  // Filtered menu items for search & category selection
+  const filteredMenuItems = useMemo(() => {
+    return menuItems.filter((item) => {
+      const query = menuSearchQuery.toLowerCase().trim();
+      const matchesSearch =
+        !query ||
+        item.name.toLowerCase().includes(query) ||
+        (item.description && item.description.toLowerCase().includes(query));
+
+      const matchesCategory =
+        selectedMenuCategory === "all" || item.category_id === selectedMenuCategory;
+
+      return matchesSearch && matchesCategory;
+    });
+  }, [menuItems, menuSearchQuery, selectedMenuCategory]);
+
+  // Featured menu items for Home tab preview (first 6 items)
+  const featuredMenuItems = useMemo(() => {
+    return menuItems.slice(0, 6);
+  }, [menuItems]);
 
   const handleCopy = (text: string, isRef = false) => {
     navigator.clipboard.writeText(text);
@@ -302,233 +358,503 @@ export default function MochiMemberView({
       {/* =================================================================== */}
       {/* 4. WHITE SHEET CONTAINER (MATCHING MOCKUP LOWER HALF)               */}
       {/* =================================================================== */}
-      <div className="rounded-t-[32px] bg-[#f8faf9] text-[#1c2d26] pt-6 pb-8 px-4 sm:px-5 shadow-[0_-8px_30px_rgba(0,0,0,0.15)] min-h-[480px]">
+      <div className="rounded-t-[32px] bg-[#f8faf9] text-[#1c2d26] pt-5 pb-24 px-4 sm:px-5 shadow-[0_-8px_30px_rgba(0,0,0,0.15)] min-h-[520px]">
         
-        {/* QUICK ACTION GRID (4 ROUND BUTTONS LIKE MOCKUP) */}
-        <section aria-label="Menu Cepat" className="grid grid-cols-4 gap-2 text-center pb-6">
-          {/* Button 1: QR Member */}
+        {/* SEGMENTED SWITCHER: DOMPET MEMBER vs KATALOG MENU */}
+        <div className="flex rounded-2xl bg-[#e5ede9] p-1.5 mb-5 shadow-inner">
           <button
             type="button"
-            onClick={() => setShowQrModal(true)}
-            className="flex flex-col items-center gap-1.5 group active:scale-95 transition-transform"
+            onClick={() => setActiveNavTab("home")}
+            className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-black transition-all ${
+              activeNavTab === "home"
+                ? "bg-[#0b3d2e] text-[#c8f53a] shadow-sm scale-[1.01]"
+                : "text-[#52665e] hover:text-[#1c2d26]"
+            }`}
           >
-            <div className="flex h-13 w-13 items-center justify-center rounded-full border-2 border-[#167052] bg-[#edf8f3] text-[#167052] shadow-sm group-hover:bg-[#167052] group-hover:text-white transition-colors">
-              <QrCode size={22} strokeWidth={2.2} />
-            </div>
-            <span className="text-[11px] font-extrabold text-[#20372e] tracking-tight">
-              QR Kasir
-            </span>
+            <Home size={15} />
+            <span>Dompet Member</span>
           </button>
-
-          {/* Button 2: Voucher */}
           <button
             type="button"
-            onClick={() => setShowVoucherModal(true)}
-            className="flex flex-col items-center gap-1.5 group active:scale-95 transition-transform relative"
+            onClick={() => setActiveNavTab("menu")}
+            className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-black transition-all ${
+              activeNavTab === "menu"
+                ? "bg-[#0b3d2e] text-[#c8f53a] shadow-sm scale-[1.01]"
+                : "text-[#52665e] hover:text-[#1c2d26]"
+            }`}
           >
-            <div className="flex h-13 w-13 items-center justify-center rounded-full border-2 border-[#ea580c] bg-[#fff7ed] text-[#ea580c] shadow-sm group-hover:bg-[#ea580c] group-hover:text-white transition-colors">
-              <Ticket size={22} strokeWidth={2.2} />
-            </div>
-            {activeVoucherCount > 0 && (
-              <span className="absolute top-0 right-3 flex h-4 w-4 items-center justify-center rounded-full bg-[#ea580c] text-[9px] font-black text-white">
-                {activeVoucherCount}
-              </span>
+            <UtensilsCrossed size={15} />
+            <span>Katalog Menu {menuItems.length > 0 && `(${menuItems.length})`}</span>
+          </button>
+        </div>
+
+        {activeNavTab === "home" ? (
+          <>
+            {/* QUICK ACTION GRID (4 ROUND BUTTONS LIKE MOCKUP) */}
+            <section aria-label="Menu Cepat" className="grid grid-cols-4 gap-2 text-center pb-6">
+              {/* Button 1: QR Member */}
+              <button
+                type="button"
+                onClick={() => setShowQrModal(true)}
+                className="flex flex-col items-center gap-1.5 group active:scale-95 transition-transform"
+              >
+                <div className="flex h-13 w-13 items-center justify-center rounded-full border-2 border-[#167052] bg-[#edf8f3] text-[#167052] shadow-sm group-hover:bg-[#167052] group-hover:text-white transition-colors">
+                  <QrCode size={22} strokeWidth={2.2} />
+                </div>
+                <span className="text-[11px] font-extrabold text-[#20372e] tracking-tight">
+                  QR Kasir
+                </span>
+              </button>
+
+              {/* Button 2: Voucher */}
+              <button
+                type="button"
+                onClick={() => setShowVoucherModal(true)}
+                className="flex flex-col items-center gap-1.5 group active:scale-95 transition-transform relative"
+              >
+                <div className="flex h-13 w-13 items-center justify-center rounded-full border-2 border-[#ea580c] bg-[#fff7ed] text-[#ea580c] shadow-sm group-hover:bg-[#ea580c] group-hover:text-white transition-colors">
+                  <Ticket size={22} strokeWidth={2.2} />
+                </div>
+                {activeVoucherCount > 0 && (
+                  <span className="absolute top-0 right-3 flex h-4 w-4 items-center justify-center rounded-full bg-[#ea580c] text-[9px] font-black text-white">
+                    {activeVoucherCount}
+                  </span>
+                )}
+                <span className="text-[11px] font-extrabold text-[#20372e] tracking-tight">
+                  Voucher
+                </span>
+              </button>
+
+              {/* Button 3: Pesan Meja (Opens Menu Tab) */}
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveNavTab("menu");
+                  window.scrollTo({ top: 380, behavior: "smooth" });
+                }}
+                className="flex flex-col items-center gap-1.5 group active:scale-95 transition-transform"
+              >
+                <div className="flex h-13 w-13 items-center justify-center rounded-full border-2 border-[#0284c7] bg-[#f0f9ff] text-[#0284c7] shadow-sm group-hover:bg-[#0284c7] group-hover:text-white transition-colors">
+                  <UtensilsCrossed size={22} strokeWidth={2.2} />
+                </div>
+                <span className="text-[11px] font-extrabold text-[#20372e] tracking-tight">
+                  Pesan Meja
+                </span>
+              </button>
+
+              {/* Button 4: Review Google */}
+              <button
+                type="button"
+                onClick={() => {
+                  if (business.google_place_id) {
+                    window.open(`https://search.google.com/local/writereview?placeid=${business.google_place_id}`, "_blank");
+                  } else {
+                    alert("Tautan Google Review sedang disiapkan oleh pengelola toko.");
+                  }
+                }}
+                className="flex flex-col items-center gap-1.5 group active:scale-95 transition-transform"
+              >
+                <div className="flex h-13 w-13 items-center justify-center rounded-full border-2 border-[#eab308] bg-[#fefce8] text-[#ca8a04] shadow-sm group-hover:bg-[#eab308] group-hover:text-white transition-colors">
+                  <Star size={22} strokeWidth={2.2} />
+                </div>
+                <span className="text-[11px] font-extrabold text-[#20372e] tracking-tight">
+                  Ulasan
+                </span>
+              </button>
+            </section>
+
+            {/* ACTIVE VOUCHER HERO CARD (IF ANY) */}
+            {activeVoucher && (
+              <div className="mb-5 rounded-2xl border-2 border-[#ea580c] bg-gradient-to-r from-[#fff7ed] to-[#ffedd5] p-3.5 shadow-sm space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="inline-flex items-center gap-1 rounded-md bg-[#ea580c] px-2 py-0.5 text-[10px] font-black text-white uppercase tracking-wider">
+                    Voucher Siap Pakai
+                  </span>
+                  <span className="font-mono text-[10.5px] text-[#9a3412] font-bold">
+                    Tunjukkan ke Kasir
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="font-black text-sm text-[#7c2d12]">
+                      {rewards.find((r) => r.id === activeVoucher.reward_id)?.name ?? "Voucher Hadiah"}
+                    </h4>
+                    <p className="text-[11px] text-[#9a3412]">
+                      Kode: <strong className="font-mono font-black text-sm tracking-wider text-[#ea580c]">{activeVoucher.code}</strong>
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleCopy(activeVoucher.code)}
+                    className="flex items-center gap-1 rounded-xl bg-white px-3 py-1.5 text-xs font-bold text-[#ea580c] shadow-xs border border-[#ea580c]/30 active:scale-95"
+                  >
+                    {copiedCode === activeVoucher.code ? <Check size={13} /> : <Copy size={13} />}
+                    <span>{copiedCode === activeVoucher.code ? "Tersalin" : "Salin"}</span>
+                  </button>
+                </div>
+              </div>
             )}
-            <span className="text-[11px] font-extrabold text-[#20372e] tracking-tight">
-              Voucher
-            </span>
-          </button>
 
-          {/* Button 3: Pesan Meja (QR Order) */}
-          <Link
-            href={`/order/${business.store_code || "MOCHIKAFE"}/1`}
-            className="flex flex-col items-center gap-1.5 group active:scale-95 transition-transform"
-          >
-            <div className="flex h-13 w-13 items-center justify-center rounded-full border-2 border-[#0284c7] bg-[#f0f9ff] text-[#0284c7] shadow-sm group-hover:bg-[#0284c7] group-hover:text-white transition-colors">
-              <UtensilsCrossed size={22} strokeWidth={2.2} />
-            </div>
-            <span className="text-[11px] font-extrabold text-[#20372e] tracking-tight">
-              Pesan Meja
-            </span>
-          </Link>
+            {/* TARGET REWARD MILESTONE BAR */}
+            {targetReward && (
+              <div className="mb-6 rounded-2xl bg-white border border-[#d8e3de] p-4 shadow-xs space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-[#6f8279] uppercase tracking-wide">
+                    Target Hadiah Berikutnya
+                  </span>
+                  <span className="text-xs font-black text-[#167052] font-mono">
+                    {balance} / {targetReward.point_cost} Pts
+                  </span>
+                </div>
 
-          {/* Button 4: Review Google */}
-          <button
-            type="button"
-            onClick={() => {
-              if (business.google_place_id) {
-                window.open(`https://search.google.com/local/writereview?placeid=${business.google_place_id}`, "_blank");
-              } else {
-                alert("Tautan Google Review sedang disiapkan oleh pengelola toko.");
-              }
-            }}
-            className="flex flex-col items-center gap-1.5 group active:scale-95 transition-transform"
-          >
-            <div className="flex h-13 w-13 items-center justify-center rounded-full border-2 border-[#eab308] bg-[#fefce8] text-[#ca8a04] shadow-sm group-hover:bg-[#eab308] group-hover:text-white transition-colors">
-              <Star size={22} strokeWidth={2.2} />
-            </div>
-            <span className="text-[11px] font-extrabold text-[#20372e] tracking-tight">
-              Ulasan
-            </span>
-          </button>
-        </section>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[#edf8f3] text-[#167052]">
+                      <Gift size={16} />
+                    </span>
+                    <h3 className="text-xs font-bold text-[#20372e] truncate">
+                      {targetReward.name}
+                    </h3>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowRewardModal(true)}
+                    className="text-[11px] font-bold text-[#167052] hover:underline shrink-0"
+                  >
+                    Lihat
+                  </button>
+                </div>
 
-        {/* ACTIVE VOUCHER HERO CARD (IF ANY) */}
-        {activeVoucher && (
-          <div className="mb-5 rounded-2xl border-2 border-[#ea580c] bg-gradient-to-r from-[#fff7ed] to-[#ffedd5] p-3.5 shadow-sm space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="inline-flex items-center gap-1 rounded-md bg-[#ea580c] px-2 py-0.5 text-[10px] font-black text-white uppercase tracking-wider">
-                Voucher Siap Pakai
-              </span>
-              <span className="font-mono text-[10.5px] text-[#9a3412] font-bold">
-                Tunjukkan ke Kasir
-              </span>
-            </div>
-            <div className="flex items-center justify-between">
-              <div>
-                <h4 className="font-black text-sm text-[#7c2d12]">
-                  {rewards.find((r) => r.id === activeVoucher.reward_id)?.name ?? "Voucher Hadiah"}
-                </h4>
-                <p className="text-[11px] text-[#9a3412]">
-                  Kode: <strong className="font-mono font-black text-sm tracking-wider text-[#ea580c]">{activeVoucher.code}</strong>
+                {/* Progress Bar */}
+                <div className="h-2 w-full rounded-full bg-[#edf1ef] overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-[#167052] transition-all duration-500"
+                    style={{ width: `${progressPct}%` }}
+                  />
+                </div>
+
+                <p className="text-[10.5px] text-[#718078] leading-tight">
+                  {pointsNeeded === 0
+                    ? "🎉 Poin Anda sudah cukup! Klik tombol Tukar Hadiah untuk klaim voucher."
+                    : `Kumpulkan ${pointsNeeded} poin lagi untuk mendapatkan hadiah ini.`}
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={() => handleCopy(activeVoucher.code)}
-                className="flex items-center gap-1 rounded-xl bg-white px-3 py-1.5 text-xs font-bold text-[#ea580c] shadow-xs border border-[#ea580c]/30 active:scale-95"
-              >
-                {copiedCode === activeVoucher.code ? <Check size={13} /> : <Copy size={13} />}
-                <span>{copiedCode === activeVoucher.code ? "Tersalin" : "Salin"}</span>
-              </button>
-            </div>
-          </div>
-        )}
+            )}
 
-        {/* TARGET REWARD MILESTONE BAR */}
-        {targetReward && (
-          <div className="mb-6 rounded-2xl bg-white border border-[#d8e3de] p-4 shadow-xs space-y-2.5">
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold text-[#6f8279] uppercase tracking-wide">
-                Target Hadiah Berikutnya
-              </span>
-              <span className="text-xs font-black text-[#167052] font-mono">
-                {balance} / {targetReward.point_cost} Pts
-              </span>
-            </div>
-
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2 min-w-0">
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[#edf8f3] text-[#167052]">
-                  <Gift size={16} />
-                </span>
-                <h3 className="text-xs font-bold text-[#20372e] truncate">
-                  {targetReward.name}
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowRewardModal(true)}
-                className="text-[11px] font-bold text-[#167052] hover:underline shrink-0"
-              >
-                Lihat
-              </button>
-            </div>
-
-            {/* Progress Bar */}
-            <div className="h-2 w-full rounded-full bg-[#edf1ef] overflow-hidden">
-              <div
-                className="h-full rounded-full bg-[#167052] transition-all duration-500"
-                style={{ width: `${progressPct}%` }}
-              />
-            </div>
-
-            <p className="text-[10.5px] text-[#718078] leading-tight">
-              {pointsNeeded === 0
-                ? "🎉 Poin Anda sudah cukup! Klik tombol Tukar Hadiah untuk klaim voucher."
-                : `Kumpulkan ${pointsNeeded} poin lagi untuk mendapatkan hadiah ini.`}
-            </p>
-          </div>
-        )}
-
-        {/* ================================================================= */}
-        {/* 5. RECENT TRANSACTIONS (MATCHING MOCKUP BOTTOM HALF)              */}
-        {/* ================================================================= */}
-        <section aria-label="Riwayat Transaksi" className="space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="text-base font-extrabold text-[#1c2d26] tracking-tight">
-              Aktivitas Terakhir
-            </h2>
-            <button
-              type="button"
-              onClick={() => setActiveNavTab("voucher")}
-              className="text-xs font-bold text-[#167052] hover:underline"
-            >
-              Lihat semua
-            </button>
-          </div>
-
-          {ledger.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-[#ccd9d3] bg-white p-6 text-center text-xs text-[#718078] space-y-1">
-              <Coffee size={24} className="mx-auto text-[#167052] opacity-50 mb-1" />
-              <p className="font-bold text-[#20372e]">Belum ada catatan aktivitas</p>
-              <p>Poin Anda akan otomatis bertambah saat berbelanja di kasir Mochi.</p>
-            </div>
-          ) : (
-            <div className="divide-y divide-[#e5ede9] rounded-2xl bg-white border border-[#d8e3de] overflow-hidden shadow-xs">
-              {ledger.slice(0, 5).map((entry) => {
-                const isEarn = entry.delta > 0;
-                return (
-                  <div key={entry.id} className="flex items-center justify-between p-3.5 hover:bg-[#fcfdfc] transition-colors">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div
-                        className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${
-                          isEarn
-                            ? "bg-[#edf8f3] text-[#167052]"
-                            : "bg-[#fff1f2] text-[#e11d48]"
-                        }`}
-                      >
-                        {isEarn ? (
-                          <Coffee size={18} strokeWidth={2} />
-                        ) : (
-                          <Gift size={18} strokeWidth={2} />
-                        )}
-                      </div>
-
-                      <div className="min-w-0">
-                        <h3 className="text-xs font-extrabold text-[#20372e] truncate">
-                          {entry.reason === "purchase"
-                            ? "Kunjungan & Belanja Kasir"
-                            : entry.reason === "redeem"
-                            ? "Tukar Voucher Hadiah"
-                            : entry.reason === "referral"
-                            ? "Bonus Ajak Teman"
-                            : "Penyesuaian Stempel"}
-                        </h3>
-                        <p className="text-[10px] text-[#718078] font-mono">
-                          {formatBusinessDateTime(entry.created_at)}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="text-right shrink-0">
-                      <span
-                        className={`block text-xs font-black font-mono ${
-                          isEarn ? "text-[#167052]" : "text-[#e11d48]"
-                        }`}
-                      >
-                        {isEarn ? `+${entry.delta}` : entry.delta} Pts
-                      </span>
-                      <span className="text-[9.5px] font-bold text-[#8ba096]">
-                        {isEarn ? "Berhasil" : "Klaim"}
-                      </span>
-                    </div>
+            {/* PILIHAN MENU FAVORIT MOCHI */}
+            {featuredMenuItems.length > 0 && (
+              <section aria-label="Menu Favorit Mochi" className="mb-6 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-sm font-black text-[#1c2d26] tracking-tight flex items-center gap-1.5">
+                      <Sparkles size={14} className="text-[#167052]" />
+                      <span>Menu Favorit Mochi</span>
+                    </h2>
+                    <p className="text-[11px] text-[#718078]">
+                      Dapatkan poin member tiap pesan menu di bawah
+                    </p>
                   </div>
-                );
-              })}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveNavTab("menu");
+                      window.scrollTo({ top: 380, behavior: "smooth" });
+                    }}
+                    className="text-xs font-bold text-[#167052] hover:underline flex items-center gap-0.5 shrink-0"
+                  >
+                    <span>Lihat Semua</span>
+                    <ChevronRight size={13} />
+                  </button>
+                </div>
+
+                {/* 2-Column Responsive Grid */}
+                <div className="grid grid-cols-2 gap-2.5">
+                  {featuredMenuItems.slice(0, 4).map((item) => {
+                    const earnedPts = Math.max(1, Math.floor(item.price / (program.earn_rate || 1000)));
+                    return (
+                      <div
+                        key={item.id}
+                        className="flex flex-col justify-between rounded-2xl bg-white border border-[#d8e3de] p-2.5 shadow-xs hover:border-[#167052]/40 transition-all group"
+                      >
+                        <div className="space-y-2">
+                          <div className="relative aspect-4/3 w-full rounded-xl overflow-hidden bg-[#edf8f3]">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={item.photo_url || PLACEHOLDER_MENU}
+                              alt={item.name}
+                              loading="lazy"
+                              className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-300"
+                            />
+                            <span className="absolute top-1.5 right-1.5 rounded-full bg-[#0b3d2e]/90 backdrop-blur-xs text-[#c8f53a] px-2 py-0.5 text-[9px] font-black font-mono shadow-xs">
+                              +{earnedPts} Pts
+                            </span>
+                          </div>
+                          <div>
+                            <h3 className="text-xs font-black text-[#1c2d26] line-clamp-1 group-hover:text-[#167052] transition-colors">
+                              {item.name}
+                            </h3>
+                            {item.description && (
+                              <p className="text-[10px] text-[#718078] line-clamp-1 mt-0.5">
+                                {item.description}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                        <div className="mt-2.5 flex items-center justify-between pt-2 border-t border-[#f0f4f2]">
+                          <span className="text-xs font-black font-mono text-[#0b3d2e]">
+                            {formatRupiah(item.price)}
+                          </span>
+                          <Link
+                            href={`/order/${business.store_code || "MOCHIKAFE"}/1`}
+                            className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#edf8f3] text-[#167052] hover:bg-[#167052] hover:text-white transition-colors"
+                            title="Pesan Meja"
+                          >
+                            <Plus size={14} strokeWidth={2.5} />
+                          </Link>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
+
+            {/* RECENT TRANSACTIONS */}
+            <section aria-label="Riwayat Transaksi" className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h2 className="text-base font-extrabold text-[#1c2d26] tracking-tight">
+                  Aktivitas Terakhir
+                </h2>
+                <button
+                  type="button"
+                  onClick={() => setShowVoucherModal(true)}
+                  className="text-xs font-bold text-[#167052] hover:underline"
+                >
+                  Lihat kupon
+                </button>
+              </div>
+
+              {ledger.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-[#ccd9d3] bg-white p-6 text-center text-xs text-[#718078] space-y-1">
+                  <Coffee size={24} className="mx-auto text-[#167052] opacity-50 mb-1" />
+                  <p className="font-bold text-[#20372e]">Belum ada catatan aktivitas</p>
+                  <p>Poin Anda akan otomatis bertambah saat berbelanja di kasir Mochi.</p>
+                </div>
+              ) : (
+                <div className="divide-y divide-[#e5ede9] rounded-2xl bg-white border border-[#d8e3de] overflow-hidden shadow-xs">
+                  {ledger.slice(0, 5).map((entry) => {
+                    const isEarn = entry.delta > 0;
+                    return (
+                      <div key={entry.id} className="flex items-center justify-between p-3.5 hover:bg-[#fcfdfc] transition-colors">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div
+                            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${
+                              isEarn
+                                ? "bg-[#edf8f3] text-[#167052]"
+                                : "bg-[#fff1f2] text-[#e11d48]"
+                            }`}
+                          >
+                            {isEarn ? (
+                              <Coffee size={18} strokeWidth={2} />
+                            ) : (
+                              <Gift size={18} strokeWidth={2} />
+                            )}
+                          </div>
+
+                          <div className="min-w-0">
+                            <h3 className="text-xs font-extrabold text-[#20372e] truncate">
+                              {entry.reason === "purchase"
+                                ? "Kunjungan & Belanja Kasir"
+                                : entry.reason === "redeem"
+                                ? "Tukar Voucher Hadiah"
+                                : entry.reason === "referral"
+                                ? "Bonus Ajak Teman"
+                                : "Penyesuaian Stempel"}
+                            </h3>
+                            <p className="text-[10px] text-[#718078] font-mono">
+                              {formatBusinessDateTime(entry.created_at)}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="text-right shrink-0">
+                          <span
+                            className={`block text-xs font-black font-mono ${
+                              isEarn ? "text-[#167052]" : "text-[#e11d48]"
+                            }`}
+                          >
+                            {isEarn ? `+${entry.delta}` : entry.delta} Pts
+                          </span>
+                          <span className="text-[9.5px] font-bold text-[#8ba096]">
+                            {isEarn ? "Berhasil" : "Klaim"}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+          </>
+        ) : (
+          /* ================================================================= */
+          /* DEDICATED MENU VIEW (KATALOG MENU MOCHI)                          */
+          /* ================================================================= */
+          <section aria-label="Katalog Menu Mochi" className="space-y-4">
+            {/* QR Order Callout Banner */}
+            <div className="rounded-2xl border-2 border-[#167052] bg-gradient-to-r from-[#0b3d2e] to-[#124d3a] p-3.5 text-white shadow-md flex items-center justify-between gap-3">
+              <div className="space-y-0.5 min-w-0">
+                <div className="flex items-center gap-1.5 text-[#c8f53a] text-[10px] font-black uppercase tracking-wider">
+                  <UtensilsCrossed size={12} />
+                  <span>Duduk di Meja Kafe?</span>
+                </div>
+                <p className="text-xs font-extrabold text-white">
+                  Pesan Langsung Tanpa Antre Kasir
+                </p>
+                <p className="text-[10px] text-emerald-200/80">
+                  Pesanan langsung masuk ke dapur & kasir Mochi
+                </p>
+              </div>
+              <Link
+                href={`/order/${business.store_code || "MOCHIKAFE"}/1`}
+                className="shrink-0 flex items-center gap-1.5 rounded-xl bg-[#c8f53a] px-3 py-2 text-xs font-black text-[#073829] shadow-sm active:scale-95 transition-transform"
+              >
+                <span>Pesan Meja 1</span>
+                <ArrowRight size={13} />
+              </Link>
             </div>
-          )}
-        </section>
+
+            {/* Search Bar */}
+            <div className="relative">
+              <Search
+                size={16}
+                className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#718078]"
+              />
+              <input
+                type="text"
+                value={menuSearchQuery}
+                onChange={(e) => setMenuSearchQuery(e.target.value)}
+                placeholder="Cari makanan, minuman, pastry..."
+                className="w-full rounded-2xl border border-[#ccd9d3] bg-white pl-10 pr-9 py-2.5 text-xs text-[#1c2d26] placeholder-[#8ba096] focus:border-[#167052] focus:outline-hidden focus:ring-2 focus:ring-[#167052]/20 shadow-xs"
+              />
+              {menuSearchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setMenuSearchQuery("")}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-[#8ba096] hover:text-[#1c2d26]"
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+
+            {/* Category Filter Chips */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar text-xs">
+              <button
+                type="button"
+                onClick={() => setSelectedMenuCategory("all")}
+                className={`rounded-xl px-3 py-1.5 font-bold whitespace-nowrap transition-all ${
+                  selectedMenuCategory === "all"
+                    ? "bg-[#0b3d2e] text-[#c8f53a] shadow-xs"
+                    : "bg-white border border-[#d8e3de] text-[#52665e] hover:bg-[#edf8f3]"
+                }`}
+              >
+                Semua ({menuItems.length})
+              </button>
+              {menuCategories.map((cat) => (
+                <button
+                  key={cat.id}
+                  type="button"
+                  onClick={() => setSelectedMenuCategory(cat.id)}
+                  className={`rounded-xl px-3 py-1.5 font-bold whitespace-nowrap transition-all ${
+                    selectedMenuCategory === cat.id
+                      ? "bg-[#0b3d2e] text-[#c8f53a] shadow-xs"
+                      : "bg-white border border-[#d8e3de] text-[#52665e] hover:bg-[#edf8f3]"
+                  }`}
+                >
+                  {cat.name} ({cat.count})
+                </button>
+              ))}
+            </div>
+
+            {/* Menu Grid (2-Columns) */}
+            {filteredMenuItems.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-[#ccd9d3] bg-white p-8 text-center text-xs text-[#718078] space-y-2">
+                <Coffee size={28} className="mx-auto text-[#167052] opacity-40" />
+                <p className="font-bold text-[#20372e]">Menu tidak ditemukan</p>
+                <p className="text-[11px]">
+                  Coba kata kunci pencarian lain atau pilih kategori Semua.
+                </p>
+                {menuSearchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMenuSearchQuery("");
+                      setSelectedMenuCategory("all");
+                    }}
+                    className="mt-2 inline-flex items-center gap-1 rounded-xl bg-[#edf8f3] text-[#167052] px-3 py-1.5 font-bold text-xs"
+                  >
+                    Reset Pencarian
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-2.5">
+                {filteredMenuItems.map((item) => {
+                  const earnedPts = Math.max(1, Math.floor(item.price / (program.earn_rate || 1000)));
+                  return (
+                    <div
+                      key={item.id}
+                      className="flex flex-col justify-between rounded-2xl bg-white border border-[#d8e3de] p-2.5 shadow-xs hover:border-[#167052]/40 transition-all group"
+                    >
+                      <div className="space-y-2">
+                        <div className="relative aspect-4/3 w-full rounded-xl overflow-hidden bg-[#edf8f3]">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={item.photo_url || PLACEHOLDER_MENU}
+                            alt={item.name}
+                            loading="lazy"
+                            className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-300"
+                          />
+                          <span className="absolute top-1.5 right-1.5 rounded-full bg-[#0b3d2e]/90 backdrop-blur-xs text-[#c8f53a] px-2 py-0.5 text-[9px] font-black font-mono shadow-xs">
+                            +{earnedPts} Pts
+                          </span>
+                        </div>
+                        <div>
+                          <h3 className="text-xs font-black text-[#1c2d26] line-clamp-2 leading-tight group-hover:text-[#167052] transition-colors">
+                            {item.name}
+                          </h3>
+                          {item.description && (
+                            <p className="text-[10px] text-[#718078] line-clamp-2 mt-1 leading-snug">
+                              {item.description}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      <div className="mt-3 flex items-center justify-between pt-2 border-t border-[#f0f4f2]">
+                        <div>
+                          <span className="block text-xs font-black font-mono text-[#0b3d2e]">
+                            {formatRupiah(item.price)}
+                          </span>
+                          <span className="text-[9px] font-bold text-[#8ba096]">
+                            +{earnedPts} poin
+                          </span>
+                        </div>
+                        <Link
+                          href={`/order/${business.store_code || "MOCHIKAFE"}/1`}
+                          className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#edf8f3] text-[#167052] hover:bg-[#167052] hover:text-white transition-colors"
+                          title="Pesan Meja"
+                        >
+                          <Plus size={14} strokeWidth={2.5} />
+                        </Link>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+        )}
 
       </div>
 
@@ -578,13 +904,19 @@ export default function MochiMemberView({
         </button>
 
         {/* Nav 3: Menu */}
-        <Link
-          href={`/order/${business.store_code || "MOCHIKAFE"}/1`}
-          className="flex flex-col items-center gap-1 py-1 px-2.5 text-emerald-200/70 hover:text-white transition-colors"
+        <button
+          type="button"
+          onClick={() => {
+            setActiveNavTab("menu");
+            window.scrollTo({ top: 380, behavior: "smooth" });
+          }}
+          className={`flex flex-col items-center gap-1 py-1 px-2.5 transition-colors ${
+            activeNavTab === "menu" ? "text-[#c8f53a]" : "text-emerald-200/70 hover:text-white"
+          }`}
         >
-          <UtensilsCrossed size={19} />
+          <UtensilsCrossed size={19} strokeWidth={activeNavTab === "menu" ? 2.6 : 2} />
           <span className="text-[9.5px] font-bold tracking-tight">Menu</span>
-        </Link>
+        </button>
 
         {/* Nav 4: Profil */}
         <button

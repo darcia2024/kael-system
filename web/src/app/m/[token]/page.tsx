@@ -40,12 +40,13 @@ export default async function MemberPage({
         lifetimeSpend={0}
         cardSettings={null}
         menuItems={[]}
+        categories={[]}
         visitCount={0}
       />
     );
   }
 
-  const [business, program, rewards, balance, ledger, redemptions, cardSettings, stamp] =
+  const [business, program, rewards, balance, ledger, redemptions, cardSettings, stamp, categories] =
     await Promise.all([
       db.getBusiness(customer.business_id),
       db.getLoyaltyProgram(customer.business_id),
@@ -55,6 +56,7 @@ export default async function MemberPage({
       db.getRedemptions(customer.id),
       db.getMemberCardSettings(customer.business_id),
       db.getStampProgress(customer.business_id, customer.id),
+      db.getCategories(customer.business_id),
     ]);
 
   /**
@@ -101,6 +103,7 @@ export default async function MemberPage({
       lifetimeSpend={lifetimeSpend}
       cardSettings={cardSettings}
       menuItems={menuItems}
+      categories={categories}
       visitCount={stamp.totalKunjungan}
     />
   );
