@@ -525,8 +525,8 @@ export default function PosClient({
     <section className="flex h-full min-h-0 flex-col bg-white">
       <div className="flex items-start justify-between border-b border-[#dfe6e2] px-4 py-3.5">
         <div>
-          <p className="text-[10px] font-bold uppercase text-[#728078]">Transaksi aktif</p>
-          <h2 className="mt-0.5 text-lg font-extrabold text-[#17382e]">Pesanan kasir</h2>
+          <p className="text-[10px] font-bold uppercase text-[#728078]">{isMochiPos ? "Daftar Pesanan" : "Transaksi aktif"}</p>
+          <h2 className="mt-0.5 text-lg font-extrabold text-[#17382e]">{isMochiPos ? "Pesanan Anda" : "Pesanan kasir"}</h2>
           <p className="text-xs text-[#7a8781]">
             {cartList.reduce((sum, line) => sum + line.qty, 0)} item
           </p>
@@ -706,22 +706,31 @@ export default function PosClient({
               <ArrowLeft size={18} aria-hidden="true" />
             </Link>
             <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl shadow-xs ${isMochiPos ? "bg-[#c8f53a] text-[#073829]" : "bg-[#1d5d47] text-white"}`}>
-              <Receipt size={20} aria-hidden="true" />
+              {isMochiPos ? <Coffee size={20} aria-hidden="true" /> : <Receipt size={20} aria-hidden="true" />}
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <h1 className={`truncate text-sm font-extrabold sm:text-base ${isMochiPos ? "text-white" : ""}`}>{business?.name} POS</h1>
-                <span className={`hidden rounded-lg px-2.5 py-1 text-[9.5px] font-black sm:inline ${
-                  activeShift
-                    ? (isMochiPos ? "bg-[#c8f53a] text-[#073829]" : "bg-[#e4f4ed] text-[#176047]")
-                    : (isMochiPos ? "bg-red-500/20 border border-red-400/30 text-red-200" : "bg-[#fff0ed] text-[#aa4035]")
-                }`}>
-                  {activeShift ? "Shift aktif" : "Shift belum dibuka"}
-                </span>
+                <h1 className={`truncate text-sm font-black sm:text-base tracking-tight ${isMochiPos ? "text-white" : ""}`}>
+                  {business?.name || "Mochi Cafe n Resto"}
+                </h1>
+                {isMochiPos ? (
+                  <span className="hidden rounded-full bg-[#c8f53a] px-2.5 py-0.5 text-[9.5px] font-black text-[#073829] sm:inline">
+                    Menu &amp; Pesan
+                  </span>
+                ) : (
+                  <span className={`hidden rounded-lg px-2.5 py-1 text-[9.5px] font-black sm:inline ${
+                    activeShift ? "bg-[#e4f4ed] text-[#176047]" : "bg-[#fff0ed] text-[#aa4035]"
+                  }`}>
+                    {activeShift ? "Shift aktif" : "Shift belum dibuka"}
+                  </span>
+                )}
               </div>
-              <p className={`truncate text-[10px] sm:text-xs ${isMochiPos ? "text-emerald-200/80 font-mono" : "text-[#75837c]"}`}>
-                {staffList.find((staff) => staff.id === selectedStaffId)?.name || "Kasir"}
-                {activeShift ? `, modal ${formatRupiah(Number(activeShift.opening_cash))}` : ", buka shift sebelum transaksi"}
+              <p className={`truncate text-[10.5px] sm:text-xs ${isMochiPos ? "text-emerald-200/90 font-medium" : "text-[#75837c]"}`}>
+                {isMochiPos
+                  ? "Pesan langsung · Dine In & Take Away"
+                  : (staffList.find((staff) => staff.id === selectedStaffId)?.name || "Kasir") +
+                    (activeShift ? `, modal ${formatRupiah(Number(activeShift.opening_cash))}` : ", buka shift sebelum transaksi")
+                }
               </p>
             </div>
           </div>
@@ -733,7 +742,7 @@ export default function PosClient({
                 aria-label={`${pendingQrOrders.length} pesanan masuk`}
                 title="Pesanan masuk"
                 onClick={() => setShowQueue(true)}
-                className={`relative flex h-11 w-11 items-center justify-center rounded-xl border ${
+                className={`relative flex h-10 w-10 sm:h-11 sm:w-11 items-center justify-center rounded-xl border ${
                   isMochiPos ? "border-amber-400/40 bg-amber-50 text-[#a15a18]" : "border-[#e0b46d] bg-[#fff7e8] text-[#a15a18]"
                 }`}
               >
@@ -746,15 +755,19 @@ export default function PosClient({
             <button
               type="button"
               aria-label={activeShift ? "Tutup shift" : "Buka shift"}
-              title={activeShift ? "Tutup shift" : "Buka shift"}
+              title={activeShift ? "Shift aktif" : "Kelola shift"}
               onClick={() => setShowShiftModal(true)}
-              className={`flex h-11 w-11 items-center justify-center rounded-xl border ${
-                activeShift
-                  ? (isMochiPos ? "border-emerald-500/40 bg-emerald-950/40 text-[#c8f53a]" : "border-[#bdd0c6] bg-[#e8f4ee] text-[#176047]")
-                  : "border-[#e7c0bb] bg-[#fff0ed] text-[#a83d33]"
+              className={`flex h-10 w-10 sm:h-11 sm:w-11 items-center justify-center rounded-xl border transition-colors ${
+                isMochiPos
+                  ? (activeShift
+                      ? "border-emerald-500/40 bg-emerald-950/40 text-[#c8f53a]"
+                      : "border-white/20 bg-white/10 text-white/80 hover:bg-white/20")
+                  : (activeShift
+                      ? "border-[#bdd0c6] bg-[#e8f4ee] text-[#176047]"
+                      : "border-[#e7c0bb] bg-[#fff0ed] text-[#a83d33]")
               }`}
             >
-              <Clock size={18} aria-hidden="true" />
+              <Clock size={17} aria-hidden="true" />
             </button>
           </div>
         </div>
@@ -865,7 +878,9 @@ export default function PosClient({
 
           <div className="flex items-end justify-between px-3 pb-1.5 pt-2 sm:pb-2 sm:pt-3 sm:px-4">
             <div>
-              <p className="text-[9px] sm:text-[10px] font-bold uppercase text-[#78867f]">Katalog kasir</p>
+              <p className="text-[9px] sm:text-[10px] font-bold uppercase text-[#78867f]">
+                {isMochiPos ? "Pilihan Menu" : "Katalog kasir"}
+              </p>
               <h2 className="text-base sm:text-lg font-extrabold text-[#1e3b30]">
                 {activeCategory === "all" ? "Semua menu" : categories.find((category) => category.id === activeCategory)?.name || "Menu"}
               </h2>
@@ -997,9 +1012,29 @@ export default function PosClient({
 
       {cartList.length > 0 && (
         <div className="fixed inset-x-0 bottom-0 z-40 border-t border-[#d1ddd7] bg-white px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 shadow-[0_-8px_24px_rgba(25,67,52,0.12)] lg:hidden">
-          <button type="button" onClick={() => setShowMobileCart(true)} className="mx-auto flex min-h-12 w-full max-w-md items-center justify-between rounded-lg bg-[#167052] px-4 text-white">
-            <span className="flex items-center gap-2 text-left"><ShoppingCart size={18} aria-hidden="true" /><span><span className="block text-xs font-extrabold">Lihat pesanan</span><span className="block text-[10px] text-white/75">{cartList.reduce((sum, line) => sum + line.qty, 0)} item</span></span></span>
-            <span className="text-sm font-extrabold tabular-nums">{formatRupiah(checkoutTotal)}</span>
+          <button
+            type="button"
+            onClick={() => setShowMobileCart(true)}
+            className={`mx-auto flex min-h-12 w-full max-w-md items-center justify-between px-4 transition-all active:scale-[0.99] ${
+              isMochiPos
+                ? "rounded-2xl bg-[#0b3d2e] text-white shadow-xl border border-emerald-700/50 hover:bg-[#124d3b]"
+                : "rounded-lg bg-[#167052] text-white"
+            }`}
+          >
+            <span className="flex items-center gap-2.5 text-left">
+              <span className={`flex h-8 w-8 items-center justify-center rounded-xl ${isMochiPos ? "bg-[#c8f53a] text-[#073829]" : "bg-white/20 text-white"}`}>
+                <ShoppingCart size={17} aria-hidden="true" />
+              </span>
+              <span>
+                <span className="block text-xs font-extrabold">Lihat Pesanan</span>
+                <span className={`block text-[10px] ${isMochiPos ? "text-emerald-200 font-mono" : "text-white/75"}`}>
+                  {cartList.reduce((sum, line) => sum + line.qty, 0)} item dipilih
+                </span>
+              </span>
+            </span>
+            <span className={`text-sm font-black tabular-nums font-mono ${isMochiPos ? "text-[#c8f53a]" : "text-white"}`}>
+              {formatRupiah(checkoutTotal)}
+            </span>
           </button>
         </div>
       )}
