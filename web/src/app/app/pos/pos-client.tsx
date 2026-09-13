@@ -797,32 +797,42 @@ export default function PosClient({
         </nav>
 
         <section className="flex min-h-0 min-w-0 flex-col overflow-hidden border-r border-[#d8e1dc]">
-          <div className={`shrink-0 border-b p-3 sm:p-4 ${isMochiPos ? "bg-white border-[#dbe4df]" : "bg-[#f7faf8] border-[#dbe4df]"}`}>
+          <div className={`shrink-0 border-b p-2.5 sm:p-4 ${isMochiPos ? "bg-white border-[#dbe4df]" : "bg-[#f7faf8] border-[#dbe4df]"}`}>
             <div className="relative">
-              <Search size={18} aria-hidden="true" className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[#718078]" />
+              <Search size={16} aria-hidden="true" className="pointer-events-none absolute left-3 sm:left-3.5 top-1/2 -translate-y-1/2 text-[#718078] sm:h-[18px] sm:w-[18px]" />
               <input
                 type="search"
                 value={menuSearchQuery}
                 onChange={(event) => setMenuSearchQuery(event.target.value)}
                 placeholder="Cari nama menu"
                 aria-label="Cari nama menu"
-                className={`min-h-12 w-full rounded-xl border bg-white pl-11 pr-11 text-sm outline-none transition-colors placeholder:text-[#98a29d] ${isMochiPos ? "border-[#ccd9d3] focus:border-[#167052] focus:ring-2 focus:ring-[#167052]/20" : "border-[#cfdad4] focus:border-[#167052]"}`}
+                className={`min-h-10 sm:min-h-12 w-full rounded-xl border bg-white pl-9 sm:pl-11 pr-9 sm:pr-11 text-xs sm:text-sm outline-none transition-colors placeholder:text-[#98a29d] ${isMochiPos ? "border-[#ccd9d3] focus:border-[#167052] focus:ring-2 focus:ring-[#167052]/20" : "border-[#cfdad4] focus:border-[#167052]"}`}
               />
               {menuSearchQuery && (
-                <button type="button" aria-label="Hapus pencarian" onClick={() => setMenuSearchQuery("")} className="absolute right-0 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center text-[#68766f]">
-                  <X size={18} aria-hidden="true" />
+                <button type="button" aria-label="Hapus pencarian" onClick={() => setMenuSearchQuery("")} className="absolute right-0 top-1/2 flex h-10 sm:h-11 w-10 sm:w-11 -translate-y-1/2 items-center justify-center text-[#68766f]">
+                  <X size={16} aria-hidden="true" className="sm:h-[18px] sm:w-[18px]" />
                 </button>
               )}
             </div>
 
-            <div className="mt-3 grid grid-flow-col grid-rows-2 auto-cols-[148px] gap-2 overflow-x-auto pb-1 scrollbar-none">
+            <div className="mt-2 sm:mt-3 flex overflow-x-auto gap-1.5 pb-0.5 scrollbar-none sm:grid sm:grid-flow-col sm:grid-rows-2 sm:auto-cols-[140px] sm:gap-2 sm:pb-1">
               <button
                 type="button"
                 onClick={() => setActiveCategory("all")}
-                className={`flex min-h-16 items-center gap-2 rounded-xl border px-3 text-left transition-all ${activeCategory === "all" ? (isMochiPos ? "border-[#0b3d2e] bg-[#0b3d2e] text-[#c8f53a] shadow-xs scale-[1.01]" : "border-[#167052] bg-[#e1f2ea] text-[#15533e]") : (isMochiPos ? "border-[#d8e3de] bg-white text-[#20372e] hover:border-[#167052]/40" : "border-[#d5ded9] bg-white text-[#526159]")}`}
+                className={`shrink-0 flex items-center gap-1.5 sm:gap-2 rounded-xl border px-2.5 py-1.5 sm:min-h-14 sm:px-3 text-left transition-all ${
+                  activeCategory === "all"
+                    ? (isMochiPos ? "border-[#0b3d2e] bg-[#0b3d2e] text-[#c8f53a] shadow-xs" : "border-[#167052] bg-[#e1f2ea] text-[#15533e]")
+                    : (isMochiPos ? "border-[#d8e3de] bg-white text-[#20372e] hover:border-[#167052]/40" : "border-[#d5ded9] bg-white text-[#526159]")
+                }`}
               >
-                <LayoutGrid size={20} strokeWidth={1.8} aria-hidden="true" />
-                <span className="min-w-0"><span className="block text-xs font-extrabold">Semua</span><span className={`block text-[9px] ${activeCategory === "all" && isMochiPos ? "text-emerald-200" : "text-[#7c8982]"}`}>{menuItems.length} menu</span></span>
+                <LayoutGrid size={15} strokeWidth={1.8} aria-hidden="true" className="sm:h-5 sm:w-5 shrink-0" />
+                <span className="flex items-center gap-1 sm:block sm:min-w-0">
+                  <span className="text-xs font-extrabold whitespace-nowrap">Semua</span>
+                  <span className={`text-[10px] font-mono sm:text-[9px] sm:block ${activeCategory === "all" && isMochiPos ? "text-emerald-200" : "text-[#7c8982]"}`}>
+                    <span className="sm:hidden">({menuItems.length})</span>
+                    <span className="hidden sm:inline">{menuItems.length} menu</span>
+                  </span>
+                </span>
               </button>
               {categories.map((category) => {
                 const CategoryIcon = getPosCategoryIcon(category.name);
@@ -833,20 +843,30 @@ export default function PosClient({
                     key={category.id}
                     type="button"
                     onClick={() => setActiveCategory(category.id)}
-                    className={`flex min-h-16 items-center gap-2 rounded-xl border px-3 text-left transition-all ${isSelected ? (isMochiPos ? "border-[#0b3d2e] bg-[#0b3d2e] text-[#c8f53a] shadow-xs scale-[1.01]" : "border-[#167052] bg-[#e1f2ea] text-[#15533e]") : (isMochiPos ? "border-[#d8e3de] bg-white text-[#20372e] hover:border-[#167052]/40" : "border-[#d5ded9] bg-white text-[#526159]")}`}
+                    className={`shrink-0 flex items-center gap-1.5 sm:gap-2 rounded-xl border px-2.5 py-1.5 sm:min-h-14 sm:px-3 text-left transition-all ${
+                      isSelected
+                        ? (isMochiPos ? "border-[#0b3d2e] bg-[#0b3d2e] text-[#c8f53a] shadow-xs" : "border-[#167052] bg-[#e1f2ea] text-[#15533e]")
+                        : (isMochiPos ? "border-[#d8e3de] bg-white text-[#20372e] hover:border-[#167052]/40" : "border-[#d5ded9] bg-white text-[#526159]")
+                    }`}
                   >
-                    <CategoryIcon size={20} strokeWidth={1.8} aria-hidden="true" />
-                    <span className="min-w-0"><span className="line-clamp-2 block text-xs font-extrabold leading-tight">{category.name}</span><span className={`block text-[9px] ${isSelected && isMochiPos ? "text-emerald-200" : "text-[#7c8982]"}`}>{itemCount} menu</span></span>
+                    <CategoryIcon size={15} strokeWidth={1.8} aria-hidden="true" className="sm:h-5 sm:w-5 shrink-0" />
+                    <span className="flex items-center gap-1 sm:block sm:min-w-0">
+                      <span className="text-xs font-extrabold whitespace-nowrap sm:line-clamp-2 leading-tight">{category.name}</span>
+                      <span className={`text-[10px] font-mono sm:text-[9px] sm:block ${isSelected && isMochiPos ? "text-emerald-200" : "text-[#7c8982]"}`}>
+                        <span className="sm:hidden">({itemCount})</span>
+                        <span className="hidden sm:inline">{itemCount} menu</span>
+                      </span>
+                    </span>
                   </button>
                 );
               })}
             </div>
           </div>
 
-          <div className="flex items-end justify-between px-3 pb-2 pt-3 sm:px-4">
+          <div className="flex items-end justify-between px-3 pb-1.5 pt-2 sm:pb-2 sm:pt-3 sm:px-4">
             <div>
-              <p className="text-[10px] font-bold uppercase text-[#78867f]">Katalog kasir</p>
-              <h2 className="text-lg font-extrabold text-[#1e3b30]">
+              <p className="text-[9px] sm:text-[10px] font-bold uppercase text-[#78867f]">Katalog kasir</p>
+              <h2 className="text-base sm:text-lg font-extrabold text-[#1e3b30]">
                 {activeCategory === "all" ? "Semua menu" : categories.find((category) => category.id === activeCategory)?.name || "Menu"}
               </h2>
             </div>
