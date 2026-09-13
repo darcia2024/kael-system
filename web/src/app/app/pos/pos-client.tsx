@@ -145,7 +145,7 @@ export default function PosClient({
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
-  const [selectedStaffId] = useState<string>(currentUserId || staffList[0]?.id || "");
+  const [selectedStaffId, setSelectedStaffId] = useState<string>(currentUserId || staffList[0]?.id || "");
   const [activeCategory, setActiveCategory] = useState<string>("all");
   const [menuSearchQuery, setMenuSearchQuery] = useState("");
   const [showMobileCart, setShowMobileCart] = useState(false);
@@ -1062,13 +1062,29 @@ export default function PosClient({
                   </span>
                 )}
               </div>
-              <p className={`truncate text-[10.5px] sm:text-xs ${isMochiPos ? "text-emerald-200/90 font-medium" : "text-[#75837c]"}`}>
-                {isMochiPos
-                  ? "Pesan langsung · Dine In & Take Away"
-                  : (staffList.find((staff) => staff.id === selectedStaffId)?.name || "Kasir") +
-                    (activeShift ? `, modal ${formatRupiah(Number(activeShift.opening_cash))}` : ", buka shift sebelum transaksi")
-                }
-              </p>
+              <div className={`truncate text-[10.5px] sm:text-xs flex items-center gap-1.5 ${isMochiPos ? "text-emerald-200/90 font-medium" : "text-[#75837c]"}`}>
+                <span>{isMochiPos ? "Pesan langsung ·" : ""}</span>
+                {staffList.length > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const idx = staffList.findIndex((s) => s.id === selectedStaffId);
+                      const next = staffList[(idx + 1) % staffList.length];
+                      if (next) setSelectedStaffId(next.id);
+                    }}
+                    className={`inline-flex items-center gap-1 font-bold underline decoration-dotted transition-colors ${
+                      isMochiPos ? "text-[#c8f53a] hover:text-white" : "text-[#1d5d47] hover:underline"
+                    }`}
+                    title="Klik untuk ganti staf kasir yang bertugas"
+                  >
+                    <Users size={11} />
+                    <span>{staffList.find((staff) => staff.id === selectedStaffId)?.name || "Staf Toko"} ⇄</span>
+                  </button>
+                ) : (
+                  <span>{staffList.find((staff) => staff.id === selectedStaffId)?.name || "Kasir"}</span>
+                )}
+                {!isMochiPos && activeShift && `, modal ${formatRupiah(Number(activeShift.opening_cash))}`}
+              </div>
             </div>
           </div>
 
@@ -1628,6 +1644,39 @@ export default function PosClient({
                   ))}
                 </div>
               </div>
+
+              {/* Staf Kasir yang Melayani (Fleksibel: Siapapun Bisa Jadi Kasir) */}
+              {staffList.length > 0 && (
+                <div className="space-y-1 font-mono">
+                  <div className="flex items-center justify-between">
+                    <label className={`block font-bold flex items-center gap-1.5 ${isMochiPos ? "text-[#0b3d2e]" : "text-[#232331]"}`}>
+                      <Users size={12} />
+                      <span>Kasir / Staf yang Melayani:</span>
+                    </label>
+                    <span className="text-[10px] text-[#718078]">Pilih nama staf</span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 pt-0.5">
+                    {staffList.map((st) => (
+                      <button
+                        key={st.id}
+                        type="button"
+                        onClick={() => setSelectedStaffId(st.id)}
+                        className={`rounded-xl border px-3 py-1.5 text-xs font-bold transition-all ${
+                          selectedStaffId === st.id
+                            ? isMochiPos
+                              ? "border-[#0b3d2e] bg-[#0b3d2e] text-[#c8f53a] shadow-xs"
+                              : "border-[#232331] bg-[#232331] text-white shadow-ink-xs"
+                            : isMochiPos
+                              ? "border-[#ccd9d3] bg-white text-[#2d473e] hover:bg-[#edf8f3]"
+                              : "border-[#ccd7d1] bg-white text-[#526159] hover:bg-[#f2f5f3]"
+                        }`}
+                      >
+                        {st.name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {serviceType === "delivery" && (
                 <div className={`space-y-2 rounded-2xl border p-3 font-mono ${
