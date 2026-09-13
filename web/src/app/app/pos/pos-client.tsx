@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect, useTransition } from "react";
+import { useState, useMemo, useEffect, useRef, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { 
@@ -42,6 +42,9 @@ import {
   Package,
   X,
   Camera,
+  Bell,
+  Volume2,
+  VolumeX,
   type LucideIcon,
 } from "lucide-react";
 import type { 
@@ -63,7 +66,8 @@ import {
   searchCustomersAction,
   lookupMemberAction,
   registerCustomerByStaffAction,
-  recordReceiptPrintAction
+  recordReceiptPrintAction,
+  getPendingQrOrdersAction,
 } from "@/lib/actions";
 import { 
   calculateCartTotals, 
@@ -82,6 +86,8 @@ import { calculateEarnedPoints } from "@/lib/loyalty-engine";
 import { PLACEHOLDER_MENU } from "@/lib/types";
 import TableQrModal from "./table-qr-modal";
 import PosMemberScannerModal from "./pos-member-scanner-modal";
+import PosBellSettingsModal from "./pos-bell-settings-modal";
+import { alertNewIncomingOrder, buildPrinterBuzzerPayload } from "@/lib/pos-audio";
 
 function getPosCategoryIcon(categoryName: string): LucideIcon {
   const normalized = categoryName.toLowerCase();
@@ -206,6 +212,103 @@ export default function PosClient({
   const [showMemberScannerModal, setShowMemberScannerModal] = useState(false);
   const [shiftOpeningCashInput, setShiftOpeningCashInput] = useState<number>(100000);
   const [shiftClosingCashInput, setShiftClosingCashInput] = useState<number>(0);
+
+  // Live QR Orders & Bell Notification States
+  const [currentQrOrders, setCurrentQrOrders] = useState(pendingQrOrders);
+  const knownOrderIds = useRef(new Set(pendingQrOrders.map((o) => o.id)));
+
+  const [showBellModal, setShowBellModal] = useState(false);
+  const [soundEnabled, setSoundEnabled] = useState(true);
+  const [voiceEnabled, setVoiceEnabled] = useState(true);
+  const [printerBuzzerEnabled, setPrinterBuzzerEnabled] = useState(false);
+  const [staffWhatsapp, setStaffWhatsapp] = useState(business?.phone || "");
+  const [incomingToast, setIncomingToast] = useState<{
+    orderNo: string;
+    tableNo: string;
+    total: number;
+    count: number;
+  } | null>(null);
+
+  // Sync props to state if props change
+  useEffect(() => {
+    setCurrentQrOrders(pendingQrOrders);
+    pendingQrOrders.forEach((o) => knownOrderIds.current.add(o.id));
+  }, [pendingQrOrders]);
+
+  // Load bell preferences from localStorage on mount
+  useEffect(() => {
+    try {
+      const savedSound = localStorage.getItem("kael_pos_bell_enabled");
+      if (savedSound !== null) setSoundEnabled(savedSound === "true");
+
+      const savedVoice = localStorage.getItem("kael_pos_voice_enabled");
+      if (savedVoice !== null) setVoiceEnabled(savedVoice === "true");
+
+      const savedBuzzer = localStorage.getItem("kael_pos_printer_buzzer");
+      if (savedBuzzer !== null) setPrinterBuzzerEnabled(savedBuzzer === "true");
+
+      const savedWa = localStorage.getItem("kael_pos_wa_staff");
+      if (savedWa) setStaffWhatsapp(savedWa);
+    } catch {}
+  }, []);
+
+  const handleToggleSound = (val: boolean) => {
+    setSoundEnabled(val);
+    try { localStorage.setItem("kael_pos_bell_enabled", String(val)); } catch {}
+  };
+
+  const handleToggleVoice = (val: boolean) => {
+    setVoiceEnabled(val);
+    try { localStorage.setItem("kael_pos_voice_enabled", String(val)); } catch {}
+  };
+
+  const handleTogglePrinterBuzzer = (val: boolean) => {
+    setPrinterBuzzerEnabled(val);
+    try { localStorage.setItem("kael_pos_printer_buzzer", String(val)); } catch {}
+  };
+
+  const handleSaveStaffWhatsapp = (val: string) => {
+    setStaffWhatsapp(val);
+    try { localStorage.setItem("kael_pos_wa_staff", val); } catch {}
+  };
+
+  // Background live polling every 7 seconds for QR orders
+  useEffect(() => {
+    const pollInterval = window.setInterval(async () => {
+      try {
+        const res = await getPendingQrOrdersAction();
+        if (res.ok && res.data.orders) {
+          const freshOrders = res.data.orders;
+          const incoming = freshOrders.filter((o) => !knownOrderIds.current.has(o.id));
+          
+          if (incoming.length > 0) {
+            const latest = incoming[0];
+            setIncomingToast({
+              orderNo: latest.order_no,
+              tableNo: latest.table_no || "?",
+              total: Number(latest.total),
+              count: incoming.length,
+            });
+
+            if (soundEnabled) {
+              alertNewIncomingOrder({
+                tableNo: latest.table_no,
+                total: Number(latest.total),
+                withVoice: voiceEnabled,
+              });
+            }
+          }
+
+          freshOrders.forEach((o) => knownOrderIds.current.add(o.id));
+          setCurrentQrOrders(freshOrders);
+        }
+      } catch {
+        // network polling failure ignored
+      }
+    }, 7000);
+
+    return () => window.clearInterval(pollInterval);
+  }, [soundEnabled, voiceEnabled]);
 
   const handleQuickSearchOrScan = async (q: string) => {
     const clean = q.trim();
@@ -507,7 +610,8 @@ export default function PosClient({
       // ini hanya boleh ikut pada pembayaran tunai yang baru tersimpan.
       const openCashDrawer = completedOrder.paymentMethod === "cash";
       const drawerPulse = openCashDrawer ? [0x1b, 0x70, 0x00, 0x19, 0xfa] : [];
-      const finish = [0x0a, 0x0a, 0x0a, ...drawerPulse, 0x1d, 0x56, 0x00];
+      const buzzerPulse = printerBuzzerEnabled ? [0x1b, 0x42, 0x03, 0x02, 0x1b, 0x70, 0x01, 0x19, 0xfa] : [];
+      const finish = [0x0a, 0x0a, 0x0a, ...drawerPulse, ...buzzerPulse, 0x1d, 0x56, 0x00];
       const payload = new Uint8Array(encoded.length + 2 + finish.length);
       payload.set([0x1b, 0x40], 0);
       payload.set(encoded, 2);
@@ -841,10 +945,10 @@ export default function PosClient({
           </div>
 
           <div className="flex items-center gap-1.5 lg:hidden">
-            {pendingQrOrders.length > 0 && (
+            {currentQrOrders.length > 0 && (
               <button
                 type="button"
-                aria-label={`${pendingQrOrders.length} pesanan masuk`}
+                aria-label={`${currentQrOrders.length} pesanan masuk`}
                 title="Pesanan masuk"
                 onClick={() => setShowQueue(true)}
                 className={`relative flex h-10 w-10 sm:h-11 sm:w-11 items-center justify-center rounded-xl border ${
@@ -853,10 +957,33 @@ export default function PosClient({
               >
                 <Utensils size={18} aria-hidden="true" />
                 <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#ea580c] px-1 text-[9px] font-extrabold text-white">
-                  {pendingQrOrders.length}
+                  {currentQrOrders.length}
                 </span>
               </button>
             )}
+            <button
+              type="button"
+              aria-label="Pengaturan Bel & Suara Kasir"
+              title={soundEnabled ? "Bel Pesanan Aktif (Klik untuk atur/tes)" : "Bel Pesanan Mati"}
+              onClick={() => setShowBellModal(true)}
+              className={`relative flex h-10 w-10 sm:h-11 sm:w-11 items-center justify-center rounded-xl border transition-colors ${
+                soundEnabled
+                  ? isMochiPos
+                    ? "border-[#c8f53a] bg-[#c8f53a] text-[#073829] shadow-xs"
+                    : "border-[#16a34a] bg-[#dcfce7] text-[#15803d]"
+                  : isMochiPos
+                    ? "border-white/20 bg-white/10 text-white/50 hover:bg-white/20"
+                    : "border-[#ccd7d1] text-[#75837c] hover:bg-[#eef5f1]"
+              }`}
+            >
+              {soundEnabled ? <Bell size={17} className="animate-pulse" /> : <VolumeX size={17} />}
+              {soundEnabled && (
+                <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#16a34a] opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-[#16a34a]"></span>
+                </span>
+              )}
+            </button>
             <button
               type="button"
               aria-label="Scan QR Member"
@@ -908,8 +1035,87 @@ export default function PosClient({
               <Clock size={17} aria-hidden="true" />
             </button>
           </div>
+
+          <div className="hidden lg:flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowBellModal(true)}
+              className={`inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold transition-all ${
+                soundEnabled
+                  ? isMochiPos
+                    ? "bg-[#c8f53a] text-[#073829] shadow-xs hover:bg-[#d9ff57]"
+                    : "bg-[#dcfce7] text-[#15803d] border border-[#86efac]"
+                  : isMochiPos
+                    ? "border border-white/20 bg-white/10 text-white/70 hover:bg-white/20"
+                    : "border border-[#ccd7d1] text-[#75837c] hover:bg-[#eef5f1]"
+              }`}
+              title="Atur Bel & Suara Pesanan Masuk"
+            >
+              <Bell size={15} className={soundEnabled ? "animate-pulse" : ""} />
+              <span>{soundEnabled ? "Bel Pesanan: Aktif" : "Bel Pesanan: Mati"}</span>
+              {soundEnabled && <span className="h-2 w-2 rounded-full bg-[#16a34a] animate-ping" />}
+            </button>
+            {currentQrOrders.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setShowQueue(true)}
+                className={`inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-bold transition-all ${
+                  isMochiPos
+                    ? "bg-amber-400 text-[#073829] shadow-xs hover:bg-amber-300"
+                    : "bg-amber-100 text-amber-900 border border-amber-300 hover:bg-amber-200"
+                }`}
+              >
+                <Utensils size={15} />
+                <span>{currentQrOrders.length} Pesanan Meja</span>
+              </button>
+            )}
+          </div>
         </div>
       </header>
+
+      {/* FLOATING INCOMING ORDER BANNER */}
+      {incomingToast && (
+        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-40 w-[94%] max-w-lg animate-in slide-in-from-top-4 duration-300">
+          <div className={`flex items-center justify-between gap-3 p-3.5 rounded-2xl shadow-2xl border ${
+            isMochiPos
+              ? "bg-[#0b3d2e] text-white border-[#c8f53a]"
+              : "bg-[#232331] text-white border-amber-400"
+          }`}>
+            <div className="flex items-center gap-2.5 min-w-0">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#c8f53a] text-[#073829] font-black">
+                <Bell size={18} className="animate-bounce" />
+              </span>
+              <div className="min-w-0">
+                <p className="text-xs font-black truncate text-[#c8f53a]">
+                  🔔 Pesanan Baru Masuk! Meja {incomingToast.tableNo}
+                </p>
+                <p className="text-[11px] font-mono text-emerald-100 truncate">
+                  #{incomingToast.orderNo} · {formatRupiah(incomingToast.total)}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowQueue(true);
+                  setIncomingToast(null);
+                }}
+                className="rounded-xl bg-[#c8f53a] text-[#073829] px-3 py-1.5 font-mono text-xs font-black shadow-xs hover:bg-[#d9ff57] transition-all"
+              >
+                Buka Antrean
+              </button>
+              <button
+                type="button"
+                onClick={() => setIncomingToast(null)}
+                className="h-8 w-8 flex items-center justify-center rounded-lg text-white/70 hover:bg-white/10"
+              >
+                <X size={15} />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <main id="solusi" className="grid min-h-0 flex-1 lg:grid-cols-[76px_minmax(0,1fr)_360px]">
         <nav aria-label="Navigasi kasir" className={`hidden min-h-0 flex-col items-center gap-2.5 border-r px-2 py-3.5 lg:flex transition-colors ${isMochiPos ? "bg-[#07281e] border-emerald-900/60 text-emerald-100" : "bg-white border-[#d8e1dc]"}`}>
@@ -965,10 +1171,33 @@ export default function PosClient({
               </span>
             )}
           </button>
-          {pendingQrOrders.length > 0 && (
-            <button type="button" onClick={() => setShowQueue(true)} aria-label={`${pendingQrOrders.length} pesanan masuk`} title="Pesanan masuk" className="relative flex h-12 w-12 items-center justify-center rounded-xl bg-[#fff4df] text-[#a15a18]">
+          <button
+            type="button"
+            onClick={() => setShowBellModal(true)}
+            aria-label="Pengaturan Bel & Suara Kasir"
+            title={soundEnabled ? "Bel Pesanan Aktif (Klik untuk atur/tes)" : "Bel Pesanan Mati"}
+            className={`relative flex h-12 w-12 items-center justify-center rounded-xl transition-colors ${
+              soundEnabled
+                ? isMochiPos
+                  ? "bg-[#c8f53a] text-[#073829] shadow-xs"
+                  : "bg-[#dcfce7] text-[#15803d]"
+                : isMochiPos
+                  ? "text-emerald-300/80 hover:bg-white/10 hover:text-white"
+                  : "text-[#66766e] hover:bg-[#edf4f0] hover:text-[#1d5d47]"
+            }`}
+          >
+            {soundEnabled ? <Bell size={20} className="animate-pulse" /> : <VolumeX size={20} />}
+            {soundEnabled && (
+              <span className="absolute -top-0.5 -right-0.5 flex h-3 w-3">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#16a34a] opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-[#16a34a]"></span>
+              </span>
+            )}
+          </button>
+          {currentQrOrders.length > 0 && (
+            <button type="button" onClick={() => setShowQueue(true)} aria-label={`${currentQrOrders.length} pesanan masuk`} title="Pesanan masuk" className="relative flex h-12 w-12 items-center justify-center rounded-xl bg-[#fff4df] text-[#a15a18]">
               <Utensils size={19} aria-hidden="true" />
-              <span className="absolute -right-0.5 -top-0.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#ea580c] px-1 text-[9px] font-extrabold text-white">{pendingQrOrders.length}</span>
+              <span className="absolute -right-0.5 -top-0.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#ea580c] px-1 text-[9px] font-extrabold text-white">{currentQrOrders.length}</span>
             </button>
           )}
           <button type="button" onClick={() => setShowShiftModal(true)} aria-label={activeShift ? "Tutup shift" : "Buka shift"} title={activeShift ? "Tutup shift" : "Buka shift"} className={`mt-auto flex h-12 w-12 items-center justify-center rounded-xl border transition-all ${
@@ -1626,7 +1855,7 @@ export default function PosClient({
       )}
 
       {showQueue && (
-        <OrderQueue orders={pendingQrOrders} onClose={() => setShowQueue(false)} isMochi={isMochiPos} />
+        <OrderQueue orders={currentQrOrders} onClose={() => setShowQueue(false)} isMochi={isMochiPos} />
       )}
 
       {/* MODAL: POST-PAYMENT SUCCESS & RECEIPT ACTIONS */}
@@ -1866,6 +2095,20 @@ export default function PosClient({
         onClose={() => setShowMemberScannerModal(false)}
         onSelectCustomer={(cust) => setAttachedCustomer(cust)}
         isMochiPos={isMochiPos}
+      />
+
+      <PosBellSettingsModal
+        isOpen={showBellModal}
+        onClose={() => setShowBellModal(false)}
+        isMochi={isMochiPos}
+        soundEnabled={soundEnabled}
+        onToggleSound={handleToggleSound}
+        voiceEnabled={voiceEnabled}
+        onToggleVoice={handleToggleVoice}
+        printerBuzzerEnabled={printerBuzzerEnabled}
+        onTogglePrinterBuzzer={handleTogglePrinterBuzzer}
+        staffWhatsapp={staffWhatsapp}
+        onSaveStaffWhatsapp={handleSaveStaffWhatsapp}
       />
 
     </div>

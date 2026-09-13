@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { X, Check, Ban, Loader2, Clock, AlertTriangle, ChefHat } from "lucide-react";
+import { X, Check, Ban, Loader2, Clock, AlertTriangle, ChefHat, MessageSquare } from "lucide-react";
 
 import {
   confirmPaymentAction,
@@ -55,6 +55,27 @@ export default function OrderQueue({
       return;
     }
     router.refresh();
+  };
+
+  const forwardToWhatsapp = (order: Antrean) => {
+    const staffPhone = typeof window !== "undefined" ? localStorage.getItem("kael_pos_wa_staff") || "" : "";
+    const phoneClean = staffPhone.replace(/[^0-9]/g, "").replace(/^0/, "62");
+
+    const itemsText = order.items
+      .map((i) => `• ${i.qty}x ${i.name_snapshot}${i.note ? ` (${i.note})` : ""}`)
+      .join("\n");
+    const text = encodeURIComponent(
+      `🔔 *PESANAN MASUK #${order.order_no}*\n` +
+      `━━━━━━━━━━━━━━━━━━━━━━\n` +
+      `📍 ${serviceTypeLabel(order.service_type, order.table_no)}\n` +
+      `💰 Total: ${formatRupiah(Number(order.total))} (${order.payment_method.toUpperCase()})\n` +
+      `📌 Status: ${PAYMENT_STATUS_LABEL[order.payment_status] || order.payment_status}\n\n` +
+      `📋 *Menu Pesanan:*\n${itemsText}\n\n` +
+      `👉 Buka Kasir: https://kaels.site/app/pos`
+    );
+
+    const url = phoneClean ? `https://wa.me/${phoneClean}?text=${text}` : `https://wa.me/?text=${text}`;
+    window.open(url, "_blank");
   };
 
   const menunggu = orders.filter((o) => o.payment_status === "pending");
@@ -218,6 +239,18 @@ export default function OrderQueue({
                     </div>
                   </div>
                 )}
+
+                <div className="pt-1">
+                  <button
+                    type="button"
+                    onClick={() => forwardToWhatsapp(o)}
+                    className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl border border-[#22c55e]/40 bg-[#f0fdf4] py-2 px-2.5 font-mono text-[11px] font-bold text-[#15803d] hover:bg-[#dcfce7] transition-colors"
+                    title="Kirim detail pesanan ini ke nomor WhatsApp staf atau grup dapur"
+                  >
+                    <MessageSquare size={13} />
+                    Kirim Rincian ke WhatsApp Staf / Dapur
+                  </button>
+                </div>
               </div>
             );
           })}

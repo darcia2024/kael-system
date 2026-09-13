@@ -1920,6 +1920,14 @@ export async function getOrderStationSnapshotAction(): Promise<
   return done({ orders: await db.getOrderStationOrders(businessId) });
 }
 
+/** Daftar pesanan QR meja untuk polling bel notifikasi di layar kasir POS. */
+export async function getPendingQrOrdersAction(): Promise<
+  ActionResult<{ orders: Awaited<ReturnType<typeof db.getPendingQrOrders>> }>
+> {
+  const { businessId } = await requirePermission("pos");
+  return done({ orders: await db.getPendingQrOrders(businessId) });
+}
+
 /** Staf yang menekan tombol ini tercatat sebagai penanggung jawab order. */
 export async function claimOrderAction(orderId: string): Promise<ActionResult<null>> {
   const { businessId, userId } = await requirePermission("pos");

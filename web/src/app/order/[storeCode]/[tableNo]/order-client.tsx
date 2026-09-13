@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   Coffee,
   CupSoda,
+  MessageSquare,
   Minus,
   Package,
   Plus,
@@ -307,6 +308,20 @@ export default function CustomerQrOrderPage({
           <p className="text-[11px] text-[#68736d]">
             Pesanan mulai disiapkan setelah pembayaran dipastikan kasir.
           </p>
+
+          {business?.phone ? (
+            <a
+              href={`https://wa.me/${business.phone.replace(/[^0-9]/g, "").replace(/^0/, "62")}?text=${encodeURIComponent(
+                `Halo ${business.name}, saya baru saja memesan dari Meja ${tableNo} (Pesanan #${pesananSelesai.no}) dengan total ${formatRupiah(pesananSelesai.total)}. Mohon diproses ya!`
+              )}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-[#22c55e] bg-[#f0fdf4] px-4 font-mono text-xs font-bold text-[#15803d] hover:bg-[#dcfce7] transition-colors"
+            >
+              <MessageSquare size={16} />
+              Konfirmasi / Bukti ke WhatsApp Toko
+            </a>
+          ) : null}
 
           <button
             type="button"
