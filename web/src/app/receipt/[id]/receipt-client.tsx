@@ -12,23 +12,17 @@ import {
   Copy,
   Check,
   ExternalLink,
-  Star
+  Star,
+  Sparkles
 } from "lucide-react";
 import type { Order, OrderItem, Customer, Business, FeedbackReasonCode } from "@/lib/types";
 import { FEEDBACK_REASONS } from "@/lib/types";
 import { generateWhatsAppReceiptMessage, serviceTypeLabel } from "@/lib/pos-engine";
 import { formatRupiah, formatBusinessDateTime } from "@/lib/formatters";
-import { generateEscPosReceiptText } from "@/lib/pos-engine";
 import { BusinessMark } from "@/components/business-mark";
 import { submitFeedbackAction } from "@/lib/actions";
+import { isMochiBusiness } from "@/lib/mochi-brand";
 
-/**
- * Tampilan struk. Datanya diambil di server oleh page.tsx.
- *
- * Struk dibuka lewat tautan yang dibagikan ke pelanggan, jadi halaman ini tidak
- * meminta login. Yang dikirim ke browser hanya isi struk itu sendiri, bukan
- * akses ke tabel transaksi.
- */
 export interface ReceiptPageData {
   data:
     | {
@@ -88,6 +82,7 @@ export default function DigitalReceiptPage({ data, staffName, hasFeedback, revie
   }
 
   const { order, items, customer, business } = data;
+  const isMochi = isMochiBusiness(business);
 
   const waShareMessage = encodeURIComponent(generateWhatsAppReceiptMessage({
     businessName: business.name,
@@ -140,7 +135,7 @@ export default function DigitalReceiptPage({ data, staffName, hasFeedback, revie
   };
 
   return (
-    <div className="kael-thermal-receipt min-h-screen bg-[#f7f6fc] text-[#232331] font-sans flex flex-col justify-between max-w-md mx-auto p-4 sm:p-6 print:p-0 print:max-w-none">
+    <div className={`kael-thermal-receipt min-h-screen ${isMochi ? "bg-[#07281e] text-[#1c2d26]" : "bg-[#f7f6fc] text-[#232331]"} font-sans flex flex-col justify-between max-w-md mx-auto p-4 sm:p-6 print:p-0 print:max-w-none print:bg-white`}>
       <style jsx global>{`
         @media print {
           @page { size: 80mm auto; margin: 0; }
@@ -154,7 +149,11 @@ export default function DigitalReceiptPage({ data, staffName, hasFeedback, revie
       <div className="flex items-center justify-between gap-2 pb-4 print:hidden">
         <Link
           href="/app/pos"
-          className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#232331] bg-white text-[#232331] shadow-ink-xs hover:bg-[#f0edff]"
+          className={`flex h-9 w-9 items-center justify-center rounded-xl transition-colors ${
+            isMochi
+              ? "border border-emerald-600/40 bg-[#0b3d2e] text-white hover:bg-emerald-800"
+              : "border border-[#232331] bg-white text-[#232331] shadow-ink-xs hover:bg-[#f0edff]"
+          }`}
         >
           <ArrowLeft size={16} />
         </Link>
@@ -164,7 +163,11 @@ export default function DigitalReceiptPage({ data, staffName, hasFeedback, revie
             href={`https://wa.me/?text=${waShareMessage}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="btn-tactile flex items-center gap-1.5 rounded-xl border-2 border-[#16a34a] bg-[#dcfce7] px-3 py-1.5 font-mono text-xs font-black text-[#16a34a] shadow-ink-xs"
+            className={`btn-tactile flex items-center gap-1.5 rounded-xl px-3 py-1.5 font-mono text-xs font-black transition-all ${
+              isMochi
+                ? "border-0 bg-[#c8f53a] text-[#0b3d2e] hover:bg-[#d9ff57] shadow-sm"
+                : "border-2 border-[#16a34a] bg-[#dcfce7] text-[#16a34a] shadow-ink-xs"
+            }`}
           >
             <Share2 size={13} />
             <span>Kirim WhatsApp</span>
@@ -173,7 +176,11 @@ export default function DigitalReceiptPage({ data, staffName, hasFeedback, revie
           <button
             type="button"
             onClick={handlePrint}
-            className="btn-tactile flex items-center gap-1.5 rounded-xl border-2 border-[#232331] bg-[#232331] px-3 py-1.5 font-mono text-xs font-black text-white shadow-ink-xs"
+            className={`btn-tactile flex items-center gap-1.5 rounded-xl px-3 py-1.5 font-mono text-xs font-black transition-all ${
+              isMochi
+                ? "border border-emerald-600/40 bg-[#0b3d2e] text-white hover:bg-emerald-800 shadow-sm"
+                : "border-2 border-[#232331] bg-[#232331] text-white shadow-ink-xs"
+            }`}
           >
             <Printer size={13} />
             <span>Cetak 80mm</span>
@@ -181,8 +188,32 @@ export default function DigitalReceiptPage({ data, staffName, hasFeedback, revie
         </div>
       </div>
 
+      {/* Mochi Member Callout Banner */}
+      {isMochi && (customer || memberCardUrl) && (
+        <div className="mb-4 rounded-2xl border border-emerald-500/40 bg-[#0b3d2e] p-4 text-white shadow-lg flex items-center justify-between gap-3 print:hidden">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#c8f53a] text-[#0b3d2e]">
+              <Sparkles size={20} />
+            </div>
+            <div>
+              <span className="text-[10px] font-black uppercase tracking-wider text-[#c8f53a]">Member Mochi Cafe</span>
+              <p className="text-sm font-black text-white">{customer?.name ?? "Pelanggan Setia"}</p>
+              <p className="text-[10px] text-emerald-200/80">Poin pesanan ini otomatis tercatat di kartu!</p>
+            </div>
+          </div>
+          {memberCardUrl && (
+            <Link
+              href={memberCardUrl}
+              className="shrink-0 rounded-xl bg-[#c8f53a] px-3 py-2 text-xs font-black text-[#0b3d2e] hover:bg-[#d9ff57] transition-all shadow-sm"
+            >
+              Buka Kartu
+            </Link>
+          )}
+        </div>
+      )}
+
       {/* TACTILE PAPER RECEIPT CARD */}
-      <div className="rounded-3xl border-2 border-[#232331] bg-white p-6 shadow-ink-lg space-y-4 font-mono text-xs relative overflow-hidden print:border-none print:shadow-none print:p-0">
+      <div className={`rounded-3xl border-2 ${isMochi ? "border-emerald-700/50" : "border-[#232331]"} bg-white p-6 shadow-ink-lg space-y-4 font-mono text-xs relative overflow-hidden print:border-none print:shadow-none print:p-0`}>
         
         {/* Top Shop Header */}
         <div className="text-center space-y-1 border-b-2 border-dashed border-[#232331] pb-4">
@@ -281,7 +312,7 @@ export default function DigitalReceiptPage({ data, staffName, hasFeedback, revie
 
           <div className="flex justify-between text-base font-black text-[#232331] border-t-2 border-[#232331] pt-2">
             <span>TOTAL BAYAR</span>
-            <span className="text-[#16a34a]">{formatRupiah(order.total)}</span>
+            <span className={isMochi ? "text-[#0b3d2e] font-black" : "text-[#16a34a]"}>{formatRupiah(order.total)}</span>
           </div>
 
           <div className="flex justify-between text-[11px] pt-1">
@@ -313,22 +344,34 @@ export default function DigitalReceiptPage({ data, staffName, hasFeedback, revie
 
       {/* FEEDBACK PASCATRANSAKSI (Print Hidden) */}
       {canGiveFeedback && (
-        <div className="mt-4 rounded-3xl border-2 border-[#232331] bg-white p-5 shadow-ink-lg print:hidden">
+        <div className={`mt-4 rounded-3xl border-2 p-5 print:hidden ${
+          isMochi
+            ? "border-emerald-600/30 bg-[#0b3d2e] text-white shadow-xl"
+            : "border-[#232331] bg-white shadow-ink-lg"
+        }`}>
           {feedbackSubmitted ? (
             <div className="space-y-3 text-center">
-              <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-2xl border-2 border-[#16a34a] bg-[#dcfce7] text-[#16a34a]">
+              <div className={`mx-auto flex h-11 w-11 items-center justify-center rounded-2xl border-2 ${
+                isMochi
+                  ? "border-[#c8f53a] bg-[#c8f53a]/20 text-[#c8f53a]"
+                  : "border-[#16a34a] bg-[#dcfce7] text-[#16a34a]"
+              }`}>
                 <CheckCircle2 size={20} />
               </div>
               <div>
-                <p className="text-sm font-black text-[#232331]">Terima kasih atas masukanmu!</p>
-                <p className="mt-0.5 text-xs text-[#7b7b8e]">Sudah kami terima dan akan ditinjau oleh {business.name}.</p>
+                <p className={`text-sm font-black ${isMochi ? "text-white" : "text-[#232331]"}`}>Terima kasih atas masukanmu!</p>
+                <p className={`mt-0.5 text-xs ${isMochi ? "text-emerald-200/70" : "text-[#7b7b8e]"}`}>Sudah kami terima dan akan ditinjau oleh {business.name}.</p>
               </div>
               {reviewUrl && (
                 <a
                   href={reviewUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="btn-tactile flex items-center justify-center gap-1.5 rounded-xl border-2 border-[#16a34a] bg-[#dcfce7] py-2.5 text-xs font-black text-[#16a34a]"
+                  className={`btn-tactile flex items-center justify-center gap-1.5 rounded-xl py-2.5 text-xs font-black ${
+                    isMochi
+                      ? "bg-[#c8f53a] text-[#0b3d2e] hover:bg-[#d9ff57]"
+                      : "border-2 border-[#16a34a] bg-[#dcfce7] text-[#16a34a]"
+                  }`}
                 >
                   <ExternalLink size={14} />
                   <span>Bagikan juga di Google Review</span>
@@ -337,7 +380,7 @@ export default function DigitalReceiptPage({ data, staffName, hasFeedback, revie
             </div>
           ) : (
             <div>
-              <p className="text-center text-sm font-black text-[#232331]">Bagaimana pengalamanmu di {business.name}?</p>
+              <p className={`text-center text-sm font-black ${isMochi ? "text-white" : "text-[#232331]"}`}>Bagaimana pengalamanmu di {business.name}?</p>
               <div className="mt-3 flex justify-center gap-2">
                 {[1, 2, 3, 4, 5].map((n) => (
                   <button
@@ -347,7 +390,14 @@ export default function DigitalReceiptPage({ data, staffName, hasFeedback, revie
                     className="btn-tactile p-1"
                     aria-label={`Beri ${n} bintang`}
                   >
-                    <Star size={30} className={(rating ?? 0) >= n ? "fill-[#facc15] text-[#facc15]" : "text-[#dedee8]"} />
+                    <Star
+                      size={30}
+                      className={
+                        (rating ?? 0) >= n
+                          ? isMochi ? "fill-[#c8f53a] text-[#c8f53a]" : "fill-[#facc15] text-[#facc15]"
+                          : isMochi ? "text-emerald-800" : "text-[#dedee8]"
+                      }
+                    />
                   </button>
                 ))}
               </div>
@@ -361,8 +411,10 @@ export default function DigitalReceiptPage({ data, staffName, hasFeedback, revie
                           key={r.key}
                           type="button"
                           onClick={() => setReasonCode(reasonCode === r.key ? null : r.key)}
-                          className={`btn-tactile rounded-full border-2 px-3 py-1.5 text-[11px] font-bold ${
-                            reasonCode === r.key ? "border-[#232331] bg-[#232331] text-white" : "border-[#dedee8] bg-white text-[#5c5c70]"
+                          className={`btn-tactile rounded-full border px-3 py-1.5 text-[11px] font-bold transition-colors ${
+                            reasonCode === r.key
+                              ? isMochi ? "border-[#c8f53a] bg-[#c8f53a] text-[#0b3d2e]" : "border-[#232331] bg-[#232331] text-white"
+                              : isMochi ? "border-emerald-700/50 bg-[#07241b] text-emerald-100/80" : "border-[#dedee8] bg-white text-[#5c5c70]"
                           }`}
                         >
                           {r.label}
@@ -376,7 +428,11 @@ export default function DigitalReceiptPage({ data, staffName, hasFeedback, revie
                     onChange={(e) => setFeedbackComment(e.target.value.slice(0, 500))}
                     rows={2}
                     placeholder={rating >= 4 ? "Ada yang mau disampaikan? (opsional)" : "Ceritakan lebih detail? (opsional)"}
-                    className="w-full rounded-xl border border-[#dedee8] bg-[#fcfcfe] p-3 text-xs text-[#232331]"
+                    className={`w-full rounded-xl border p-3 text-xs ${
+                      isMochi
+                        ? "border-emerald-600/40 bg-[#07241b] text-white placeholder-emerald-400/40 focus:outline-none focus:ring-2 focus:ring-[#c8f53a]"
+                        : "border-[#dedee8] bg-[#fcfcfe] text-[#232331]"
+                    }`}
                   />
 
                   {reviewUrl && (
@@ -384,7 +440,11 @@ export default function DigitalReceiptPage({ data, staffName, hasFeedback, revie
                       href={reviewUrl}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="btn-tactile flex items-center justify-center gap-1.5 rounded-xl border-2 border-[#16a34a] bg-[#dcfce7] py-2.5 text-xs font-black text-[#16a34a]"
+                      className={`btn-tactile flex items-center justify-center gap-1.5 rounded-xl py-2.5 text-xs font-black ${
+                        isMochi
+                          ? "bg-[#c8f53a] text-[#0b3d2e] hover:bg-[#d9ff57]"
+                          : "border-2 border-[#16a34a] bg-[#dcfce7] text-[#16a34a]"
+                      }`}
                     >
                       <ExternalLink size={14} />
                       <span>Bagikan juga di Google Review</span>
@@ -397,7 +457,11 @@ export default function DigitalReceiptPage({ data, staffName, hasFeedback, revie
                     type="button"
                     onClick={() => void handleSubmitFeedback()}
                     disabled={submittingFeedback}
-                    className="btn-tactile w-full rounded-xl border-2 border-[#232331] bg-[#232331] py-2.5 text-xs font-black text-[#d9ff57] disabled:opacity-50"
+                    className={`btn-tactile w-full rounded-xl py-2.5 text-xs font-black disabled:opacity-50 ${
+                      isMochi
+                        ? "bg-[#c8f53a] text-[#0b3d2e] hover:bg-[#d9ff57] shadow-sm"
+                        : "border-2 border-[#232331] bg-[#232331] text-[#d9ff57]"
+                    }`}
                   >
                     {submittingFeedback ? "Mengirim..." : "Kirim Feedback"}
                   </button>
@@ -413,7 +477,11 @@ export default function DigitalReceiptPage({ data, staffName, hasFeedback, revie
         <button
           type="button"
           onClick={handleCopyLink}
-          className="btn-tactile inline-flex items-center gap-1.5 rounded-xl border border-[#dedee8] bg-white px-3 py-1.5 text-xs font-mono text-[#7b7b8e] hover:text-[#232331]"
+          className={`btn-tactile inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-mono transition-colors ${
+            isMochi
+              ? "border-emerald-600/40 bg-[#0b3d2e] text-emerald-200/90 hover:text-white"
+              : "border-[#dedee8] bg-white text-[#7b7b8e] hover:text-[#232331]"
+          }`}
         >
           {copied ? <Check size={13} className="text-[#16a34a]" /> : <Copy size={13} />}
           <span>{copied ? "Tautan Struk Tersalin!" : "Salin Tautan Struk Digital"}</span>

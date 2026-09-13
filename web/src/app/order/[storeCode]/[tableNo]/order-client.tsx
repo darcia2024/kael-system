@@ -22,6 +22,7 @@ import QrCode from "@/components/qr-code";
 import { buildDynamicQris } from "@/lib/qris-engine";
 import { formatRupiah } from "@/lib/formatters";
 import { BusinessMark } from "@/components/business-mark";
+import { isMochiBusiness } from "@/lib/mochi-brand";
 
 function getCategoryIcon(categoryName: string): LucideIcon {
   const name = categoryName.toLowerCase();
@@ -56,6 +57,7 @@ export default function CustomerQrOrderPage({
   menuItems: MenuItem[];
   fontClassName: string;
 }) {
+  const isMochi = isMochiBusiness(business);
   const [activeCategory, setActiveCategory] = useState<string>(categories[0]?.id ?? "");
   const [searchQuery, setSearchQuery] = useState("");
   const [isCartOpen, setIsCartOpen] = useState(false);
@@ -364,7 +366,11 @@ export default function CustomerQrOrderPage({
                   type="button"
                   aria-label={`Tambah ${item.name}`}
                   onClick={() => handleUpdateQty(item.id, 1)}
-                  className="flex h-11 w-11 items-center justify-center rounded-lg bg-[#176c4f] text-white"
+                  className={`flex h-11 w-11 items-center justify-center rounded-lg font-bold ${
+                    isMochi
+                      ? "bg-[#c8f53a] text-[#0b3d2e] hover:bg-[#d9ff57]"
+                      : "bg-[#176c4f] text-white"
+                  }`}
                 >
                   <Plus size={14} aria-hidden="true" />
                 </button>
@@ -419,7 +425,9 @@ export default function CustomerQrOrderPage({
                 onClick={() => setCaraBayar(method.id)}
                 className={`min-h-11 rounded-lg border px-3 py-2 text-left transition-colors ${
                   caraBayar === method.id
-                    ? "border-[#176c4f] bg-[#e7f4ee] text-[#174a38]"
+                    ? isMochi
+                      ? "border-[#0b3d2e] bg-[#0b3d2e] text-[#c8f53a]"
+                      : "border-[#176c4f] bg-[#e7f4ee] text-[#174a38]"
                     : "border-[#d5ded9] bg-white text-[#5e6c65]"
                 }`}
               >
@@ -439,7 +447,11 @@ export default function CustomerQrOrderPage({
             type="button"
             onClick={handleCheckout}
             disabled={isSubmitting || !customerName.trim()}
-            className="min-h-11 rounded-lg bg-[#0aae6f] px-5 text-sm font-extrabold text-white transition-colors hover:bg-[#079760] disabled:cursor-not-allowed disabled:opacity-45"
+            className={`min-h-11 rounded-xl px-5 text-sm font-black transition-all disabled:cursor-not-allowed disabled:opacity-45 ${
+              isMochi
+                ? "bg-[#c8f53a] text-[#0b3d2e] hover:bg-[#d9ff57] shadow-sm"
+                : "bg-[#0aae6f] text-white hover:bg-[#079760]"
+            }`}
           >
             {isSubmitting ? "Mengirim..." : "Kirim pesanan"}
           </button>
@@ -449,35 +461,35 @@ export default function CustomerQrOrderPage({
   );
 
   return (
-    <div className={`${fontClassName} min-h-screen bg-[#edf4f0] pb-24 text-[#1c2d26] lg:pb-0`}>
+    <div className={`${fontClassName} ${isMochi ? "mochi-ui mochi-shell" : ""} min-h-screen bg-[#edf4f0] pb-24 text-[#1c2d26] lg:pb-0`}>
       {business?.is_demo && (
         <p className="bg-[#f1e5b9] px-4 py-2 text-center text-[10px] font-bold uppercase text-[#6d5520]">
           Demo, tidak untuk pembayaran sungguhan
         </p>
       )}
 
-      <header className="sticky top-0 z-30 border-b border-[#d8e1dc] bg-white/95 backdrop-blur-md">
+      <header className={`sticky top-0 z-30 border-b backdrop-blur-md ${isMochi ? "border-[#07281e] bg-[#0b3d2e] text-white shadow-sm" : "mochi-header border-[#d8e1dc] bg-white/95"}`}>
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3 lg:px-6">
           <div className="flex min-w-0 items-center gap-3">
             <BusinessMark
               name={business?.name}
               logoUrl={business?.logo_url}
               brandColor={business?.brand_color}
-              className="rounded-lg border border-[#cdd8d2]"
+              className={`rounded-xl border ${isMochi ? "border-emerald-600/40" : "border-[#cdd8d2]"}`}
             />
             <div className="min-w-0">
-              <h1 className="truncate text-base font-extrabold text-[#18392f]">
+              <h1 className={`truncate text-base font-extrabold ${isMochi ? "text-white" : "text-[#18392f]"}`}>
                 {business?.name || "Toko Kami"}
               </h1>
-              <span className="block text-[11px] font-medium text-[#718078]">
-                Menu digital, meja {tableNo}
+              <span className={`block text-[11px] font-medium ${isMochi ? "text-emerald-200/80" : "text-[#718078]"}`}>
+                Menu digital · Meja {tableNo}
               </span>
             </div>
           </div>
 
-          <div className="flex h-11 min-w-14 flex-col items-center justify-center rounded-lg border border-[#c8d4ce] bg-[#f5f8f6] px-3">
-            <span className="text-[8px] font-bold uppercase text-[#728078]">Meja</span>
-            <span className="text-sm font-extrabold text-[#18392f]">{tableNo}</span>
+          <div className={`flex h-11 min-w-14 flex-col items-center justify-center rounded-xl px-3 ${isMochi ? "bg-[#c8f53a] text-[#0b3d2e] shadow-sm font-mono" : "border border-[#c8d4ce] bg-[#f5f8f6]"}`}>
+            <span className={`text-[8px] font-bold uppercase ${isMochi ? "text-[#0b3d2e]/80" : "text-[#728078]"}`}>Meja</span>
+            <span className={`text-sm font-extrabold ${isMochi ? "text-[#0b3d2e]" : "text-[#18392f]"}`}>{tableNo}</span>
           </div>
         </div>
       </header>
@@ -541,10 +553,12 @@ export default function CustomerQrOrderPage({
                       setSearchQuery("");
                       selectCategory(category.id);
                     }}
-                    className={`flex h-[82px] w-[104px] min-w-[104px] flex-col items-center justify-center gap-1.5 rounded-lg border px-2 text-center transition-colors ${
+                    className={`flex h-[82px] w-[104px] min-w-[104px] flex-col items-center justify-center gap-1.5 rounded-2xl border px-2 text-center transition-all ${
                       isActive
-                        ? "border-[#176c4f] bg-[#e4f4ed] text-[#14523d]"
-                        : "border-[#d5ded9] bg-white text-[#526159]"
+                        ? isMochi
+                          ? "border-[#c8f53a] bg-[#c8f53a] text-[#0b3d2e] font-extrabold shadow-sm scale-102"
+                          : "border-[#176c4f] bg-[#e4f4ed] text-[#14523d]"
+                        : "border-[#d5ded9] bg-white text-[#526159] hover:border-[#176c4f]"
                     }`}
                   >
                     <CategoryIcon size={22} strokeWidth={1.8} aria-hidden="true" />
@@ -627,7 +641,11 @@ export default function CustomerQrOrderPage({
                                   type="button"
                                   aria-label={`Tambah ${item.name}`}
                                   onClick={() => handleUpdateQty(item.id, 1)}
-                                  className="flex h-11 w-11 items-center justify-center rounded-lg bg-[#0aae6f] text-white"
+                                  className={`flex h-11 w-11 items-center justify-center rounded-lg font-bold ${
+                                    isMochi
+                                      ? "bg-[#c8f53a] text-[#0b3d2e] hover:bg-[#d9ff57]"
+                                      : "bg-[#0aae6f] text-white"
+                                  }`}
                                 >
                                   <Plus size={15} aria-hidden="true" />
                                 </button>
@@ -643,7 +661,11 @@ export default function CustomerQrOrderPage({
                                 aria-label={`Tambah ${item.name} ke pesanan`}
                                 title={`Tambah ${item.name}`}
                                 onClick={() => handleAddToCart(item)}
-                                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-[#0aae6f] text-white transition-colors hover:bg-[#079760] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#176c4f]"
+                                className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 ${
+                                  isMochi
+                                    ? "bg-[#c8f53a] text-[#0b3d2e] hover:bg-[#d9ff57] shadow-sm active:scale-95 focus-visible:outline-[#c8f53a]"
+                                    : "bg-[#0aae6f] text-white hover:bg-[#079760] focus-visible:outline-[#176c4f]"
+                                }`}
                               >
                                 <Plus size={19} strokeWidth={2.5} aria-hidden="true" />
                               </button>
@@ -684,21 +706,27 @@ export default function CustomerQrOrderPage({
           <button
             type="button"
             onClick={() => setIsCartOpen(true)}
-            className="mx-auto flex min-h-12 w-full max-w-md items-center justify-between rounded-lg bg-[#176c4f] px-4 text-white"
+            className={`mx-auto flex min-h-12 w-full max-w-md items-center justify-between rounded-xl px-4 transition-transform active:scale-[0.99] ${
+              isMochi
+                ? "bg-[#0b3d2e] text-white border border-emerald-600/40 shadow-xl"
+                : "bg-[#176c4f] text-white"
+            }`}
           >
             <span className="flex items-center gap-2 text-left">
-              <span className="relative flex h-8 w-8 items-center justify-center rounded-lg bg-white/12">
+              <span className={`relative flex h-8 w-8 items-center justify-center rounded-lg ${isMochi ? "bg-white/10" : "bg-white/12"}`}>
                 <ShoppingBag size={18} aria-hidden="true" />
-                <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#d9f52a] px-1 text-[9px] font-extrabold text-[#18392f]">
+                <span className={`absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[9px] font-black ${
+                  isMochi ? "bg-[#c8f53a] text-[#0b3d2e]" : "bg-[#d9f52a] text-[#18392f]"
+                }`}>
                   {totalItemCount}
                 </span>
               </span>
               <span>
                 <span className="block text-xs font-extrabold">Lihat pesanan</span>
-                <span className="block text-[10px] text-white/75">Meja {tableNo}</span>
+                <span className={`block text-[10px] ${isMochi ? "text-emerald-200/80" : "text-white/75"}`}>Meja {tableNo}</span>
               </span>
             </span>
-            <span className="text-sm font-extrabold">{formatRupiah(cartTotal)}</span>
+            <span className={`text-sm font-extrabold ${isMochi ? "text-[#c8f53a]" : "text-white"}`}>{formatRupiah(cartTotal)}</span>
           </button>
         </div>
       )}

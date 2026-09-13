@@ -60,6 +60,85 @@ html {
   max-width: 100vw;
 }
 
+/* Theme khusus Mochi dan tenant demo KAEL Cafe yang memakai menu Mochi. */
+.mochi-ui {
+  --mochi-ink: #18392f;
+  --mochi-forest: #176c4f;
+  --mochi-forest-deep: #0b3d2e;
+  --mochi-emerald: #0b3d2e;
+  --mochi-emerald-deep: #07281e;
+  --mochi-lime: #c8f53a;
+  --mochi-lime-hover: #d9ff57;
+  --mochi-sheet: #f8faf9;
+  --mochi-cream: #f3f0e7;
+  --mochi-paper: #fffdf7;
+  --mochi-line: #d8ddd3;
+  --mochi-muted: #718078;
+  --mochi-price: #9b5332;
+  color: var(--mochi-ink);
+}
+
+.mochi-ui.mochi-shell,
+.mochi-ui .mochi-shell {
+  background-color: var(--mochi-cream);
+  color: var(--mochi-ink);
+}
+
+.mochi-ui .mochi-header {
+  border-color: var(--mochi-line);
+  background-color: var(--mochi-paper);
+}
+
+.mochi-ui .mochi-panel {
+  border-color: var(--mochi-line);
+  background-color: var(--mochi-paper);
+  box-shadow: 0 8px 24px rgba(30, 67, 51, 0.08);
+}
+
+.mochi-ui .mochi-primary {
+  border-color: var(--mochi-forest);
+  background-color: var(--mochi-forest);
+  color: white;
+}
+
+.mochi-ui .mochi-primary:hover {
+  background-color: var(--mochi-forest-deep);
+}
+
+.mochi-ui .mochi-price {
+  color: var(--mochi-price);
+}
+
+.mochi-ui .mochi-lime-btn {
+  background-color: #c8f53a !important;
+  color: #0b3d2e !important;
+  font-weight: 800;
+}
+
+.mochi-ui .mochi-lime-btn:hover {
+  background-color: #d9ff57 !important;
+}
+
+.mochi-ui .bg-\[\#7958d8\],
+.mochi-ui .bg-\[\#d9ff57\] {
+  background-color: #c8f53a !important;
+  color: #0b3d2e !important;
+}
+
+.mochi-ui .text-\[\#7958d8\],
+.mochi-ui .text-\[\#6d4cc4\] {
+  color: var(--mochi-forest) !important;
+}
+
+.mochi-ui .bg-\[\#f0edff\],
+.mochi-ui .bg-\[\#f1edff\] {
+  background-color: #edf8f3 !important;
+}
+
+.mochi-ui .border-\[\#ddd9ff\] {
+  border-color: #bdd5c8 !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;
