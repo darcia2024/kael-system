@@ -172,7 +172,7 @@ export default function OrderQueue({
                         }`}
                       >
                         {busy ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
-                        Pembayaran diterima
+                        Uang sudah masuk
                       </button>
                       <button
                         type="button"

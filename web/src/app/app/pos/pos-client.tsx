@@ -1609,7 +1609,13 @@ export default function PosClient({
                   }`}
                 >
                   <Check size={16} />
-                  <span>{isPending ? "Memproses..." : "Proses Pembayaran Selesai ✓"}</span>
+                  <span>
+                    {isPending
+                      ? "Memproses..."
+                      : paymentMethod === "qris" || paymentMethod === "transfer"
+                        ? "Uang Sudah Masuk · Selesaikan Transaksi ✓"
+                        : "Terima Tunai · Selesaikan Transaksi ✓"}
+                  </span>
                 </button>
               </div>
 
