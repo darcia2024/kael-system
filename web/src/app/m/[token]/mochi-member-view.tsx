@@ -35,7 +35,7 @@ import {
 } from "lucide-react";
 
 import type { MemberPageData } from "./member-client";
-import { PLACEHOLDER_MENU } from "@/lib/types";
+import { PLACEHOLDER_MENU, type MenuItem } from "@/lib/types";
 import { maskPhoneNumber, resolveTier } from "@/lib/loyalty-engine";
 import { formatRupiah, formatBusinessDateTime } from "@/lib/formatters";
 import QrCodeComponent from "@/components/qr-code";
@@ -68,6 +68,8 @@ export default function MochiMemberView({
   // Menu tab state
   const [menuSearchQuery, setMenuSearchQuery] = useState("");
   const [selectedMenuCategory, setSelectedMenuCategory] = useState<string>("all");
+  const [selectedMenuDetail, setSelectedMenuDetail] = useState<MenuItem | null>(null);
+  const [tableInput, setTableInput] = useState("");
 
   // Balance visibility toggle
   const [hideBalance, setHideBalance] = useState(false);
@@ -425,7 +427,7 @@ export default function MochiMemberView({
                 </span>
               </button>
 
-              {/* Button 3: Pesan Meja (Opens Menu Tab) */}
+              {/* Button 3: Katalog Menu (Opens Menu Tab) */}
               <button
                 type="button"
                 onClick={() => {
@@ -434,11 +436,11 @@ export default function MochiMemberView({
                 }}
                 className="flex flex-col items-center gap-1.5 group active:scale-95 transition-transform"
               >
-                <div className="flex h-13 w-13 items-center justify-center rounded-full border-2 border-[#0284c7] bg-[#f0f9ff] text-[#0284c7] shadow-sm group-hover:bg-[#0284c7] group-hover:text-white transition-colors">
+                <div className="flex h-13 w-13 items-center justify-center rounded-full border-2 border-[#167052] bg-[#edf8f3] text-[#167052] shadow-sm group-hover:bg-[#167052] group-hover:text-white transition-colors">
                   <UtensilsCrossed size={22} strokeWidth={2.2} />
                 </div>
                 <span className="text-[11px] font-extrabold text-[#20372e] tracking-tight">
-                  Pesan Meja
+                  Katalog Menu
                 </span>
               </button>
 
@@ -574,7 +576,8 @@ export default function MochiMemberView({
                     return (
                       <div
                         key={item.id}
-                        className="flex flex-col justify-between rounded-2xl bg-white border border-[#d8e3de] p-2.5 shadow-xs hover:border-[#167052]/40 transition-all group"
+                        onClick={() => setSelectedMenuDetail(item)}
+                        className="flex flex-col justify-between rounded-2xl bg-white border border-[#d8e3de] p-2.5 shadow-xs hover:border-[#167052]/40 transition-all group cursor-pointer"
                       >
                         <div className="space-y-2">
                           <div className="relative aspect-4/3 w-full rounded-xl overflow-hidden bg-[#edf8f3]">
@@ -604,13 +607,17 @@ export default function MochiMemberView({
                           <span className="text-xs font-black font-mono text-[#0b3d2e]">
                             {formatRupiah(item.price)}
                           </span>
-                          <Link
-                            href={`/order/${business.store_code || "MOCHIKAFE"}/1`}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedMenuDetail(item);
+                            }}
                             className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#edf8f3] text-[#167052] hover:bg-[#167052] hover:text-white transition-colors"
-                            title="Pesan Meja"
+                            title="Lihat Detail Menu"
                           >
-                            <Plus size={14} strokeWidth={2.5} />
-                          </Link>
+                            <Eye size={14} strokeWidth={2.2} />
+                          </button>
                         </div>
                       </div>
                     );
@@ -701,27 +708,28 @@ export default function MochiMemberView({
           /* DEDICATED MENU VIEW (KATALOG MENU MOCHI)                          */
           /* ================================================================= */
           <section aria-label="Katalog Menu Mochi" className="space-y-4">
-            {/* QR Order Callout Banner */}
-            <div className="rounded-2xl border-2 border-[#167052] bg-gradient-to-r from-[#0b3d2e] to-[#124d3a] p-3.5 text-white shadow-md flex items-center justify-between gap-3">
+            {/* Official Menu Catalog Header Banner */}
+            <div className="rounded-2xl border border-[#c5d8cf] bg-gradient-to-br from-[#edf8f3] to-[#e4f3ec] p-3.5 text-[#1c2d26] shadow-xs flex items-center justify-between gap-3">
               <div className="space-y-0.5 min-w-0">
-                <div className="flex items-center gap-1.5 text-[#c8f53a] text-[10px] font-black uppercase tracking-wider">
-                  <UtensilsCrossed size={12} />
-                  <span>Duduk di Meja Kafe?</span>
+                <div className="flex items-center gap-1.5 text-[#167052] text-[10px] font-black uppercase tracking-wider">
+                  <Coffee size={13} />
+                  <span>Katalog Menu Resmi</span>
                 </div>
-                <p className="text-xs font-extrabold text-white">
-                  Pesan Langsung Tanpa Antre Kasir
+                <p className="text-xs font-extrabold text-[#0b3d2e]">
+                  Daftar Menu &amp; Harga Mochi Cafe n Resto
                 </p>
-                <p className="text-[10px] text-emerald-200/80">
-                  Pesanan langsung masuk ke dapur & kasir Mochi
+                <p className="text-[10.5px] text-[#556b62] leading-tight">
+                  Tunjukkan QR Member ke kasir untuk kumpulkan poin loyalty di setiap pesanan.
                 </p>
               </div>
-              <Link
-                href={`/order/${business.store_code || "MOCHIKAFE"}/1`}
-                className="shrink-0 flex items-center gap-1.5 rounded-xl bg-[#c8f53a] px-3 py-2 text-xs font-black text-[#073829] shadow-sm active:scale-95 transition-transform"
+              <button
+                type="button"
+                onClick={() => setShowQrModal(true)}
+                className="shrink-0 flex items-center gap-1.5 rounded-xl bg-[#0b3d2e] px-3 py-2 text-xs font-bold text-[#c8f53a] shadow-xs hover:bg-[#124634] active:scale-95 transition-all"
               >
-                <span>Pesan Meja 1</span>
-                <ArrowRight size={13} />
-              </Link>
+                <QrCode size={13} />
+                <span>QR Kasir</span>
+              </button>
             </div>
 
             {/* Search Bar */}
@@ -805,7 +813,8 @@ export default function MochiMemberView({
                   return (
                     <div
                       key={item.id}
-                      className="flex flex-col justify-between rounded-2xl bg-white border border-[#d8e3de] p-2.5 shadow-xs hover:border-[#167052]/40 transition-all group"
+                      onClick={() => setSelectedMenuDetail(item)}
+                      className="flex flex-col justify-between rounded-2xl bg-white border border-[#d8e3de] p-2.5 shadow-xs hover:border-[#167052]/40 transition-all group cursor-pointer"
                     >
                       <div className="space-y-2">
                         <div className="relative aspect-4/3 w-full rounded-xl overflow-hidden bg-[#edf8f3]">
@@ -840,13 +849,17 @@ export default function MochiMemberView({
                             +{earnedPts} poin
                           </span>
                         </div>
-                        <Link
-                          href={`/order/${business.store_code || "MOCHIKAFE"}/1`}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedMenuDetail(item);
+                          }}
                           className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#edf8f3] text-[#167052] hover:bg-[#167052] hover:text-white transition-colors"
-                          title="Pesan Meja"
+                          title="Lihat Detail Menu"
                         >
-                          <Plus size={14} strokeWidth={2.5} />
-                        </Link>
+                          <Eye size={14} strokeWidth={2.2} />
+                        </button>
                       </div>
                     </div>
                   );
@@ -1240,6 +1253,133 @@ export default function MochiMemberView({
             >
               Tutup Pengaturan
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* =================================================================== */}
+      {/* MODAL 5: DETAIL MENU & CARA PESAN                                   */}
+      {/* =================================================================== */}
+      {selectedMenuDetail && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/75 p-0 sm:p-4 backdrop-blur-xs animate-in fade-in-50">
+          <div className="w-full max-w-sm rounded-t-[32px] sm:rounded-3xl bg-white p-5 text-[#1c2d26] max-h-[88vh] overflow-y-auto shadow-2xl animate-in slide-in-from-bottom-10 space-y-4">
+            {/* Header */}
+            <div className="flex items-center justify-between">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-[#edf8f3] px-3 py-1 text-[11px] font-bold text-[#167052]">
+                <Coffee size={13} />
+                <span>{categories?.find((c) => c.id === selectedMenuDetail.category_id)?.name || "Menu Mochi"}</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedMenuDetail(null);
+                  setTableInput("");
+                }}
+                className="flex h-7 w-7 items-center justify-center rounded-full bg-[#edf1ef] text-[#718078] hover:text-[#1c2d26]"
+              >
+                <X size={15} />
+              </button>
+            </div>
+
+            {/* Menu Image */}
+            <div className="relative aspect-4/3 w-full rounded-2xl overflow-hidden bg-[#edf8f3] border border-[#e5ede9]">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={selectedMenuDetail.photo_url || PLACEHOLDER_MENU}
+                alt={selectedMenuDetail.name}
+                className="h-full w-full object-cover"
+              />
+              <span className="absolute top-2 right-2 rounded-full bg-[#0b3d2e]/90 backdrop-blur-xs text-[#c8f53a] px-2.5 py-1 text-[10px] font-black font-mono shadow-xs">
+                +{Math.max(1, Math.floor(selectedMenuDetail.price / (program.earn_rate || 1000)))} Poin
+              </span>
+            </div>
+
+            {/* Menu Info */}
+            <div className="space-y-1">
+              <div className="flex items-baseline justify-between gap-2">
+                <h3 className="text-base font-black text-[#1c2d26]">
+                  {selectedMenuDetail.name}
+                </h3>
+                <span className="text-sm font-black font-mono text-[#0b3d2e] shrink-0">
+                  {formatRupiah(selectedMenuDetail.price)}
+                </span>
+              </div>
+              {selectedMenuDetail.description && (
+                <p className="text-xs text-[#556b62] leading-relaxed">
+                  {selectedMenuDetail.description}
+                </p>
+              )}
+            </div>
+
+            {/* Loyalty Reward Callout */}
+            <div className="rounded-xl border border-[#d8e3de] bg-[#f9fbf9] p-3 text-xs space-y-1">
+              <div className="flex items-center gap-1.5 text-[#167052] font-black">
+                <Sparkles size={14} />
+                <span>Kumpulkan Poin Member</span>
+              </div>
+              <p className="text-[11px] text-[#556b62] leading-relaxed">
+                Pesan menu ini di kasir dan tunjukkan QR Member Anda untuk mendapatkan +{Math.max(1, Math.floor(selectedMenuDetail.price / (program.earn_rate || 1000)))} poin loyalty.
+              </p>
+            </div>
+
+            {/* Meja QR Ordering Option (Hanya jika sedang di meja kafe) */}
+            <div className="rounded-xl border border-[#ccd9d3] p-3 bg-white space-y-2">
+              <div className="flex items-center gap-1.5 text-[11px] font-black text-[#1c2d26]">
+                <UtensilsCrossed size={13} className="text-[#167052]" />
+                <span>Sedang Duduk di Meja Kafe?</span>
+              </div>
+              <p className="text-[10px] text-[#718078]">
+                Masukkan nomor meja Anda untuk langsung memesan dari tempat duduk:
+              </p>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min="1"
+                  max="99"
+                  placeholder="No. Meja"
+                  value={tableInput}
+                  onChange={(e) => setTableInput(e.target.value)}
+                  className="w-24 rounded-xl border border-[#ccd9d3] px-3 py-2 text-xs font-mono font-bold text-center focus:border-[#167052] focus:outline-hidden"
+                />
+                <button
+                  type="button"
+                  disabled={!tableInput || parseInt(tableInput, 10) < 1}
+                  onClick={() => {
+                    if (tableInput && parseInt(tableInput, 10) > 0) {
+                      window.location.href = `/order/${encodeURIComponent(business.store_code || "MOCHIKAFE")}/${encodeURIComponent(tableInput.trim())}`;
+                    }
+                  }}
+                  className="flex-1 rounded-xl bg-[#0b3d2e] py-2 text-xs font-bold text-[#c8f53a] disabled:opacity-40 disabled:cursor-not-allowed hover:bg-[#124634] transition-colors"
+                >
+                  Pesan di Meja {tableInput ? `#${tableInput}` : ""}
+                </button>
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex items-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedMenuDetail(null);
+                  setShowQrModal(true);
+                }}
+                className="flex-1 flex items-center justify-center gap-1.5 rounded-2xl bg-[#c8f53a] py-3 text-xs font-black text-[#073829] shadow-sm hover:bg-[#b8e830] active:scale-95 transition-transform"
+              >
+                <QrCode size={14} />
+                <span>Tunjuk QR di Kasir</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedMenuDetail(null);
+                  setTableInput("");
+                }}
+                className="rounded-2xl border border-[#d8e3de] bg-white px-4 py-3 text-xs font-bold text-[#718078] hover:bg-[#f5f7f6]"
+              >
+                Tutup
+              </button>
+            </div>
           </div>
         </div>
       )}
