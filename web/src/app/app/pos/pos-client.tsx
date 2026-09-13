@@ -33,7 +33,15 @@ import {
   TrendingUp,
   UtensilsCrossed,
   UserPlus,
-  RefreshCw
+  RefreshCw,
+  MonitorSmartphone,
+  ChefHat,
+  LayoutGrid,
+  CupSoda,
+  Soup,
+  Package,
+  X,
+  type LucideIcon,
 } from "lucide-react";
 import type { 
   MenuItem, 
@@ -52,7 +60,8 @@ import {
   closeShiftAction,
   updateOrderStatusAction,
   searchCustomersAction,
-  registerCustomerByStaffAction
+  registerCustomerByStaffAction,
+  recordReceiptPrintAction
 } from "@/lib/actions";
 import { 
   calculateCartTotals, 
@@ -68,6 +77,25 @@ import { formatRupiah, formatBusinessDateTime } from "@/lib/formatters";
 import QrisPayment from "./qris-payment";
 import OrderQueue from "./order-queue";
 import { calculateEarnedPoints } from "@/lib/loyalty-engine";
+import { PLACEHOLDER_MENU } from "@/lib/types";
+
+function getPosCategoryIcon(categoryName: string): LucideIcon {
+  const normalized = categoryName.toLowerCase();
+  if (normalized.includes("coffee") || normalized.includes("kopi")) return Coffee;
+  if (normalized.includes("mie") || normalized.includes("sup") || normalized.includes("berkuah")) return Soup;
+  if (normalized.includes("cemilan") || normalized.includes("snack") || normalized.includes("tambahan")) return Package;
+  if (
+    normalized.includes("minuman") ||
+    normalized.includes("dalgona") ||
+    normalized.includes("mojito") ||
+    normalized.includes("milkshake") ||
+    normalized.includes("float") ||
+    normalized.includes("jus")
+  ) {
+    return CupSoda;
+  }
+  return UtensilsCrossed;
+}
 
 interface PosClientProps {
   business: Business | null;
@@ -83,6 +111,8 @@ interface PosClientProps {
   loyaltyProgram: LoyaltyProgram | null;
   taxRatePct: number;
   serviceChargePct: number;
+  themeClassName?: string;
+  isMochi?: boolean;
 }
 
 export default function PosClient({
@@ -97,13 +127,17 @@ export default function PosClient({
   loyaltyProgram,
   taxRatePct: configuredTaxRate,
   serviceChargePct: configuredServiceRate,
+  themeClassName = "",
+  isMochi = false,
 }: PosClientProps) {
+  const isMochiPos = isMochi || Boolean(business?.name?.toLowerCase().includes("mochi")) || themeClassName.includes("mochi-ui");
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
   const [selectedStaffId] = useState<string>(currentUserId || staffList[0]?.id || "");
   const [activeCategory, setActiveCategory] = useState<string>("all");
-
+  const [menuSearchQuery, setMenuSearchQuery] = useState("");
+  const [showMobileCart, setShowMobileCart] = useState(false);
   // Cart State
   const [cart, setCart] = useState<Record<string, { item: MenuItem; qty: number; note: string }>>({});
   const [discountNominal, setDiscountNominal] = useState<number>(0);
@@ -159,6 +193,7 @@ export default function PosClient({
     customerName?: string | null;
     items: { name: string; qty: number; price: number; note?: string }[];
   } | null>(null);
+  const [printerState, setPrinterState] = useState<"idle" | "printing" | "connected" | "error">("idle");
 
   // Shift Modal State
   const [showQueue, setShowQueue] = useState(false);
@@ -185,6 +220,19 @@ export default function PosClient({
 
   const checkoutTotal = cartTotals.total + (serviceType === "delivery" ? Math.max(0, kirimOngkir) : 0);
 
+  useEffect(() => {
+    if (!showMobileCart) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [showMobileCart]);
+
+  useEffect(() => {
+    if (cartList.length === 0 && showMobileCart) setShowMobileCart(false);
+  }, [cartList.length, showMobileCart]);
+
   // Cash Change Calculation
   const cashChangeCalc = useMemo(() => {
     return calculateCashChange(checkoutTotal, cashGivenInput);
@@ -192,11 +240,13 @@ export default function PosClient({
 
   // Filtered Menu Items
   const filteredMenu = useMemo(() => {
+    const normalizedSearch = menuSearchQuery.trim().toLowerCase();
     return menuItems.filter((m) => {
-      if (activeCategory === "all") return true;
-      return m.category_id === activeCategory;
+      if (activeCategory !== "all" && m.category_id !== activeCategory) return false;
+      if (!normalizedSearch) return true;
+      return `${m.name} ${m.description ?? ""}`.toLowerCase().includes(normalizedSearch);
     });
-  }, [menuItems, activeCategory]);
+  }, [menuItems, activeCategory, menuSearchQuery]);
 
   // Search Loyalty Customers via Server Action
   useEffect(() => {
@@ -252,6 +302,7 @@ export default function PosClient({
       setCart({});
       setDiscountNominal(0);
       setAttachedCustomer(null);
+      setShowMobileCart(false);
     }
   };
 
@@ -330,6 +381,7 @@ export default function PosClient({
     };
 
     setShowPaymentModal(false);
+    setShowMobileCart(false);
     setCart({});
     setDiscountNominal(0);
     setAttachedCustomer(null);
@@ -378,6 +430,7 @@ export default function PosClient({
   // halaman struk dan dialog cetak bawaan perangkat.
   const handlePrintBluetoothThermal = async () => {
     if (!completedOrder) return;
+    setPrinterState("printing");
     const receiptText = generateEscPosReceiptText({
       businessName: business?.name || "KAEL POS",
       businessAddress: business?.address || "",
@@ -431,10 +484,15 @@ export default function PosClient({
       })();
 
       const encoded = new TextEncoder().encode(receiptText);
-      const payload = new Uint8Array(encoded.length + 8);
+      // ESC p membuka laci yang terhubung ke port RJ11 milik printer. Perintah
+      // ini hanya boleh ikut pada pembayaran tunai yang baru tersimpan.
+      const openCashDrawer = completedOrder.paymentMethod === "cash";
+      const drawerPulse = openCashDrawer ? [0x1b, 0x70, 0x00, 0x19, 0xfa] : [];
+      const finish = [0x0a, 0x0a, 0x0a, ...drawerPulse, 0x1d, 0x56, 0x00];
+      const payload = new Uint8Array(encoded.length + 2 + finish.length);
       payload.set([0x1b, 0x40], 0);
       payload.set(encoded, 2);
-      payload.set([0x0a, 0x0a, 0x0a, 0x1d, 0x56, 0x00], encoded.length + 2);
+      payload.set(finish, encoded.length + 2);
 
       for (let offset = 0; offset < payload.length; offset += 180) {
         const chunk = payload.slice(offset, offset + 180);
@@ -445,321 +503,457 @@ export default function PosClient({
         }
       }
       device.gatt?.disconnect();
-      alert(`Struk #${completedOrder.orderNo} terkirim ke ${device.name || "printer thermal"}.`);
+      const printLog = await recordReceiptPrintAction(
+        completedOrder.orderId,
+        openCashDrawer,
+        device.name || "printer thermal",
+      );
+      setPrinterState(printLog.ok ? "connected" : "error");
+      alert(
+        `Struk #${completedOrder.orderNo} terkirim ke ${device.name || "printer thermal"}.` +
+        (openCashDrawer ? " Laci uang dibuka." : ""),
+      );
     } catch (error) {
+      setPrinterState("error");
       console.warn("[KAEL] cetak Bluetooth gagal", error);
       const useBrowserPrint = window.confirm("Printer Bluetooth belum bisa menerima struk. Buka versi thermal di dialog cetak browser?");
       if (useBrowserPrint) window.open(`/receipt/${completedOrder.orderId}`, "_blank", "noopener,noreferrer");
     }
   };
 
-  return (
-    <div className="min-h-screen bg-[#f7f6fc] text-[#232331] font-sans flex flex-col h-screen overflow-hidden">
-      
-      {/* Top POS Header */}
-      <header className="border-b-2 border-[#232331] bg-white px-3 sm:px-6 py-2.5 shrink-0 z-30">
-        <div className="flex items-center justify-between gap-2">
-          
-          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-            <Link
-              // Kasir kembali ke berandanya sendiri. Sebelumnya tombol ini
-              // menunjuk "/app" secara tetap, jadi kasir yang menekannya
-              // mendarat di dasbor pemilik usaha.
-              href={userRole === "owner" ? "/app" : "/app/staff"}
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-[#232331] bg-[#fcfcfe] text-[#232331] shadow-ink-xs hover:bg-[#f0edff]"
-            >
-              <ArrowLeft size={16} />
-            </Link>
-
-            <div className="min-w-0">
-              <div className="flex items-center gap-1.5">
-                <h1 className="font-black text-xs sm:text-base text-[#232331] truncate">
-                  {business?.name} · POS
-                </h1>
-                <span className="rounded-md bg-[#dcfce7] px-1.5 py-0.2 font-mono text-[8.5px] sm:text-[9px] font-bold text-[#16a34a] border border-[#16a34a] shrink-0">
-                  Online Kasir
-                </span>
-              </div>
-              <span className="text-[10px] sm:text-[11px] text-[#7b7b8e] font-mono block truncate">
-                Shift: {activeShift ? `Aktif (${formatRupiah(Number(activeShift.opening_cash))})` : "Belum Dibuka"}
-              </span>
-            </div>
-          </div>
-
-          {/* Quick Actions Header */}
-          <div className="flex items-center gap-1.5 font-mono text-xs">
-            
-            {userRole === "owner" && (
-              <>
-                <Link
-                  href="/app/pos/menu"
-                  className="btn-tactile flex items-center gap-1 rounded-xl border border-[#232331] bg-white px-2.5 py-1.5 font-bold text-[#232331] shadow-ink-xs"
-                >
-                  <UtensilsCrossed size={13} />
-                  <span className="hidden sm:inline">Kelola Menu</span>
-                </Link>
-                <Link
-                  href="/app/pos/owner"
-                  className="btn-tactile flex items-center gap-1 rounded-xl border border-[#232331] bg-white px-2.5 py-1.5 font-bold text-[#232331] shadow-ink-xs"
-                >
-                  <TrendingUp size={13} />
-                  <span className="hidden sm:inline">Dashboard Owner</span>
-                </Link>
-              </>
-            )}
-
-            {/* QR Orders Queue Badge */}
-            {pendingQrOrders.length > 0 && (
-              <button
-                type="button"
-                onClick={() => setShowQueue(true)}
-                className="btn-tactile flex items-center gap-1 rounded-xl border border-[#d97706] bg-[#fef3c7] px-2.5 py-1.5 font-bold text-[#d97706] shadow-ink-xs animate-pulse"
-              >
-                <Utensils size={13} />
-                <span>{pendingQrOrders.length} Pesanan Masuk</span>
-              </button>
-            )}
-
-            {/* Shift Button */}
-            <button
-              type="button"
-              onClick={() => setShowShiftModal(true)}
-              className={`btn-tactile flex items-center gap-1 rounded-xl border-2 px-3 py-1.5 font-black shadow-ink-xs ${
-                activeShift
-                  ? "border-[#232331] bg-[#d9ff57] text-[#232331]"
-                  : "border-[#ef4444] bg-[#feebee] text-[#ef4444]"
-              }`}
-            >
-              <Clock size={13} />
-              <span>{activeShift ? "Tutup Shift" : "Buka Shift"}</span>
-            </button>
-
-          </div>
-
+  const renderInvoice = (showCloseButton: boolean) => (
+    <section className="flex h-full min-h-0 flex-col bg-white">
+      <div className="flex items-start justify-between border-b border-[#dfe6e2] px-4 py-3.5">
+        <div>
+          <p className="text-[10px] font-bold uppercase text-[#728078]">Transaksi aktif</p>
+          <h2 className="mt-0.5 text-lg font-extrabold text-[#17382e]">Pesanan kasir</h2>
+          <p className="text-xs text-[#7a8781]">
+            {cartList.reduce((sum, line) => sum + line.qty, 0)} item
+          </p>
         </div>
-      </header>
-
-      {/* Main Terminal Workspace (Split View) */}
-      <main className="flex-1 grid grid-cols-12 overflow-hidden">
-        
-        {/* Left Side: Visual Category & Menu Grid */}
-        <section className="col-span-12 lg:col-span-7 xl:col-span-8 flex flex-col border-r-2 border-[#232331] bg-[#f7f6fc] overflow-hidden">
-          
-          {/* Category Bar */}
-          <div className="flex items-center gap-1.5 p-3 border-b border-[#dedee8] bg-white overflow-x-auto scrollbar-none shrink-0 font-mono text-xs font-bold">
+        <div className="flex items-center gap-1">
+          {cartList.length > 0 && (
             <button
               type="button"
-              onClick={() => setActiveCategory("all")}
-              className={`px-3.5 py-2 rounded-xl border transition-all whitespace-nowrap min-h-[44px] flex items-center ${
-                activeCategory === "all"
-                  ? "bg-[#232331] text-[#d9ff57] border-[#232331] shadow-ink-xs"
-                  : "bg-white text-[#7b7b8e] border-[#dedee8]"
+              onClick={handleClearCart}
+              className="flex min-h-11 items-center gap-1.5 rounded-lg px-2 text-xs font-bold text-[#b34539] transition-colors hover:bg-[#fff0ed]"
+            >
+              <Trash2 size={15} aria-hidden="true" />
+              Kosongkan
+            </button>
+          )}
+          {showCloseButton && (
+            <button
+              type="button"
+              aria-label="Tutup rincian pesanan"
+              onClick={() => setShowMobileCart(false)}
+              className="flex h-11 w-11 items-center justify-center rounded-lg border border-[#d5ded9] text-[#5d6c65]"
+            >
+              <X size={19} aria-hidden="true" />
+            </button>
+          )}
+        </div>
+      </div>
+
+      <fieldset className="border-b border-[#dfe6e2] px-4 py-3">
+        <legend className="sr-only">Tipe layanan</legend>
+        <div className="grid grid-cols-3 gap-2">
+          {SERVICE_TYPES.map((type) => (
+            <button
+              key={type.key}
+              type="button"
+              onClick={() => setServiceType(type.key)}
+              className={`min-h-11 rounded-xl border px-2 py-1.5 text-center text-[10px] font-bold transition-all ${
+                serviceType === type.key
+                  ? (isMochiPos ? "border-[#0b3d2e] bg-[#0b3d2e] text-[#c8f53a] font-black shadow-xs" : "border-[#167052] bg-[#e4f4ed] text-[#15533e]")
+                  : (isMochiPos ? "border-[#d8e3de] bg-white text-[#526159] hover:bg-[#edf8f3]" : "border-[#d6dfda] bg-white text-[#66746d] hover:border-[#9db8ab]")
               }`}
             >
-              Semua Menu ({menuItems.length})
+              {type.label}
             </button>
+          ))}
+        </div>
+      </fieldset>
 
-            {categories.map((cat) => (
-              <button
-                key={cat.id}
-                type="button"
-                onClick={() => setActiveCategory(cat.id)}
-                className={`px-3.5 py-2 rounded-xl border transition-all whitespace-nowrap min-h-[44px] flex items-center ${
-                  activeCategory === cat.id
-                    ? "bg-[#232331] text-[#d9ff57] border-[#232331] shadow-ink-xs"
-                    : "bg-white text-[#7b7b8e] border-[#dedee8]"
-                }`}
-              >
-                {cat.name}
-              </button>
-            ))}
+      <div className="min-h-0 flex-1 overflow-y-auto px-4">
+        {cartList.length === 0 ? (
+          <div className="flex h-full min-h-56 flex-col items-center justify-center px-5 text-center">
+            <ShoppingCart size={30} strokeWidth={1.6} className="text-[#8ba097]" aria-hidden="true" />
+            <p className="mt-3 text-sm font-extrabold text-[#294239]">Belum ada menu dipilih</p>
+            <p className="mt-1 max-w-52 text-xs leading-relaxed text-[#7b8882]">
+              Pilih menu dari katalog untuk mulai membuat transaksi.
+            </p>
           </div>
-
-          {/* Menu Grid */}
-          <div className="flex-1 p-3 sm:p-4 overflow-y-auto grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-2.5 sm:gap-3 auto-rows-max">
-            {filteredMenu.map((item) => {
-              const inCart = cart[item.id];
+        ) : (
+          <div className="divide-y divide-[#e4eae7]">
+            {cartList.map(({ item, qty, note }) => {
+              const hasPhoto = item.photo_url && item.photo_url !== PLACEHOLDER_MENU;
               return (
-                <button
-                  key={item.id}
-                  type="button"
-                  disabled={!item.is_available}
-                  onClick={() => handleAddToCart(item)}
-                  className={`card-tactile rounded-2xl border-2 p-3 text-left flex flex-col justify-between min-h-[100px] transition-all relative ${
-                    item.is_available
-                      ? "border-[#232331] bg-white hover:bg-[#fcfcfe] shadow-ink-xs"
-                      : "border-[#dedee8] bg-[#f0edff]/40 opacity-50 cursor-not-allowed"
-                  }`}
-                >
-                  {inCart && (
-                    <span className="absolute top-2 right-2 flex h-6 w-6 items-center justify-center rounded-full bg-[#232331] text-[#d9ff57] font-mono text-xs font-black">
-                      {inCart.qty}
-                    </span>
-                  )}
-
-                  <div>
-                    <h3 className="font-black text-xs sm:text-sm text-[#232331] font-sans leading-tight">
-                      {item.name}
-                    </h3>
-                  </div>
-
-                  <div className="mt-2 flex justify-between items-baseline font-mono">
-                    <span className="text-xs sm:text-sm font-black text-[#c2410c]">
-                      {formatRupiah(Number(item.price))}
-                    </span>
-                    {!item.is_available && (
-                      <span className="text-[9px] text-[#ef4444] font-bold">Habis</span>
-                    )}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-
-        </section>
-
-        {/* Right Side: Sticky Live Cart & Checkout */}
-        <section className="col-span-12 lg:col-span-5 xl:col-span-4 flex flex-col bg-white overflow-hidden">
-          
-          {/* Cart Header */}
-          <div className="p-3.5 border-b border-[#dedee8] flex items-center justify-between shrink-0">
-            <div className="flex items-center gap-2">
-              <ShoppingCart size={17} className="text-[#7958d8]" />
-              <h2 className="font-extrabold text-sm text-[#232331]">
-                Keranjang Kasir ({cartList.reduce((s, c) => s + c.qty, 0)})
-              </h2>
-            </div>
-
-            {cartList.length > 0 && (
-              <button
-                type="button"
-                onClick={handleClearCart}
-                className="text-[11px] font-mono text-[#ef4444] hover:underline font-bold"
-              >
-                Kosongkan
-              </button>
-            )}
-          </div>
-
-          {/* Cart Items List */}
-          <div className="flex-1 p-3 overflow-y-auto space-y-2 font-mono text-xs">
-            {cartList.length === 0 ? (
-              <div className="h-full flex flex-col items-center justify-center text-center p-6 text-[#7b7b8e] space-y-2">
-                <Coffee size={36} className="text-[#dedee8]" />
-                <p className="text-xs">Keranjang masih kosong. Ketuk menu di sebelah kiri untuk menambah pesanan.</p>
-              </div>
-            ) : (
-              cartList.map(({ item, qty, note }) => (
-                <div key={item.id} className="rounded-2xl border border-[#dedee8] bg-[#fcfcfe] p-2.5 space-y-2">
-                  <div className="flex justify-between items-start">
+                <article key={item.id} className="space-y-2 py-3">
+                  <div className="flex items-start gap-2.5">
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-[#eaf3ef] text-[#34745d]">
+                      {hasPhoto ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={item.photo_url ?? undefined} alt={item.name} className="h-full w-full object-cover" />
+                      ) : (
+                        <UtensilsCrossed size={19} aria-hidden="true" />
+                      )}
+                    </div>
                     <div className="min-w-0 flex-1">
-                      <span className="font-bold text-xs text-[#232331] font-sans block truncate">
-                        {item.name}
-                      </span>
-                      <span className="text-[11px] text-[#c2410c] font-black">
+                      <h3 className="text-sm font-extrabold leading-snug text-[#243a31]">{item.name}</h3>
+                      <p className={`mt-0.5 text-xs font-black tabular-nums font-mono ${isMochiPos ? "text-[#0b3d2e]" : "text-[#9b5332]"}`}>
                         {formatRupiah(Number(item.price) * qty)}
-                      </span>
+                      </p>
                     </div>
-
-                    {/* Qty Steppers */}
-                    <div className="flex items-center gap-1 shrink-0">
+                    <div className="grid shrink-0 grid-cols-[44px_32px_44px] items-center">
                       <button
                         type="button"
+                        aria-label={`Kurangi ${item.name}`}
                         onClick={() => handleUpdateQty(item.id, -1)}
-                        className="h-7 w-7 rounded-lg bg-white border border-[#dedee8] font-black flex items-center justify-center text-[#7b7b8e] hover:border-[#232331]"
+                        className={`flex h-11 w-11 items-center justify-center rounded-xl border ${isMochiPos ? "border-[#ccd9d3] bg-[#edf8f3] text-[#167052]" : "border-[#cbd8d2] text-[#355a4b]"}`}
                       >
-                        <Minus size={12} />
+                        <Minus size={14} aria-hidden="true" />
                       </button>
-                      <span className="w-6 text-center font-black text-xs">{qty}</span>
+                      <span className="text-center text-sm font-black tabular-nums font-mono">{qty}</span>
                       <button
                         type="button"
+                        aria-label={`Tambah ${item.name}`}
                         onClick={() => handleUpdateQty(item.id, 1)}
-                        className="h-7 w-7 rounded-lg bg-[#232331] text-[#d9ff57] font-black flex items-center justify-center"
+                        className={`flex h-11 w-11 items-center justify-center rounded-xl text-white ${isMochiPos ? "bg-[#0b3d2e]" : "bg-[#167052]"}`}
                       >
-                        <Plus size={12} />
+                        <Plus size={15} aria-hidden="true" />
                       </button>
                     </div>
                   </div>
-
                   <input
                     type="text"
                     value={note}
-                    onChange={(e) => handleUpdateNote(item.id, e.target.value)}
-                    placeholder="Catatan item (less sugar, es sedikit)..."
-                    className="w-full rounded-lg border border-[#dedee8] bg-white px-2 py-1 text-[10.5px] text-[#232331] font-sans focus:outline-none"
+                    onChange={(event) => handleUpdateNote(item.id, event.target.value)}
+                    placeholder="Catatan pesanan"
+                    className="min-h-11 w-full rounded-xl border border-[#d7e0dc] bg-[#f8faf9] px-3 text-xs outline-none focus:border-[#167052]"
                   />
-                </div>
-              ))
-            )}
+                </article>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      <div className="space-y-3 border-t border-[#dfe6e2] bg-[#f8faf9] p-4">
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-xs font-semibold text-[#627069]">Diskon</span>
+          <div className="grid grid-cols-4 gap-1">
+            {[0, 5000, 10000, 15000].map((discount) => (
+              <button
+                key={discount}
+                type="button"
+                onClick={() => setDiscountNominal(discount)}
+                className={`min-h-11 min-w-11 rounded-xl border px-1 text-[10px] font-extrabold transition-all ${
+                  discountNominal === discount
+                    ? (isMochiPos ? "border-[#0b3d2e] bg-[#0b3d2e] text-[#c8f53a] shadow-xs" : "border-[#1f4437] bg-[#1f4437] text-white")
+                    : "border-[#d3ddd8] bg-white text-[#65736c]"
+                }`}
+              >
+                {discount === 0 ? "0" : `${discount / 1000}rb`}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <dl className="space-y-1.5 text-xs tabular-nums font-mono">
+          <div className="flex justify-between text-[#68766f]"><dt>Subtotal</dt><dd>{formatRupiah(cartTotals.subtotal)}</dd></div>
+          {cartTotals.discount > 0 && <div className="flex justify-between text-[#b34539]"><dt>Diskon</dt><dd>-{formatRupiah(cartTotals.discount)}</dd></div>}
+          {cartTotals.serviceCharge > 0 && <div className="flex justify-between text-[#68766f]"><dt>Service</dt><dd>{formatRupiah(cartTotals.serviceCharge)}</dd></div>}
+          {cartTotals.tax > 0 && <div className="flex justify-between text-[#68766f]"><dt>Pajak</dt><dd>{formatRupiah(cartTotals.tax)}</dd></div>}
+          {serviceType === "delivery" && kirimOngkir > 0 && <div className="flex justify-between text-[#68766f]"><dt>Ongkir</dt><dd>{formatRupiah(kirimOngkir)}</dd></div>}
+        </dl>
+
+        <div className="flex items-end justify-between border-t border-[#d6dfda] pt-3">
+          <span className="text-sm font-extrabold text-[#243a31]">Total</span>
+          <strong className={`text-2xl font-black tabular-nums font-mono ${isMochiPos ? "text-[#0b3d2e]" : "text-[#167052]"}`}>{formatRupiah(checkoutTotal)}</strong>
+        </div>
+
+        <button
+          type="button"
+          disabled={cartList.length === 0}
+          onClick={handleOpenPayment}
+          className={`flex min-h-13 w-full items-center justify-center gap-2.5 rounded-xl px-4 text-sm font-black transition-all active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-40 shadow-md ${
+            isMochiPos
+              ? "bg-[#c8f53a] hover:bg-[#d9ff57] text-[#073829] shadow-emerald-950/10"
+              : "bg-[#167052] hover:bg-[#115c43] text-white"
+          }`}
+        >
+          <CreditCard size={18} aria-hidden="true" />
+          <span>Lanjut Pembayaran</span>
+        </button>
+      </div>
+    </section>
+  );
+
+  return (
+    <div className={`${themeClassName} flex h-[100dvh] min-h-[640px] flex-col overflow-hidden ${isMochiPos ? "bg-[#f0f5f2]" : "bg-[#edf3f0]"} font-sans text-[#21352d]`}>
+      <header className={`z-30 shrink-0 border-b ${isMochiPos ? "bg-[#0b3d2e] border-emerald-800/60 text-white shadow-sm" : "bg-white border-[#d8e1dc]"}`}>
+        <div className="flex min-h-16 items-center justify-between gap-3 px-3 sm:px-5">
+          <div className="flex min-w-0 items-center gap-3">
+            <Link
+              href={userRole === "owner" ? "/app" : "/app/staff"}
+              aria-label="Kembali"
+              title="Kembali"
+              className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border transition-colors ${
+                isMochiPos ? "border-white/15 bg-white/10 text-white hover:bg-white/20" : "border-[#ccd7d1] text-[#29473b] hover:bg-[#eef5f1]"
+              }`}
+            >
+              <ArrowLeft size={18} aria-hidden="true" />
+            </Link>
+            <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl shadow-xs ${isMochiPos ? "bg-[#c8f53a] text-[#073829]" : "bg-[#1d5d47] text-white"}`}>
+              <Receipt size={20} aria-hidden="true" />
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <h1 className={`truncate text-sm font-extrabold sm:text-base ${isMochiPos ? "text-white" : ""}`}>{business?.name} POS</h1>
+                <span className={`hidden rounded-lg px-2.5 py-1 text-[9.5px] font-black sm:inline ${
+                  activeShift
+                    ? (isMochiPos ? "bg-[#c8f53a] text-[#073829]" : "bg-[#e4f4ed] text-[#176047]")
+                    : (isMochiPos ? "bg-red-500/20 border border-red-400/30 text-red-200" : "bg-[#fff0ed] text-[#aa4035]")
+                }`}>
+                  {activeShift ? "Shift aktif" : "Shift belum dibuka"}
+                </span>
+              </div>
+              <p className={`truncate text-[10px] sm:text-xs ${isMochiPos ? "text-emerald-200/80 font-mono" : "text-[#75837c]"}`}>
+                {staffList.find((staff) => staff.id === selectedStaffId)?.name || "Kasir"}
+                {activeShift ? `, modal ${formatRupiah(Number(activeShift.opening_cash))}` : ", buka shift sebelum transaksi"}
+              </p>
+            </div>
           </div>
 
-          {/* Cart Financial Summary & Checkout Footer */}
-          <div className="p-3.5 border-t-2 border-[#232331] bg-[#fcfcfe] space-y-2 shrink-0 font-mono text-xs">
-            
-            <div className="flex justify-between text-[#7b7b8e]">
-              <span>Subtotal:</span>
-              <span>{formatRupiah(cartTotals.subtotal)}</span>
-            </div>
-
-            {/* Discount Pill Selector */}
-            <div className="flex items-center justify-between">
-              <span className="text-[#7b7b8e]">Diskon:</span>
-              <div className="flex items-center gap-1">
-                {[0, 5000, 10000, 15000].map((d) => (
-                  <button
-                    key={d}
-                    type="button"
-                    onClick={() => setDiscountNominal(d)}
-                    className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${
-                      discountNominal === d ? "bg-[#232331] text-white border-[#232331]" : "bg-white text-[#7b7b8e] border-[#dedee8]"
-                    }`}
-                  >
-                    {d === 0 ? "0" : `-${d / 1000}k`}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {cartTotals.serviceCharge > 0 && <div className="flex justify-between text-[#7b7b8e]"><span>Service:</span><span>{formatRupiah(cartTotals.serviceCharge)}</span></div>}
-            {cartTotals.tax > 0 && <div className="flex justify-between text-[#7b7b8e]"><span>Pajak:</span><span>{formatRupiah(cartTotals.tax)}</span></div>}
-
-            {/* Grand Total */}
-            <div className="flex justify-between items-baseline pt-1 border-t border-[#dedee8]">
-              <span className="font-extrabold text-sm text-[#232331]">TOTAL:</span>
-              <span className="text-xl font-black text-[#16a34a]">
-                {formatRupiah(checkoutTotal)}
-              </span>
-            </div>
-
-            {/* Big Touch Checkout Button */}
+          <div className="flex items-center gap-1.5 lg:hidden">
+            {pendingQrOrders.length > 0 && (
+              <button
+                type="button"
+                aria-label={`${pendingQrOrders.length} pesanan masuk`}
+                title="Pesanan masuk"
+                onClick={() => setShowQueue(true)}
+                className={`relative flex h-11 w-11 items-center justify-center rounded-xl border ${
+                  isMochiPos ? "border-amber-400/40 bg-amber-50 text-[#a15a18]" : "border-[#e0b46d] bg-[#fff7e8] text-[#a15a18]"
+                }`}
+              >
+                <Utensils size={18} aria-hidden="true" />
+                <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#ea580c] px-1 text-[9px] font-extrabold text-white">
+                  {pendingQrOrders.length}
+                </span>
+              </button>
+            )}
             <button
               type="button"
-              disabled={cartList.length === 0}
-              onClick={handleOpenPayment}
-              className="btn-tactile w-full flex items-center justify-center gap-2 rounded-2xl border-2 border-[#232331] bg-[#232331] py-3.5 text-sm font-black text-white shadow-ink-md disabled:opacity-40 min-h-[48px]"
+              aria-label={activeShift ? "Tutup shift" : "Buka shift"}
+              title={activeShift ? "Tutup shift" : "Buka shift"}
+              onClick={() => setShowShiftModal(true)}
+              className={`flex h-11 w-11 items-center justify-center rounded-xl border ${
+                activeShift
+                  ? (isMochiPos ? "border-emerald-500/40 bg-emerald-950/40 text-[#c8f53a]" : "border-[#bdd0c6] bg-[#e8f4ee] text-[#176047]")
+                  : "border-[#e7c0bb] bg-[#fff0ed] text-[#a83d33]"
+              }`}
             >
-              <span>Bayar {formatRupiah(checkoutTotal)} ➔</span>
+              <Clock size={18} aria-hidden="true" />
             </button>
+          </div>
+        </div>
+      </header>
 
+      <main id="solusi" className="grid min-h-0 flex-1 lg:grid-cols-[76px_minmax(0,1fr)_360px]">
+        <nav aria-label="Navigasi kasir" className={`hidden min-h-0 flex-col items-center gap-2.5 border-r px-2 py-3.5 lg:flex transition-colors ${isMochiPos ? "bg-[#07281e] border-emerald-900/60 text-emerald-100" : "bg-white border-[#d8e1dc]"}`}>
+          <div className={`flex h-12 w-12 items-center justify-center rounded-xl transition-transform ${isMochiPos ? "bg-[#c8f53a] text-[#073829] shadow-sm" : "bg-[#1d5d47] text-white"}`} title="Kasir">
+            <LayoutGrid size={20} aria-hidden="true" />
+          </div>
+          {userRole === "owner" && (
+            <Link href="/app/pos/menu" aria-label="Kelola menu" title="Kelola menu" className={`flex h-12 w-12 items-center justify-center rounded-xl transition-colors ${isMochiPos ? "text-emerald-300/80 hover:bg-white/10 hover:text-white" : "text-[#66766e] hover:bg-[#edf4f0] hover:text-[#1d5d47]"}`}>
+              <UtensilsCrossed size={20} aria-hidden="true" />
+            </Link>
+          )}
+          <Link href="/app/pos/station" aria-label="Kasir tetap" title="Kasir tetap" className={`flex h-12 w-12 items-center justify-center rounded-xl transition-colors ${isMochiPos ? "text-emerald-300/80 hover:bg-white/10 hover:text-white" : "text-[#66766e] hover:bg-[#edf4f0] hover:text-[#1d5d47]"}`}>
+            <MonitorSmartphone size={20} aria-hidden="true" />
+          </Link>
+          <Link href="/app/pos/kitchen" aria-label="Dapur" title="Dapur" className={`flex h-12 w-12 items-center justify-center rounded-xl transition-colors ${isMochiPos ? "text-emerald-300/80 hover:bg-white/10 hover:text-white" : "text-[#66766e] hover:bg-[#edf4f0] hover:text-[#1d5d47]"}`}>
+            <ChefHat size={20} aria-hidden="true" />
+          </Link>
+          {userRole === "owner" && (
+            <Link href="/app/pos/owner" aria-label="Dashboard owner" title="Dashboard owner" className={`flex h-12 w-12 items-center justify-center rounded-xl transition-colors ${isMochiPos ? "text-emerald-300/80 hover:bg-white/10 hover:text-white" : "text-[#66766e] hover:bg-[#edf4f0] hover:text-[#1d5d47]"}`}>
+              <TrendingUp size={20} aria-hidden="true" />
+            </Link>
+          )}
+          {pendingQrOrders.length > 0 && (
+            <button type="button" onClick={() => setShowQueue(true)} aria-label={`${pendingQrOrders.length} pesanan masuk`} title="Pesanan masuk" className="relative flex h-12 w-12 items-center justify-center rounded-xl bg-[#fff4df] text-[#a15a18]">
+              <Utensils size={19} aria-hidden="true" />
+              <span className="absolute -right-0.5 -top-0.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#ea580c] px-1 text-[9px] font-extrabold text-white">{pendingQrOrders.length}</span>
+            </button>
+          )}
+          <button type="button" onClick={() => setShowShiftModal(true)} aria-label={activeShift ? "Tutup shift" : "Buka shift"} title={activeShift ? "Tutup shift" : "Buka shift"} className={`mt-auto flex h-12 w-12 items-center justify-center rounded-xl border transition-all ${
+            activeShift
+              ? (isMochiPos ? "border-[#c8f53a]/50 bg-[#0b3d2e] text-[#c8f53a]" : "border-[#b8cec2] bg-[#e5f3ec] text-[#176047]")
+              : "border-[#e3b5af] bg-[#fff0ed] text-[#a83d33]"
+          }`}>
+            <Clock size={19} aria-hidden="true" />
+          </button>
+        </nav>
+
+        <section className="flex min-h-0 min-w-0 flex-col overflow-hidden border-r border-[#d8e1dc]">
+          <div className={`shrink-0 border-b p-3 sm:p-4 ${isMochiPos ? "bg-white border-[#dbe4df]" : "bg-[#f7faf8] border-[#dbe4df]"}`}>
+            <div className="relative">
+              <Search size={18} aria-hidden="true" className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-[#718078]" />
+              <input
+                type="search"
+                value={menuSearchQuery}
+                onChange={(event) => setMenuSearchQuery(event.target.value)}
+                placeholder="Cari nama menu"
+                aria-label="Cari nama menu"
+                className={`min-h-12 w-full rounded-xl border bg-white pl-11 pr-11 text-sm outline-none transition-colors placeholder:text-[#98a29d] ${isMochiPos ? "border-[#ccd9d3] focus:border-[#167052] focus:ring-2 focus:ring-[#167052]/20" : "border-[#cfdad4] focus:border-[#167052]"}`}
+              />
+              {menuSearchQuery && (
+                <button type="button" aria-label="Hapus pencarian" onClick={() => setMenuSearchQuery("")} className="absolute right-0 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center text-[#68766f]">
+                  <X size={18} aria-hidden="true" />
+                </button>
+              )}
+            </div>
+
+            <div className="mt-3 grid grid-flow-col grid-rows-2 auto-cols-[148px] gap-2 overflow-x-auto pb-1 scrollbar-none">
+              <button
+                type="button"
+                onClick={() => setActiveCategory("all")}
+                className={`flex min-h-16 items-center gap-2 rounded-xl border px-3 text-left transition-all ${activeCategory === "all" ? (isMochiPos ? "border-[#0b3d2e] bg-[#0b3d2e] text-[#c8f53a] shadow-xs scale-[1.01]" : "border-[#167052] bg-[#e1f2ea] text-[#15533e]") : (isMochiPos ? "border-[#d8e3de] bg-white text-[#20372e] hover:border-[#167052]/40" : "border-[#d5ded9] bg-white text-[#526159]")}`}
+              >
+                <LayoutGrid size={20} strokeWidth={1.8} aria-hidden="true" />
+                <span className="min-w-0"><span className="block text-xs font-extrabold">Semua</span><span className={`block text-[9px] ${activeCategory === "all" && isMochiPos ? "text-emerald-200" : "text-[#7c8982]"}`}>{menuItems.length} menu</span></span>
+              </button>
+              {categories.map((category) => {
+                const CategoryIcon = getPosCategoryIcon(category.name);
+                const itemCount = menuItems.filter((item) => item.category_id === category.id).length;
+                const isSelected = activeCategory === category.id;
+                return (
+                  <button
+                    key={category.id}
+                    type="button"
+                    onClick={() => setActiveCategory(category.id)}
+                    className={`flex min-h-16 items-center gap-2 rounded-xl border px-3 text-left transition-all ${isSelected ? (isMochiPos ? "border-[#0b3d2e] bg-[#0b3d2e] text-[#c8f53a] shadow-xs scale-[1.01]" : "border-[#167052] bg-[#e1f2ea] text-[#15533e]") : (isMochiPos ? "border-[#d8e3de] bg-white text-[#20372e] hover:border-[#167052]/40" : "border-[#d5ded9] bg-white text-[#526159]")}`}
+                  >
+                    <CategoryIcon size={20} strokeWidth={1.8} aria-hidden="true" />
+                    <span className="min-w-0"><span className="line-clamp-2 block text-xs font-extrabold leading-tight">{category.name}</span><span className={`block text-[9px] ${isSelected && isMochiPos ? "text-emerald-200" : "text-[#7c8982]"}`}>{itemCount} menu</span></span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
+          <div className="flex items-end justify-between px-3 pb-2 pt-3 sm:px-4">
+            <div>
+              <p className="text-[10px] font-bold uppercase text-[#78867f]">Katalog kasir</p>
+              <h2 className="text-lg font-extrabold text-[#1e3b30]">
+                {activeCategory === "all" ? "Semua menu" : categories.find((category) => category.id === activeCategory)?.name || "Menu"}
+              </h2>
+            </div>
+            <span className="text-xs font-semibold text-[#728078]">{filteredMenu.length} tersedia</span>
+          </div>
+
+          <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-24 sm:px-4 lg:pb-4">
+            {filteredMenu.length > 0 ? (
+              <div className="grid grid-cols-1 gap-2.5 min-[520px]:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+                {filteredMenu.map((item) => {
+                  const inCart = cart[item.id];
+                  const categoryName = categories.find((category) => category.id === item.category_id)?.name ?? "Menu";
+                  const CategoryIcon = getPosCategoryIcon(categoryName);
+                  const hasPhoto = item.photo_url && item.photo_url !== PLACEHOLDER_MENU;
+                  return (
+                    <article key={item.id} className={`flex min-h-[154px] min-w-0 flex-col rounded-2xl border bg-white p-3 transition-all hover:shadow-md ${inCart ? (isMochiPos ? "border-2 border-[#167052] ring-2 ring-[#167052]/10 shadow-sm bg-[#fbfdfc]" : "border-[#167052] shadow-[0_4px_14px_rgba(22,112,82,0.1)]") : (isMochiPos ? "border-[#d8e3de]" : "border-[#d8e1dc]")} ${!item.is_available ? "opacity-55" : ""}`}>
+                      <div className="flex min-w-0 gap-2.5">
+                        <div className="flex h-[68px] w-[68px] shrink-0 items-center justify-center overflow-hidden rounded-xl bg-[#e8f2ed] text-[#34745d]">
+                          {hasPhoto ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={item.photo_url ?? undefined} alt={item.name} loading="lazy" className="h-full w-full object-cover" />
+                          ) : (
+                            <CategoryIcon size={25} strokeWidth={1.6} aria-hidden="true" />
+                          )}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <h3 className="line-clamp-2 text-[13px] font-extrabold leading-snug text-[#20372e]">{item.name}</h3>
+                          {item.description && <p className="mt-1 line-clamp-2 text-[10px] leading-relaxed text-[#7c8982]">{item.description}</p>}
+                          <p className="mt-1 text-[10px] font-semibold text-[#6f7d76]">{categoryName}</p>
+                        </div>
+                      </div>
+
+                      <div className="mt-auto flex items-end justify-between gap-2 pt-2">
+                        <strong className={`text-sm font-black tabular-nums font-mono ${isMochiPos ? "text-[#0b3d2e]" : "text-[#9b5332]"}`}>{formatRupiah(Number(item.price))}</strong>
+                        {item.is_available ? (
+                          inCart ? (
+                            <div className="grid shrink-0 grid-cols-[44px_30px_44px] items-center">
+                              <button type="button" aria-label={`Kurangi ${item.name}`} onClick={() => handleUpdateQty(item.id, -1)} className={`flex h-11 w-11 items-center justify-center rounded-xl border ${isMochiPos ? "border-[#ccd9d3] bg-[#edf8f3] text-[#167052]" : "border-[#c5d4cd] text-[#315d4b]"}`}><Minus size={14} aria-hidden="true" /></button>
+                              <span className="text-center text-sm font-black tabular-nums font-mono">{inCart.qty}</span>
+                              <button type="button" aria-label={`Tambah ${item.name}`} onClick={() => handleUpdateQty(item.id, 1)} className={`flex h-11 w-11 items-center justify-center rounded-xl text-white ${isMochiPos ? "bg-[#0b3d2e]" : "bg-[#167052]"}`}><Plus size={15} aria-hidden="true" /></button>
+                            </div>
+                          ) : (
+                            <button type="button" aria-label={`Tambah ${item.name}`} onClick={() => handleAddToCart(item)} className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl transition-all active:scale-95 shadow-xs ${isMochiPos ? "bg-[#c8f53a] hover:bg-[#d9ff57] text-[#073829] font-black" : "bg-[#0aae6f] hover:bg-[#079760] text-white"}`}><Plus size={18} aria-hidden="true" /></button>
+                          )
+                        ) : (
+                          <span className="flex min-h-11 items-center rounded-lg bg-[#fff0ed] px-3 text-xs font-bold text-[#a44237]">Habis</span>
+                        )}
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="flex min-h-64 flex-col items-center justify-center rounded-2xl border border-[#d6dfda] bg-white px-6 text-center">
+                <Search size={27} strokeWidth={1.6} className="text-[#82968d]" aria-hidden="true" />
+                <p className="mt-3 text-sm font-extrabold text-[#294239]">Menu tidak ditemukan</p>
+                <p className="mt-1 text-xs text-[#7b8882]">Coba kata pencarian atau kategori lain.</p>
+              </div>
+            )}
+          </div>
         </section>
 
+        <aside className="hidden min-h-0 overflow-hidden lg:block">{renderInvoice(false)}</aside>
       </main>
+
+      {cartList.length > 0 && (
+        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-[#d1ddd7] bg-white px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 shadow-[0_-8px_24px_rgba(25,67,52,0.12)] lg:hidden">
+          <button type="button" onClick={() => setShowMobileCart(true)} className="mx-auto flex min-h-12 w-full max-w-md items-center justify-between rounded-lg bg-[#167052] px-4 text-white">
+            <span className="flex items-center gap-2 text-left"><ShoppingCart size={18} aria-hidden="true" /><span><span className="block text-xs font-extrabold">Lihat pesanan</span><span className="block text-[10px] text-white/75">{cartList.reduce((sum, line) => sum + line.qty, 0)} item</span></span></span>
+            <span className="text-sm font-extrabold tabular-nums">{formatRupiah(checkoutTotal)}</span>
+          </button>
+        </div>
+      )}
+
+      {showMobileCart && cartList.length > 0 && (
+        <div className="fixed inset-0 z-50 flex items-end bg-[#12271f]/45 lg:hidden" role="dialog" aria-modal="true" aria-label="Rincian pesanan kasir">
+          <button type="button" aria-label="Tutup rincian pesanan" onClick={() => setShowMobileCart(false)} className="absolute inset-0 cursor-default" />
+          <div className="relative h-[90dvh] w-full overflow-hidden rounded-t-2xl bg-white shadow-[0_-16px_40px_rgba(17,42,33,0.2)]">
+            <div className="absolute left-1/2 top-2 z-10 h-1 w-10 -translate-x-1/2 rounded-full bg-[#cbd6d0]" />
+            {renderInvoice(true)}
+          </div>
+        </div>
+      )}
 
       {/* MODAL: PAYMENT MODAL & CASH CALCULATOR */}
       {showPaymentModal && (
-        <div className="fixed inset-0 z-50 bg-[#232331]/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
-          <div className="w-full max-w-lg rounded-3xl border-2 border-[#232331] bg-white p-5 sm:p-6 shadow-ink-lg space-y-4 animate-in zoom-in-95 font-mono text-xs max-h-[95vh] overflow-y-auto">
+        <div className={`fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 backdrop-blur-xs ${
+          isMochiPos ? "bg-[#07281e]/60" : "bg-[#232331]/60"
+        }`}>
+          <div className={`w-full max-w-lg rounded-3xl bg-white p-5 sm:p-6 space-y-4 animate-in zoom-in-95 font-mono text-xs max-h-[95vh] overflow-y-auto ${
+            isMochiPos ? "border border-[#d8e3de] shadow-2xl" : "border-2 border-[#232331] shadow-ink-lg"
+          }`}>
             
-            <div className="flex items-center justify-between border-b border-[#dedee8] pb-3">
-              <h3 className="font-extrabold text-base text-[#232331] font-sans">
+            <div className={`flex items-center justify-between border-b pb-3 ${
+              isMochiPos ? "border-[#e0ebe5]" : "border-[#dedee8]"
+            }`}>
+              <h3 className={`font-extrabold text-base font-sans ${
+                isMochiPos ? "text-[#0b3d2e]" : "text-[#232331]"
+              }`}>
                 Pembayaran Kasir
               </h3>
               <button
                 type="button"
                 onClick={() => setShowPaymentModal(false)}
-                className="text-[#7b7b8e] hover:text-[#232331] font-bold p-1"
+                className={`font-bold p-1 transition-colors ${
+                  isMochiPos ? "text-[#7b8882] hover:text-[#0b3d2e]" : "text-[#7b7b8e] hover:text-[#232331]"
+                }`}
               >
                 ✕
               </button>
@@ -769,7 +963,7 @@ export default function PosClient({
               
               {/* Tipe layanan: Dine-In / Takeaway / Delivery */}
               <div className="space-y-1 font-mono">
-                <label className="block font-bold text-[#232331]">Tipe Layanan:</label>
+                <label className={`block font-bold ${isMochiPos ? "text-[#0b3d2e]" : "text-[#232331]"}`}>Tipe Layanan:</label>
                 <div className="grid grid-cols-3 gap-2">
                   {SERVICE_TYPES.map((st) => (
                     <button
@@ -777,8 +971,10 @@ export default function PosClient({
                       type="button"
                       onClick={() => setServiceType(st.key)}
                       title={st.hint}
-                      className={`p-2 rounded-xl border font-bold text-center text-[11px] ${
-                        serviceType === st.key ? "bg-[#232331] text-[#d9ff57] border-[#232331]" : "bg-white text-[#7b7b8e] border-[#dedee8]"
+                      className={`p-2 rounded-xl border font-bold text-center text-[11px] transition-all ${
+                        serviceType === st.key
+                          ? (isMochiPos ? "bg-[#0b3d2e] text-[#c8f53a] border-[#0b3d2e] shadow-xs" : "bg-[#232331] text-[#d9ff57] border-[#232331]")
+                          : (isMochiPos ? "bg-white text-[#526159] border-[#d8e3de] hover:bg-[#edf8f3]" : "bg-white text-[#7b7b8e] border-[#dedee8]")
                       }`}
                     >
                       {st.label}
@@ -788,60 +984,66 @@ export default function PosClient({
               </div>
 
               {serviceType === "delivery" && (
-                <div className="space-y-2 rounded-2xl border border-[#dedee8] bg-[#fcfcfe] p-3 font-mono">
-                  <p className="font-bold text-[#232331]">Data pengantaran</p>
+                <div className={`space-y-2 rounded-2xl border p-3 font-mono ${
+                  isMochiPos ? "border-[#d8e3de] bg-[#f8faf9]" : "border-[#dedee8] bg-[#fcfcfe]"
+                }`}>
+                  <p className={`font-bold ${isMochiPos ? "text-[#0b3d2e]" : "text-[#232331]"}`}>Data pengantaran</p>
                   <input
                     type="text" required value={kirimNama}
                     onChange={(e) => setKirimNama(e.target.value)}
                     placeholder="Nama penerima"
-                    className="w-full rounded-xl border border-[#c9c9d4] p-2 text-xs"
+                    className={`w-full rounded-xl border p-2 text-xs ${isMochiPos ? "border-[#ccd9d3] focus:border-[#167052]" : "border-[#c9c9d4]"}`}
                   />
                   <input
                     type="tel" required value={kirimHp}
                     onChange={(e) => setKirimHp(e.target.value)}
                     placeholder="Nomor WhatsApp"
-                    className="w-full rounded-xl border border-[#c9c9d4] p-2 text-xs"
+                    className={`w-full rounded-xl border p-2 text-xs ${isMochiPos ? "border-[#ccd9d3] focus:border-[#167052]" : "border-[#c9c9d4]"}`}
                   />
                   <textarea
                     required value={kirimAlamat} rows={2}
                     onChange={(e) => setKirimAlamat(e.target.value)}
                     placeholder="Alamat lengkap"
-                    className="w-full rounded-xl border border-[#c9c9d4] p-2 text-xs"
+                    className={`w-full rounded-xl border p-2 text-xs ${isMochiPos ? "border-[#ccd9d3] focus:border-[#167052]" : "border-[#c9c9d4]"}`}
                   />
                   <div>
                     <label className="block text-[11px] font-bold mb-1">Ongkir (Rp)</label>
                     <input
                       type="number" min={0} step={1000} value={kirimOngkir}
                       onChange={(e) => setKirimOngkir(Number(e.target.value))}
-                      className="w-full rounded-xl border border-[#c9c9d4] p-2 text-xs font-bold"
+                      className={`w-full rounded-xl border p-2 text-xs font-bold ${isMochiPos ? "border-[#ccd9d3] text-[#0b3d2e]" : "border-[#c9c9d4]"}`}
                     />
                   </div>
                   <input
                     type="text" value={kirimCatatan}
                     onChange={(e) => setKirimCatatan(e.target.value)}
                     placeholder="Catatan pengiriman (opsional)"
-                    className="w-full rounded-xl border border-[#c9c9d4] p-2 text-xs"
+                    className={`w-full rounded-xl border p-2 text-xs ${isMochiPos ? "border-[#ccd9d3]" : "border-[#c9c9d4]"}`}
                   />
                 </div>
               )}
 
               {serviceType === "dine_in" && (
                 <div className="space-y-1 font-mono">
-                  <label className="block font-bold text-[#232331]">Nomor Meja:</label>
+                  <label className={`block font-bold ${isMochiPos ? "text-[#0b3d2e]" : "text-[#232331]"}`}>Nomor Meja:</label>
                   <input
                     type="text"
                     value={selectedTableNo}
                     onChange={(e) => setSelectedTableNo(e.target.value)}
                     placeholder="Contoh: 04"
-                    className="w-full rounded-xl border border-[#232331] p-2 text-xs font-bold text-[#232331]"
+                    className={`w-full rounded-xl border p-2 text-xs font-bold ${
+                      isMochiPos
+                        ? "border-[#ccd9d3] text-[#0b3d2e] focus:border-[#167052] focus:ring-1 focus:ring-[#167052]/20"
+                        : "border-[#232331] text-[#232331]"
+                    }`}
                   />
                 </div>
               )}
 
               {/* Loyalty Customer Attacher */}
-              <div className="space-y-1 font-mono border-t border-[#dedee8] pt-3">
+              <div className={`space-y-1 font-mono border-t pt-3 ${isMochiPos ? "border-[#e0ebe5]" : "border-[#dedee8]"}`}>
                 <div className="flex justify-between items-center">
-                  <label className="font-bold text-[#7958d8]">Member KAEL Loyalty (Opsional):</label>
+                  <label className={`font-bold ${isMochiPos ? "text-[#167052]" : "text-[#7958d8]"}`}>Member KAEL Loyalty (Opsional):</label>
                   {attachedCustomer && (
                     <button
                       type="button"
@@ -860,15 +1062,6 @@ export default function PosClient({
                       <span className="text-[10.5px] text-[#7b7b8e]">{attachedCustomer.phone_masked}</span>
                     </div>
                     <span className="font-black text-xs text-[#16a34a]">
-                      {/*
-                        Angka pastinya hanya boleh ditampilkan kalau memang
-                        bisa dipastikan dari layar ini. Kurs poin dibaca dari
-                        program yang sebenarnya, bukan angka tetap. Kalau
-                        program level menyala, jumlah akhirnya bergantung level
-                        member ini dan baru dihitung di server — jadi kasir
-                        diberi kepastian bahwa poinnya masuk, tanpa angka yang
-                        bisa meleset di depan pelanggan.
-                      */}
                       {!loyaltyProgram
                         ? "Member Terpasang ✓"
                         : loyaltyProgram.tiers_is_active
@@ -886,11 +1079,17 @@ export default function PosClient({
                       value={loyaltySearchQuery}
                       onChange={(e) => setLoyaltySearchQuery(e.target.value)}
                       placeholder="Ketik 4 digit WA member..."
-                      className="w-full rounded-xl border border-[#dedee8] pl-8 pr-3 py-1.5 text-xs font-bold text-[#232331]"
+                      className={`w-full rounded-xl border pl-8 pr-3 py-1.5 text-xs font-bold ${
+                        isMochiPos
+                          ? "border-[#ccd9d3] text-[#0b3d2e] focus:border-[#167052]"
+                          : "border-[#dedee8] text-[#232331]"
+                      }`}
                     />
 
                     {loyaltySearchResults.length > 0 && (
-                      <div className="mt-1 rounded-xl border border-[#7958d8] bg-white p-1 space-y-1 max-h-32 overflow-y-auto">
+                      <div className={`mt-1 rounded-xl border bg-white p-1 space-y-1 max-h-32 overflow-y-auto ${
+                        isMochiPos ? "border-[#167052]" : "border-[#7958d8]"
+                      }`}>
                         {loyaltySearchResults.map((c) => (
                           <button
                             key={c.id}
@@ -899,7 +1098,9 @@ export default function PosClient({
                               setAttachedCustomer(c);
                               setLoyaltySearchQuery("");
                             }}
-                            className="w-full flex justify-between items-center p-1.5 rounded-lg hover:bg-[#f0edff] text-left text-[11px]"
+                            className={`w-full flex justify-between items-center p-1.5 rounded-lg text-left text-[11px] transition-colors ${
+                              isMochiPos ? "hover:bg-[#edf8f3]" : "hover:bg-[#f0edff]"
+                            }`}
                           >
                             <span className="font-bold text-[#232331]">{c.name} ({c.phone_masked})</span>
                             <span className="font-bold text-[#15803d]">{c.balance} Pts</span>
@@ -908,12 +1109,6 @@ export default function PosClient({
                       </div>
                     )}
 
-                    {/*
-                      Daftar member langsung dari kasir.
-                      Pelanggan cukup menyebutkan nama dan nomornya; tidak perlu
-                      memegang ponsel, tidak perlu menyentuh kartu di meja. Ini
-                      jalur yang paling sering terpakai saat antrean panjang.
-                    */}
                     {!formMemberBaru ? (
                       <button
                         type="button"
@@ -923,12 +1118,18 @@ export default function PosClient({
                           setMemberBaruTelp(loyaltySearchQuery.replace(/\D/g, ""));
                           setGalatMemberBaru(null);
                         }}
-                        className="mt-1.5 flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-[#7958d8] py-1.5 text-[11px] font-bold text-[#7958d8]"
+                        className={`mt-1.5 flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed py-1.5 text-[11px] font-bold transition-colors ${
+                          isMochiPos
+                            ? "border-[#167052] text-[#167052] hover:bg-[#edf8f3]"
+                            : "border-[#7958d8] text-[#7958d8] hover:bg-[#faf9ff]"
+                        }`}
                       >
                         <UserPlus size={12} /> Daftarkan member baru
                       </button>
                     ) : (
-                      <div className="mt-1.5 space-y-1.5 rounded-xl border border-[#7958d8] bg-[#faf9ff] p-2">
+                      <div className={`mt-1.5 space-y-1.5 rounded-xl border p-2 ${
+                        isMochiPos ? "border-[#167052] bg-[#f4faf7]" : "border-[#7958d8] bg-[#faf9ff]"
+                      }`}>
                         <input
                           type="text"
                           value={memberBaruNama}
@@ -970,14 +1171,15 @@ export default function PosClient({
                                 setGalatMemberBaru(res.error);
                                 return;
                               }
-                              // Langsung menempel ke transaksi yang sedang berjalan,
-                              // supaya belanja hari ini ikut terhitung — bukan baru
-                              // dimulai dari kedatangan berikutnya.
                               setAttachedCustomer(res.data.customer);
                               setFormMemberBaru(false);
                               setLoyaltySearchQuery("");
                             }}
-                            className="flex-1 rounded-lg border border-[#232331] bg-[#d9ff57] py-1.5 text-[11px] font-black text-[#232331] disabled:opacity-60"
+                            className={`flex-1 rounded-lg py-1.5 text-[11px] font-black disabled:opacity-60 transition-all ${
+                              isMochiPos
+                                ? "bg-[#c8f53a] text-[#073829] shadow-xs"
+                                : "border border-[#232331] bg-[#d9ff57] text-[#232331]"
+                            }`}
                           >
                             {simpanMemberBaru ? "..." : "Daftar & pakai"}
                           </button>
@@ -989,8 +1191,8 @@ export default function PosClient({
               </div>
 
               {/* Payment Method Selector */}
-              <div className="space-y-1 font-mono border-t border-[#dedee8] pt-3">
-                <label className="block font-bold text-[#232331]">Metode Pembayaran:</label>
+              <div className={`space-y-1 font-mono border-t pt-3 ${isMochiPos ? "border-[#e0ebe5]" : "border-[#dedee8]"}`}>
+                <label className={`block font-bold ${isMochiPos ? "text-[#0b3d2e]" : "text-[#232331]"}`}>Metode Pembayaran:</label>
                 <div className="grid grid-cols-3 gap-2">
                   {[
                     { id: "cash", label: "💵 Tunai (Cash)" },
@@ -1001,8 +1203,10 @@ export default function PosClient({
                       key={m.id}
                       type="button"
                       onClick={() => setPaymentMethod(m.id as any)}
-                      className={`p-2.5 rounded-xl border font-bold text-center text-xs ${
-                        paymentMethod === m.id ? "bg-[#232331] text-[#d9ff57] border-[#232331] shadow-ink-xs" : "bg-white text-[#7b7b8e] border-[#dedee8]"
+                      className={`p-2.5 rounded-xl border font-bold text-center text-xs transition-all ${
+                        paymentMethod === m.id
+                          ? (isMochiPos ? "bg-[#0b3d2e] text-[#c8f53a] border-[#0b3d2e] shadow-xs" : "bg-[#232331] text-[#d9ff57] border-[#232331] shadow-ink-xs")
+                          : (isMochiPos ? "bg-white text-[#526159] border-[#d8e3de] hover:bg-[#edf8f3]" : "bg-white text-[#7b7b8e] border-[#dedee8]")
                       }`}
                     >
                       {m.label}
@@ -1013,15 +1217,19 @@ export default function PosClient({
 
               {/* Cash Input & Change Calculator */}
               {paymentMethod === "cash" && (
-                <div className="rounded-2xl border border-[#dedee8] bg-[#fcfcfe] p-3 space-y-2 font-mono text-xs">
-                  <label className="block font-bold text-[#232331]">Uang Tunai Diterima (Rp):</label>
+                <div className={`rounded-2xl border p-3 space-y-2 font-mono text-xs ${
+                  isMochiPos ? "border-[#d8e3de] bg-[#f8faf9]" : "border-[#dedee8] bg-[#fcfcfe]"
+                }`}>
+                  <label className={`block font-bold ${isMochiPos ? "text-[#0b3d2e]" : "text-[#232331]"}`}>Uang Tunai Diterima (Rp):</label>
                   <input
                     type="number"
                     min={checkoutTotal}
                     step={5000}
                     value={cashGivenInput}
                     onChange={(e) => setCashGivenInput(Number(e.target.value))}
-                    className="w-full rounded-xl border-2 border-[#232331] p-2.5 text-base font-black text-[#232331]"
+                    className={`w-full rounded-xl border-2 p-2.5 text-base font-black ${
+                      isMochiPos ? "border-[#0b3d2e] text-[#0b3d2e]" : "border-[#232331] text-[#232331]"
+                    }`}
                   />
 
                   {/* Quick Cash Pills */}
@@ -1031,7 +1239,11 @@ export default function PosClient({
                         key={amt}
                         type="button"
                         onClick={() => setCashGivenInput(amt)}
-                        className="px-2 py-1 rounded-lg border border-[#dedee8] bg-white text-[10.5px] font-bold text-[#7b7b8e] hover:border-[#232331]"
+                        className={`px-2 py-1 rounded-lg border text-[10.5px] font-bold transition-colors ${
+                          isMochiPos
+                            ? "border-[#d8e3de] bg-white text-[#526159] hover:border-[#0b3d2e] hover:bg-[#edf8f3]"
+                            : "border-[#dedee8] bg-white text-[#7b7b8e] hover:border-[#232331]"
+                        }`}
                       >
                         {amt === checkoutTotal ? "Uang Pas" : formatRupiah(amt)}
                       </button>
@@ -1039,9 +1251,13 @@ export default function PosClient({
                   </div>
 
                   {/* Kembalian Display */}
-                  <div className="flex justify-between items-center pt-2 border-t border-[#dedee8]">
+                  <div className={`flex justify-between items-center pt-2 border-t ${
+                    isMochiPos ? "border-[#e0ebe5]" : "border-[#dedee8]"
+                  }`}>
                     <span className="font-bold text-[#7b7b8e]">KEMBALIAN:</span>
-                    <span className="text-base font-black text-[#16a34a]">
+                    <span className={`text-base font-black font-mono ${
+                      isMochiPos ? "text-[#0b3d2e]" : "text-[#16a34a]"
+                    }`}>
                       {formatRupiah(cashChangeCalc.cashChange)}
                     </span>
                   </div>
@@ -1062,7 +1278,11 @@ export default function PosClient({
                 <button
                   type="submit"
                   disabled={isPending}
-                  className="btn-tactile w-full flex items-center justify-center gap-2 rounded-2xl border-2 border-[#232331] bg-[#16a34a] py-3.5 text-sm font-black text-white shadow-ink-md disabled:opacity-50"
+                  className={`w-full flex items-center justify-center gap-2 rounded-2xl py-3.5 text-sm font-black disabled:opacity-50 transition-all ${
+                    isMochiPos
+                      ? "bg-[#c8f53a] hover:bg-[#d9ff57] text-[#073829] shadow-md active:scale-[0.99]"
+                      : "btn-tactile border-2 border-[#232331] bg-[#16a34a] text-white shadow-ink-md"
+                  }`}
                 >
                   <Check size={16} />
                   <span>{isPending ? "Memproses..." : "Proses Pembayaran Selesai ✓"}</span>
@@ -1076,24 +1296,38 @@ export default function PosClient({
       )}
 
       {showQueue && (
-        <OrderQueue orders={pendingQrOrders} onClose={() => setShowQueue(false)} />
+        <OrderQueue orders={pendingQrOrders} onClose={() => setShowQueue(false)} isMochi={isMochiPos} />
       )}
 
       {/* MODAL: POST-PAYMENT SUCCESS & RECEIPT ACTIONS */}
       {completedOrder && (
-        <div className="fixed inset-0 z-50 bg-[#232331]/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="w-full max-w-sm rounded-3xl border-2 border-[#232331] bg-white p-6 shadow-ink-lg text-center space-y-4 animate-in zoom-in-95 font-mono text-xs">
+        <div className={`fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-xs ${
+          isMochiPos ? "bg-[#07281e]/60" : "bg-[#232331]/60"
+        }`}>
+          <div className={`w-full max-w-sm rounded-3xl bg-white p-6 text-center space-y-4 animate-in zoom-in-95 font-mono text-xs ${
+            isMochiPos ? "border border-[#d8e3de] shadow-2xl" : "border-2 border-[#232331] shadow-ink-lg"
+          }`}>
             
-            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-[#dcfce7] text-[#16a34a] border-2 border-[#16a34a]">
+            <div className={`mx-auto flex h-14 w-14 items-center justify-center rounded-2xl ${
+              isMochiPos
+                ? "bg-[#edf8f3] text-[#167052] border border-[#a3d9be]"
+                : "bg-[#dcfce7] text-[#16a34a] border-2 border-[#16a34a]"
+            }`}>
               <CheckCircle2 size={32} />
             </div>
 
             <div className="space-y-1">
-              <span className="text-[10.5px] text-[#7958d8] font-bold block uppercase">TRANSAKSI SUKSES</span>
-              <h3 className="text-2xl font-black text-[#232331]">
+              <span className={`text-[10.5px] font-bold block uppercase ${
+                isMochiPos ? "text-[#167052]" : "text-[#7958d8]"
+              }`}>TRANSAKSI SUKSES</span>
+              <h3 className={`text-2xl font-black ${
+                isMochiPos ? "text-[#0b3d2e]" : "text-[#232331]"
+              }`}>
                 #{completedOrder.orderNo}
               </h3>
-              <p className="text-base font-extrabold text-[#16a34a]">
+              <p className={`text-base font-extrabold ${
+                isMochiPos ? "text-[#0b3d2e]" : "text-[#16a34a]"
+              }`}>
                 Total: {formatRupiah(completedOrder.total)}
               </p>
               {completedOrder.paymentMethod === "cash" && (
@@ -1108,16 +1342,35 @@ export default function PosClient({
               <button
                 type="button"
                 onClick={handlePrintBluetoothThermal}
-                className="btn-tactile w-full flex items-center justify-center gap-2 rounded-xl border-2 border-[#232331] bg-[#232331] py-2.5 text-xs font-bold text-white shadow-ink-xs"
+                disabled={printerState === "printing"}
+                className={`w-full flex items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-bold disabled:opacity-60 transition-all ${
+                  isMochiPos
+                    ? "bg-[#0b3d2e] hover:bg-[#124d3b] text-white border border-[#0b3d2e] shadow-xs"
+                    : "btn-tactile border-2 border-[#232331] bg-[#232331] text-white shadow-ink-xs"
+                }`}
               >
                 <Printer size={14} />
-                <span>Cetak Thermal Bluetooth</span>
+                <span>{printerState === "printing" ? "Mengirim ke printer..." : completedOrder.paymentMethod === "cash" ? "Cetak & Buka Laci" : "Cetak Thermal Bluetooth"}</span>
               </button>
+              {completedOrder.paymentMethod === "cash" && (
+                <p className={`rounded-lg border px-3 py-2 text-left text-[10px] font-bold ${
+                  isMochiPos
+                    ? "border-amber-200 bg-amber-50 text-amber-900"
+                    : "border-[#d97706] bg-[#fff7e5] text-[#9a4f0a]"
+                }`}>
+                  Laci terbuka lewat kabel RJ11 pada printer setelah struk berhasil dikirim.
+                </p>
+              )}
+              {printerState === "connected" && <p className="text-[10px] font-bold text-[#15803d]">Printer terhubung dan aktivitas cetak tercatat.</p>}
 
               <Link
                 href={`/receipt/${completedOrder.orderId}`}
                 target="_blank"
-                className="btn-tactile w-full flex items-center justify-center gap-2 rounded-xl border border-[#16a34a] bg-[#dcfce7] py-2.5 text-xs font-bold text-[#16a34a]"
+                className={`w-full flex items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-bold transition-colors ${
+                  isMochiPos
+                    ? "border border-[#ccd9d3] bg-[#edf8f3] text-[#0b3d2e] hover:bg-[#e0f1e8]"
+                    : "btn-tactile border border-[#16a34a] bg-[#dcfce7] text-[#16a34a]"
+                }`}
               >
                 <Share2 size={14} />
                 <span>Kirim Struk Digital WhatsApp</span>
@@ -1127,7 +1380,9 @@ export default function PosClient({
             <button
               type="button"
               onClick={() => setCompletedOrder(null)}
-              className="w-full py-2 text-xs font-bold text-[#7b7b8e] hover:text-[#232331] pt-1"
+              className={`w-full py-2 text-xs font-bold pt-1 transition-colors ${
+                isMochiPos ? "text-[#526159] hover:text-[#0b3d2e]" : "text-[#7b7b8e] hover:text-[#232331]"
+              }`}
             >
               + Transaksi Baru
             </button>
@@ -1138,17 +1393,27 @@ export default function PosClient({
 
       {/* MODAL: SHIFT MANAGEMENT */}
       {showShiftModal && (
-        <div className="fixed inset-0 z-50 bg-[#232331]/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="w-full max-w-md rounded-3xl border-2 border-[#232331] bg-white p-6 shadow-ink-lg space-y-4 animate-in zoom-in-95 font-mono text-xs">
+        <div className={`fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-xs ${
+          isMochiPos ? "bg-[#07281e]/60" : "bg-[#232331]/60"
+        }`}>
+          <div className={`w-full max-w-md rounded-3xl bg-white p-6 space-y-4 animate-in zoom-in-95 font-mono text-xs ${
+            isMochiPos ? "border border-[#d8e3de] shadow-2xl" : "border-2 border-[#232331] shadow-ink-lg"
+          }`}>
             
-            <div className="flex items-center justify-between border-b border-[#dedee8] pb-3">
-              <h3 className="font-extrabold text-base text-[#232331] font-sans">
+            <div className={`flex items-center justify-between border-b pb-3 ${
+              isMochiPos ? "border-[#e0ebe5]" : "border-[#dedee8]"
+            }`}>
+              <h3 className={`font-extrabold text-base font-sans ${
+                isMochiPos ? "text-[#0b3d2e]" : "text-[#232331]"
+              }`}>
                 {activeShift ? "Tutup Shift Kasir" : "Buka Shift Kasir Baru"}
               </h3>
               <button
                 type="button"
                 onClick={() => setShowShiftModal(false)}
-                className="text-[#7b7b8e] hover:text-[#232331] font-bold p-1"
+                className={`font-bold p-1 transition-colors ${
+                  isMochiPos ? "text-[#7b8882] hover:text-[#0b3d2e]" : "text-[#7b7b8e] hover:text-[#232331]"
+                }`}
               >
                 ✕
               </button>
@@ -1156,7 +1421,9 @@ export default function PosClient({
 
             {activeShift ? (
               <form onSubmit={handleCloseShift} className="space-y-3 font-sans">
-                <div className="rounded-xl bg-[#f0edff] p-3 space-y-1 font-mono text-xs">
+                <div className={`rounded-xl p-3 space-y-1 font-mono text-xs ${
+                  isMochiPos ? "bg-[#edf8f3] border border-[#ccd9d3]" : "bg-[#f0edff]"
+                }`}>
                   <div className="flex justify-between">
                     <span className="text-[#7b7b8e]">Waktu Buka:</span>
                     <span>{formatBusinessDateTime(activeShift.opened_at)}</span>
@@ -1168,7 +1435,7 @@ export default function PosClient({
                 </div>
 
                 <div className="space-y-1 font-mono">
-                  <label className="block font-bold text-[#232331]">
+                  <label className={`block font-bold ${isMochiPos ? "text-[#0b3d2e]" : "text-[#232331]"}`}>
                     Hitung Uang Fisik di Laci Kasir (Rp):
                   </label>
                   <input
@@ -1178,7 +1445,9 @@ export default function PosClient({
                     step={5000}
                     value={shiftClosingCashInput}
                     onChange={(e) => setShiftClosingCashInput(Number(e.target.value))}
-                    className="w-full rounded-xl border-2 border-[#232331] p-2.5 text-base font-black text-[#232331]"
+                    className={`w-full rounded-xl border-2 p-2.5 text-base font-black ${
+                      isMochiPos ? "border-[#0b3d2e] text-[#0b3d2e]" : "border-[#232331] text-[#232331]"
+                    }`}
                     autoFocus
                   />
                   <span className="text-[10px] text-[#7b7b8e] block">
@@ -1197,7 +1466,11 @@ export default function PosClient({
                   <button
                     type="submit"
                     disabled={isPending}
-                    className="btn-tactile rounded-xl bg-[#ef4444] px-5 py-2 font-black text-white shadow-ink-xs disabled:opacity-50"
+                    className={`rounded-xl px-5 py-2 font-black text-white disabled:opacity-50 transition-all ${
+                      isMochiPos
+                        ? "bg-rose-600 hover:bg-rose-700 shadow-xs"
+                        : "btn-tactile bg-[#ef4444] shadow-ink-xs"
+                    }`}
                   >
                     Tutup Shift &amp; Rekonsiliasi ✓
                   </button>
@@ -1206,7 +1479,7 @@ export default function PosClient({
             ) : (
               <form onSubmit={handleOpenShift} className="space-y-3 font-sans">
                 <div className="space-y-1 font-mono">
-                  <label className="block font-bold text-[#232331]">
+                  <label className={`block font-bold ${isMochiPos ? "text-[#0b3d2e]" : "text-[#232331]"}`}>
                     Modal Awal Uang Kembalian (Rp):
                   </label>
                   <input
@@ -1216,7 +1489,9 @@ export default function PosClient({
                     step={10000}
                     value={shiftOpeningCashInput}
                     onChange={(e) => setShiftOpeningCashInput(Number(e.target.value))}
-                    className="w-full rounded-xl border-2 border-[#232331] p-2.5 text-base font-black text-[#232331]"
+                    className={`w-full rounded-xl border-2 p-2.5 text-base font-black ${
+                      isMochiPos ? "border-[#0b3d2e] text-[#0b3d2e]" : "border-[#232331] text-[#232331]"
+                    }`}
                     autoFocus
                   />
                 </div>
@@ -1232,7 +1507,11 @@ export default function PosClient({
                   <button
                     type="submit"
                     disabled={isPending}
-                    className="btn-tactile rounded-xl bg-[#232331] px-5 py-2 font-black text-[#d9ff57] shadow-ink-xs disabled:opacity-50"
+                    className={`rounded-xl px-5 py-2 font-black disabled:opacity-50 transition-all ${
+                      isMochiPos
+                        ? "bg-[#c8f53a] hover:bg-[#d9ff57] text-[#073829] shadow-xs"
+                        : "btn-tactile bg-[#232331] text-[#d9ff57] shadow-ink-xs"
+                    }`}
                   >
                     Buka Shift Sekarang ✓
                   </button>
