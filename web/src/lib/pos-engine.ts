@@ -193,6 +193,65 @@ export function generateEscPosReceiptText(params: {
 }
 
 /**
+ * Format string tiket dapur (Kitchen Slip) 58mm / 80mm monospace.
+ * Didesain khusus untuk koki & barista: menonjolkan nomor meja,
+ * kuantitas item tebal, dan catatan khusus (notes/less sugar/pedas).
+ */
+export function generateKitchenTicketText(params: {
+  businessName: string;
+  orderNo: string;
+  tableNo?: string | null;
+  serviceType: "dine_in" | "takeaway" | "delivery";
+  createdAt: string;
+  items: { name: string; qty: number; note?: string }[];
+  cashierName?: string | null;
+}): string {
+  const W = 32;
+  const center = (str: string) => {
+    const space = Math.max(0, Math.floor((W - str.length) / 2));
+    return " ".repeat(space) + str;
+  };
+  const row = (left: string, right: string) => {
+    const space = Math.max(1, W - left.length - right.length);
+    return left + " ".repeat(space) + right;
+  };
+  const divider = "-".repeat(W);
+  const doubleDivider = "=".repeat(W);
+
+  const lines: string[] = [];
+  lines.push(doubleDivider);
+  lines.push(center("*** TIKET DAPUR / BARISTA ***"));
+  lines.push(center(params.businessName.toUpperCase()));
+  lines.push(doubleDivider);
+
+  const service = params.serviceType === "dine_in"
+    ? `MEJA ${params.tableNo || "-"}`
+    : params.serviceType === "takeaway"
+      ? "TAKE AWAY (BUNGKUS)"
+      : "DELIVERY";
+
+  lines.push(center(`>> ${service} <<`));
+  lines.push(row(`Pesanan #${params.orderNo}`, params.createdAt.slice(11, 16) + " WIB"));
+  if (params.cashierName) {
+    lines.push(row(`Kasir: ${params.cashierName.slice(0, 14)}`, ""));
+  }
+  lines.push(divider);
+
+  params.items.forEach((item) => {
+    lines.push(`[ ${item.qty}x ] ${item.name.toUpperCase()}`);
+    if (item.note) {
+      lines.push(`  ** CATATAN: ${item.note.toUpperCase()}`);
+    }
+  });
+
+  lines.push(doubleDivider);
+  lines.push(center("MOHON SEGERA DISIAPKAN"));
+  lines.push("\n\n\n");
+
+  return lines.join("\n");
+}
+
+/**
  * Ringkasan struk untuk WhatsApp. Berbeda dengan cetak thermal, pesan ini
  * dioptimalkan untuk dibaca di layar chat: total dan tautan struk berada di
  * bagian akhir, sementara rincian transaksi tetap utuh di atasnya.

@@ -73,6 +73,7 @@ import {
   calculateCartTotals, 
   calculateCashChange, 
   generateEscPosReceiptText,
+  generateKitchenTicketText,
   SERVICE_TYPES,
   serviceTypeLabel,
   PAYMENT_STATUS_LABEL,
@@ -547,37 +548,47 @@ export default function PosClient({
     );
   };
 
-  // Web Bluetooth Thermal ESC/POS Trigger. Browser hanya bisa bicara ke
-  // perangkat yang membuka layanan Bluetooth-nya; printer USB/A4 tetap memakai
-  // halaman struk dan dialog cetak bawaan perangkat.
-  const handlePrintBluetoothThermal = async () => {
-    if (!completedOrder) return;
+  // Web Bluetooth Thermal ESC/POS Trigger.
+  // Mendukung cetak struk belanja pelanggan dan tiket dapur/barista (Kitchen Slip)
+  // ke printer thermal 58mm/80mm Bluetooth, atau fallback ke dialog cetak browser.
+  const sendRawEscPosToBluetooth = async (
+    rawText: string,
+    options: {
+      jobName: string;
+      orderId?: string;
+      orderNo?: string;
+      openCashDrawer?: boolean;
+      isCustomerReceipt?: boolean;
+    }
+  ) => {
     setPrinterState("printing");
-    const receiptText = generateEscPosReceiptText({
-      businessName: business?.name || "KAEL POS",
-      businessAddress: business?.address || "",
-      businessPhone: business?.phone || "",
-      orderNo: completedOrder.orderNo,
-      tableNo: completedOrder.tableNo,
-      serviceType: completedOrder.serviceType,
-      cashierName: completedOrder.cashierName,
-      createdAt: completedOrder.createdAt,
-      items: completedOrder.items,
-      subtotal: completedOrder.subtotal,
-      discount: completedOrder.discount,
-      tax: completedOrder.tax,
-      serviceCharge: completedOrder.serviceCharge,
-      deliveryFee: completedOrder.deliveryFee,
-      total: completedOrder.total,
-      paymentMethod: completedOrder.paymentMethod,
-      cashGiven: completedOrder.cashGiven,
-      cashChange: completedOrder.change || undefined,
-      customerName: completedOrder.customerName,
-    });
-
     const bluetooth = (navigator as Navigator & { bluetooth?: any }).bluetooth;
     if (!bluetooth) {
-      window.open(`/receipt/${completedOrder.orderId}`, "_blank", "noopener,noreferrer");
+      if (options.isCustomerReceipt && options.orderId) {
+        window.open(`/receipt/${options.orderId}`, "_blank", "noopener,noreferrer");
+      } else {
+        const printWindow = window.open("", "_blank", "width=380,height=600");
+        if (printWindow) {
+          printWindow.document.write(`
+            <html>
+              <head>
+                <title>${options.jobName} #${options.orderNo || ""}</title>
+                <style>
+                  body { font-family: monospace; font-size: 13px; white-space: pre-wrap; padding: 20px; line-height: 1.3; }
+                  @media print { body { padding: 0; } }
+                </style>
+              </head>
+              <body>${rawText.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</body>
+            </html>
+          `);
+          printWindow.document.close();
+          printWindow.focus();
+          setTimeout(() => {
+            printWindow.print();
+          }, 300);
+        }
+      }
+      setPrinterState("idle");
       return;
     }
 
@@ -605,10 +616,8 @@ export default function PosClient({
         throw new Error("Jalur tulis printer belum dikenali.");
       })();
 
-      const encoded = new TextEncoder().encode(receiptText);
-      // ESC p membuka laci yang terhubung ke port RJ11 milik printer. Perintah
-      // ini hanya boleh ikut pada pembayaran tunai yang baru tersimpan.
-      const openCashDrawer = completedOrder.paymentMethod === "cash";
+      const encoded = new TextEncoder().encode(rawText);
+      const openCashDrawer = Boolean(options.openCashDrawer);
       const drawerPulse = openCashDrawer ? [0x1b, 0x70, 0x00, 0x19, 0xfa] : [];
       const buzzerPulse = printerBuzzerEnabled ? [0x1b, 0x42, 0x03, 0x02, 0x1b, 0x70, 0x01, 0x19, 0xfa] : [];
       const finish = [0x0a, 0x0a, 0x0a, ...drawerPulse, ...buzzerPulse, 0x1d, 0x56, 0x00];
@@ -626,22 +635,141 @@ export default function PosClient({
         }
       }
       device.gatt?.disconnect();
-      const printLog = await recordReceiptPrintAction(
-        completedOrder.orderId,
-        openCashDrawer,
-        device.name || "printer thermal",
-      );
-      setPrinterState(printLog.ok ? "connected" : "error");
+
+      if (options.isCustomerReceipt && options.orderId) {
+        const printLog = await recordReceiptPrintAction(
+          options.orderId,
+          openCashDrawer,
+          device.name || "printer thermal",
+        );
+        setPrinterState(printLog.ok ? "connected" : "error");
+      } else {
+        setPrinterState("connected");
+      }
+
       alert(
-        `Struk #${completedOrder.orderNo} terkirim ke ${device.name || "printer thermal"}.` +
+        `${options.jobName} #${options.orderNo || ""} terkirim ke ${device.name || "printer thermal"}.` +
         (openCashDrawer ? " Laci uang dibuka." : ""),
       );
     } catch (error) {
       setPrinterState("error");
       console.warn("[KAEL] cetak Bluetooth gagal", error);
-      const useBrowserPrint = window.confirm("Printer Bluetooth belum bisa menerima struk. Buka versi thermal di dialog cetak browser?");
-      if (useBrowserPrint) window.open(`/receipt/${completedOrder.orderId}`, "_blank", "noopener,noreferrer");
+      const useBrowserPrint = window.confirm(`Printer Bluetooth belum bisa menerima ${options.jobName.toLowerCase()}. Buka versi cetak di dialog browser?`);
+      if (useBrowserPrint) {
+        if (options.isCustomerReceipt && options.orderId) {
+          window.open(`/receipt/${options.orderId}`, "_blank", "noopener,noreferrer");
+        } else {
+          const printWindow = window.open("", "_blank", "width=380,height=600");
+          if (printWindow) {
+            printWindow.document.write(`
+              <html>
+                <head>
+                  <title>${options.jobName} #${options.orderNo || ""}</title>
+                  <style>
+                    body { font-family: monospace; font-size: 13px; white-space: pre-wrap; padding: 20px; line-height: 1.3; }
+                    @media print { body { padding: 0; } }
+                  </style>
+                </head>
+                <body>${rawText.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</body>
+              </html>
+            `);
+            printWindow.document.close();
+            printWindow.focus();
+            setTimeout(() => {
+              printWindow.print();
+            }, 300);
+          }
+        }
+      }
     }
+  };
+
+  const handlePrintBluetoothThermal = async () => {
+    if (!completedOrder) return;
+    const receiptText = generateEscPosReceiptText({
+      businessName: business?.name || "KAEL POS",
+      businessAddress: business?.address || "",
+      businessPhone: business?.phone || "",
+      orderNo: completedOrder.orderNo,
+      tableNo: completedOrder.tableNo,
+      serviceType: completedOrder.serviceType,
+      cashierName: completedOrder.cashierName,
+      createdAt: completedOrder.createdAt,
+      items: completedOrder.items,
+      subtotal: completedOrder.subtotal,
+      discount: completedOrder.discount,
+      tax: completedOrder.tax,
+      serviceCharge: completedOrder.serviceCharge,
+      deliveryFee: completedOrder.deliveryFee,
+      total: completedOrder.total,
+      paymentMethod: completedOrder.paymentMethod,
+      cashGiven: completedOrder.cashGiven,
+      cashChange: completedOrder.change || undefined,
+      customerName: completedOrder.customerName,
+    });
+
+    await sendRawEscPosToBluetooth(receiptText, {
+      jobName: "Struk Kasir",
+      orderId: completedOrder.orderId,
+      orderNo: completedOrder.orderNo,
+      openCashDrawer: completedOrder.paymentMethod === "cash",
+      isCustomerReceipt: true,
+    });
+  };
+
+  const handlePrintKitchenTicketBluetooth = async () => {
+    if (!completedOrder) return;
+    const ticketText = generateKitchenTicketText({
+      businessName: business?.name || "KAEL POS",
+      orderNo: completedOrder.orderNo,
+      tableNo: completedOrder.tableNo,
+      serviceType: completedOrder.serviceType,
+      createdAt: completedOrder.createdAt,
+      items: completedOrder.items.map((i) => ({
+        name: i.name,
+        qty: i.qty,
+        note: i.note,
+      })),
+      cashierName: completedOrder.cashierName,
+    });
+
+    await sendRawEscPosToBluetooth(ticketText, {
+      jobName: "Tiket Dapur",
+      orderId: completedOrder.orderId,
+      orderNo: completedOrder.orderNo,
+      openCashDrawer: false,
+      isCustomerReceipt: false,
+    });
+  };
+
+  const handlePrintKitchenTicketFromQueue = async (order: {
+    order_no: string;
+    table_no?: string | null;
+    service_type: string;
+    created_at: string;
+    items: { name_snapshot: string; qty: number; note?: string | null }[];
+  }) => {
+    const activeCashier = staffList.find((staff) => staff.id === selectedStaffId)?.name || "Kasir";
+    const ticketText = generateKitchenTicketText({
+      businessName: business?.name || "KAEL POS",
+      orderNo: order.order_no,
+      tableNo: order.table_no,
+      serviceType: (order.service_type || "dine_in") as "dine_in" | "takeaway" | "delivery",
+      createdAt: order.created_at,
+      items: order.items.map((i) => ({
+        name: i.name_snapshot,
+        qty: i.qty,
+        note: i.note || undefined,
+      })),
+      cashierName: activeCashier,
+    });
+
+    await sendRawEscPosToBluetooth(ticketText, {
+      jobName: "Tiket Dapur",
+      orderNo: order.order_no,
+      openCashDrawer: false,
+      isCustomerReceipt: false,
+    });
   };
 
   const renderInvoice = (showCloseButton: boolean) => (
@@ -1855,7 +1983,12 @@ export default function PosClient({
       )}
 
       {showQueue && (
-        <OrderQueue orders={currentQrOrders} onClose={() => setShowQueue(false)} isMochi={isMochiPos} />
+        <OrderQueue
+          orders={currentQrOrders}
+          onClose={() => setShowQueue(false)}
+          isMochi={isMochiPos}
+          onPrintKitchenTicket={handlePrintKitchenTicketFromQueue}
+        />
       )}
 
       {/* MODAL: POST-PAYMENT SUCCESS & RECEIPT ACTIONS */}
@@ -1909,7 +2042,21 @@ export default function PosClient({
                 }`}
               >
                 <Printer size={14} />
-                <span>{printerState === "printing" ? "Mengirim ke printer..." : completedOrder.paymentMethod === "cash" ? "Cetak & Buka Laci" : "Cetak Thermal Bluetooth"}</span>
+                <span>{printerState === "printing" ? "Mengirim ke printer..." : completedOrder.paymentMethod === "cash" ? "Cetak Struk & Buka Laci" : "Cetak Struk Pelanggan"}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handlePrintKitchenTicketBluetooth}
+                disabled={printerState === "printing"}
+                className={`w-full flex items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-black disabled:opacity-60 transition-all ${
+                  isMochiPos
+                    ? "bg-[#c8f53a] hover:bg-[#d9ff57] text-[#073829] shadow-xs"
+                    : "btn-tactile border-2 border-[#232331] bg-[#d9ff57] text-[#232331] shadow-ink-xs"
+                }`}
+              >
+                <ChefHat size={14} />
+                <span>Cetak Tiket Dapur / Barista 🍳</span>
               </button>
               {completedOrder.paymentMethod === "cash" && (
                 <p className={`rounded-lg border px-3 py-2 text-left text-[10px] font-bold ${

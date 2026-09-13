@@ -2,11 +2,11 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState, useTransition } from "react";
-import { BellRing, ChefHat, Check, Clock3, Volume2, VolumeX, RefreshCw, MonitorSmartphone, ArrowLeft } from "lucide-react";
+import { BellRing, ChefHat, Check, Clock3, Volume2, VolumeX, RefreshCw, MonitorSmartphone, ArrowLeft, Printer } from "lucide-react";
 
 import { claimOrderAction, confirmPaymentAction, getOrderStationSnapshotAction, setFulfillmentAction } from "@/lib/actions";
 import { formatRupiah } from "@/lib/formatters";
-import { serviceTypeLabel } from "@/lib/pos-engine";
+import { serviceTypeLabel, generateKitchenTicketText } from "@/lib/pos-engine";
 import type { Order, OrderItem } from "@/lib/types";
 
 type StationOrder = Order & { items: OrderItem[] };
@@ -79,6 +79,108 @@ export default function OrderStationClient({
     const timer = window.setInterval(() => void refresh(), 10000);
     return () => window.clearInterval(timer);
   }, []);
+
+  const printKitchenTicket = async (order: StationOrder) => {
+    const ticketText = generateKitchenTicketText({
+      businessName,
+      orderNo: order.order_no,
+      tableNo: order.table_no,
+      serviceType: (order.service_type || "dine_in") as "dine_in" | "takeaway" | "delivery",
+      createdAt: order.created_at,
+      items: order.items.map((i) => ({
+        name: i.name_snapshot,
+        qty: i.qty,
+        note: i.note || undefined,
+      })),
+    });
+
+    const bluetooth = (navigator as Navigator & { bluetooth?: any }).bluetooth;
+    if (!bluetooth) {
+      const printWindow = window.open("", "_blank", "width=380,height=600");
+      if (printWindow) {
+        printWindow.document.write(`
+          <html>
+            <head>
+              <title>Tiket Dapur #${order.order_no}</title>
+              <style>
+                body { font-family: monospace; font-size: 13px; white-space: pre-wrap; padding: 20px; line-height: 1.3; }
+                @media print { body { padding: 0; } }
+              </style>
+            </head>
+            <body>${ticketText.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</body>
+          </html>
+        `);
+        printWindow.document.close();
+        printWindow.focus();
+        setTimeout(() => printWindow.print(), 300);
+      }
+      return;
+    }
+
+    try {
+      const device = await bluetooth.requestDevice({
+        acceptAllDevices: true,
+        optionalServices: [
+          "000018f0-0000-1000-8000-00805f9b34fb",
+          "49535343-fe7d-4ae5-8fa9-9fafd205e455",
+        ],
+      });
+      const server = await device.gatt?.connect();
+      if (!server) throw new Error("Printer tidak terhubung.");
+
+      const service = await (async () => {
+        for (const uuid of ["000018f0-0000-1000-8000-00805f9b34fb", "49535343-fe7d-4ae5-8fa9-9fafd205e455"]) {
+          try { return await server.getPrimaryService(uuid); } catch {}
+        }
+        throw new Error("Profil printer tidak ditemukan.");
+      })();
+
+      const characteristic = await (async () => {
+        for (const uuid of ["00002af1-0000-1000-8000-00805f9b34fb", "49535343-8841-43f4-a8d4-ecbe34729bb3"]) {
+          try { return await service.getCharacteristic(uuid); } catch {}
+        }
+        throw new Error("Karakteristik tulis tidak ditemukan.");
+      })();
+
+      const encoded = new TextEncoder().encode(ticketText);
+      const finish = [0x0a, 0x0a, 0x0a, 0x1d, 0x56, 0x00];
+      const payload = new Uint8Array(encoded.length + 2 + finish.length);
+      payload.set([0x1b, 0x40], 0);
+      payload.set(encoded, 2);
+      payload.set(finish, encoded.length + 2);
+
+      for (let offset = 0; offset < payload.length; offset += 180) {
+        const chunk = payload.slice(offset, offset + 180);
+        if (typeof characteristic.writeValueWithoutResponse === "function") {
+          await characteristic.writeValueWithoutResponse(chunk);
+        } else {
+          await characteristic.writeValue(chunk);
+        }
+      }
+      device.gatt?.disconnect();
+      setMessage(`Tiket Dapur #${order.order_no} berhasil dicetak.`);
+    } catch (err) {
+      console.warn("Print tiket dapur gagal", err);
+      const printWindow = window.open("", "_blank", "width=380,height=600");
+      if (printWindow) {
+        printWindow.document.write(`
+          <html>
+            <head>
+              <title>Tiket Dapur #${order.order_no}</title>
+              <style>
+                body { font-family: monospace; font-size: 13px; white-space: pre-wrap; padding: 20px; line-height: 1.3; }
+                @media print { body { padding: 0; } }
+              </style>
+            </head>
+            <body>${ticketText.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</body>
+          </html>
+        `);
+        printWindow.document.close();
+        printWindow.focus();
+        setTimeout(() => printWindow.print(), 300);
+      }
+    }
+  };
 
   const run = (fn: () => Promise<{ ok: boolean; error?: string }>) => {
     startTransition(async () => {
@@ -385,15 +487,25 @@ export default function OrderStationClient({
                           </button>
                         )
                       ) : step ? (
-                        <button
-                          type="button"
-                          disabled={isPending}
-                          onClick={() => run(() => setFulfillmentAction(order.id, step.next))}
-                          className="w-full rounded-xl bg-[#c8f53a] hover:bg-[#d9ff57] text-[#073829] py-3 text-xs font-black shadow-sm flex items-center justify-center gap-2 active:scale-98 transition-all disabled:opacity-50"
-                        >
-                          <Check size={16} strokeWidth={2.6} />
-                          <span>{step.label}</span>
-                        </button>
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            disabled={isPending}
+                            onClick={() => run(() => setFulfillmentAction(order.id, step.next))}
+                            className="flex-1 rounded-xl bg-[#c8f53a] hover:bg-[#d9ff57] text-[#073829] py-3 text-xs font-black shadow-sm flex items-center justify-center gap-2 active:scale-98 transition-all disabled:opacity-50"
+                          >
+                            <Check size={16} strokeWidth={2.6} />
+                            <span>{step.label}</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void printKitchenTicket(order)}
+                            className="rounded-xl border border-[#d8e3de] bg-white hover:bg-[#edf8f3] text-[#0b3d2e] px-3.5 flex items-center justify-center transition-colors shadow-xs"
+                            title="Cetak Tiket Dapur Thermal"
+                          >
+                            <Printer size={16} />
+                          </button>
+                        </div>
                       ) : null}
                     </div>
                   </article>
@@ -435,7 +547,7 @@ export default function OrderStationClient({
           return <article key={order.id} className={`mochi-panel border-2 p-4 shadow-ink-sm ${pendingPayment ? "border-[#d97706] bg-[#fffaf0]" : "border-[#232331] bg-white"}`}>
             <div className="flex items-start justify-between gap-3 border-b-2 border-[#dedee8] pb-3"><div><p className="font-mono text-xl font-black">#{order.order_no}</p><p className="font-mono text-[11px] text-[#777587]">{serviceTypeLabel(order.service_type, order.table_no)} · {timeSince(order.created_at)}</p></div><div className="text-right"><p className="font-black">{formatRupiah(Number(order.total))}</p><p className="font-mono text-[10px] font-bold uppercase text-[#7958d8]">{pendingPayment ? "Menunggu bayar" : order.fulfillment_status}</p></div></div>
             <ul className="my-3 space-y-1.5 font-mono text-xs">{order.items.map((item) => <li key={item.id} className="flex justify-between gap-3"><span>{item.qty}x {item.name_snapshot}{item.note ? <span className="block pl-5 text-[10px] text-[#777587]">Catatan: {item.note}</span> : null}</span><span>{formatRupiah(Number(item.subtotal))}</span></li>)}</ul>
-            <div className="border-t-2 border-[#dedee8] pt-3">{mode === "cashier" ? pendingPayment ? <button type="button" disabled={isPending} onClick={() => run(() => confirmPaymentAction(order.id))} className="btn-tactile w-full rounded-lg border-2 border-[#232331] bg-[#d9ff57] px-3 py-2.5 font-mono text-xs font-black shadow-ink-xs disabled:opacity-50">Pembayaran sudah masuk</button> : order.claimed_by && order.claimed_by !== currentUserId ? <p className="font-mono text-xs font-bold text-[#7958d8]">Sedang dipegang {order.claimed_by_name ?? "staf lain"}.</p> : order.claimed_by === currentUserId ? <p className="flex items-center gap-1.5 font-mono text-xs font-bold text-[#15803d]"><Check size={14} /> Kamu pegang pesanan ini</p> : <button type="button" disabled={isPending} onClick={() => run(() => claimOrderAction(order.id))} className="btn-tactile w-full rounded-lg border-2 border-[#232331] bg-white px-3 py-2.5 font-mono text-xs font-black shadow-ink-xs disabled:opacity-50">Ambil pesanan ini</button> : step ? <button type="button" disabled={isPending} onClick={() => run(() => setFulfillmentAction(order.id, step.next))} className="btn-tactile w-full rounded-lg border-2 border-[#232331] bg-[#d9ff57] px-3 py-2.5 font-mono text-xs font-black shadow-ink-xs disabled:opacity-50">{step.label}</button> : null}</div>
+            <div className="border-t-2 border-[#dedee8] pt-3">{mode === "cashier" ? pendingPayment ? <button type="button" disabled={isPending} onClick={() => run(() => confirmPaymentAction(order.id))} className="btn-tactile w-full rounded-lg border-2 border-[#232331] bg-[#d9ff57] px-3 py-2.5 font-mono text-xs font-black shadow-ink-xs disabled:opacity-50">Pembayaran sudah masuk</button> : order.claimed_by && order.claimed_by !== currentUserId ? <p className="font-mono text-xs font-bold text-[#7958d8]">Sedang dipegang {order.claimed_by_name ?? "staf lain"}.</p> : order.claimed_by === currentUserId ? <p className="flex items-center gap-1.5 font-mono text-xs font-bold text-[#15803d]"><Check size={14} /> Kamu pegang pesanan ini</p> : <button type="button" disabled={isPending} onClick={() => run(() => claimOrderAction(order.id))} className="btn-tactile w-full rounded-lg border-2 border-[#232331] bg-white px-3 py-2.5 font-mono text-xs font-black shadow-ink-xs disabled:opacity-50">Ambil pesanan ini</button> : step ? <div className="flex gap-2"><button type="button" disabled={isPending} onClick={() => run(() => setFulfillmentAction(order.id, step.next))} className="btn-tactile flex-1 rounded-lg border-2 border-[#232331] bg-[#d9ff57] px-3 py-2.5 font-mono text-xs font-black shadow-ink-xs disabled:opacity-50">{step.label}</button><button type="button" onClick={() => void printKitchenTicket(order)} className="btn-tactile rounded-lg border-2 border-[#232331] bg-white px-3 py-2.5 shadow-ink-xs" title="Cetak Tiket Dapur"><Printer size={15} /></button></div> : null}</div>
           </article>;
         })}</div>}
       </section>

@@ -36,10 +36,12 @@ export default function OrderQueue({
   orders,
   onClose,
   isMochi,
+  onPrintKitchenTicket,
 }: {
   orders: Antrean[];
   onClose: () => void;
   isMochi?: boolean;
+  onPrintKitchenTicket?: (order: Antrean) => void;
 }) {
   const router = useRouter();
   const [sibuk, setSibuk] = useState<string | null>(null);
@@ -240,15 +242,36 @@ export default function OrderQueue({
                   </div>
                 )}
 
-                <div className="pt-1">
+                <div className="flex flex-col sm:flex-row gap-2 pt-1">
+                  {onPrintKitchenTicket && (
+                    <button
+                      type="button"
+                      onClick={() => onPrintKitchenTicket(o)}
+                      className={`flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl py-2 px-3 font-mono text-[11px] font-black transition-all ${
+                        isMochi
+                          ? "bg-[#c8f53a] hover:bg-[#d9ff57] text-[#073829] shadow-xs"
+                          : "btn-tactile border-2 border-[#232331] bg-[#d9ff57] text-[#232331] shadow-ink-xs"
+                      }`}
+                      title="Cetak tiket dapur via printer thermal"
+                    >
+                      <ChefHat size={13} />
+                      <span>Cetak Tiket Dapur 🍳</span>
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => forwardToWhatsapp(o)}
-                    className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl border border-[#22c55e]/40 bg-[#f0fdf4] py-2 px-2.5 font-mono text-[11px] font-bold text-[#15803d] hover:bg-[#dcfce7] transition-colors"
+                    className={`inline-flex items-center justify-center gap-1.5 rounded-xl border py-2 px-3 font-mono text-[11px] font-bold transition-colors ${
+                      onPrintKitchenTicket ? "sm:w-auto" : "w-full"
+                    } ${
+                      isMochi
+                        ? "border-emerald-600/30 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
+                        : "border-[#22c55e]/40 bg-[#f0fdf4] text-[#15803d] hover:bg-[#dcfce7]"
+                    }`}
                     title="Kirim detail pesanan ini ke nomor WhatsApp staf atau grup dapur"
                   >
                     <MessageSquare size={13} />
-                    Kirim Rincian ke WhatsApp Staf / Dapur
+                    <span>{onPrintKitchenTicket ? "Kirim WA" : "Kirim Rincian ke WhatsApp Staf / Dapur"}</span>
                   </button>
                 </div>
               </div>
