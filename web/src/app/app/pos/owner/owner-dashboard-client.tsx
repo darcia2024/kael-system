@@ -5,7 +5,12 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import {
   ArrowLeft,
+  ArrowRight,
   Banknote,
+  BarChart3,
+  CheckCircle2,
+  FileText,
+  X,
   ChevronRight,
   CircleDollarSign,
   Clock3,
@@ -127,6 +132,7 @@ export default function OwnerDashboardClient({
   const [showTableQrModal, setShowTableQrModal] = useState(false);
   const [menuPeriod, setMenuPeriod] = useState<"today" | "monthly">("today");
   const [feedbackFilter, setFeedbackFilter] = useState<"all" | "complaints" | "positive">("all");
+  const [showReportsModal, setShowReportsModal] = useState(false);
 
   const reasonMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -285,7 +291,7 @@ export default function OwnerDashboardClient({
                     isMochi ? "text-white" : "text-[#232331]"
                   }`}
                 >
-                  Dashboard Owner POS
+                  Dashboard Owner Utama
                 </h1>
                 <span
                   className={
@@ -304,7 +310,7 @@ export default function OwnerDashboardClient({
                     : "truncate font-mono text-[10px] text-[#7b7b8e]"
                 }
               >
-                {business?.name ?? "Mochi Cafe n Resto"} · tersinkron {latestSync}
+                Pusat Kendali Bisnis · {business?.name ?? "Mochi Cafe n Resto"} · tersinkron {latestSync}
               </p>
             </div>
           </div>
@@ -322,6 +328,20 @@ export default function OwnerDashboardClient({
               aria-label="Muat ulang data"
             >
               {refreshing ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowReportsModal(true)}
+              className={
+                isMochi
+                  ? "inline-flex items-center gap-1.5 rounded-xl border border-emerald-600/70 bg-[#165a45] px-3 py-2 font-mono text-xs font-black text-white hover:bg-[#1a6850] shadow-sm transition-all active:scale-95"
+                  : "btn-tactile inline-flex items-center gap-1.5 rounded-xl border-2 border-[#232331] bg-white px-3 py-2 font-mono text-xs font-black shadow-ink-xs hover:bg-[#f5f3ff]"
+              }
+              title="Buka Pilihan Laporan Lengkap"
+            >
+              <FileText size={14} className={isMochi ? "text-[#c8f53a]" : "text-[#7958d8]"} />
+              <span className="hidden sm:inline">Pilihan Laporan ▾</span>
+              <span className="sm:hidden">Laporan ▾</span>
             </button>
             <button
               type="button"
@@ -353,6 +373,185 @@ export default function OwnerDashboardClient({
 
       {/* Main Content */}
       <main className="mx-auto w-full max-w-7xl space-y-4 p-3 sm:space-y-6 sm:p-6">
+        {/* PUSAT PILIHAN LAPORAN OWNER (EXECUTIVE QUICK SWITCHER) */}
+        <section
+          className={
+            isMochi
+              ? "rounded-3xl border border-[#d8e3de] bg-white p-4 sm:p-5 shadow-[0_4px_20px_rgba(11,61,46,0.04)]"
+              : "border-2 border-[#232331] bg-white p-4 shadow-ink-md"
+          }
+        >
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3.5 border-b border-[#edf4f0]">
+            <div>
+              <div className="flex items-center gap-2">
+                <span
+                  className={`flex h-6 w-6 items-center justify-center rounded-lg ${
+                    isMochi ? "bg-[#c8f53a] text-[#073829]" : "bg-[#232331] text-white"
+                  }`}
+                >
+                  <BarChart3 size={13} />
+                </span>
+                <h2
+                  className={`text-xs sm:text-sm font-black uppercase tracking-wider ${
+                    isMochi ? "text-[#0b3d2e]" : "text-[#232331]"
+                  }`}
+                >
+                  Pusat Laporan &amp; Analitik Toko
+                </h2>
+                <span
+                  className={`rounded-full px-2 py-0.2 font-mono text-[9px] font-bold ${
+                    isMochi ? "bg-[#edf8f3] text-[#167052]" : "bg-[#f5f3ff] text-[#6d4cc4]"
+                  }`}
+                >
+                  NAVIGASI CEPAT
+                </span>
+              </div>
+              <p className={`text-[11px] mt-0.5 ${isMochi ? "text-[#637970]" : "text-[#7b7b8e]"}`}>
+                Pilih laporan yang ingin dipantau dengan satu klik:
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowReportsModal(true)}
+              className={`self-start sm:self-auto inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 font-mono text-[11px] font-bold transition-all ${
+                isMochi
+                  ? "bg-[#edf8f3] text-[#0b3d2e] hover:bg-[#e0f2ea] border border-emerald-300"
+                  : "bg-[#f7f6fc] text-[#232331] hover:bg-[#ecebf1] border border-[#dedee8]"
+              }`}
+            >
+              <span>Katalog Semua Laporan ▾</span>
+              <ChevronRight size={13} />
+            </button>
+          </div>
+
+          {/* Quick Switcher Cards / Pills */}
+          <div className="mt-3.5 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-2.5">
+            {/* 1. Ringkasan Utama (Current) */}
+            <div
+              className={`p-3 rounded-2xl border transition-all ${
+                isMochi
+                  ? "border-emerald-600 bg-gradient-to-br from-[#0b3d2e] to-[#124d3b] text-white shadow-sm"
+                  : "border-2 border-[#232331] bg-[#232331] text-white shadow-ink-xs"
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <span className="font-mono text-[9px] font-black uppercase tracking-wider text-[#c8f53a]">
+                  AKTIF SAAT INI
+                </span>
+                <CheckCircle2 size={12} className="text-[#c8f53a]" />
+              </div>
+              <p className="mt-1 font-bold text-xs sm:text-sm">Ringkasan Hari Ini</p>
+              <p className="text-[10px] text-emerald-200/80 line-clamp-1">Omzet, jam ramai, menu</p>
+            </div>
+
+            {/* 2. Laporan Penjualan & Profit */}
+            <Link
+              href="/app/pos/reports"
+              className={`group p-3 rounded-2xl border transition-all ${
+                isMochi
+                  ? "border-[#d8e3de] bg-[#fbfdfc] hover:border-emerald-400 hover:bg-[#f4faf6]"
+                  : "border border-[#dedee8] bg-[#fcfcfe] hover:border-[#232331]"
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <span className="font-mono text-[9px] font-bold uppercase tracking-wider text-[#637970]">
+                  HPP &amp; PROFIT
+                </span>
+                <ChevronRight size={12} className="text-[#7b7b8e] group-hover:translate-x-0.5 transition-transform" />
+              </div>
+              <p className={`mt-1 font-bold text-xs sm:text-sm ${isMochi ? "text-[#0b3d2e]" : "text-[#232331]"}`}>
+                Penjualan Kasir
+              </p>
+              <p className="text-[10px] text-[#7b7b8e] line-clamp-1">Laba kotor, shift, audit</p>
+            </Link>
+
+            {/* 3. Laporan Loyalty & Member */}
+            <Link
+              href="/app/loyalty/analytics"
+              className={`group p-3 rounded-2xl border transition-all ${
+                isMochi
+                  ? "border-[#d8e3de] bg-[#fbfdfc] hover:border-emerald-400 hover:bg-[#f4faf6]"
+                  : "border border-[#dedee8] bg-[#fcfcfe] hover:border-[#232331]"
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <span className="font-mono text-[9px] font-bold uppercase tracking-wider text-[#637970]">
+                  RETENSI 30H
+                </span>
+                <ChevronRight size={12} className="text-[#7b7b8e] group-hover:translate-x-0.5 transition-transform" />
+              </div>
+              <p className={`mt-1 font-bold text-xs sm:text-sm ${isMochi ? "text-[#0b3d2e]" : "text-[#232331]"}`}>
+                Loyalty &amp; Member
+              </p>
+              <p className="text-[10px] text-[#7b7b8e] line-clamp-1">Pertumbuhan &amp; repeat</p>
+            </Link>
+
+            {/* 4. Laporan Review & Kepuasan */}
+            <a
+              href="#laporan-review"
+              className={`group p-3 rounded-2xl border transition-all ${
+                isMochi
+                  ? "border-[#d8e3de] bg-[#fbfdfc] hover:border-emerald-400 hover:bg-[#f4faf6]"
+                  : "border border-[#dedee8] bg-[#fcfcfe] hover:border-[#232331]"
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <span className="font-mono text-[9px] font-bold uppercase tracking-wider text-[#637970]">
+                  SMART SHIELD
+                </span>
+                <ChevronRight size={12} className="text-[#7b7b8e] group-hover:translate-x-0.5 transition-transform" />
+              </div>
+              <p className={`mt-1 font-bold text-xs sm:text-sm ${isMochi ? "text-[#0b3d2e]" : "text-[#232331]"}`}>
+                Review Pelanggan
+              </p>
+              <p className="text-[10px] text-[#7b7b8e] line-clamp-1">Google &amp; keluhan privat</p>
+            </a>
+
+            {/* 5. Laporan Keuangan */}
+            <Link
+              href="/app/finance/reports"
+              className={`group p-3 rounded-2xl border transition-all ${
+                isMochi
+                  ? "border-[#d8e3de] bg-[#fbfdfc] hover:border-emerald-400 hover:bg-[#f4faf6]"
+                  : "border border-[#dedee8] bg-[#fcfcfe] hover:border-[#232331]"
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <span className="font-mono text-[9px] font-bold uppercase tracking-wider text-[#637970]">
+                  FINANCE
+                </span>
+                <ChevronRight size={12} className="text-[#7b7b8e] group-hover:translate-x-0.5 transition-transform" />
+              </div>
+              <p className={`mt-1 font-bold text-xs sm:text-sm ${isMochi ? "text-[#0b3d2e]" : "text-[#232331]"}`}>
+                Keuangan &amp; Kas
+              </p>
+              <p className="text-[10px] text-[#7b7b8e] line-clamp-1">Laba rugi &amp; arus kas</p>
+            </Link>
+
+            {/* 6. Laporan SDM / Absensi */}
+            <Link
+              href="/app/hr/attendance"
+              className={`group p-3 rounded-2xl border transition-all ${
+                isMochi
+                  ? "border-[#d8e3de] bg-[#fbfdfc] hover:border-emerald-400 hover:bg-[#f4faf6]"
+                  : "border border-[#dedee8] bg-[#fcfcfe] hover:border-[#232331]"
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <span className="font-mono text-[9px] font-bold uppercase tracking-wider text-[#637970]">
+                  SDM &amp; SHIFT
+                </span>
+                <ChevronRight size={12} className="text-[#7b7b8e] group-hover:translate-x-0.5 transition-transform" />
+              </div>
+              <p className={`mt-1 font-bold text-xs sm:text-sm ${isMochi ? "text-[#0b3d2e]" : "text-[#232331]"}`}>
+                Absensi Staf
+              </p>
+              <p className="text-[10px] text-[#7b7b8e] line-clamp-1">Kehadiran kasir &amp; tim</p>
+            </Link>
+          </div>
+        </section>
+
         {/* KPI Cards */}
         <section className="grid grid-cols-2 gap-2.5 lg:grid-cols-4 lg:gap-4">
           {isMochi ? (
@@ -950,7 +1149,7 @@ export default function OwnerDashboardClient({
         </section>
 
         {/* Laporan Review & Kepuasan Pelanggan (Smart Review Routing) */}
-        <section
+        <section id="laporan-review"
           className={
             isMochi
               ? "rounded-3xl border border-[#d8e3de] bg-white p-5 shadow-[0_4px_20px_rgba(11,61,46,0.04)] sm:p-6"
@@ -1735,6 +1934,195 @@ export default function OwnerDashboardClient({
           )}
         </section>
       </main>
+
+      {/* MODAL: KATALOG PILIHAN LAPORAN BISNIS */}
+      {showReportsModal && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-[#07281e]/60 backdrop-blur-sm animate-in fade-in duration-200"
+          onClick={() => setShowReportsModal(false)}
+        >
+          <div
+            className={`w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-3xl p-5 sm:p-7 shadow-2xl transition-all ${
+              isMochi
+                ? "border border-emerald-700/60 bg-white text-[#1a382d]"
+                : "border-2 border-[#232331] bg-white text-[#232331]"
+            }`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="flex items-start justify-between gap-3 pb-4 border-b border-[#edf4f0]">
+              <div className="flex items-center gap-3">
+                <div
+                  className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${
+                    isMochi ? "bg-[#c8f53a] text-[#073829]" : "bg-[#f0edff] text-[#7958d8]"
+                  }`}
+                >
+                  <FileText size={22} />
+                </div>
+                <div>
+                  <h3
+                    className={`font-black text-base sm:text-lg ${
+                      isMochi ? "text-[#0b3d2e]" : "text-[#232331]"
+                    }`}
+                  >
+                    Katalog Pilihan Laporan Bisnis
+                  </h3>
+                  <p className="text-xs text-[#637970] mt-0.5">
+                    Pilih kategori laporan untuk melihat analitik mendalam {business?.name ?? "Mochi Cafe"}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowReportsModal(false)}
+                className="flex h-8 w-8 items-center justify-center rounded-full bg-[#edf4f0] text-[#637970] hover:bg-[#e0ebe5] hover:text-[#0b3d2e] transition-colors"
+                aria-label="Tutup modal"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Modal Content / Groups */}
+            <div className="mt-5 space-y-5">
+              {/* Group 1: Transaksi & Kasir */}
+              <div>
+                <p className="font-mono text-[10px] font-bold uppercase tracking-wider text-[#637970] mb-2.5">
+                  1. Laporan Transaksi &amp; Kasir (POS)
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <Link
+                    href="/app/pos/reports"
+                    onClick={() => setShowReportsModal(false)}
+                    className="group p-3.5 rounded-2xl border border-[#d8e3de] bg-[#fbfdfc] hover:border-emerald-400 hover:bg-[#edf8f3] transition-all"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-xs sm:text-sm text-[#0b3d2e] group-hover:text-emerald-700">
+                        🧾 Laporan Penjualan &amp; Laba Kasir
+                      </span>
+                      <ArrowRight size={13} className="text-[#637970] group-hover:translate-x-1 transition-transform" />
+                    </div>
+                    <p className="text-[11px] text-[#637970] mt-1 line-clamp-2 leading-relaxed">
+                      Omzet 30 hari, laba kotor HPP resep, rekap metode bayar (Tunai vs QRIS vs Transfer), dan riwayat transaksi.
+                    </p>
+                  </Link>
+
+                  <Link
+                    href="/app/pos/reports"
+                    onClick={() => setShowReportsModal(false)}
+                    className="group p-3.5 rounded-2xl border border-[#d8e3de] bg-[#fbfdfc] hover:border-emerald-400 hover:bg-[#edf8f3] transition-all"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-xs sm:text-sm text-[#0b3d2e] group-hover:text-emerald-700">
+                        💼 Audit Shift &amp; Laci Kasir
+                      </span>
+                      <ArrowRight size={13} className="text-[#637970] group-hover:translate-x-1 transition-transform" />
+                    </div>
+                    <p className="text-[11px] text-[#637970] mt-1 line-clamp-2 leading-relaxed">
+                      Laporan modal awal laci, uang fisik laci vs uang sistem kasir, dan audit selisih kas per staf kasir.
+                    </p>
+                  </Link>
+                </div>
+              </div>
+
+              {/* Group 2: Pelanggan & Reputasi */}
+              <div>
+                <p className="font-mono text-[10px] font-bold uppercase tracking-wider text-[#637970] mb-2.5">
+                  2. Laporan Pelanggan, Loyalty &amp; Ulasan
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <Link
+                    href="/app/loyalty/analytics"
+                    onClick={() => setShowReportsModal(false)}
+                    className="group p-3.5 rounded-2xl border border-[#d8e3de] bg-[#fbfdfc] hover:border-emerald-400 hover:bg-[#edf8f3] transition-all"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-xs sm:text-sm text-[#0b3d2e] group-hover:text-emerald-700">
+                        👑 Laporan Analitik Loyalty &amp; Member
+                      </span>
+                      <ArrowRight size={13} className="text-[#637970] group-hover:translate-x-1 transition-transform" />
+                    </div>
+                    <p className="text-[11px] text-[#637970] mt-1 line-clamp-2 leading-relaxed">
+                      Pertumbuhan member aktif 30 hari, repeat order rate, cohort kunjungan, dan distribusi saldo poin.
+                    </p>
+                  </Link>
+
+                  <a
+                    href="#laporan-review"
+                    onClick={() => setShowReportsModal(false)}
+                    className="group p-3.5 rounded-2xl border border-[#d8e3de] bg-[#fbfdfc] hover:border-emerald-400 hover:bg-[#edf8f3] transition-all"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-xs sm:text-sm text-[#0b3d2e] group-hover:text-emerald-700">
+                        ⭐ Laporan Review &amp; Smart Shield
+                      </span>
+                      <ArrowRight size={13} className="text-[#637970] group-hover:translate-x-1 transition-transform" />
+                    </div>
+                    <p className="text-[11px] text-[#637970] mt-1 line-clamp-2 leading-relaxed">
+                      Smart routing ulasan bintang 4–5 ke Google publik, serta feed keluhan privat bintang 1–3 yang terlindungi.
+                    </p>
+                  </a>
+                </div>
+              </div>
+
+              {/* Group 3: Finansial & Operasional */}
+              <div>
+                <p className="font-mono text-[10px] font-bold uppercase tracking-wider text-[#637970] mb-2.5">
+                  3. Laporan Keuangan, SDM &amp; Operasional
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <Link
+                    href="/app/finance/reports"
+                    onClick={() => setShowReportsModal(false)}
+                    className="group p-3.5 rounded-2xl border border-[#d8e3de] bg-[#fbfdfc] hover:border-emerald-400 hover:bg-[#edf8f3] transition-all"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-xs sm:text-sm text-[#0b3d2e] group-hover:text-emerald-700">
+                        💰 Laporan Keuangan &amp; Arus Kas
+                      </span>
+                      <ArrowRight size={13} className="text-[#637970] group-hover:translate-x-1 transition-transform" />
+                    </div>
+                    <p className="text-[11px] text-[#637970] mt-1 line-clamp-2 leading-relaxed">
+                      Ringkasan laba rugi bulanan, pencatatan biaya operasional, dan arus kas masuk/keluar usaha.
+                    </p>
+                  </Link>
+
+                  <Link
+                    href="/app/hr/attendance"
+                    onClick={() => setShowReportsModal(false)}
+                    className="group p-3.5 rounded-2xl border border-[#d8e3de] bg-[#fbfdfc] hover:border-emerald-400 hover:bg-[#edf8f3] transition-all"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-xs sm:text-sm text-[#0b3d2e] group-hover:text-emerald-700">
+                        👥 Laporan Absensi &amp; Jam Kerja Staf
+                      </span>
+                      <ArrowRight size={13} className="text-[#637970] group-hover:translate-x-1 transition-transform" />
+                    </div>
+                    <p className="text-[11px] text-[#637970] mt-1 line-clamp-2 leading-relaxed">
+                      Rekapitulasi jam masuk, jam pulang, dan shift staf kasir serta barista toko.
+                    </p>
+                  </Link>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="mt-6 pt-4 border-t border-[#edf4f0] flex items-center justify-between">
+              <p className="text-[11px] text-[#637970] font-mono">
+                KAEL Executive Intelligence · Multi-Module Reporting Hub
+              </p>
+              <button
+                type="button"
+                onClick={() => setShowReportsModal(false)}
+                className="px-4 py-2 rounded-xl bg-[#0b3d2e] font-mono text-xs font-bold text-white hover:bg-[#144f3d] transition-colors"
+              >
+                Tutup
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <TableQrModal
         isOpen={showTableQrModal}

@@ -19,7 +19,8 @@ import {
   Settings, 
   AlertTriangle,
   CheckCircle2,
-  Lock
+  Lock,
+  Star,
 } from "lucide-react";
 import type { Business, User, SafeUser } from "@/lib/types";
 import type { LicenseState, ModuleStatus } from "@/lib/licensing";
@@ -282,6 +283,70 @@ export default function AppPortalHub({
 
       {/* Main Content Area */}
       <main className="flex-1 mx-auto w-full max-w-6xl p-4 sm:p-8 space-y-8">
+
+        {/* EXECUTIVE DASHBOARD OWNER UTAMA HERO BANNER */}
+        {sessionRole === "owner" && (
+          <div className="rounded-3xl border-2 border-[#232331] bg-gradient-to-br from-[#0b3d2e] via-[#0e4837] to-[#07281e] p-5 sm:p-7 text-white shadow-ink-md">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <span className="rounded-full bg-[#c8f53a] px-2.5 py-0.5 font-mono text-[9.5px] font-black text-[#073829]">
+                    PUSAT KENDALI OWNER
+                  </span>
+                  <span className="text-xs font-mono text-emerald-200">· {business?.name ?? "Mochi Cafe"}</span>
+                </div>
+                <h2 className="text-xl sm:text-2xl font-black text-white">
+                  Dashboard Owner Utama
+                </h2>
+                <p className="text-xs text-emerald-100/85 max-w-xl leading-relaxed">
+                  Akses langsung ke ringkasan omzet hari ini, performa menu terlaris, laci kasir, audit kepuasan pelanggan, serta seluruh pilihan laporan bisnis.
+                </p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <Link
+                  href="/app/pos/owner"
+                  className="btn-tactile inline-flex items-center gap-2 rounded-2xl bg-[#c8f53a] px-5 py-3 font-mono text-xs font-black text-[#073829] shadow-sm hover:bg-[#bbf028] transition-all active:scale-95"
+                >
+                  <span>Buka Dashboard Owner Utama</span>
+                  <ArrowRight size={15} />
+                </Link>
+              </div>
+            </div>
+
+            {/* Quick Report Shortcuts inside the hero card */}
+            <div className="mt-5 pt-4 border-t border-emerald-700/60 grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+              <Link href="/app/pos/reports" className="flex items-center gap-2.5 rounded-xl bg-white/10 hover:bg-white/15 p-2.5 transition-colors">
+                <Receipt size={16} className="text-[#c8f53a] shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-xs font-bold truncate">Laporan Penjualan</p>
+                  <p className="text-[10px] text-emerald-200 truncate">HPP, Laba &amp; Omzet</p>
+                </div>
+              </Link>
+              <Link href="/app/loyalty/analytics" className="flex items-center gap-2.5 rounded-xl bg-white/10 hover:bg-white/15 p-2.5 transition-colors">
+                <HeartHandshake size={16} className="text-[#c8f53a] shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-xs font-bold truncate">Laporan Loyalty</p>
+                  <p className="text-[10px] text-emerald-200 truncate">Retensi &amp; Member</p>
+                </div>
+              </Link>
+              <Link href="/app/pos/owner#laporan-review" className="flex items-center gap-2.5 rounded-xl bg-white/10 hover:bg-white/15 p-2.5 transition-colors">
+                <Star size={16} className="text-[#c8f53a] shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-xs font-bold truncate">Laporan Review</p>
+                  <p className="text-[10px] text-emerald-200 truncate">Google &amp; Keluhan</p>
+                </div>
+              </Link>
+              <Link href="/app/finance/reports" className="flex items-center gap-2.5 rounded-xl bg-white/10 hover:bg-white/15 p-2.5 transition-colors">
+                <Calculator size={16} className="text-[#c8f53a] shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-xs font-bold truncate">Laporan Keuangan</p>
+                  <p className="text-[10px] text-emerald-200 truncate">Arus Kas &amp; Biaya</p>
+                </div>
+              </Link>
+            </div>
+          </div>
+        )}
+
         
         {/* Banner Renewal Info (Fondasi Bersama 2.1) */}
         {/* Alasan pengguna dilempar balik ke beranda */}

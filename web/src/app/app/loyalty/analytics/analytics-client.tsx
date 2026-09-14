@@ -3,6 +3,7 @@
 import Link from "next/link";
 import {
   ArrowLeft,
+  LayoutDashboard,
   Users,
   UserCheck,
   Repeat,
@@ -105,10 +106,53 @@ export default function AnalyticsClient({
               <span className="block truncate font-mono text-[10px] text-[#7b7b8e] sm:text-[11px]">{business?.name} · 30 hari terakhir dibanding 30 hari sebelumnya</span>
             </div>
           </div>
+          <div className="flex items-center gap-2">
+            <Link
+              href="/app/pos/owner"
+              className="btn-tactile flex items-center gap-1.5 rounded-xl border-2 border-[#232331] bg-[#d9ff57] px-3.5 py-1.5 font-mono text-xs font-black text-[#232331] shadow-ink-xs"
+            >
+              <LayoutDashboard size={13} />
+              <span className="hidden sm:inline">Dashboard Owner Utama</span>
+              <span className="sm:hidden">Dashboard</span>
+            </Link>
+          </div>
         </div>
       </header>
 
       <main className="mx-auto w-full max-w-6xl space-y-5 p-3 sm:p-6 lg:p-8">
+
+        {/* Quick Report Switcher Bar */}
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 font-mono text-xs">
+          <Link
+            href="/app/pos/owner"
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-[#dedee8] bg-white px-3 py-1.5 font-bold text-[#7b7b8e] hover:border-[#232331] hover:text-[#232331] transition-colors"
+          >
+            <ArrowLeft size={13} />
+            <span>Dashboard Owner Utama</span>
+          </Link>
+          <Link
+            href="/app/pos/reports"
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-[#dedee8] bg-white px-3 py-1.5 font-bold text-[#7b7b8e] hover:border-[#232331] hover:text-[#232331] transition-colors"
+          >
+            <span>Laporan Penjualan &amp; Laba</span>
+          </Link>
+          <span className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border-2 border-[#232331] bg-[#232331] px-3 py-1.5 font-bold text-white shadow-ink-xs">
+            <span>Laporan Loyalty Member</span>
+          </span>
+          <Link
+            href="/app/pos/owner#laporan-review"
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-[#dedee8] bg-white px-3 py-1.5 font-bold text-[#7b7b8e] hover:border-[#232331] hover:text-[#232331] transition-colors"
+          >
+            <span>Laporan Review &amp; Keluhan</span>
+          </Link>
+          <Link
+            href="/app/finance/reports"
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-[#dedee8] bg-white px-3 py-1.5 font-bold text-[#7b7b8e] hover:border-[#232331] hover:text-[#232331] transition-colors"
+          >
+            <span>Laporan Keuangan</span>
+          </Link>
+        </div>
+
 
         {/* SUMMARY KPI */}
         <div className="grid grid-cols-2 gap-2.5 sm:gap-4 lg:grid-cols-4">

@@ -135,13 +135,50 @@ export default function PosOwnerReportsPage({
             className="btn-tactile flex items-center gap-1 rounded-xl border-2 border-[#232331] bg-[#d9ff57] px-3.5 py-1.5 font-mono text-xs font-black text-[#232331] shadow-ink-xs"
           >
             <LayoutDashboard size={13} />
-            <span>Dashboard Owner</span>
+            <span>Dashboard Owner Utama</span>
           </Link>
         </div>
       </header>
 
       {/* Main Container */}
       <main className="flex-1 mx-auto w-full max-w-6xl p-3 sm:p-6 lg:p-8 space-y-5">
+
+        {/* Quick Report Switcher Bar */}
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 font-mono text-xs">
+          <Link
+            href="/app/pos/owner"
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-[#dedee8] bg-white px-3 py-1.5 font-bold text-[#7b7b8e] hover:border-[#232331] hover:text-[#232331] transition-colors"
+          >
+            <ArrowLeft size={13} />
+            <span>Dashboard Owner Utama</span>
+          </Link>
+          <span className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border-2 border-[#232331] bg-[#232331] px-3 py-1.5 font-bold text-white shadow-ink-xs">
+            <Receipt size={13} />
+            <span>Laporan Penjualan &amp; Laba</span>
+          </span>
+          <Link
+            href="/app/loyalty/analytics"
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-[#dedee8] bg-white px-3 py-1.5 font-bold text-[#7b7b8e] hover:border-[#232331] hover:text-[#232331] transition-colors"
+          >
+            <Sparkles size={13} />
+            <span>Laporan Loyalty Member</span>
+          </Link>
+          <Link
+            href="/app/pos/owner#laporan-review"
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-[#dedee8] bg-white px-3 py-1.5 font-bold text-[#7b7b8e] hover:border-[#232331] hover:text-[#232331] transition-colors"
+          >
+            <Star size={13} />
+            <span>Laporan Review &amp; Keluhan</span>
+          </Link>
+          <Link
+            href="/app/finance/reports"
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-[#dedee8] bg-white px-3 py-1.5 font-bold text-[#7b7b8e] hover:border-[#232331] hover:text-[#232331] transition-colors"
+          >
+            <Clock size={13} />
+            <span>Laporan Keuangan</span>
+          </Link>
+        </div>
+
         
         {/* KPI OVERVIEW WITH FINANCE GROSS PROFIT */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
