@@ -1572,7 +1572,7 @@ export default function PosClient({
 
           <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-24 sm:px-4 lg:pb-4">
             {filteredMenu.length > 0 ? (
-              <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-2.5 sm:gap-3">
+              <div className="grid grid-cols-3 gap-2 sm:gap-2.5 md:gap-3 xl:grid-cols-3 2xl:grid-cols-4">
                 {filteredMenu.map((item) => {
                   const inCart = cart[item.id];
                   const categoryName = categories.find((category) => category.id === item.category_id)?.name ?? "Menu";
@@ -1586,14 +1586,14 @@ export default function PosClient({
                           handleAddToCart(item);
                         }
                       }}
-                      className={`group relative flex min-w-0 flex-col justify-between rounded-2xl border bg-white p-2.5 sm:p-3 transition-all cursor-pointer select-none active:scale-[0.98] hover:shadow-md hover:border-[#167052]/60 ${
+                      className={`group relative flex min-w-0 flex-col justify-between rounded-xl sm:rounded-2xl border bg-white p-2 sm:p-2.5 lg:p-3 transition-all cursor-pointer select-none active:scale-[0.98] hover:shadow-md hover:border-[#167052]/60 ${
                         inCart
                           ? (isMochiPos ? "border-2 border-[#167052] ring-2 ring-[#167052]/15 shadow-sm bg-[#f7fcf9]" : "border-[#167052] shadow-[0_4px_14px_rgba(22,112,82,0.1)]")
                           : (isMochiPos ? "border-[#d8e3de]" : "border-[#d8e1dc]")
                       } ${!item.is_available ? "opacity-55 cursor-not-allowed" : ""}`}
                     >
-                      <div className="space-y-2">
-                        <div className="relative aspect-[16/11] sm:aspect-[4/3] max-h-36 sm:max-h-40 w-full overflow-hidden rounded-xl bg-[#e8f2ed] text-[#34745d] flex items-center justify-center">
+                      <div className="space-y-1.5 sm:space-y-2">
+                        <div className="relative aspect-[4/3] w-full overflow-hidden rounded-lg sm:rounded-xl bg-[#e8f2ed] text-[#34745d] flex items-center justify-center">
                           {hasPhoto ? (
                             // eslint-disable-next-line @next/next/no-img-element
                             <img
@@ -1603,28 +1603,28 @@ export default function PosClient({
                               className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
                             />
                           ) : (
-                            <CategoryIcon size={26} strokeWidth={1.6} aria-hidden="true" />
+                            <CategoryIcon size={24} strokeWidth={1.6} aria-hidden="true" />
                           )}
                           {inCart && (
-                            <span className="absolute right-2 top-2 flex h-6 min-w-6 items-center justify-center rounded-full bg-[#0b3d2e] px-2 font-mono text-[11px] font-black text-[#c8f53a] shadow-md ring-2 ring-white animate-in zoom-in-75">
+                            <span className="absolute right-1.5 top-1.5 flex h-5 min-w-5 sm:h-6 sm:min-w-6 items-center justify-center rounded-full bg-[#0b3d2e] px-1.5 font-mono text-[9.5px] sm:text-[11px] font-black text-[#c8f53a] shadow-md ring-1.5 ring-white animate-in zoom-in-75">
                               {inCart.qty}x
                             </span>
                           )}
                         </div>
 
                         <div className="min-w-0">
-                          <h3 className="line-clamp-2 text-xs sm:text-sm font-extrabold leading-snug text-[#20372e] group-hover:text-[#167052] transition-colors">
+                          <h3 className="line-clamp-2 text-[11px] sm:text-xs md:text-sm font-extrabold leading-snug text-[#20372e] group-hover:text-[#167052] transition-colors">
                             {item.name}
                           </h3>
-                          <p className="mt-0.5 truncate text-[11px] font-semibold text-[#718078]">
+                          <p className="mt-0.5 truncate text-[9.5px] sm:text-[11px] font-semibold text-[#718078]">
                             {categoryName}
                           </p>
                         </div>
                       </div>
 
-                      <div className="mt-2.5 flex items-center justify-between gap-1.5 border-t border-[#f0f4f2] pt-2">
+                      <div className="mt-2 flex items-center justify-between gap-1 border-t border-[#f0f4f2] pt-1.5 sm:pt-2">
                         <strong
-                          className={`text-xs sm:text-sm font-black tabular-nums font-mono ${
+                          className={`text-[10.5px] sm:text-xs md:text-sm font-black tabular-nums font-mono truncate ${
                             isMochiPos ? "text-[#0b3d2e]" : "text-[#9b5332]"
                           }`}
                         >
@@ -1633,7 +1633,7 @@ export default function PosClient({
 
                         {item.is_available ? (
                           inCart ? (
-                            <div className="flex shrink-0 items-center gap-1">
+                            <div className="flex shrink-0 items-center gap-0.5 sm:gap-1">
                               <button
                                 type="button"
                                 aria-label={`Kurangi ${item.name}`}
@@ -1641,15 +1641,15 @@ export default function PosClient({
                                   e.stopPropagation();
                                   handleUpdateQty(item.id, -1);
                                 }}
-                                className={`flex h-7 w-7 sm:h-8 sm:w-8 items-center justify-center rounded-lg border transition-colors active:scale-95 ${
+                                className={`flex h-6 w-6 sm:h-7 sm:w-7 items-center justify-center rounded-md sm:rounded-lg border transition-colors active:scale-95 ${
                                   isMochiPos
                                     ? "border-[#ccd9d3] bg-[#edf8f3] text-[#167052] hover:bg-[#e0f1e8]"
                                     : "border-[#c5d4cd] text-[#315d4b]"
                                 }`}
                               >
-                                <Minus size={12} aria-hidden="true" />
+                                <Minus size={10} aria-hidden="true" className="sm:h-3 sm:w-3" />
                               </button>
-                              <span className="w-5 text-center text-xs font-black tabular-nums font-mono">
+                              <span className="w-4 sm:w-5 text-center text-[10.5px] sm:text-xs font-black tabular-nums font-mono">
                                 {inCart.qty}
                               </span>
                               <button
@@ -1659,11 +1659,11 @@ export default function PosClient({
                                   e.stopPropagation();
                                   handleAddToCart(item);
                                 }}
-                                className={`flex h-7 w-7 sm:h-8 sm:w-8 items-center justify-center rounded-lg text-white transition-colors active:scale-95 ${
+                                className={`flex h-6 w-6 sm:h-7 sm:w-7 items-center justify-center rounded-md sm:rounded-lg text-white transition-colors active:scale-95 ${
                                   isMochiPos ? "bg-[#0b3d2e] hover:bg-[#124d3b]" : "bg-[#167052]"
                                 }`}
                               >
-                                <Plus size={12} aria-hidden="true" />
+                                <Plus size={10} aria-hidden="true" className="sm:h-3 sm:w-3" />
                               </button>
                             </div>
                           ) : (
@@ -1674,17 +1674,17 @@ export default function PosClient({
                                 e.stopPropagation();
                                 handleAddToCart(item);
                               }}
-                              className={`flex h-8 w-8 sm:h-9 sm:w-9 shrink-0 items-center justify-center rounded-xl transition-all active:scale-95 shadow-xs ${
+                              className={`flex h-6 w-6 sm:h-8 sm:w-8 shrink-0 items-center justify-center rounded-lg sm:rounded-xl transition-all active:scale-95 shadow-xs ${
                                 isMochiPos
                                   ? "bg-[#c8f53a] hover:bg-[#d9ff57] text-[#073829] font-black"
                                   : "bg-[#0aae6f] hover:bg-[#079760] text-white"
                               }`}
                             >
-                              <Plus size={15} strokeWidth={2.5} aria-hidden="true" />
+                              <Plus size={13} strokeWidth={2.5} aria-hidden="true" className="sm:h-4 sm:w-4" />
                             </button>
                           )
                         ) : (
-                          <span className="flex items-center rounded-lg bg-[#fff0ed] px-1.5 py-0.5 text-[9.5px] font-bold text-[#a44237]">
+                          <span className="flex items-center rounded-md bg-[#fff0ed] px-1 py-0.5 text-[8.5px] sm:text-[9.5px] font-bold text-[#a44237]">
                             Habis
                           </span>
                         )}
