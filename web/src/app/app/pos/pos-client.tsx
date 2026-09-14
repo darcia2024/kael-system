@@ -877,13 +877,20 @@ export default function PosClient({
   };
 
   const renderInvoice = (showCloseButton: boolean) => (
-    <section className="flex h-full min-h-0 flex-col bg-white">
-      <div className="flex items-start justify-between border-b border-[#dfe6e2] px-4 py-3.5">
+    <section className="flex h-full min-h-0 flex-col bg-[#fbfdfc]">
+      <div className="flex items-start justify-between border-b border-[#dfe6e2] px-4 py-3 bg-white">
         <div>
-          <p className="text-[10px] font-bold uppercase text-[#728078]">{isMochiPos ? "Daftar Pesanan" : "Transaksi aktif"}</p>
-          <h2 className="mt-0.5 text-lg font-extrabold text-[#17382e]">{isMochiPos ? "Pesanan Anda" : "Pesanan kasir"}</h2>
-          <p className="text-xs text-[#7a8781]">
-            {cartList.reduce((sum, line) => sum + line.qty, 0)} item
+          <div className="flex items-center gap-1.5">
+            <span className="h-2 w-2 rounded-full bg-[#167052] animate-pulse" />
+            <p className="text-[10px] font-extrabold uppercase tracking-wider text-[#728078]">
+              {isMochiPos ? "Menu Dipilih" : "Pesanan Dipilih"}
+            </p>
+          </div>
+          <h2 className="mt-0.5 text-base sm:text-lg font-black text-[#17382e]">
+            {isMochiPos ? "Daftar Pesanan" : "Rincian Transaksi"}
+          </h2>
+          <p className="text-xs font-semibold text-[#7a8781]">
+            <strong className="text-[#0b3d2e] font-black font-mono">{cartList.reduce((sum, line) => sum + line.qty, 0)}</strong> item dalam pesanan
           </p>
         </div>
         <div className="flex items-center gap-1">
@@ -891,10 +898,10 @@ export default function PosClient({
             <button
               type="button"
               onClick={handleClearCart}
-              className="flex min-h-11 items-center gap-1.5 rounded-lg px-2 text-xs font-bold text-[#b34539] transition-colors hover:bg-[#fff0ed]"
+              className="flex h-9 items-center gap-1.5 rounded-xl px-2.5 text-xs font-bold text-[#b34539] transition-colors hover:bg-[#fff0ed] border border-red-200/60"
             >
-              <Trash2 size={15} aria-hidden="true" />
-              Kosongkan
+              <Trash2 size={14} aria-hidden="true" />
+              Reset
             </button>
           )}
           {showCloseButton && (
@@ -902,25 +909,25 @@ export default function PosClient({
               type="button"
               aria-label="Tutup rincian pesanan"
               onClick={() => setShowMobileCart(false)}
-              className="flex h-11 w-11 items-center justify-center rounded-lg border border-[#d5ded9] text-[#5d6c65]"
+              className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#d5ded9] text-[#5d6c65]"
             >
-              <X size={19} aria-hidden="true" />
+              <X size={18} aria-hidden="true" />
             </button>
           )}
         </div>
       </div>
 
-      <fieldset className="border-b border-[#dfe6e2] px-4 py-3">
+      <fieldset className="border-b border-[#dfe6e2] px-3.5 py-2 bg-white">
         <legend className="sr-only">Tipe layanan</legend>
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-3 gap-1.5">
           {SERVICE_TYPES.map((type) => (
             <button
               key={type.key}
               type="button"
               onClick={() => setServiceType(type.key)}
-              className={`min-h-11 rounded-xl border px-2 py-1.5 text-center text-[10px] font-bold transition-all ${
+              className={`h-9 rounded-xl border px-1.5 py-1 text-center text-[11px] font-extrabold transition-all ${
                 serviceType === type.key
-                  ? (isMochiPos ? "border-[#0b3d2e] bg-[#0b3d2e] text-[#c8f53a] font-black shadow-xs" : "border-[#167052] bg-[#e4f4ed] text-[#15533e]")
+                  ? (isMochiPos ? "border-[#0b3d2e] bg-[#0b3d2e] text-[#c8f53a] font-black shadow-2xs" : "border-[#167052] bg-[#e4f4ed] text-[#15533e]")
                   : (isMochiPos ? "border-[#d8e3de] bg-white text-[#526159] hover:bg-[#edf8f3]" : "border-[#d6dfda] bg-white text-[#66746d] hover:border-[#9db8ab]")
               }`}
             >
@@ -929,14 +936,14 @@ export default function PosClient({
           ))}
         </div>
         {serviceType === "dine_in" && (
-          <div className="mt-2.5 flex items-center gap-2">
+          <div className="mt-2 flex items-center gap-2">
             <span className="text-[11px] font-bold text-[#556b62] shrink-0 font-mono">No. Meja:</span>
             <input
               type="text"
               value={selectedTableNo}
               onChange={(e) => setSelectedTableNo(e.target.value)}
               placeholder="Contoh: 04, Meja 2"
-              className={`flex-1 rounded-lg border px-2.5 py-1 text-xs font-mono font-bold ${
+              className={`flex-1 h-8 rounded-lg border px-2.5 text-xs font-mono font-bold ${
                 isMochiPos
                   ? "border-[#ccd9d3] bg-[#edf8f3] text-[#0b3d2e] focus:border-[#167052] focus:bg-white"
                   : "border-[#ccd7d2] bg-white text-[#21352d]"
@@ -947,27 +954,22 @@ export default function PosClient({
       </fieldset>
 
       {/* Member Loyalty Bar / Attacher */}
-      <div className={`border-b px-4 py-2.5 ${isMochiPos ? "border-[#dfe6e2] bg-[#f8faf9]" : "border-[#e0ebe5] bg-[#f9fbfa]"}`}>
+      <div className={`border-b px-3.5 py-2 ${isMochiPos ? "border-[#dfe6e2] bg-[#f8faf9]" : "border-[#e0ebe5] bg-[#f9fbfa]"}`}>
         {attachedCustomer ? (
-          <div className="rounded-xl border border-[#16a34a]/40 bg-[#edfbf3] p-2.5 flex items-center justify-between gap-2 shadow-2xs">
+          <div className="rounded-xl border border-[#16a34a]/40 bg-[#edfbf3] p-2 flex items-center justify-between gap-2 shadow-2xs">
             <div className="flex items-center gap-2 min-w-0">
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#0b3d2e] text-[#c8f53a] font-black text-xs shadow-xs">
+              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#0b3d2e] text-[#c8f53a] font-black text-xs shadow-xs">
                 ★
               </div>
               <div className="min-w-0">
                 <div className="flex items-center gap-1.5">
                   <span className="truncate text-xs font-black text-[#14532d]">{attachedCustomer.name}</span>
-                  <span className="rounded bg-[#bbf7d0] px-1.5 py-0.2 text-[9px] font-black text-[#166534]">
+                  <span className="rounded bg-[#bbf7d0] px-1 py-0.2 text-[8.5px] font-black text-[#166534]">
                     MEMBER
                   </span>
                 </div>
-                <p className="text-[10px] font-mono text-[#166534] truncate">
-                  {attachedCustomer.phone_masked} · Saldo: <strong>{attachedCustomer.balance} Pts</strong>
-                  {loyaltyProgram && cartTotals.total > 0 && (
-                    <span className="text-[#15803d] font-bold ml-1">
-                      (+{loyaltyProgram.mode === "stamp" ? `${loyaltyProgram.stamp_per_visit} Stamp` : `${calculateEarnedPoints(cartTotals.total, loyaltyProgram.earn_rate)} Pts`})
-                    </span>
-                  )}
+                <p className="text-[9.5px] font-mono text-[#166534] truncate">
+                  {attachedCustomer.phone_masked} · <strong>{attachedCustomer.balance} Pts</strong>
                 </p>
               </div>
             </div>
@@ -978,7 +980,7 @@ export default function PosClient({
                 title="Ganti / Scan Member Lain"
                 className="flex h-7 w-7 items-center justify-center rounded-lg bg-white border border-[#bbf7d0] text-[#166534] hover:bg-[#dcfce7] transition-colors"
               >
-                <RefreshCw size={12} />
+                <RefreshCw size={11} />
               </button>
               <button
                 type="button"
@@ -986,7 +988,7 @@ export default function PosClient({
                 title="Lepas Member"
                 className="flex h-7 w-7 items-center justify-center rounded-lg bg-white border border-red-200 text-red-500 hover:bg-red-50 transition-colors"
               >
-                <X size={13} />
+                <X size={12} />
               </button>
             </div>
           </div>
@@ -994,85 +996,110 @@ export default function PosClient({
           <button
             type="button"
             onClick={() => setShowMemberScannerModal(true)}
-            className={`w-full flex items-center justify-between px-3 py-2 rounded-xl border text-xs font-bold transition-all group ${
+            className={`w-full flex items-center justify-between px-3 py-1.5 rounded-xl border text-xs font-bold transition-all group ${
               isMochiPos
                 ? "border-emerald-700/25 bg-[#edf8f3] text-[#0b3d2e] hover:bg-[#e1f5eb] hover:border-[#167052]"
                 : "border-[#d6dfda] bg-white text-[#344d41] hover:border-[#167052]"
             }`}
           >
             <div className="flex items-center gap-2 min-w-0">
-              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-[#0b3d2e] text-[#c8f53a] shadow-xs">
-                <QrCode size={13} />
+              <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-lg bg-[#0b3d2e] text-[#c8f53a] shadow-xs">
+                <QrCode size={11} />
               </div>
-              <span className="truncate text-left text-[11.5px] font-extrabold text-[#0b3d2e]">
+              <span className="truncate text-left text-[11px] font-extrabold text-[#0b3d2e]">
                 Scan QR / No. WA Member
               </span>
             </div>
-            <span className="flex items-center gap-1 text-[11px] font-black text-[#167052] bg-white/80 border border-emerald-600/30 px-2 py-0.5 rounded-lg group-hover:bg-[#167052] group-hover:text-white transition-colors">
-              <Camera size={12} />
+            <span className="flex items-center gap-1 text-[10px] font-black text-[#167052] bg-white/80 border border-emerald-600/30 px-2 py-0.5 rounded-lg group-hover:bg-[#167052] group-hover:text-white transition-colors">
+              <Camera size={11} />
               <span>Pindai</span>
             </span>
           </button>
         )}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-4">
+      <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-3.5 space-y-2.5">
         {cartList.length === 0 ? (
           <div className="flex h-full min-h-56 flex-col items-center justify-center px-5 text-center">
-            <ShoppingCart size={30} strokeWidth={1.6} className="text-[#8ba097]" aria-hidden="true" />
-            <p className="mt-3 text-sm font-extrabold text-[#294239]">Belum ada menu dipilih</p>
-            <p className="mt-1 max-w-52 text-xs leading-relaxed text-[#7b8882]">
-              Pilih menu dari katalog untuk mulai membuat transaksi.
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#edf8f3] text-[#167052] mb-3">
+              <ShoppingCart size={28} strokeWidth={1.8} aria-hidden="true" />
+            </div>
+            <p className="text-sm font-extrabold text-[#294239]">Belum ada menu dipilih</p>
+            <p className="mt-1 max-w-56 text-xs leading-relaxed text-[#7b8882]">
+              Sentuh atau klik foto menu pada katalog di sebelah kiri untuk langsung memasukkan ke daftar pesanan.
             </p>
           </div>
         ) : (
-          <div className="divide-y divide-[#e4eae7]">
+          <div className="space-y-2.5">
             {cartList.map(({ item, qty, note }) => {
               const hasPhoto = item.photo_url && item.photo_url !== PLACEHOLDER_MENU;
+              const unitPrice = Number(item.price);
+              const lineTotal = unitPrice * qty;
               return (
-                <article key={item.id} className="space-y-2 py-3">
-                  <div className="flex items-start gap-2.5">
-                    <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-[#eaf3ef] text-[#34745d]">
+                <article
+                  key={item.id}
+                  className="rounded-2xl border border-[#dce7e2] bg-white p-3 shadow-2xs transition-all hover:border-[#167052]/40 space-y-2"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="relative flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-[#eaf3ef] text-[#34745d] border border-emerald-900/10">
                       {hasPhoto ? (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img src={item.photo_url ?? undefined} alt={item.name} className="h-full w-full object-cover" />
                       ) : (
-                        <UtensilsCrossed size={19} aria-hidden="true" />
+                        <UtensilsCrossed size={20} aria-hidden="true" />
                       )}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <h3 className="text-sm font-extrabold leading-snug text-[#243a31]">{item.name}</h3>
-                      <p className={`mt-0.5 text-xs font-black tabular-nums font-mono ${isMochiPos ? "text-[#0b3d2e]" : "text-[#9b5332]"}`}>
-                        {formatRupiah(Number(item.price) * qty)}
-                      </p>
+                      <h3 className="text-[13px] sm:text-sm font-extrabold leading-snug text-[#20382d]">
+                        {item.name}
+                      </h3>
+                      <div className="mt-0.5 flex items-center gap-2 text-xs">
+                        <span className="font-mono text-[11px] text-[#6b7b74]">
+                          @{formatRupiah(unitPrice)}
+                        </span>
+                        <span className="text-[#9cb0a6]">·</span>
+                        <span className={`font-mono text-xs font-black ${isMochiPos ? "text-[#0b3d2e]" : "text-[#9b5332]"}`}>
+                          {formatRupiah(lineTotal)}
+                        </span>
+                      </div>
                     </div>
-                    <div className="grid shrink-0 grid-cols-[44px_32px_44px] items-center">
+                    <div className="flex shrink-0 items-center gap-1 bg-[#f4f8f6] p-1 rounded-xl border border-[#dbe6e1]">
                       <button
                         type="button"
                         aria-label={`Kurangi ${item.name}`}
                         onClick={() => handleUpdateQty(item.id, -1)}
-                        className={`flex h-11 w-11 items-center justify-center rounded-xl border ${isMochiPos ? "border-[#ccd9d3] bg-[#edf8f3] text-[#167052]" : "border-[#cbd8d2] text-[#355a4b]"}`}
+                        className={`flex h-7 w-7 items-center justify-center rounded-lg border transition-all active:scale-95 ${
+                          isMochiPos
+                            ? "border-[#ccd9d3] bg-white text-[#167052] hover:bg-[#edf8f3]"
+                            : "border-[#cbd8d2] bg-white text-[#355a4b]"
+                        }`}
                       >
-                        <Minus size={14} aria-hidden="true" />
+                        <Minus size={13} aria-hidden="true" />
                       </button>
-                      <span className="text-center text-sm font-black tabular-nums font-mono">{qty}</span>
+                      <span className="w-5 text-center text-xs font-black tabular-nums font-mono text-[#0b3d2e]">
+                        {qty}
+                      </span>
                       <button
                         type="button"
                         aria-label={`Tambah ${item.name}`}
                         onClick={() => handleUpdateQty(item.id, 1)}
-                        className={`flex h-11 w-11 items-center justify-center rounded-xl text-white ${isMochiPos ? "bg-[#0b3d2e]" : "bg-[#167052]"}`}
+                        className={`flex h-7 w-7 items-center justify-center rounded-lg text-white transition-all active:scale-95 ${
+                          isMochiPos ? "bg-[#0b3d2e] hover:bg-[#124d3b]" : "bg-[#167052]"
+                        }`}
                       >
-                        <Plus size={15} aria-hidden="true" />
+                        <Plus size={13} aria-hidden="true" />
                       </button>
                     </div>
                   </div>
-                  <input
-                    type="text"
-                    value={note}
-                    onChange={(event) => handleUpdateNote(item.id, event.target.value)}
-                    placeholder="Catatan pesanan"
-                    className="min-h-11 w-full rounded-xl border border-[#d7e0dc] bg-[#f8faf9] px-3 text-xs outline-none focus:border-[#167052]"
-                  />
+                  <div className="pt-0.5">
+                    <input
+                      type="text"
+                      value={note}
+                      onChange={(event) => handleUpdateNote(item.id, event.target.value)}
+                      placeholder="Catatan menu (e.g. less ice, pedas sedang)..."
+                      className="h-8 w-full rounded-lg border border-dashed border-[#ccd9d2] bg-[#f8faf9] px-2.5 text-[11px] text-[#243d32] placeholder:text-[#889a91] outline-hidden focus:border-solid focus:border-[#167052] focus:bg-white focus:ring-1 focus:ring-[#167052]/20 transition-all"
+                    />
+                  </div>
                 </article>
               );
             })}
@@ -1080,52 +1107,54 @@ export default function PosClient({
         )}
       </div>
 
-      <div className="space-y-3 border-t border-[#dfe6e2] bg-[#f8faf9] p-4">
-        <div className="flex items-center justify-between gap-3">
-          <span className="text-xs font-semibold text-[#627069]">Diskon</span>
-          <div className="grid grid-cols-4 gap-1">
+      <div className="space-y-2.5 border-t border-[#dfe6e2] bg-[#f8faf9] p-3.5 sm:p-4">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-xs font-bold text-[#5c6c64]">Diskon Cepat</span>
+          <div className="grid grid-cols-4 gap-1 flex-1 max-w-[220px]">
             {[0, 5000, 10000, 15000].map((discount) => (
               <button
                 key={discount}
                 type="button"
                 onClick={() => setDiscountNominal(discount)}
-                className={`min-h-11 min-w-11 rounded-xl border px-1 text-[10px] font-extrabold transition-all ${
+                className={`h-8 rounded-xl border px-1 text-[11px] font-extrabold font-mono transition-all ${
                   discountNominal === discount
                     ? (isMochiPos ? "border-[#0b3d2e] bg-[#0b3d2e] text-[#c8f53a] shadow-xs" : "border-[#1f4437] bg-[#1f4437] text-white")
-                    : "border-[#d3ddd8] bg-white text-[#65736c]"
+                    : "border-[#d3ddd8] bg-white text-[#65736c] hover:border-[#167052]/40"
                 }`}
               >
-                {discount === 0 ? "0" : `${discount / 1000}rb`}
+                {discount === 0 ? "0" : `${discount / 1000}k`}
               </button>
             ))}
           </div>
         </div>
 
-        <dl className="space-y-1.5 text-xs tabular-nums font-mono">
+        <dl className="space-y-1 text-xs tabular-nums font-mono border-t border-[#e8efe9] pt-2">
           <div className="flex justify-between text-[#68766f]"><dt>Subtotal</dt><dd>{formatRupiah(cartTotals.subtotal)}</dd></div>
-          {cartTotals.discount > 0 && <div className="flex justify-between text-[#b34539]"><dt>Diskon</dt><dd>-{formatRupiah(cartTotals.discount)}</dd></div>}
+          {cartTotals.discount > 0 && <div className="flex justify-between text-[#b34539] font-bold"><dt>Diskon</dt><dd>-{formatRupiah(cartTotals.discount)}</dd></div>}
           {cartTotals.serviceCharge > 0 && <div className="flex justify-between text-[#68766f]"><dt>Service</dt><dd>{formatRupiah(cartTotals.serviceCharge)}</dd></div>}
           {cartTotals.tax > 0 && <div className="flex justify-between text-[#68766f]"><dt>Pajak</dt><dd>{formatRupiah(cartTotals.tax)}</dd></div>}
           {serviceType === "delivery" && kirimOngkir > 0 && <div className="flex justify-between text-[#68766f]"><dt>Ongkir</dt><dd>{formatRupiah(kirimOngkir)}</dd></div>}
         </dl>
 
-        <div className="flex items-end justify-between border-t border-[#d6dfda] pt-3">
-          <span className="text-sm font-extrabold text-[#243a31]">Total</span>
-          <strong className={`text-2xl font-black tabular-nums font-mono ${isMochiPos ? "text-[#0b3d2e]" : "text-[#167052]"}`}>{formatRupiah(checkoutTotal)}</strong>
+        <div className="flex items-baseline justify-between border-t border-[#d6dfda] pt-2">
+          <span className="text-xs sm:text-sm font-black text-[#243a31]">Total Tagihan</span>
+          <strong className={`text-xl sm:text-2xl font-black tabular-nums font-mono ${isMochiPos ? "text-[#0b3d2e]" : "text-[#167052]"}`}>
+            {formatRupiah(checkoutTotal)}
+          </strong>
         </div>
 
         <button
           type="button"
           disabled={cartList.length === 0}
           onClick={handleOpenPayment}
-          className={`flex min-h-13 w-full items-center justify-center gap-2.5 rounded-xl px-4 text-sm font-black transition-all active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-40 shadow-md ${
+          className={`flex h-12 w-full items-center justify-center gap-2 rounded-xl px-4 text-sm font-black transition-all active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-40 shadow-md ${
             isMochiPos
               ? "bg-[#c8f53a] hover:bg-[#d9ff57] text-[#073829] shadow-emerald-950/10"
               : "bg-[#167052] hover:bg-[#115c43] text-white"
           }`}
         >
-          <CreditCard size={18} aria-hidden="true" />
-          <span>Lanjut Pembayaran</span>
+          <CreditCard size={17} aria-hidden="true" />
+          <span>Lanjut Pembayaran ({cartList.reduce((sum, line) => sum + line.qty, 0)})</span>
         </button>
       </div>
     </section>
@@ -1395,24 +1424,24 @@ export default function PosClient({
         </div>
       )}
 
-      <main id="solusi" className="grid min-h-0 flex-1 lg:grid-cols-[76px_minmax(0,1fr)_360px]">
-        <nav aria-label="Navigasi kasir" className={`hidden min-h-0 flex-col items-center gap-2.5 border-r px-2 py-3.5 lg:flex transition-colors ${isMochiPos ? "bg-[#07281e] border-emerald-900/60 text-emerald-100" : "bg-white border-[#d8e1dc]"}`}>
-          <div className={`flex h-12 w-12 items-center justify-center rounded-xl transition-transform ${isMochiPos ? "bg-[#c8f53a] text-[#073829] shadow-sm" : "bg-[#1d5d47] text-white"}`} title="Kasir">
+      <main id="solusi" className="grid min-h-0 flex-1 lg:grid-cols-[68px_minmax(0,1fr)_390px] xl:grid-cols-[72px_minmax(0,1fr)_430px] 2xl:grid-cols-[76px_minmax(0,1fr)_460px]">
+        <nav aria-label="Navigasi kasir" className={`hidden min-h-0 flex-col items-center gap-2 border-r px-1.5 py-3 lg:flex transition-colors ${isMochiPos ? "bg-[#07281e] border-emerald-900/60 text-emerald-100" : "bg-white border-[#d8e1dc]"}`}>
+          <div className={`flex h-11 w-11 items-center justify-center rounded-xl transition-transform ${isMochiPos ? "bg-[#c8f53a] text-[#073829] shadow-sm" : "bg-[#1d5d47] text-white"}`} title="Kasir">
             <LayoutGrid size={20} aria-hidden="true" />
           </div>
           {userRole === "owner" && (
-            <Link href="/app/pos/menu" aria-label="Kelola menu" title="Kelola menu" className={`flex h-12 w-12 items-center justify-center rounded-xl transition-colors ${isMochiPos ? "text-emerald-300/80 hover:bg-white/10 hover:text-white" : "text-[#66766e] hover:bg-[#edf4f0] hover:text-[#1d5d47]"}`}>
+            <Link href="/app/pos/menu" aria-label="Kelola menu" title="Kelola menu" className={`flex h-11 w-11 items-center justify-center rounded-xl transition-colors ${isMochiPos ? "text-emerald-300/80 hover:bg-white/10 hover:text-white" : "text-[#66766e] hover:bg-[#edf4f0] hover:text-[#1d5d47]"}`}>
               <UtensilsCrossed size={20} aria-hidden="true" />
             </Link>
           )}
-          <Link href="/app/pos/station" aria-label="Kasir tetap" title="Kasir tetap" className={`flex h-12 w-12 items-center justify-center rounded-xl transition-colors ${isMochiPos ? "text-emerald-300/80 hover:bg-white/10 hover:text-white" : "text-[#66766e] hover:bg-[#edf4f0] hover:text-[#1d5d47]"}`}>
+          <Link href="/app/pos/station" aria-label="Kasir tetap" title="Kasir tetap" className={`flex h-11 w-11 items-center justify-center rounded-xl transition-colors ${isMochiPos ? "text-emerald-300/80 hover:bg-white/10 hover:text-white" : "text-[#66766e] hover:bg-[#edf4f0] hover:text-[#1d5d47]"}`}>
             <MonitorSmartphone size={20} aria-hidden="true" />
           </Link>
-          <Link href="/app/pos/kitchen" aria-label="Dapur" title="Dapur" className={`flex h-12 w-12 items-center justify-center rounded-xl transition-colors ${isMochiPos ? "text-emerald-300/80 hover:bg-white/10 hover:text-white" : "text-[#66766e] hover:bg-[#edf4f0] hover:text-[#1d5d47]"}`}>
+          <Link href="/app/pos/kitchen" aria-label="Dapur" title="Dapur" className={`flex h-11 w-11 items-center justify-center rounded-xl transition-colors ${isMochiPos ? "text-emerald-300/80 hover:bg-white/10 hover:text-white" : "text-[#66766e] hover:bg-[#edf4f0] hover:text-[#1d5d47]"}`}>
             <ChefHat size={20} aria-hidden="true" />
           </Link>
           {userRole === "owner" && (
-            <Link href="/app/pos/owner" aria-label="Dashboard owner" title="Dashboard owner" className={`flex h-12 w-12 items-center justify-center rounded-xl transition-colors ${isMochiPos ? "text-emerald-300/80 hover:bg-white/10 hover:text-white" : "text-[#66766e] hover:bg-[#edf4f0] hover:text-[#1d5d47]"}`}>
+            <Link href="/app/pos/owner" aria-label="Dashboard owner" title="Dashboard owner" className={`flex h-11 w-11 items-center justify-center rounded-xl transition-colors ${isMochiPos ? "text-emerald-300/80 hover:bg-white/10 hover:text-white" : "text-[#66766e] hover:bg-[#edf4f0] hover:text-[#1d5d47]"}`}>
               <TrendingUp size={20} aria-hidden="true" />
             </Link>
           )}
@@ -1421,7 +1450,7 @@ export default function PosClient({
             onClick={() => setShowTableQrModal(true)}
             aria-label="Cetak QR Meja"
             title="Cetak QR Meja"
-            className={`flex h-12 w-12 items-center justify-center rounded-xl transition-colors ${
+            className={`flex h-11 w-11 items-center justify-center rounded-xl transition-colors ${
               isMochiPos
                 ? "text-emerald-300/80 hover:bg-white/10 hover:text-white"
                 : "text-[#66766e] hover:bg-[#edf4f0] hover:text-[#1d5d47]"
@@ -1434,7 +1463,7 @@ export default function PosClient({
             onClick={() => setShowMemberScannerModal(true)}
             aria-label="Scan QR Member"
             title={attachedCustomer ? `Member: ${attachedCustomer.name}` : "Scan QR Member"}
-            className={`relative flex h-12 w-12 items-center justify-center rounded-xl transition-colors ${
+            className={`relative flex h-11 w-11 items-center justify-center rounded-xl transition-colors ${
               attachedCustomer
                 ? "bg-[#c8f53a] text-[#073829] shadow-xs"
                 : isMochiPos
@@ -1454,7 +1483,7 @@ export default function PosClient({
             onClick={() => setShowBellModal(true)}
             aria-label="Pengaturan Bel & Suara Kasir"
             title={soundEnabled ? "Bel Pesanan Aktif (Klik untuk atur/tes)" : "Bel Pesanan Mati"}
-            className={`relative flex h-12 w-12 items-center justify-center rounded-xl transition-colors ${
+            className={`relative flex h-11 w-11 items-center justify-center rounded-xl transition-colors ${
               soundEnabled
                 ? isMochiPos
                   ? "bg-[#c8f53a] text-[#073829] shadow-xs"
@@ -1473,12 +1502,12 @@ export default function PosClient({
             )}
           </button>
           {currentQrOrders.length > 0 && (
-            <button type="button" onClick={() => setShowQueue(true)} aria-label={`${currentQrOrders.length} pesanan masuk`} title="Pesanan masuk" className="relative flex h-12 w-12 items-center justify-center rounded-xl bg-[#fff4df] text-[#a15a18]">
+            <button type="button" onClick={() => setShowQueue(true)} aria-label={`${currentQrOrders.length} pesanan masuk`} title="Pesanan masuk" className="relative flex h-11 w-11 items-center justify-center rounded-xl bg-[#fff4df] text-[#a15a18]">
               <Utensils size={19} aria-hidden="true" />
               <span className="absolute -right-0.5 -top-0.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#ea580c] px-1 text-[9px] font-extrabold text-white">{currentQrOrders.length}</span>
             </button>
           )}
-          <button type="button" onClick={() => setShowShiftModal(true)} aria-label={activeShift ? "Tutup shift" : "Buka shift"} title={activeShift ? "Tutup shift" : "Buka shift"} className={`mt-auto flex h-12 w-12 items-center justify-center rounded-xl border transition-all ${
+          <button type="button" onClick={() => setShowShiftModal(true)} aria-label={activeShift ? "Tutup shift" : "Buka shift"} title={activeShift ? "Tutup shift" : "Buka shift"} className={`mt-auto flex h-11 w-11 items-center justify-center rounded-xl border transition-all ${
             activeShift
               ? (isMochiPos ? "border-[#c8f53a]/50 bg-[#0b3d2e] text-[#c8f53a]" : "border-[#b8cec2] bg-[#e5f3ec] text-[#176047]")
               : "border-[#e3b5af] bg-[#fff0ed] text-[#a83d33]"
@@ -1548,21 +1577,23 @@ export default function PosClient({
             </div>
           </div>
 
-          <div className="flex items-end justify-between px-3 pb-1.5 pt-2 sm:pb-2 sm:pt-2 sm:px-4">
+          <div className="flex items-end justify-between px-3 pb-2 pt-2 sm:px-4">
             <div>
-              <p className="text-[9px] sm:text-[10px] font-bold uppercase text-[#78867f]">
-                {isMochiPos ? "Pilihan Menu" : "Katalog kasir"}
+              <p className="text-[10px] font-extrabold uppercase tracking-wider text-[#78867f]">
+                {isMochiPos ? "Katalog Menu" : "Katalog Kasir"}
               </p>
-              <h2 className="text-base sm:text-lg font-extrabold text-[#1e3b30]">
-                {activeCategory === "all" ? "Semua menu" : categories.find((category) => category.id === activeCategory)?.name || "Menu"}
+              <h2 className="text-base sm:text-lg font-black text-[#1e3b30]">
+                {activeCategory === "all" ? "Daftar Menu Kasir" : categories.find((category) => category.id === activeCategory)?.name || "Menu"}
               </h2>
             </div>
-            <span className="text-xs font-semibold text-[#728078]">{filteredMenu.length} tersedia</span>
+            <span className="text-xs font-bold font-mono text-[#728078] bg-[#edf8f3] px-2.5 py-0.5 rounded-lg border border-emerald-900/10">
+              {filteredMenu.length} menu tersedia
+            </span>
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-24 sm:px-4 lg:pb-4">
             {filteredMenu.length > 0 ? (
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-2 sm:gap-2.5">
+              <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-2.5 sm:gap-3">
                 {filteredMenu.map((item) => {
                   const inCart = cart[item.id];
                   const categoryName = categories.find((category) => category.id === item.category_id)?.name ?? "Menu";
@@ -1576,14 +1607,14 @@ export default function PosClient({
                           handleAddToCart(item);
                         }
                       }}
-                      className={`group relative flex min-w-0 flex-col justify-between rounded-2xl border bg-white p-2 sm:p-2.5 transition-all cursor-pointer select-none active:scale-[0.97] hover:shadow-md hover:border-[#167052]/50 ${
+                      className={`group relative flex min-w-0 flex-col justify-between rounded-2xl border bg-white p-2.5 sm:p-3 transition-all cursor-pointer select-none active:scale-[0.98] hover:shadow-md hover:border-[#167052]/60 ${
                         inCart
-                          ? (isMochiPos ? "border-2 border-[#167052] ring-2 ring-[#167052]/15 shadow-xs bg-[#f7fcf9]" : "border-[#167052] shadow-[0_4px_14px_rgba(22,112,82,0.1)]")
+                          ? (isMochiPos ? "border-2 border-[#167052] ring-2 ring-[#167052]/15 shadow-sm bg-[#f7fcf9]" : "border-[#167052] shadow-[0_4px_14px_rgba(22,112,82,0.1)]")
                           : (isMochiPos ? "border-[#d8e3de]" : "border-[#d8e1dc]")
                       } ${!item.is_available ? "opacity-55 cursor-not-allowed" : ""}`}
                     >
-                      <div className="space-y-1.5">
-                        <div className="relative aspect-[16/11] sm:aspect-[4/3] max-h-32 sm:max-h-36 w-full overflow-hidden rounded-xl bg-[#e8f2ed] text-[#34745d] flex items-center justify-center">
+                      <div className="space-y-2">
+                        <div className="relative aspect-[16/11] sm:aspect-[4/3] max-h-36 sm:max-h-40 w-full overflow-hidden rounded-xl bg-[#e8f2ed] text-[#34745d] flex items-center justify-center">
                           {hasPhoto ? (
                             // eslint-disable-next-line @next/next/no-img-element
                             <img
@@ -1593,28 +1624,28 @@ export default function PosClient({
                               className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
                             />
                           ) : (
-                            <CategoryIcon size={24} strokeWidth={1.6} aria-hidden="true" />
+                            <CategoryIcon size={26} strokeWidth={1.6} aria-hidden="true" />
                           )}
                           {inCart && (
-                            <span className="absolute right-1.5 top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#0b3d2e] px-1.5 font-mono text-[10px] font-black text-[#c8f53a] shadow-sm animate-in zoom-in-75">
-                              {inCart.qty}
+                            <span className="absolute right-2 top-2 flex h-6 min-w-6 items-center justify-center rounded-full bg-[#0b3d2e] px-2 font-mono text-[11px] font-black text-[#c8f53a] shadow-md ring-2 ring-white animate-in zoom-in-75">
+                              {inCart.qty}x
                             </span>
                           )}
                         </div>
 
                         <div className="min-w-0">
-                          <h3 className="line-clamp-2 text-xs sm:text-[13px] font-extrabold leading-snug text-[#20372e] group-hover:text-[#167052] transition-colors">
+                          <h3 className="line-clamp-2 text-xs sm:text-sm font-extrabold leading-snug text-[#20372e] group-hover:text-[#167052] transition-colors">
                             {item.name}
                           </h3>
-                          <p className="mt-0.5 truncate text-[10px] font-semibold text-[#718078]">
+                          <p className="mt-0.5 truncate text-[11px] font-semibold text-[#718078]">
                             {categoryName}
                           </p>
                         </div>
                       </div>
 
-                      <div className="mt-2 flex items-center justify-between gap-1 border-t border-[#f0f4f2] pt-1.5">
+                      <div className="mt-2.5 flex items-center justify-between gap-1.5 border-t border-[#f0f4f2] pt-2">
                         <strong
-                          className={`text-xs sm:text-[13px] font-black tabular-nums font-mono ${
+                          className={`text-xs sm:text-sm font-black tabular-nums font-mono ${
                             isMochiPos ? "text-[#0b3d2e]" : "text-[#9b5332]"
                           }`}
                         >
@@ -1631,7 +1662,7 @@ export default function PosClient({
                                   e.stopPropagation();
                                   handleUpdateQty(item.id, -1);
                                 }}
-                                className={`flex h-7 w-7 sm:h-8 sm:w-8 items-center justify-center rounded-lg border transition-colors ${
+                                className={`flex h-7 w-7 sm:h-8 sm:w-8 items-center justify-center rounded-lg border transition-colors active:scale-95 ${
                                   isMochiPos
                                     ? "border-[#ccd9d3] bg-[#edf8f3] text-[#167052] hover:bg-[#e0f1e8]"
                                     : "border-[#c5d4cd] text-[#315d4b]"
@@ -1639,7 +1670,7 @@ export default function PosClient({
                               >
                                 <Minus size={12} aria-hidden="true" />
                               </button>
-                              <span className="w-4 text-center text-xs font-black tabular-nums font-mono">
+                              <span className="w-5 text-center text-xs font-black tabular-nums font-mono">
                                 {inCart.qty}
                               </span>
                               <button
@@ -1649,7 +1680,7 @@ export default function PosClient({
                                   e.stopPropagation();
                                   handleAddToCart(item);
                                 }}
-                                className={`flex h-7 w-7 sm:h-8 sm:w-8 items-center justify-center rounded-lg text-white transition-colors ${
+                                className={`flex h-7 w-7 sm:h-8 sm:w-8 items-center justify-center rounded-lg text-white transition-colors active:scale-95 ${
                                   isMochiPos ? "bg-[#0b3d2e] hover:bg-[#124d3b]" : "bg-[#167052]"
                                 }`}
                               >
@@ -1664,13 +1695,13 @@ export default function PosClient({
                                 e.stopPropagation();
                                 handleAddToCart(item);
                               }}
-                              className={`flex h-7 w-7 sm:h-8 sm:w-8 shrink-0 items-center justify-center rounded-xl transition-all active:scale-95 shadow-xs ${
+                              className={`flex h-8 w-8 sm:h-9 sm:w-9 shrink-0 items-center justify-center rounded-xl transition-all active:scale-95 shadow-xs ${
                                 isMochiPos
                                   ? "bg-[#c8f53a] hover:bg-[#d9ff57] text-[#073829] font-black"
                                   : "bg-[#0aae6f] hover:bg-[#079760] text-white"
                               }`}
                             >
-                              <Plus size={14} strokeWidth={2.5} aria-hidden="true" />
+                              <Plus size={15} strokeWidth={2.5} aria-hidden="true" />
                             </button>
                           )
                         ) : (
