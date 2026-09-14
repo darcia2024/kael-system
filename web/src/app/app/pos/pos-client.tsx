@@ -1145,16 +1145,6 @@ export default function PosClient({
       <header className={`z-30 shrink-0 border-b ${isMochiPos ? "bg-[#0b3d2e] border-emerald-800/60 text-white shadow-sm" : "bg-white border-[#d8e1dc]"}`}>
         <div className="flex min-h-16 items-center justify-between gap-3 px-3 sm:px-5">
           <div className="flex min-w-0 items-center gap-3">
-            <Link
-              href={userRole === "owner" ? "/app" : "/app/staff"}
-              aria-label="Kembali"
-              title="Kembali"
-              className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border transition-colors ${
-                isMochiPos ? "border-white/15 bg-white/10 text-white hover:bg-white/20" : "border-[#ccd7d1] text-[#29473b] hover:bg-[#eef5f1]"
-              }`}
-            >
-              <ArrowLeft size={18} aria-hidden="true" />
-            </Link>
             <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl shadow-xs ${isMochiPos ? "bg-[#c8f53a] text-[#073829]" : "bg-[#1d5d47] text-white"}`}>
               {isMochiPos ? <Coffee size={20} aria-hidden="true" /> : <Receipt size={20} aria-hidden="true" />}
             </div>
