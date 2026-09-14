@@ -330,7 +330,7 @@ export default function AppPortalHub({
                   <p className="text-[10px] text-emerald-200 truncate">Retensi &amp; Member</p>
                 </div>
               </Link>
-              <Link href="/app/pos/owner#laporan-review" className="flex items-center gap-2.5 rounded-xl bg-white/10 hover:bg-white/15 p-2.5 transition-colors">
+              <Link href="/app/review/reports" className="flex items-center gap-2.5 rounded-xl bg-white/10 hover:bg-white/15 p-2.5 transition-colors">
                 <Star size={16} className="text-[#c8f53a] shrink-0" />
                 <div className="min-w-0">
                   <p className="text-xs font-bold truncate">Laporan Review</p>

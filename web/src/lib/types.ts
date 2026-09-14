@@ -711,6 +711,7 @@ export interface FeedbackSummary {
 
 export interface FeedbackRow extends MemberFeedback {
   customer_name: string | null;
+  customer_phone?: string | null;
   /** NULL untuk feedback dari tap kartu: tidak ada pesanan yang bisa disebut. */
   order_no: string | null;
   /** Label kartu asal, supaya owner tahu meja atau titik mana yang mengeluh. */

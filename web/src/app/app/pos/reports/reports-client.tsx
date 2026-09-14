@@ -220,7 +220,7 @@ export default function PosOwnerReportsPage({
             <span>Laporan Loyalty Member</span>
           </Link>
           <Link
-            href="/app/pos/owner#laporan-review"
+            href="/app/review/reports"
             className={`inline-flex shrink-0 items-center gap-1.5 rounded-xl border px-3 py-1.5 font-bold transition-all ${
               isMochi
                 ? "border-[#d8e3de] bg-white text-[#20372e] hover:bg-[#edf8f3] hover:border-[#167052]/40"

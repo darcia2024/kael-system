@@ -488,8 +488,8 @@ export default function OwnerDashboardClient({
             </Link>
 
             {/* 4. Laporan Review & Kepuasan */}
-            <a
-              href="#laporan-review"
+            <Link
+              href="/app/review/reports"
               className={`group p-3 rounded-2xl border transition-all ${
                 isMochi
                   ? "border-[#d8e3de] bg-[#fbfdfc] hover:border-emerald-400 hover:bg-[#f4faf6]"
@@ -506,7 +506,7 @@ export default function OwnerDashboardClient({
                 Review Pelanggan
               </p>
               <p className="text-[10px] text-[#7b7b8e] line-clamp-1">Google &amp; keluhan privat</p>
-            </a>
+            </Link>
 
             {/* 5. Laporan Keuangan */}
             <Link
@@ -1187,12 +1187,12 @@ export default function OwnerDashboardClient({
             </div>
             <div className="flex items-center gap-1.5 shrink-0">
               <Link
-                href="/app/pos/reports"
+                href="/app/review/reports"
                 className={`inline-flex items-center gap-1 font-mono text-[10px] font-bold ${
                   isMochi ? "text-[#167052] hover:text-[#0b3d2e]" : "text-[#6d4cc4]"
                 }`}
               >
-                Audit Laporan Lengkap <ChevronRight size={13} />
+                Buka Halaman Khusus &amp; Filter <ChevronRight size={13} />
               </Link>
             </div>
           </div>
@@ -2048,8 +2048,8 @@ export default function OwnerDashboardClient({
                     </p>
                   </Link>
 
-                  <a
-                    href="#laporan-review"
+                  <Link
+                    href="/app/review/reports"
                     onClick={() => setShowReportsModal(false)}
                     className="group p-3.5 rounded-2xl border border-[#d8e3de] bg-[#fbfdfc] hover:border-emerald-400 hover:bg-[#edf8f3] transition-all"
                   >
@@ -2060,9 +2060,9 @@ export default function OwnerDashboardClient({
                       <ArrowRight size={13} className="text-[#637970] group-hover:translate-x-1 transition-transform" />
                     </div>
                     <p className="text-[11px] text-[#637970] mt-1 line-clamp-2 leading-relaxed">
-                      Smart routing ulasan bintang 4–5 ke Google publik, serta feed keluhan privat bintang 1–3 yang terlindungi.
+                      Halaman khusus ulasan bintang 1–5, filter tanggal &amp; sentimen, keluhan terlindungi, dan follow-up WhatsApp.
                     </p>
-                  </a>
+                  </Link>
                 </div>
               </div>
 

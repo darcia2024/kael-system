@@ -153,7 +153,7 @@ export default function AnalyticsClient({
             <span>Laporan Loyalty Member</span>
           </span>
           <Link
-            href="/app/pos/owner#laporan-review"
+            href="/app/review/reports"
             className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-[#d8e3de] bg-white px-3 py-1.5 font-bold text-[#527867] hover:border-[#0b3d2e] hover:text-[#0b3d2e] transition-colors"
           >
             <span>Laporan Review &amp; Keluhan</span>

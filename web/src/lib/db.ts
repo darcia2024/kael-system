@@ -4531,7 +4531,24 @@ export const db = {
      * sehingga keluhan dari meja tidak pernah sampai ke layar pemilik.
      */
     return (await sql`
-      SELECT f.*, c.name AS customer_name, o.order_no, k.label AS card_label
+      SELECT f.*, c.name AS customer_name, c.phone AS customer_phone, o.order_no, k.label AS card_label
+      FROM member_feedback f
+      LEFT JOIN customers c ON c.id = f.customer_id
+      LEFT JOIN orders o ON o.id = f.order_id
+      LEFT JOIN cards k ON k.id = f.card_id
+      WHERE f.business_id = ${businessId}
+      ORDER BY f.created_at DESC
+      LIMIT ${limit}
+    `) as unknown as import("./types").FeedbackRow[];
+  },
+
+  /** Mengambil seluruh ulasan & keluhan pelanggan untuk halaman Laporan Review & Keluhan khusus. */
+  async getAllFeedback(
+    businessId: string,
+    limit = 1000,
+  ): Promise<import("./types").FeedbackRow[]> {
+    return (await sql`
+      SELECT f.*, c.name AS customer_name, c.phone AS customer_phone, o.order_no, k.label AS card_label
       FROM member_feedback f
       LEFT JOIN customers c ON c.id = f.customer_id
       LEFT JOIN orders o ON o.id = f.order_id
