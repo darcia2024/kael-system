@@ -30,8 +30,10 @@ import {
 import type { Business, Order } from "@/lib/types";
 import { formatBusinessDateTime, formatRupiah } from "@/lib/formatters";
 import { PAYMENT_STATUS_LABEL, serviceTypeLabel } from "@/lib/pos-engine";
-import { retryOrderSyncAction } from '@/lib/actions';
+import { retryOrderSyncAction } from "@/lib/actions";
 import TableQrModal from "../table-qr-modal";
+import { isMochiBusiness } from "@/lib/mochi-brand";
+import { BusinessMark } from "@/components/business-mark";
 
 type MenuItemStat = {
   id: string;
@@ -71,23 +73,52 @@ type Dashboard = {
   };
 };
 
-function statusStyle(order: Order) {
-  if (order.payment_status === "pending") return "border-[#f59e0b] bg-[#fffbeb] text-[#a16207]";
-  if (order.status === "cancelled" || order.payment_status === "failed" || order.payment_status === "expired") return "border-[#fecaca] bg-[#fff7f7] text-[#b91c1c]";
-  if (order.fulfillment_status === "ready") return "border-[#86efac] bg-[#f0fdf4] text-[#15803d]";
-  return "border-[#ddd9ff] bg-[#f5f3ff] text-[#6d4cc4]";
+function statusStyle(order: Order, isMochi = false) {
+  if (order.payment_status === "pending") {
+    return isMochi
+      ? "border-amber-300 bg-amber-50 text-amber-800"
+      : "border-[#f59e0b] bg-[#fffbeb] text-[#a16207]";
+  }
+  if (order.status === "cancelled" || order.payment_status === "failed" || order.payment_status === "expired") {
+    return isMochi
+      ? "border-rose-300 bg-rose-50 text-rose-800"
+      : "border-[#fecaca] bg-[#fff7f7] text-[#b91c1c]";
+  }
+  if (order.fulfillment_status === "ready") {
+    return isMochi
+      ? "border-emerald-300 bg-[#edf8f3] text-[#167052]"
+      : "border-[#86efac] bg-[#f0fdf4] text-[#15803d]";
+  }
+  return isMochi
+    ? "border-emerald-200 bg-[#f7fcf9] text-[#0b3d2e]"
+    : "border-[#ddd9ff] bg-[#f5f3ff] text-[#6d4cc4]";
 }
 
-export default function OwnerDashboardClient({ business, dashboard, pendingSync, themeClassName = "" }: { business: Business | null; dashboard: Dashboard; pendingSync: {id: string; order_no: string; sync_error: string | null}[]; themeClassName?: string }) {
+export default function OwnerDashboardClient({
+  business,
+  dashboard,
+  pendingSync,
+  themeClassName = "",
+}: {
+  business: Business | null;
+  dashboard: Dashboard;
+  pendingSync: { id: string; order_no: string; sync_error: string | null }[];
+  themeClassName?: string;
+}) {
+  const isMochi = isMochiBusiness(business);
   const [syncing, setSyncing] = useState(false);
-  const [syncMessage, setSyncMessage] = useState('');
+  const [syncMessage, setSyncMessage] = useState("");
   const router = useRouter();
   const [refreshing, setRefreshing] = useState(false);
   const [showTableQrModal, setShowTableQrModal] = useState(false);
   const [menuPeriod, setMenuPeriod] = useState<"today" | "monthly">("today");
   const maxHourlyRevenue = Math.max(...dashboard.hourlySales.map((item) => item.revenue), 1);
   const totalPayment = dashboard.today.payment.cash + dashboard.today.payment.qris + dashboard.today.payment.transfer;
-  const latestSync = new Intl.DateTimeFormat("id-ID", { hour: "2-digit", minute: "2-digit", timeZone: dashboard.timezone }).format(new Date());
+  const latestSync = new Intl.DateTimeFormat("id-ID", {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: dashboard.timezone,
+  }).format(new Date());
 
   const currentBestSellers = dashboard.menuAnalytics?.[menuPeriod]?.bestSellers ?? [];
   const currentSlowMovers = dashboard.menuAnalytics?.[menuPeriod]?.slowMovers ?? [];
@@ -108,117 +139,481 @@ export default function OwnerDashboardClient({ business, dashboard, pendingSync,
   };
 
   const queueTotal = dashboard.queue.awaitingPayment + dashboard.queue.preparing + dashboard.queue.ready;
-  const paymentRows = useMemo(() => [
-    { label: "Tunai", value: dashboard.today.payment.cash, icon: Banknote, color: "bg-[#d9ff57]" },
-    { label: "QRIS", value: dashboard.today.payment.qris, icon: Smartphone, color: "bg-[#ddd9ff]" },
-    { label: "Transfer", value: dashboard.today.payment.transfer, icon: CreditCard, color: "bg-[#b9f4ea]" },
-  ], [dashboard.today.payment]);
+  const paymentRows = useMemo(
+    () => [
+      {
+        label: "Tunai",
+        value: dashboard.today.payment.cash,
+        icon: Banknote,
+        color: isMochi ? "bg-[#c8f53a] text-[#073829]" : "bg-[#d9ff57]",
+        barColor: isMochi ? "bg-[#0b3d2e]" : "bg-[#232331]",
+      },
+      {
+        label: "QRIS",
+        value: dashboard.today.payment.qris,
+        icon: Smartphone,
+        color: isMochi ? "bg-[#edf8f3] text-[#167052]" : "bg-[#ddd9ff]",
+        barColor: isMochi ? "bg-[#167052]" : "bg-[#232331]",
+      },
+      {
+        label: "Transfer",
+        value: dashboard.today.payment.transfer,
+        icon: CreditCard,
+        color: isMochi ? "bg-[#e0f2fe] text-[#0369a1]" : "bg-[#b9f4ea]",
+        barColor: isMochi ? "bg-[#0ea5e9]" : "bg-[#232331]",
+      },
+    ],
+    [dashboard.today.payment, isMochi]
+  );
 
   return (
-    <div className={`${themeClassName} mochi-shell min-h-screen bg-[#f7f6fc] pb-10 text-[#232331]`}>
-      {pendingSync.length > 0 && <section className="border-b border-amber-300 bg-amber-50 p-4 text-sm" aria-label="Transaksi perlu diperiksa">
-        <p className="font-bold">{pendingSync.length} transaksi menunggu pembaruan poin atau stok</p>
-        <ul>{pendingSync.map(order => <li key={order.id}>#{order.order_no}: {order.sync_error || 'Belum selesai diproses'}</li>)}</ul>
-        <button type="button" disabled={syncing} className="mt-2 inline-flex min-h-11 items-center gap-2 rounded-lg border border-current px-3 disabled:opacity-50" onClick={async () => {
-          setSyncing(true);
-          try { const result = await retryOrderSyncAction(); setSyncMessage(result.ok ? 'Pemeriksaan selesai. Transaksi yang masih terkendala tetap ditampilkan.' : result.error); router.refresh(); }
-          catch { setSyncMessage('Belum berhasil. Coba lagi sebentar.'); }
-          finally { setSyncing(false); }
-        }}><RefreshCw size={16}/>{syncing ? 'Memproses...' : 'Coba proses ulang'}</button>
-        <p role="status">{syncMessage}</p>
-      </section>}
-      <header className="mochi-header sticky top-0 z-30 border-b-2 border-[#232331] bg-white/95 px-3 py-2.5 backdrop-blur sm:px-6">
+    <div
+      className={`${themeClassName} mochi-shell min-h-screen ${
+        isMochi ? "bg-[#f0f5f2] text-[#1a382d]" : "bg-[#f7f6fc] text-[#232331]"
+      } pb-12`}
+    >
+      {pendingSync.length > 0 && (
+        <section
+          className={`mx-auto max-w-7xl mt-3 rounded-2xl border p-4 text-sm ${
+            isMochi
+              ? "border-amber-300 bg-amber-50/95 text-amber-900 shadow-sm"
+              : "border-amber-300 bg-amber-50"
+          }`}
+          aria-label="Transaksi perlu diperiksa"
+        >
+          <p className="font-bold">{pendingSync.length} transaksi menunggu pembaruan poin atau stok</p>
+          <ul className="mt-1 space-y-0.5 text-xs">
+            {pendingSync.map((order) => (
+              <li key={order.id}>
+                #{order.order_no}: {order.sync_error || "Belum selesai diproses"}
+              </li>
+            ))}
+          </ul>
+          <button
+            type="button"
+            disabled={syncing}
+            className="mt-2.5 inline-flex min-h-9 items-center gap-2 rounded-xl border border-current px-3 py-1 text-xs font-bold disabled:opacity-50"
+            onClick={async () => {
+              setSyncing(true);
+              try {
+                const result = await retryOrderSyncAction();
+                setSyncMessage(
+                  result.ok ? "Pemeriksaan selesai. Transaksi yang masih terkendala tetap ditampilkan." : result.error
+                );
+                router.refresh();
+              } catch {
+                setSyncMessage("Belum berhasil. Coba lagi sebentar.");
+              } finally {
+                setSyncing(false);
+              }
+            }}
+          >
+            <RefreshCw size={14} className={syncing ? "animate-spin" : ""} />
+            {syncing ? "Memproses..." : "Coba proses ulang"}
+          </button>
+          {syncMessage && <p role="status" className="mt-1.5 text-xs font-medium">{syncMessage}</p>}
+        </section>
+      )}
+
+      {/* Header */}
+      <header
+        className={`sticky top-0 z-30 border-b backdrop-blur-md px-3 py-2.5 sm:py-3 sm:px-6 transition-colors ${
+          isMochi
+            ? "border-[#07281e] bg-[#0b3d2e]/98 text-white shadow-sm"
+            : "mochi-header border-b-2 border-[#232331] bg-white/95"
+        }`}
+      >
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-2">
-          <div className="flex min-w-0 items-center gap-2.5">
-            <Link href="/app" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-[#232331] bg-[#fcfcfe] shadow-ink-xs" aria-label="Kembali ke dashboard">
+          <div className="flex min-w-0 items-center gap-2.5 sm:gap-3">
+            <Link
+              href="/app"
+              className={
+                isMochi
+                  ? "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-emerald-700/50 bg-[#144f3d] text-white hover:bg-[#1b634d] transition-colors"
+                  : "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-[#232331] bg-[#fcfcfe] shadow-ink-xs"
+              }
+              aria-label="Kembali ke dashboard"
+            >
               <ArrowLeft size={16} />
             </Link>
+
+            {isMochi && (
+              <BusinessMark
+                name={business?.name}
+                logoUrl={business?.logo_url}
+                brandColor={business?.brand_color}
+                className="h-9 w-9 shrink-0 rounded-xl border border-emerald-600/40"
+              />
+            )}
+
             <div className="min-w-0">
-              <div className="flex items-center gap-1.5">
-                <h1 className="truncate text-sm font-black sm:text-base">Dashboard Owner POS</h1>
-                <span className="shrink-0 rounded-md border border-[#16a34a] bg-[#dcfce7] px-1.5 py-0.5 font-mono text-[9px] font-bold text-[#15803d]">LIVE</span>
+              <div className="flex items-center gap-1.5 sm:gap-2">
+                <h1
+                  className={`truncate text-sm font-black sm:text-base ${
+                    isMochi ? "text-white" : "text-[#232331]"
+                  }`}
+                >
+                  Dashboard Owner POS
+                </h1>
+                <span
+                  className={
+                    isMochi
+                      ? "shrink-0 rounded-full bg-[#c8f53a] px-2 py-0.5 font-mono text-[9px] font-black text-[#073829] shadow-xs"
+                      : "shrink-0 rounded-md border border-[#16a34a] bg-[#dcfce7] px-1.5 py-0.5 font-mono text-[9px] font-bold text-[#15803d]"
+                  }
+                >
+                  LIVE
+                </span>
               </div>
-              <p className="truncate font-mono text-[10px] text-[#7b7b8e]">{business?.name ?? "Toko KAEL"} · tersinkron {latestSync}</p>
+              <p
+                className={
+                  isMochi
+                    ? "truncate font-mono text-[10.5px] text-emerald-200/80"
+                    : "truncate font-mono text-[10px] text-[#7b7b8e]"
+                }
+              >
+                {business?.name ?? "Mochi Cafe n Resto"} · tersinkron {latestSync}
+              </p>
             </div>
           </div>
-          <div className="flex items-center gap-1.5">
-            <button type="button" onClick={refresh} className="btn-tactile flex h-9 w-9 items-center justify-center rounded-xl border border-[#232331] bg-white shadow-ink-xs" title="Muat ulang data" aria-label="Muat ulang data">
+
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            <button
+              type="button"
+              onClick={refresh}
+              className={
+                isMochi
+                  ? "flex h-9 w-9 items-center justify-center rounded-xl border border-emerald-700/50 bg-[#144f3d] text-white hover:bg-[#1b634d] transition-colors"
+                  : "btn-tactile flex h-9 w-9 items-center justify-center rounded-xl border border-[#232331] bg-white shadow-ink-xs"
+              }
+              title="Muat ulang data"
+              aria-label="Muat ulang data"
+            >
               {refreshing ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}
             </button>
             <button
               type="button"
               onClick={() => setShowTableQrModal(true)}
-              className="btn-tactile inline-flex items-center gap-1.5 rounded-xl border-2 border-[#232331] bg-white px-3 py-2 font-mono text-xs font-black shadow-ink-xs hover:bg-[#edf8f3]"
+              className={
+                isMochi
+                  ? "inline-flex items-center gap-1.5 rounded-xl border border-emerald-700/60 bg-[#144f3d] px-3 py-2 font-mono text-xs font-bold text-[#c8f53a] hover:bg-[#1b634d] transition-colors"
+                  : "btn-tactile inline-flex items-center gap-1.5 rounded-xl border-2 border-[#232331] bg-white px-3 py-2 font-mono text-xs font-black shadow-ink-xs hover:bg-[#edf8f3]"
+              }
               title="Generator & Cetak QR Meja"
             >
-              <QrCode size={14} /><span className="hidden sm:inline">Cetak QR Meja</span>
+              <QrCode size={14} />
+              <span className="hidden sm:inline">Cetak QR Meja</span>
             </button>
-            <Link href="/app/pos" className="btn-tactile inline-flex items-center gap-1.5 rounded-xl border-2 border-[#232331] bg-[#d9ff57] px-3 py-2 font-mono text-xs font-black shadow-ink-xs">
-              <ShoppingBag size={14} /><span className="hidden sm:inline">Buka Kasir</span>
+            <Link
+              href="/app/pos"
+              className={
+                isMochi
+                  ? "inline-flex items-center gap-1.5 rounded-xl bg-[#c8f53a] px-3.5 py-2 font-mono text-xs font-black text-[#073829] hover:bg-[#d9ff57] shadow-sm transition-all active:scale-95"
+                  : "btn-tactile inline-flex items-center gap-1.5 rounded-xl border-2 border-[#232331] bg-[#d9ff57] px-3 py-2 font-mono text-xs font-black shadow-ink-xs"
+              }
+            >
+              <ShoppingBag size={14} />
+              <span className="hidden sm:inline">Buka Kasir</span>
             </Link>
           </div>
         </div>
       </header>
 
+      {/* Main Content */}
       <main className="mx-auto w-full max-w-7xl space-y-4 p-3 sm:space-y-6 sm:p-6">
+        {/* KPI Cards */}
         <section className="grid grid-cols-2 gap-2.5 lg:grid-cols-4 lg:gap-4">
-          <Kpi label="Omzet hari ini" value={formatRupiah(dashboard.today.revenue)} hint={`${dashboard.today.paidOrders} transaksi lunas`} icon={CircleDollarSign} tone="text-[#6d4cc4] bg-[#f0edff]" />
-          <Kpi label="Rata-rata belanja" value={formatRupiah(dashboard.today.averageOrder)} hint="per transaksi lunas" icon={ReceiptText} tone="text-[#15803d] bg-[#dcfce7]" />
-          <Kpi label="Pesanan perlu dicek" value={String(dashboard.queue.awaitingPayment)} hint="menunggu pembayaran" icon={Timer} tone={dashboard.queue.awaitingPayment ? "text-[#a16207] bg-[#fef3c7]" : "text-[#15803d] bg-[#dcfce7]"} />
-          <Kpi label="Pesanan siap" value={String(dashboard.queue.ready)} hint={`${dashboard.queue.preparing} sedang disiapkan`} icon={UtensilsCrossed} tone={dashboard.queue.ready ? "text-[#15803d] bg-[#dcfce7]" : "text-[#6d4cc4] bg-[#f0edff]"} />
+          {isMochi ? (
+            <>
+              {/* Omzet Hari Ini - Highlight Card */}
+              <div className="relative overflow-hidden rounded-2xl border border-emerald-700/60 bg-gradient-to-br from-[#0b3d2e] via-[#0e4837] to-[#07281e] p-3.5 text-white shadow-sm sm:p-5">
+                <div className="flex items-start justify-between gap-2">
+                  <p className="font-mono text-[9.5px] font-extrabold uppercase tracking-wider text-emerald-200/90">
+                    Omzet hari ini
+                  </p>
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-[#c8f53a]/20 text-[#c8f53a]">
+                    <CircleDollarSign size={16} />
+                  </span>
+                </div>
+                <p className="mt-2.5 truncate font-mono text-lg font-black text-[#c8f53a] sm:text-2xl">
+                  {formatRupiah(dashboard.today.revenue)}
+                </p>
+                <p className="mt-0.5 truncate text-[10.5px] text-emerald-200/80">
+                  {dashboard.today.paidOrders} transaksi lunas
+                </p>
+              </div>
+
+              {/* Rata-rata belanja */}
+              <Kpi
+                label="Rata-rata belanja"
+                value={formatRupiah(dashboard.today.averageOrder)}
+                hint="per transaksi lunas"
+                icon={ReceiptText}
+                tone="text-[#167052] bg-[#edf8f3]"
+                isMochi={true}
+              />
+
+              {/* Pesanan perlu dicek */}
+              <Kpi
+                label="Pesanan perlu dicek"
+                value={String(dashboard.queue.awaitingPayment)}
+                hint="menunggu pembayaran"
+                icon={Timer}
+                tone={
+                  dashboard.queue.awaitingPayment
+                    ? "text-amber-700 bg-amber-100"
+                    : "text-[#167052] bg-[#edf8f3]"
+                }
+                valueTone={dashboard.queue.awaitingPayment ? "text-amber-700" : undefined}
+                isMochi={true}
+              />
+
+              {/* Pesanan siap */}
+              <Kpi
+                label="Pesanan siap"
+                value={String(dashboard.queue.ready)}
+                hint={`${dashboard.queue.preparing} sedang disiapkan`}
+                icon={UtensilsCrossed}
+                tone={
+                  dashboard.queue.ready
+                    ? "text-[#073829] bg-[#c8f53a]/40"
+                    : "text-[#167052] bg-[#edf8f3]"
+                }
+                isMochi={true}
+              />
+            </>
+          ) : (
+            <>
+              <Kpi
+                label="Omzet hari ini"
+                value={formatRupiah(dashboard.today.revenue)}
+                hint={`${dashboard.today.paidOrders} transaksi lunas`}
+                icon={CircleDollarSign}
+                tone="text-[#6d4cc4] bg-[#f0edff]"
+              />
+              <Kpi
+                label="Rata-rata belanja"
+                value={formatRupiah(dashboard.today.averageOrder)}
+                hint="per transaksi lunas"
+                icon={ReceiptText}
+                tone="text-[#15803d] bg-[#dcfce7]"
+              />
+              <Kpi
+                label="Pesanan perlu dicek"
+                value={String(dashboard.queue.awaitingPayment)}
+                hint="menunggu pembayaran"
+                icon={Timer}
+                tone={
+                  dashboard.queue.awaitingPayment
+                    ? "text-[#a16207] bg-[#fef3c7]"
+                    : "text-[#15803d] bg-[#dcfce7]"
+                }
+              />
+              <Kpi
+                label="Pesanan siap"
+                value={String(dashboard.queue.ready)}
+                hint={`${dashboard.queue.preparing} sedang disiapkan`}
+                icon={UtensilsCrossed}
+                tone={
+                  dashboard.queue.ready
+                    ? "text-[#15803d] bg-[#dcfce7]"
+                    : "text-[#6d4cc4] bg-[#f0edff]"
+                }
+              />
+            </>
+          )}
         </section>
 
+        {/* Irama Penjualan & Cara Bayar */}
         <section className="grid gap-4 lg:grid-cols-[1.45fr_0.9fr]">
-          <div className="border-2 border-[#232331] bg-white p-4 shadow-ink-md sm:p-5">
-            <div className="flex items-start justify-between gap-3 border-b border-[#dedee8] pb-3">
-              <div><h2 className="text-sm font-black sm:text-base">Irama penjualan hari ini</h2><p className="mt-0.5 text-[11px] text-[#7b7b8e]">Jam ramai terlihat dari transaksi kasir yang sudah lunas.</p></div>
-              <span className="shrink-0 rounded-lg bg-[#f0edff] px-2 py-1 font-mono text-[10px] font-bold text-[#6d4cc4]">WIB</span>
+          {/* Irama Penjualan Hari Ini */}
+          <div
+            className={
+              isMochi
+                ? "rounded-3xl border border-[#d8e3de] bg-white p-5 shadow-[0_4px_20px_rgba(11,61,46,0.04)] sm:p-6"
+                : "border-2 border-[#232331] bg-white p-4 shadow-ink-md sm:p-5"
+            }
+          >
+            <div
+              className={`flex items-start justify-between gap-3 pb-3.5 ${
+                isMochi ? "border-b border-[#e5ece8]" : "border-b border-[#dedee8]"
+              }`}
+            >
+              <div>
+                <h2
+                  className={`text-sm font-black sm:text-base ${
+                    isMochi ? "text-[#0b3d2e]" : "text-[#232331]"
+                  }`}
+                >
+                  Irama penjualan hari ini
+                </h2>
+                <p className={`mt-0.5 text-[11px] ${isMochi ? "text-[#637970]" : "text-[#7b7b8e]"}`}>
+                  Jam ramai terlihat dari transaksi kasir yang sudah lunas.
+                </p>
+              </div>
+              <span
+                className={`shrink-0 rounded-lg px-2.5 py-1 font-mono text-[10px] font-bold ${
+                  isMochi
+                    ? "border border-emerald-200/80 bg-[#edf8f3] text-[#167052]"
+                    : "bg-[#f0edff] text-[#6d4cc4]"
+                }`}
+              >
+                WIB
+              </span>
             </div>
-            {dashboard.hourlySales.length ? <div className="mt-5 flex h-40 items-end gap-1.5 sm:h-52 sm:gap-2">
-              {dashboard.hourlySales.map((slot) => <div key={slot.hour} className="flex min-w-0 flex-1 flex-col items-center gap-1.5">
-                <div className="group relative flex w-full flex-1 items-end"><div className="w-full min-h-[5px] bg-[#7958d8] transition-opacity group-hover:opacity-75" style={{ height: `${Math.max(5, (slot.revenue / maxHourlyRevenue) * 100)}%` }} title={`${slot.hour}:00 · ${formatRupiah(slot.revenue)}`} /></div>
-                <span className="font-mono text-[9px] text-[#7b7b8e]">{String(slot.hour).padStart(2, "0")}</span>
-              </div>)}
-            </div> : <Empty text="Belum ada transaksi lunas hari ini." />}
+
+            {dashboard.hourlySales.length ? (
+              <div className="mt-5 flex h-40 items-end gap-1.5 sm:h-52 sm:gap-2">
+                {dashboard.hourlySales.map((slot) => (
+                  <div key={slot.hour} className="flex min-w-0 flex-1 flex-col items-center gap-1.5">
+                    <div className="group relative flex w-full flex-1 items-end">
+                      <div
+                        className={`w-full min-h-[5px] transition-all ${
+                          isMochi
+                            ? "rounded-t-md bg-gradient-to-t from-[#0b3d2e] via-[#167052] to-[#c8f53a] group-hover:brightness-110 shadow-xs"
+                            : "bg-[#7958d8] group-hover:opacity-75"
+                        }`}
+                        style={{
+                          height: `${Math.max(5, (slot.revenue / maxHourlyRevenue) * 100)}%`,
+                        }}
+                        title={`${slot.hour}:00 · ${formatRupiah(slot.revenue)}`}
+                      />
+                    </div>
+                    <span
+                      className={`font-mono text-[9.5px] ${
+                        isMochi ? "text-[#74877e]" : "text-[#7b7b8e]"
+                      }`}
+                    >
+                      {String(slot.hour).padStart(2, "0")}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <Empty text="Belum ada transaksi lunas hari ini." />
+            )}
           </div>
 
-          <div className="border-2 border-[#232331] bg-white p-4 shadow-ink-md sm:p-5">
-            <div className="border-b border-[#dedee8] pb-3"><h2 className="text-sm font-black sm:text-base">Cara pelanggan bayar</h2><p className="mt-0.5 text-[11px] text-[#7b7b8e]">Masuk otomatis dari transaksi POS.</p></div>
-            <div className="mt-3 space-y-3">
-              {paymentRows.map(({ label, value, icon: Icon, color }) => <div key={label}>
-                <div className="flex items-center justify-between gap-2 text-xs"><span className="flex items-center gap-1.5 font-bold"><span className={`flex h-6 w-6 items-center justify-center rounded-md ${color}`}><Icon size={13} /></span>{label}</span><span className="font-mono font-black">{formatRupiah(value)}</span></div>
-                <div className="mt-1.5 h-1.5 overflow-hidden bg-[#ecebf1]"><div className="h-full bg-[#232331]" style={{ width: `${totalPayment ? Math.round((value / totalPayment) * 100) : 0}%` }} /></div>
-              </div>)}
+          {/* Cara Pelanggan Bayar */}
+          <div
+            className={
+              isMochi
+                ? "rounded-3xl border border-[#d8e3de] bg-white p-5 shadow-[0_4px_20px_rgba(11,61,46,0.04)] sm:p-6"
+                : "border-2 border-[#232331] bg-white p-4 shadow-ink-md sm:p-5"
+            }
+          >
+            <div
+              className={`pb-3.5 ${
+                isMochi ? "border-b border-[#e5ece8]" : "border-b border-[#dedee8]"
+              }`}
+            >
+              <h2
+                className={`text-sm font-black sm:text-base ${
+                  isMochi ? "text-[#0b3d2e]" : "text-[#232331]"
+                }`}
+              >
+                Cara pelanggan bayar
+              </h2>
+              <p className={`mt-0.5 text-[11px] ${isMochi ? "text-[#637970]" : "text-[#7b7b8e]"}`}>
+                Masuk otomatis dari transaksi POS.
+              </p>
+            </div>
+            <div className="mt-3.5 space-y-3.5">
+              {paymentRows.map(({ label, value, icon: Icon, color, barColor }) => (
+                <div key={label}>
+                  <div className="flex items-center justify-between gap-2 text-xs">
+                    <span className="flex items-center gap-2 font-bold">
+                      <span className={`flex h-7 w-7 items-center justify-center rounded-xl ${color}`}>
+                        <Icon size={14} />
+                      </span>
+                      <span className={isMochi ? "text-[#1a382d]" : "text-[#232331]"}>{label}</span>
+                    </span>
+                    <span className={`font-mono font-black ${isMochi ? "text-[#0b3d2e]" : ""}`}>
+                      {formatRupiah(value)}
+                    </span>
+                  </div>
+                  <div
+                    className={`mt-1.5 h-2 overflow-hidden ${
+                      isMochi ? "rounded-full bg-[#edf4f0]" : "bg-[#ecebf1]"
+                    }`}
+                  >
+                    <div
+                      className={`h-full transition-all ${
+                        isMochi ? `${barColor} rounded-full` : "bg-[#232331]"
+                      }`}
+                      style={{
+                        width: `${totalPayment ? Math.round((value / totalPayment) * 100) : 0}%`,
+                      }}
+                    />
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         </section>
 
         {/* Analisis Menu Kasir: Paling Laku & Kurang Laku */}
-        <section className="border-2 border-[#232331] bg-white p-4 shadow-ink-md sm:p-5">
-          <div className="flex flex-col gap-3 border-b border-[#dedee8] pb-4 sm:flex-row sm:items-center sm:justify-between">
+        <section
+          className={
+            isMochi
+              ? "rounded-3xl border border-[#d8e3de] bg-white p-5 shadow-[0_4px_20px_rgba(11,61,46,0.04)] sm:p-6"
+              : "border-2 border-[#232331] bg-white p-4 shadow-ink-md sm:p-5"
+          }
+        >
+          <div
+            className={`flex flex-col gap-3 pb-4 sm:flex-row sm:items-center sm:justify-between ${
+              isMochi ? "border-b border-[#e5ece8]" : "border-b border-[#dedee8]"
+            }`}
+          >
             <div>
               <div className="flex items-center gap-2">
-                <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#f0edff] text-[#6d4cc4]">
+                <span
+                  className={`flex h-7 w-7 items-center justify-center rounded-xl ${
+                    isMochi ? "bg-[#edf8f3] text-[#167052]" : "bg-[#f0edff] text-[#6d4cc4]"
+                  }`}
+                >
                   <Trophy size={16} />
                 </span>
-                <h2 className="text-sm font-black sm:text-base">Analisis Performa Menu Kasir</h2>
-                <span className="rounded-md border border-[#ddd9ff] bg-[#f5f3ff] px-2 py-0.5 font-mono text-[10px] font-bold text-[#6d4cc4]">
+                <h2
+                  className={`text-sm font-black sm:text-base ${
+                    isMochi ? "text-[#0b3d2e]" : "text-[#232331]"
+                  }`}
+                >
+                  Analisis Performa Menu Kasir
+                </h2>
+                <span
+                  className={`rounded-full px-2.5 py-0.5 font-mono text-[10px] font-bold ${
+                    isMochi
+                      ? "border border-emerald-200 bg-[#edf8f3] text-[#167052]"
+                      : "border border-[#ddd9ff] bg-[#f5f3ff] text-[#6d4cc4]"
+                  }`}
+                >
                   {dashboard.menuAnalytics?.totalMenuItems ?? 0} Menu
                 </span>
               </div>
-              <p className="mt-1 text-xs text-[#7b7b8e]">
+              <p className={`mt-1 text-xs ${isMochi ? "text-[#637970]" : "text-[#7b7b8e]"}`}>
                 Perbandingan menu paling laku (Best Seller) dan menu kurang laku (Slow Moving) dari transaksi kasir lunas.
               </p>
             </div>
 
             {/* Timeframe Switcher */}
-            <div className="inline-flex self-start rounded-xl border-2 border-[#232331] bg-[#ecebf1] p-1 sm:self-auto">
+            <div
+              className={`inline-flex self-start rounded-xl p-1 sm:self-auto ${
+                isMochi
+                  ? "border border-[#d8e3de] bg-[#edf4f0]"
+                  : "border-2 border-[#232331] bg-[#ecebf1]"
+              }`}
+            >
               <button
                 type="button"
                 onClick={() => setMenuPeriod("today")}
-                className={`rounded-lg px-3 py-1 text-xs font-bold transition-all ${
+                className={`rounded-lg px-3.5 py-1.5 text-xs font-bold transition-all ${
                   menuPeriod === "today"
-                    ? "bg-white text-[#232331] shadow-ink-xs"
+                    ? isMochi
+                      ? "bg-[#0b3d2e] text-[#c8f53a] shadow-xs"
+                      : "bg-white text-[#232331] shadow-ink-xs"
+                    : isMochi
+                    ? "text-[#637970] hover:text-[#0b3d2e]"
                     : "text-[#7b7b8e] hover:text-[#232331]"
                 }`}
               >
@@ -227,9 +622,13 @@ export default function OwnerDashboardClient({ business, dashboard, pendingSync,
               <button
                 type="button"
                 onClick={() => setMenuPeriod("monthly")}
-                className={`rounded-lg px-3 py-1 text-xs font-bold transition-all ${
+                className={`rounded-lg px-3.5 py-1.5 text-xs font-bold transition-all ${
                   menuPeriod === "monthly"
-                    ? "bg-white text-[#232331] shadow-ink-xs"
+                    ? isMochi
+                      ? "bg-[#0b3d2e] text-[#c8f53a] shadow-xs"
+                      : "bg-white text-[#232331] shadow-ink-xs"
+                    : isMochi
+                    ? "text-[#637970] hover:text-[#0b3d2e]"
                     : "text-[#7b7b8e] hover:text-[#232331]"
                 }`}
               >
@@ -240,23 +639,53 @@ export default function OwnerDashboardClient({ business, dashboard, pendingSync,
 
           <div className="mt-5 grid gap-4 lg:grid-cols-2">
             {/* Kolom Menu Paling Laku */}
-            <div className="border border-[#bbf7d0] bg-[#f0fdf4]/60 p-3 sm:p-4">
-              <div className="flex items-center justify-between border-b border-[#bbf7d0] pb-2.5">
+            <div
+              className={`rounded-2xl p-4 sm:p-5 ${
+                isMochi
+                  ? "border border-emerald-200/90 bg-[#f7fcf9]"
+                  : "border border-[#bbf7d0] bg-[#f0fdf4]/60"
+              }`}
+            >
+              <div
+                className={`flex items-center justify-between pb-3 ${
+                  isMochi ? "border-b border-emerald-200/80" : "border-b border-[#bbf7d0]"
+                }`}
+              >
                 <div className="flex items-center gap-2">
-                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#dcfce7] text-[#15803d]">
+                  <span
+                    className={`flex h-6 w-6 items-center justify-center rounded-lg ${
+                      isMochi ? "bg-[#c8f53a] text-[#073829]" : "bg-[#dcfce7] text-[#15803d]"
+                    }`}
+                  >
                     <Flame size={14} />
                   </span>
                   <div>
-                    <h3 className="text-xs font-black text-[#15803d] sm:text-sm">🏆 Menu Paling Laku</h3>
-                    <p className="text-[10px] text-[#166534]">Produk terfavorit & kontributor omzet tertinggi</p>
+                    <h3
+                      className={`text-xs font-black sm:text-sm ${
+                        isMochi ? "text-[#0b3d2e]" : "text-[#15803d]"
+                      }`}
+                    >
+                      🏆 Menu Paling Laku
+                    </h3>
+                    <p className={`text-[10px] ${isMochi ? "text-[#167052]" : "text-[#166534]"}`}>
+                      Produk terfavorit & kontributor omzet tertinggi
+                    </p>
                   </div>
                 </div>
-                <span className="font-mono text-[10px] font-bold text-[#166534]">
+                <span
+                  className={`font-mono text-[10px] font-bold ${
+                    isMochi ? "text-[#167052]" : "text-[#166534]"
+                  }`}
+                >
                   Top {currentBestSellers.length}
                 </span>
               </div>
 
-              <div className="mt-2 divide-y divide-[#dcfce7]">
+              <div
+                className={`mt-2 divide-y ${
+                  isMochi ? "divide-[#e2ebe6]" : "divide-[#dcfce7]"
+                }`}
+              >
                 {currentBestSellers.length > 0 ? (
                   currentBestSellers.map((item, index) => {
                     const qty = menuPeriod === "today" ? item.todayQty : item.monthQty;
@@ -265,7 +694,9 @@ export default function OwnerDashboardClient({ business, dashboard, pendingSync,
 
                     const rankBadge =
                       index === 0
-                        ? "bg-[#fef08a] text-[#854d0e] border-[#facc15]"
+                        ? isMochi
+                          ? "bg-[#c8f53a] text-[#073829] border-[#a8de1a] shadow-xs"
+                          : "bg-[#fef08a] text-[#854d0e] border-[#facc15]"
                         : index === 1
                         ? "bg-[#e2e8f0] text-[#334155] border-[#cbd5e1]"
                         : index === 2
@@ -276,47 +707,113 @@ export default function OwnerDashboardClient({ business, dashboard, pendingSync,
                       <div key={item.id} className="py-2.5 first:pt-2 last:pb-1">
                         <div className="flex items-center justify-between gap-2">
                           <div className="flex min-w-0 items-center gap-2">
-                            <span className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md border text-[10px] font-black ${rankBadge}`}>
+                            <span
+                              className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-md border text-[10px] font-black ${rankBadge}`}
+                            >
                               {index + 1}
                             </span>
                             <div className="min-w-0">
-                              <p className="truncate text-xs font-black text-[#232331]">{item.name}</p>
-                              <p className="truncate font-mono text-[10px] text-[#7b7b8e]">
+                              <p
+                                className={`truncate text-xs font-black ${
+                                  isMochi ? "text-[#0b3d2e]" : "text-[#232331]"
+                                }`}
+                              >
+                                {item.name}
+                              </p>
+                              <p
+                                className={`truncate font-mono text-[10px] ${
+                                  isMochi ? "text-[#637970]" : "text-[#7b7b8e]"
+                                }`}
+                              >
                                 {item.categoryName} · {formatRupiah(item.price)}
                               </p>
                             </div>
                           </div>
                           <div className="text-right shrink-0">
-                            <p className="font-mono text-xs font-black text-[#15803d]">
-                              {qty} <span className="text-[10px] font-normal text-[#166534]">terjual</span>
+                            <p
+                              className={`font-mono text-xs font-black ${
+                                isMochi ? "text-[#167052]" : "text-[#15803d]"
+                              }`}
+                            >
+                              {qty}{" "}
+                              <span
+                                className={`text-[10px] font-normal ${
+                                  isMochi ? "text-[#167052]/80" : "text-[#166534]"
+                                }`}
+                              >
+                                terjual
+                              </span>
                             </p>
-                            <p className="font-mono text-[10px] text-[#7b7b8e]">{formatRupiah(rev)}</p>
+                            <p
+                              className={`font-mono text-[10px] ${
+                                isMochi ? "text-[#637970]" : "text-[#7b7b8e]"
+                              }`}
+                            >
+                              {formatRupiah(rev)}
+                            </p>
                           </div>
                         </div>
-                        <div className="mt-1.5 h-1.5 w-full overflow-hidden bg-[#dcfce7]">
-                          <div className="h-full bg-[#16a34a]" style={{ width: `${pct}%` }} />
+                        <div
+                          className={`mt-1.5 h-1.5 w-full overflow-hidden ${
+                            isMochi ? "rounded-full bg-emerald-100" : "bg-[#dcfce7]"
+                          }`}
+                        >
+                          <div
+                            className={`h-full transition-all ${
+                              isMochi ? "rounded-full bg-[#167052]" : "bg-[#16a34a]"
+                            }`}
+                            style={{ width: `${pct}%` }}
+                          />
                         </div>
                       </div>
                     );
                   })
                 ) : (
                   <div className="py-8 text-center">
-                    <p className="font-mono text-xs text-[#7b7b8e]">Belum ada transaksi menu lunas pada periode ini.</p>
+                    <p
+                      className={`font-mono text-xs ${
+                        isMochi ? "text-[#637970]" : "text-[#7b7b8e]"
+                      }`}
+                    >
+                      Belum ada transaksi menu lunas pada periode ini.
+                    </p>
                   </div>
                 )}
               </div>
             </div>
 
             {/* Kolom Menu Kurang Laku */}
-            <div className="border border-[#fed7aa] bg-[#fffaf5] p-3 sm:p-4">
-              <div className="flex items-center justify-between border-b border-[#fed7aa] pb-2.5">
+            <div
+              className={`rounded-2xl p-4 sm:p-5 ${
+                isMochi
+                  ? "border border-amber-200/90 bg-[#fffdfa]"
+                  : "border border-[#fed7aa] bg-[#fffaf5]"
+              }`}
+            >
+              <div
+                className={`flex items-center justify-between pb-3 ${
+                  isMochi ? "border-b border-amber-200/80" : "border-b border-[#fed7aa]"
+                }`}
+              >
                 <div className="flex items-center gap-2">
-                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#ffedd5] text-[#c2410c]">
+                  <span
+                    className={`flex h-6 w-6 items-center justify-center rounded-lg ${
+                      isMochi ? "bg-amber-100 text-amber-700" : "bg-[#ffedd5] text-[#c2410c]"
+                    }`}
+                  >
                     <TrendingDown size={14} />
                   </span>
                   <div>
-                    <h3 className="text-xs font-black text-[#c2410c] sm:text-sm">⚠️ Menu Kurang Laku</h3>
-                    <p className="text-[10px] text-[#9a3412]">Perlu evaluasi strategi harga, promo, atau bundling</p>
+                    <h3
+                      className={`text-xs font-black sm:text-sm ${
+                        isMochi ? "text-[#b45309]" : "text-[#c2410c]"
+                      }`}
+                    >
+                      ⚠️ Menu Kurang Laku
+                    </h3>
+                    <p className={`text-[10px] ${isMochi ? "text-[#9a3412]" : "text-[#9a3412]"}`}>
+                      Perlu evaluasi strategi harga, promo, atau bundling
+                    </p>
                   </div>
                 </div>
                 <span className="font-mono text-[10px] font-bold text-[#9a3412]">
@@ -324,7 +821,11 @@ export default function OwnerDashboardClient({ business, dashboard, pendingSync,
                 </span>
               </div>
 
-              <div className="mt-2 divide-y divide-[#ffedd5]">
+              <div
+                className={`mt-2 divide-y ${
+                  isMochi ? "divide-amber-100" : "divide-[#ffedd5]"
+                }`}
+              >
                 {currentSlowMovers.length > 0 ? (
                   currentSlowMovers.map((item) => {
                     const qty = menuPeriod === "today" ? item.todayQty : item.monthQty;
@@ -334,17 +835,27 @@ export default function OwnerDashboardClient({ business, dashboard, pendingSync,
                       <div key={item.id} className="py-2.5 first:pt-2 last:pb-1">
                         <div className="flex items-center justify-between gap-2">
                           <div className="min-w-0">
-                            <p className="truncate text-xs font-black text-[#232331]">{item.name}</p>
-                            <p className="truncate font-mono text-[10px] text-[#7b7b8e]">
+                            <p
+                              className={`truncate text-xs font-black ${
+                                isMochi ? "text-[#2a241f]" : "text-[#232331]"
+                              }`}
+                            >
+                              {item.name}
+                            </p>
+                            <p
+                              className={`truncate font-mono text-[10px] ${
+                                isMochi ? "text-[#8c7e75]" : "text-[#7b7b8e]"
+                              }`}
+                            >
                               {item.categoryName} · {formatRupiah(item.price)}
                             </p>
                           </div>
                           <div className="text-right shrink-0">
                             <span
-                              className={`inline-block rounded-md border px-1.5 py-0.5 font-mono text-[10px] font-black ${
+                              className={`inline-block rounded-lg border px-2 py-0.5 font-mono text-[10px] font-black ${
                                 isZero
-                                  ? "border-[#fca5a5] bg-[#fef2f2] text-[#b91c1c]"
-                                  : "border-[#fed7aa] bg-[#fff7ed] text-[#c2410c]"
+                                  ? "border-rose-300 bg-rose-50 text-rose-700"
+                                  : "border-amber-200 bg-amber-50 text-amber-800"
                               }`}
                             >
                               {qty} terjual
@@ -352,7 +863,7 @@ export default function OwnerDashboardClient({ business, dashboard, pendingSync,
                           </div>
                         </div>
                         <div className="mt-1 flex items-center gap-1 text-[9.5px]">
-                          <span className="inline-flex items-center rounded bg-[#fff7ed] px-1.5 py-0.5 font-medium text-[#9a3412]">
+                          <span className="inline-flex items-center rounded-md bg-amber-100/60 px-2 py-0.5 font-medium text-amber-900">
                             {isZero
                               ? "💡 Belum dipesan: Coba bundling dengan menu best seller atau promo meja"
                               : "📉 Gerak lambat: Pertimbangkan promo jam sepi atau cek margin harga"}
@@ -363,7 +874,13 @@ export default function OwnerDashboardClient({ business, dashboard, pendingSync,
                   })
                 ) : (
                   <div className="py-8 text-center">
-                    <p className="font-mono text-xs text-[#7b7b8e]">Semua menu aktif berjalan dengan baik.</p>
+                    <p
+                      className={`font-mono text-xs ${
+                        isMochi ? "text-[#637970]" : "text-[#7b7b8e]"
+                      }`}
+                    >
+                      Semua menu aktif berjalan dengan baik.
+                    </p>
                   </div>
                 )}
               </div>
@@ -371,12 +888,28 @@ export default function OwnerDashboardClient({ business, dashboard, pendingSync,
           </div>
 
           {/* Strategic Insight Box */}
-          <div className="mt-4 flex items-start gap-2.5 border border-dashed border-[#ddd9ff] bg-[#fbfaff] p-3 sm:p-3.5">
-            <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded bg-[#ddd9ff] text-[#6d4cc4]">
-              <Lightbulb size={13} />
+          <div
+            className={`mt-4 flex items-start gap-3 rounded-2xl p-4 ${
+              isMochi
+                ? "border border-dashed border-emerald-300 bg-[#edf8f3]"
+                : "border border-dashed border-[#ddd9ff] bg-[#fbfaff]"
+            }`}
+          >
+            <span
+              className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-xl ${
+                isMochi ? "bg-[#c8f53a] text-[#073829]" : "bg-[#ddd9ff] text-[#6d4cc4]"
+              }`}
+            >
+              <Lightbulb size={15} />
             </span>
-            <div className="text-xs text-[#4b4b63]">
-              <p className="font-black text-[#232331]">Tips Pengelolaan Menu untuk Owner:</p>
+            <div className={`text-xs ${isMochi ? "text-[#164e3b]" : "text-[#4b4b63]"}`}>
+              <p
+                className={`font-black ${
+                  isMochi ? "text-[#0b3d2e]" : "text-[#232331]"
+                }`}
+              >
+                Tips Pengelolaan Menu untuk Owner:
+              </p>
               <p className="mt-0.5 text-[11px] leading-relaxed">
                 Manfaatkan menu <strong>Paling Laku</strong> sebagai daya tarik utama (traffic puller) dan gandengkan dengan menu <strong>Kurang Laku</strong> dalam paket promo bundling atau rekomendasi kasir (upselling). Bila menu tetap 0 penjualan selama 30 hari berturut-turut, pertimbangkan untuk menonaktifkan atau memperbarui resep.
               </p>
@@ -384,37 +917,274 @@ export default function OwnerDashboardClient({ business, dashboard, pendingSync,
           </div>
         </section>
 
+        {/* Shift & Transaksi Terbaru */}
         <section className="grid gap-4 lg:grid-cols-[0.9fr_1.45fr]">
-          <div className="border-2 border-[#232331] bg-white p-4 shadow-ink-md sm:p-5">
-            <div className="flex items-center justify-between gap-2 border-b border-[#dedee8] pb-3"><div><h2 className="text-sm font-black sm:text-base">Shift & laci tunai</h2><p className="mt-0.5 text-[11px] text-[#7b7b8e]">Pantau shift yang masih berjalan.</p></div><WalletCards size={18} className="text-[#6d4cc4]" /></div>
-            <div className="mt-3 space-y-2.5">
-              {dashboard.activeShifts.length ? dashboard.activeShifts.map((shift) => <div key={shift.id} className="border border-[#dedee8] bg-[#fcfcfe] p-3">
-                <div className="flex items-center justify-between gap-2"><span className="font-bold text-xs">{shift.staffName}</span><span className="rounded-md bg-[#dcfce7] px-1.5 py-0.5 font-mono text-[9px] font-bold text-[#15803d]">AKTIF</span></div>
-                <p className="mt-1 font-mono text-[10px] text-[#7b7b8e]">Dibuka {formatBusinessDateTime(shift.openedAt)}</p>
-                <div className="mt-2 grid grid-cols-2 gap-2 font-mono text-[10px]"><div><p className="text-[#7b7b8e]">Modal awal</p><p className="font-black">{formatRupiah(shift.openingCash)}</p></div><div><p className="text-[#7b7b8e]">Tunai masuk</p><p className="font-black text-[#15803d]">{formatRupiah(shift.cashSales)}</p></div></div>
-              </div>) : <Empty text="Belum ada shift kasir aktif." />}
+          {/* Shift & Laci Tunai */}
+          <div
+            className={
+              isMochi
+                ? "rounded-3xl border border-[#d8e3de] bg-white p-5 shadow-[0_4px_20px_rgba(11,61,46,0.04)] sm:p-6"
+                : "border-2 border-[#232331] bg-white p-4 shadow-ink-md sm:p-5"
+            }
+          >
+            <div
+              className={`flex items-center justify-between gap-2 pb-3.5 ${
+                isMochi ? "border-b border-[#e5ece8]" : "border-b border-[#dedee8]"
+              }`}
+            >
+              <div>
+                <h2
+                  className={`text-sm font-black sm:text-base ${
+                    isMochi ? "text-[#0b3d2e]" : "text-[#232331]"
+                  }`}
+                >
+                  Shift & laci tunai
+                </h2>
+                <p className={`mt-0.5 text-[11px] ${isMochi ? "text-[#637970]" : "text-[#7b7b8e]"}`}>
+                  Pantau shift yang masih berjalan.
+                </p>
+              </div>
+              <WalletCards size={18} className={isMochi ? "text-[#167052]" : "text-[#6d4cc4]"} />
+            </div>
+
+            <div className="mt-3.5 space-y-2.5">
+              {dashboard.activeShifts.length ? (
+                dashboard.activeShifts.map((shift) => (
+                  <div
+                    key={shift.id}
+                    className={`p-3.5 ${
+                      isMochi
+                        ? "rounded-2xl border border-[#e0ebe5] bg-[#fbfdfc] hover:border-emerald-200 transition-colors"
+                        : "border border-[#dedee8] bg-[#fcfcfe]"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span
+                        className={`font-bold text-xs ${
+                          isMochi ? "text-[#0b3d2e]" : ""
+                        }`}
+                      >
+                        {shift.staffName}
+                      </span>
+                      <span
+                        className={`px-2 py-0.5 font-mono text-[9px] font-black ${
+                          isMochi
+                            ? "rounded-full bg-[#c8f53a] text-[#073829]"
+                            : "rounded-md bg-[#dcfce7] text-[#15803d]"
+                        }`}
+                      >
+                        AKTIF
+                      </span>
+                    </div>
+                    <p
+                      className={`mt-1 font-mono text-[10px] ${
+                        isMochi ? "text-[#637970]" : "text-[#7b7b8e]"
+                      }`}
+                    >
+                      Dibuka {formatBusinessDateTime(shift.openedAt)}
+                    </p>
+                    <div className="mt-2 grid grid-cols-2 gap-2 font-mono text-[10px]">
+                      <div>
+                        <p className={isMochi ? "text-[#637970]" : "text-[#7b7b8e]"}>Modal awal</p>
+                        <p className={`font-black ${isMochi ? "text-[#0b3d2e]" : ""}`}>
+                          {formatRupiah(shift.openingCash)}
+                        </p>
+                      </div>
+                      <div>
+                        <p className={isMochi ? "text-[#637970]" : "text-[#7b7b8e]"}>Tunai masuk</p>
+                        <p
+                          className={`font-black ${
+                            isMochi ? "text-[#167052]" : "text-[#15803d]"
+                          }`}
+                        >
+                          {formatRupiah(shift.cashSales)}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <Empty text="Belum ada shift kasir aktif." />
+              )}
             </div>
           </div>
 
-          <div className="border-2 border-[#232331] bg-white p-4 shadow-ink-md sm:p-5">
-            <div className="flex items-start justify-between gap-3 border-b border-[#dedee8] pb-3"><div><h2 className="text-sm font-black sm:text-base">Transaksi terbaru</h2><p className="mt-0.5 text-[11px] text-[#7b7b8e]">Ada {queueTotal} pesanan yang masih perlu ditindaklanjuti.</p></div><Link href="/app/pos/reports" className="inline-flex shrink-0 items-center gap-1 font-mono text-[10px] font-bold text-[#6d4cc4]">Laporan lengkap <ChevronRight size={13} /></Link></div>
-            <div className="mt-1 divide-y divide-[#ecebf1]">
-              {dashboard.recentOrders.length ? dashboard.recentOrders.slice(0, 7).map((order) => {
-                const refundTotal = Number(order.refund_total ?? 0);
-                const netTotal = Math.max(0, Number(order.total) - refundTotal);
-                return <div key={order.id} className="flex items-center gap-2 py-2.5">
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#f0edff] text-[#6d4cc4]"><Coffee size={14} /></div>
-                <div className="min-w-0 flex-1"><p className="truncate text-xs font-black">#{order.order_no} <span className="font-normal text-[#7b7b8e]">· {serviceTypeLabel(order.service_type, order.table_no)}</span></p><p className="font-mono text-[10px] text-[#7b7b8e]">{formatBusinessDateTime(order.created_at)} · {order.payment_method.toUpperCase()}</p></div>
-                <div className="text-right"><p className="font-mono text-xs font-black">{formatRupiah(netTotal)}</p>{refundTotal > 0 ? <span className="inline-block rounded-md border border-[#fecaca] bg-[#fff7f7] px-1.5 py-0.5 font-mono text-[8.5px] font-bold text-[#b91c1c]">Refund {formatRupiah(refundTotal)}</span> : <span className={`inline-block rounded-md border px-1.5 py-0.5 font-mono text-[8.5px] font-bold ${statusStyle(order)}`}>{PAYMENT_STATUS_LABEL[order.payment_status] ?? order.fulfillment_status}</span>}</div>
-              </div>;
-              }) : <Empty text="Belum ada transaksi hari ini." />}
+          {/* Transaksi Terbaru */}
+          <div
+            className={
+              isMochi
+                ? "rounded-3xl border border-[#d8e3de] bg-white p-5 shadow-[0_4px_20px_rgba(11,61,46,0.04)] sm:p-6"
+                : "border-2 border-[#232331] bg-white p-4 shadow-ink-md sm:p-5"
+            }
+          >
+            <div
+              className={`flex items-start justify-between gap-3 pb-3.5 ${
+                isMochi ? "border-b border-[#e5ece8]" : "border-b border-[#dedee8]"
+              }`}
+            >
+              <div>
+                <h2
+                  className={`text-sm font-black sm:text-base ${
+                    isMochi ? "text-[#0b3d2e]" : "text-[#232331]"
+                  }`}
+                >
+                  Transaksi terbaru
+                </h2>
+                <p className={`mt-0.5 text-[11px] ${isMochi ? "text-[#637970]" : "text-[#7b7b8e]"}`}>
+                  Ada {queueTotal} pesanan yang masih perlu ditindaklanjuti.
+                </p>
+              </div>
+              <Link
+                href="/app/pos/reports"
+                className={`inline-flex shrink-0 items-center gap-1 font-mono text-[10px] font-bold ${
+                  isMochi ? "text-[#167052] hover:text-[#0b3d2e]" : "text-[#6d4cc4]"
+                }`}
+              >
+                Laporan lengkap <ChevronRight size={13} />
+              </Link>
+            </div>
+
+            <div
+              className={`mt-1 divide-y ${
+                isMochi ? "divide-[#edf4f0]" : "divide-[#ecebf1]"
+              }`}
+            >
+              {dashboard.recentOrders.length ? (
+                dashboard.recentOrders.slice(0, 7).map((order) => {
+                  const refundTotal = Number(order.refund_total ?? 0);
+                  const netTotal = Math.max(0, Number(order.total) - refundTotal);
+                  return (
+                    <div key={order.id} className="flex items-center gap-2.5 py-2.5">
+                      <div
+                        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl ${
+                          isMochi ? "bg-[#edf8f3] text-[#167052]" : "bg-[#f0edff] text-[#6d4cc4]"
+                        }`}
+                      >
+                        <Coffee size={14} />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p
+                          className={`truncate text-xs font-black ${
+                            isMochi ? "text-[#0b3d2e]" : ""
+                          }`}
+                        >
+                          #{order.order_no}{" "}
+                          <span
+                            className={`font-normal ${
+                              isMochi ? "text-[#637970]" : "text-[#7b7b8e]"
+                            }`}
+                          >
+                            · {serviceTypeLabel(order.service_type, order.table_no)}
+                          </span>
+                        </p>
+                        <p
+                          className={`font-mono text-[10px] ${
+                            isMochi ? "text-[#74877e]" : "text-[#7b7b8e]"
+                          }`}
+                        >
+                          {formatBusinessDateTime(order.created_at)} · {order.payment_method.toUpperCase()}
+                        </p>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p
+                          className={`font-mono text-xs font-black ${
+                            isMochi ? "text-[#0b3d2e]" : ""
+                          }`}
+                        >
+                          {formatRupiah(netTotal)}
+                        </p>
+                        {refundTotal > 0 ? (
+                          <span className="inline-block rounded-md border border-rose-300 bg-rose-50 px-1.5 py-0.5 font-mono text-[8.5px] font-bold text-rose-700">
+                            Refund {formatRupiah(refundTotal)}
+                          </span>
+                        ) : (
+                          <span
+                            className={`inline-block rounded-md border px-1.5 py-0.5 font-mono text-[8.5px] font-bold ${statusStyle(
+                              order,
+                              isMochi
+                            )}`}
+                          >
+                            {PAYMENT_STATUS_LABEL[order.payment_status] ?? order.fulfillment_status}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              ) : (
+                <Empty text="Belum ada transaksi hari ini." />
+              )}
             </div>
           </div>
         </section>
 
-        <section className="border-2 border-[#232331] bg-white p-4 shadow-ink-md sm:p-5">
-          <div className="flex items-center justify-between gap-2 border-b border-[#dedee8] pb-3"><div><h2 className="text-sm font-black sm:text-base">Kontribusi kasir hari ini</h2><p className="mt-0.5 text-[11px] text-[#7b7b8e]">Berdasarkan transaksi yang dicatat di POS.</p></div><Clock3 size={17} className="text-[#6d4cc4]" /></div>
-          {dashboard.cashierSales.length ? <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{dashboard.cashierSales.map((cashier) => <div key={cashier.name} className="border border-[#dedee8] bg-[#fcfcfe] p-3"><div className="flex items-center justify-between gap-2"><p className="truncate text-xs font-black">{cashier.name}</p><span className="font-mono text-[10px] text-[#7b7b8e]">{cashier.orders} trx</span></div><p className="mt-1.5 font-mono text-sm font-black text-[#15803d]">{formatRupiah(cashier.revenue)}</p></div>)}</div> : <Empty text="Belum ada penjualan yang tercatat hari ini." />}
+        {/* Kontribusi Kasir Hari Ini */}
+        <section
+          className={
+            isMochi
+              ? "rounded-3xl border border-[#d8e3de] bg-white p-5 shadow-[0_4px_20px_rgba(11,61,46,0.04)] sm:p-6"
+              : "border-2 border-[#232331] bg-white p-4 shadow-ink-md sm:p-5"
+          }
+        >
+          <div
+            className={`flex items-center justify-between gap-2 pb-3.5 ${
+              isMochi ? "border-b border-[#e5ece8]" : "border-b border-[#dedee8]"
+            }`}
+          >
+            <div>
+              <h2
+                className={`text-sm font-black sm:text-base ${
+                  isMochi ? "text-[#0b3d2e]" : "text-[#232331]"
+                }`}
+              >
+                Kontribusi kasir hari ini
+              </h2>
+              <p className={`mt-0.5 text-[11px] ${isMochi ? "text-[#637970]" : "text-[#7b7b8e]"}`}>
+                Berdasarkan transaksi yang dicatat di POS.
+              </p>
+            </div>
+            <Clock3 size={17} className={isMochi ? "text-[#167052]" : "text-[#6d4cc4]"} />
+          </div>
+          {dashboard.cashierSales.length ? (
+            <div className="mt-3.5 grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+              {dashboard.cashierSales.map((cashier) => (
+                <div
+                  key={cashier.name}
+                  className={`p-3.5 ${
+                    isMochi
+                      ? "rounded-2xl border border-[#e0ebe5] bg-[#fbfdfc] hover:border-emerald-200 transition-colors"
+                      : "border border-[#dedee8] bg-[#fcfcfe]"
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <p
+                      className={`truncate text-xs font-black ${
+                        isMochi ? "text-[#0b3d2e]" : ""
+                      }`}
+                    >
+                      {cashier.name}
+                    </p>
+                    <span
+                      className={`font-mono text-[10px] ${
+                        isMochi ? "text-[#637970]" : "text-[#7b7b8e]"
+                      }`}
+                    >
+                      {cashier.orders} trx
+                    </span>
+                  </div>
+                  <p
+                    className={`mt-1.5 font-mono text-sm font-black ${
+                      isMochi ? "text-[#167052]" : "text-[#15803d]"
+                    }`}
+                  >
+                    {formatRupiah(cashier.revenue)}
+                  </p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <Empty text="Belum ada penjualan yang tercatat hari ini." />
+          )}
         </section>
       </main>
 
@@ -429,8 +1199,52 @@ export default function OwnerDashboardClient({ business, dashboard, pendingSync,
   );
 }
 
-function Kpi({ label, value, hint, icon: Icon, tone }: { label: string; value: string; hint: string; icon: typeof LayoutDashboard; tone: string }) {
-  return <div className="border-2 border-[#232331] bg-white p-3 shadow-ink-xs sm:p-4"><div className="flex items-start justify-between gap-2"><p className="font-mono text-[9px] font-bold uppercase text-[#7b7b8e]">{label}</p><span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${tone}`}><Icon size={14} /></span></div><p className="mt-2 truncate font-mono text-base font-black sm:text-xl">{value}</p><p className="mt-0.5 truncate text-[10px] text-[#7b7b8e]">{hint}</p></div>;
+function Kpi({
+  label,
+  value,
+  hint,
+  icon: Icon,
+  tone,
+  valueTone,
+  isMochi = false,
+}: {
+  label: string;
+  value: string;
+  hint: string;
+  icon: typeof LayoutDashboard;
+  tone: string;
+  valueTone?: string;
+  isMochi?: boolean;
+}) {
+  if (isMochi) {
+    return (
+      <div className="rounded-2xl border border-[#d8e3de] bg-white p-3.5 sm:p-5 shadow-[0_4px_16px_rgba(11,61,46,0.04)] hover:border-emerald-300/60 transition-colors">
+        <div className="flex items-start justify-between gap-2">
+          <p className="font-mono text-[9.5px] font-bold uppercase tracking-wider text-[#637970]">{label}</p>
+          <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-xl ${tone}`}>
+            <Icon size={14} />
+          </span>
+        </div>
+        <p className={`mt-2 truncate font-mono text-lg font-black sm:text-2xl ${valueTone ?? "text-[#0b3d2e]"}`}>
+          {value}
+        </p>
+        <p className="mt-0.5 truncate text-[10px] text-[#74877e]">{hint}</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="border-2 border-[#232331] bg-white p-3 shadow-ink-xs sm:p-4">
+      <div className="flex items-start justify-between gap-2">
+        <p className="font-mono text-[9px] font-bold uppercase text-[#7b7b8e]">{label}</p>
+        <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${tone}`}>
+          <Icon size={14} />
+        </span>
+      </div>
+      <p className="mt-2 truncate font-mono text-base font-black sm:text-xl">{value}</p>
+      <p className="mt-0.5 truncate text-[10px] text-[#7b7b8e]">{hint}</p>
+    </div>
+  );
 }
 
 function Empty({ text }: { text: string }) {
