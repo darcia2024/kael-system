@@ -46,12 +46,12 @@ export default function LoyaltySetup({ businessName }: { businessName: string })
   const kursValid = Number.isInteger(kurs) && kurs >= 1;
 
   return (
-    <div className="min-h-screen bg-[#f7f6fc] text-[#232331] font-sans">
-      <header className="sticky top-0 z-30 border-b-2 border-[#232331] bg-white px-4 sm:px-8 py-3.5">
+    <div className="min-h-screen bg-[#f7f6fc] text-[#1a382d] font-sans">
+      <header className="sticky top-0 z-30 border-b-2 border-[#d8e3de] bg-white px-4 sm:px-8 py-3.5">
         <div className="mx-auto flex max-w-2xl items-center gap-3">
           <Link
             href="/app"
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-[#232331] bg-[#fcfcfe] shadow-ink-xs"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-[#d8e3de] bg-[#fcfcfe] shadow-xs"
           >
             <ArrowLeft size={16} />
           </Link>
@@ -59,7 +59,7 @@ export default function LoyaltySetup({ businessName }: { businessName: string })
             <h1 className="font-black text-sm sm:text-base truncate">
               {businessName} · Loyalty
             </h1>
-            <span className="text-[11px] text-[#7b7b8e] font-mono">Penyiapan awal</span>
+            <span className="text-[11px] text-[#527867] font-mono">Penyiapan awal</span>
           </div>
         </div>
       </header>
@@ -76,8 +76,8 @@ export default function LoyaltySetup({ businessName }: { businessName: string })
           </div>
         </div>
 
-        <div className="rounded-3xl border-2 border-[#232331] bg-white p-6 shadow-ink-md space-y-5">
-          <div className="flex items-center gap-2 border-b border-[#dedee8] pb-4">
+        <div className="rounded-3xl border border-[#d8e3de] bg-white p-6 shadow-[0_4px_20px_rgba(11,61,46,0.04)] space-y-5">
+          <div className="flex items-center gap-2 border-b border-[#d8e3de] pb-4">
             <HeartHandshake size={20} className="text-[#d97706]" />
             <h2 className="font-extrabold text-base">Cara pelanggan mengumpulkan</h2>
           </div>
@@ -93,8 +93,8 @@ export default function LoyaltySetup({ businessName }: { businessName: string })
                 onClick={() => setMode(m.id)}
                 className={`rounded-2xl border-2 p-3 text-left transition-colors ${
                   mode === m.id
-                    ? "border-[#232331] bg-[#232331] text-[#d9ff57] shadow-ink-xs"
-                    : "border-[#dedee8] bg-white text-[#7b7b8e]"
+                    ? "border-[#d8e3de] bg-[#0b3d2e] text-[#c8f53a] shadow-xs"
+                    : "border-[#d8e3de] bg-white text-[#527867]"
                 }`}
               >
                 <span className="font-extrabold text-sm block">{m.label}</span>
@@ -114,7 +114,7 @@ export default function LoyaltySetup({ businessName }: { businessName: string })
                 step={1000}
                 value={kurs}
                 onChange={(e) => setKurs(Number(e.target.value))}
-                className="w-full rounded-2xl border-2 border-[#232331] px-4 py-3 text-lg font-black"
+                className="w-full rounded-2xl border border-[#d8e3de] px-4 py-3 text-lg font-black"
               />
               <div className="flex flex-wrap gap-1.5">
                 {[5_000, 10_000, 20_000, 50_000].map((v) => (
@@ -122,13 +122,13 @@ export default function LoyaltySetup({ businessName }: { businessName: string })
                     key={v}
                     type="button"
                     onClick={() => setKurs(v)}
-                    className="rounded-lg border border-[#dedee8] bg-white px-2 py-1 font-mono text-[11px] font-bold text-[#7b7b8e] hover:border-[#232331]"
+                    className="rounded-lg border border-[#d8e3de] bg-white px-2 py-1 font-mono text-[11px] font-bold text-[#527867] hover:border-[#d8e3de]"
                   >
                     {formatRupiah(v)}
                   </button>
                 ))}
               </div>
-              <p className="font-mono text-[11px] text-[#7b7b8e]">
+              <p className="font-mono text-[11px] text-[#527867]">
                 {kursValid
                   ? `Pelanggan belanja ${formatRupiah(kurs)} dapat 1 poin.`
                   : "Kurs harus lebih dari nol."}
@@ -145,7 +145,7 @@ export default function LoyaltySetup({ businessName }: { businessName: string })
                 max={10}
                 value={stempel}
                 onChange={(e) => setStempel(Number(e.target.value))}
-                className="w-full rounded-2xl border-2 border-[#232331] px-4 py-3 text-lg font-black"
+                className="w-full rounded-2xl border border-[#d8e3de] px-4 py-3 text-lg font-black"
               />
             </div>
           )}
@@ -161,7 +161,7 @@ export default function LoyaltySetup({ businessName }: { businessName: string })
             type="button"
             onClick={simpan}
             disabled={busy || (mode === "point" && !kursValid)}
-            className="btn-tactile w-full inline-flex items-center justify-center gap-2 rounded-2xl border-2 border-[#232331] bg-[#d9ff57] px-4 py-3.5 font-mono text-sm font-extrabold shadow-ink-md disabled:opacity-50"
+            className="w-full inline-flex items-center justify-center gap-2 rounded-2xl border border-[#d8e3de] bg-[#c8f53a] px-4 py-3.5 font-mono text-sm font-extrabold shadow-[0_4px_20px_rgba(11,61,46,0.04)] disabled:opacity-50"
           >
             {busy ? <Loader2 size={16} className="animate-spin" /> : <Check size={16} />}
             {busy ? "Menyimpan..." : "Aktifkan program member"}

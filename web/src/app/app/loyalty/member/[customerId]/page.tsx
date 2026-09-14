@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 
 import { db } from "@/lib/db";
 import { guardModulePage } from "@/lib/licensing";
+import { mochiThemeClass } from "@/lib/mochi-theme";
 import MemberProfileClient from "./member-profile-client";
 
 export const metadata: Metadata = {
@@ -18,7 +19,8 @@ export default async function MemberProfilePage({
   const { customerId } = await params;
   const { session } = await guardModulePage("loyalty", `/app/loyalty/member/${customerId}`);
 
-  const [profile, program, rewards, ledger, redemptions] = await Promise.all([
+  const [business, profile, program, rewards, ledger, redemptions] = await Promise.all([
+    db.getBusiness(session.businessId),
     db.getCustomerProfileSummary(customerId, session.businessId),
     db.getLoyaltyProgram(session.businessId),
     db.getRewards(session.businessId),
@@ -32,6 +34,8 @@ export default async function MemberProfilePage({
 
   return (
     <MemberProfileClient
+      business={business}
+      themeClassName={mochiThemeClass(business)}
       profile={profile}
       program={program}
       rewards={rewards}

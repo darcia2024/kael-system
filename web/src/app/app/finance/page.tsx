@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 
 import { db } from "@/lib/db";
 import { guardModulePage } from "@/lib/licensing";
+import { mochiThemeClass } from "@/lib/mochi-theme";
 import FinanceClient from "./finance-client";
 
 export const metadata: Metadata = {
@@ -25,6 +26,7 @@ export default async function FinancePage() {
       initialRecipes={recipes}
       initialIngredients={ingredients}
       initialCalculatorPresets={calculatorPresets}
+      themeClassName={mochiThemeClass(business)}
     />
   );
 }

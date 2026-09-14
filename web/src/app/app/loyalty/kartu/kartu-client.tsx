@@ -17,6 +17,7 @@ export default function KartuClient({
   minimumPurchase,
   mode,
   targetStempel,
+  themeClassName,
 }: {
   settings: MemberCardSettings | null;
   storeCode: string | null;
@@ -24,6 +25,7 @@ export default function KartuClient({
   minimumPurchase: number;
   mode: "point" | "stamp";
   targetStempel: number | null;
+  themeClassName?: string;
 }) {
   const router = useRouter();
 
@@ -93,20 +95,20 @@ export default function KartuClient({
   };
 
   return (
-    <main className="min-h-screen bg-[#f7f6fc] p-4 text-[#232331] sm:p-8">
+    <main className="min-h-screen bg-[#f7f6fc] p-4 text-[#1a382d] sm:p-8">
       <form onSubmit={kirim} className="mx-auto max-w-2xl space-y-5">
         <Link
           href="/app/loyalty"
-          className="inline-flex h-10 w-10 items-center justify-center rounded-lg border-2 border-[#232331] bg-white"
+          className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-[#d8e3de] bg-white"
           title="Kembali ke KAEL Loyalty"
         >
           <ArrowLeft size={17} />
         </Link>
 
         <header>
-          <p className="font-mono text-[11px] font-bold text-[#7958d8]">KAEL LOYALTY</p>
+          <p className="font-mono text-[11px] font-bold text-[#167052]">KAEL LOYALTY</p>
           <h1 className="text-2xl font-black">Isi Kartu Member</h1>
-          <p className="mt-1 text-xs text-[#5c5c70]">
+          <p className="mt-1 text-xs text-[#527867]">
             Yang ditulis di sini muncul di kartu yang dipegang pelanggan. Logo dan warna
             sudah disiapkan tim KAEL dan ikut otomatis.
           </p>
@@ -125,10 +127,10 @@ export default function KartuClient({
         )}
 
         {/* ------------------------------------------------- CARA DAPAT STEMPEL */}
-        <section className="space-y-3 rounded-2xl border-2 border-[#232331] bg-white p-5 shadow-ink-md">
+        <section className="space-y-3 rounded-2xl border border-[#d8e3de] bg-white p-5 shadow-[0_4px_20px_rgba(11,61,46,0.04)]">
           <div>
             <h2 className="text-sm font-black">Cara pelanggan dapat {mode === "stamp" ? "stempel" : "poin"}</h2>
-            <p className="mt-0.5 text-[11px] text-[#5c5c70]">
+            <p className="mt-0.5 text-[11px] text-[#527867]">
               {mode === "stamp"
                 ? "Satu kali datang dengan belanja minimal di bawah ini dapat 1 stempel."
                 : "Mode program sekarang POIN. Ganti ke stempel lewat pengaturan program di halaman Loyalty."}
@@ -142,32 +144,32 @@ export default function KartuClient({
               onChange={(e) => setMinimal(e.target.value)}
               inputMode="numeric"
               placeholder="50000"
-              className="mt-1 w-full rounded-lg border-2 border-[#232331] px-3 py-2 font-mono text-sm font-bold"
+              className="mt-1 w-full rounded-lg border border-[#d8e3de] px-3 py-2 font-mono text-sm font-bold"
             />
-            <span className="mt-1 block font-normal text-[11px] text-[#5c5c70]">
+            <span className="mt-1 block font-normal text-[11px] text-[#527867]">
               {Number(minimal.replace(/[^\d]/g, "")) > 0
                 ? `Belanja di bawah ${rupiah(Number(minimal.replace(/[^\d]/g, "")))} tidak dapat apa-apa.`
                 : "Kosong atau 0 berarti semua nominal dapat."}
             </span>
           </label>
 
-          <p className="rounded-xl border border-[#dedee8] bg-[#fcfcfe] p-3 text-[11px] leading-relaxed text-[#5c5c70]">
+          <p className="rounded-xl border border-[#d8e3de] bg-[#fcfcfe] p-3 text-[11px] leading-relaxed text-[#527867]">
             {targetStempel
               ? `Kartu stempel pelanggan menggambar ${targetStempel} kotak, mengikuti harga hadiah termurah yang aktif. Ubah jumlahnya lewat harga hadiah di halaman Loyalty — supaya jumlah kotak dan harga hadiah tidak pernah berbeda.`
               : "Belum ada hadiah aktif, jadi kartu pelanggan menggambar 10 kotak sebagai bawaan. Buat hadiah dulu di halaman Loyalty."}
           </p>
 
           {mode === "stamp" && (
-            <div className="rounded-xl border-2 border-[#232331] bg-[#d9ff57] p-3">
+            <div className="rounded-xl border border-[#d8e3de] bg-[#c8f53a] p-3">
               <p className="text-sm font-black">Kartu stempel fisik siap cetak</p>
-              <p className="mt-1 text-[11px] leading-relaxed text-[#5c5c70]">Formatnya dua sisi ukuran kartu dompet: depan berisi {targetStempel ?? 10} lingkaran stempel, belakang berisi aturan main. Cetak di kertas tebal agar tahan dibawa anak-anak.</p>
-              <button type="button" onClick={cetakKartuStempel} className="mt-3 inline-flex min-h-10 items-center gap-2 rounded-xl border-2 border-[#232331] bg-white px-4 text-xs font-black shadow-ink-xs"><Printer size={15} /> Cetak Kartu Stempel</button>
+              <p className="mt-1 text-[11px] leading-relaxed text-[#527867]">Formatnya dua sisi ukuran kartu dompet: depan berisi {targetStempel ?? 10} lingkaran stempel, belakang berisi aturan main. Cetak di kertas tebal agar tahan dibawa anak-anak.</p>
+              <button type="button" onClick={cetakKartuStempel} className="mt-3 inline-flex min-h-10 items-center gap-2 rounded-xl border border-[#d8e3de] bg-white px-4 text-xs font-black shadow-xs"><Printer size={15} /> Cetak Kartu Stempel</button>
             </div>
           )}
         </section>
 
         {/* ------------------------------------------------------------ ISI */}
-        <section className="space-y-3 rounded-2xl border-2 border-[#232331] bg-white p-5 shadow-ink-md">
+        <section className="space-y-3 rounded-2xl border border-[#d8e3de] bg-white p-5 shadow-[0_4px_20px_rgba(11,61,46,0.04)]">
           <h2 className="text-sm font-black">Isi kartu</h2>
 
           <label className="block text-xs font-bold">
@@ -176,7 +178,7 @@ export default function KartuClient({
               value={headline}
               onChange={(e) => setHeadline(e.target.value.slice(0, 60))}
               placeholder="Kartu Stempel Member"
-              className="mt-1 w-full rounded-lg border-2 border-[#232331] px-3 py-2 text-sm font-normal"
+              className="mt-1 w-full rounded-lg border border-[#d8e3de] px-3 py-2 text-sm font-normal"
             />
           </label>
 
@@ -187,30 +189,30 @@ export default function KartuClient({
               onChange={(e) => setWelcome(e.target.value.slice(0, 200))}
               rows={3}
               placeholder="Setiap belanja minimal Rp50.000 dapat 1 stempel. Kumpulkan 10 stempel, tukar jadi kopi gratis."
-              className="mt-1 w-full rounded-lg border-2 border-[#232331] px-3 py-2 text-sm font-normal"
+              className="mt-1 w-full rounded-lg border border-[#d8e3de] px-3 py-2 text-sm font-normal"
             />
-            <span className="mt-0.5 block text-right font-mono text-[10px] font-normal text-[#5c5c70]">
+            <span className="mt-0.5 block text-right font-mono text-[10px] font-normal text-[#527867]">
               {welcome.length}/200
             </span>
           </label>
 
           <label className="block text-xs font-bold">
-            Kabar minggu ini <span className="font-normal text-[#5c5c70]">(opsional)</span>
+            Kabar minggu ini <span className="font-normal text-[#527867]">(opsional)</span>
             <textarea
               value={kabar}
               onChange={(e) => setKabar(e.target.value.slice(0, 300))}
               rows={2}
               placeholder="Minggu ini: Croissant beli 2 gratis 1, khusus member."
-              className="mt-1 w-full rounded-lg border-2 border-[#232331] px-3 py-2 text-sm font-normal"
+              className="mt-1 w-full rounded-lg border border-[#d8e3de] px-3 py-2 text-sm font-normal"
             />
-            <span className="mt-0.5 block font-normal text-[11px] text-[#5c5c70]">
+            <span className="mt-0.5 block font-normal text-[11px] text-[#527867]">
               Muncul menonjol di atas kartu. Kosongkan kalau tidak ada kabar.
             </span>
           </label>
         </section>
 
         {/* --------------------------------------------------------- KONTAK */}
-        <section className="space-y-3 rounded-2xl border-2 border-[#232331] bg-white p-5 shadow-ink-md">
+        <section className="space-y-3 rounded-2xl border border-[#d8e3de] bg-white p-5 shadow-[0_4px_20px_rgba(11,61,46,0.04)]">
           <h2 className="text-sm font-black">Kontak dan info toko</h2>
 
           <label className="block text-xs font-bold">
@@ -220,9 +222,9 @@ export default function KartuClient({
               onChange={(e) => setWa(e.target.value)}
               inputMode="tel"
               placeholder="081234567890"
-              className="mt-1 w-full rounded-lg border-2 border-[#232331] px-3 py-2 font-mono text-sm font-bold"
+              className="mt-1 w-full rounded-lg border border-[#d8e3de] px-3 py-2 font-mono text-sm font-bold"
             />
-            <span className="mt-1 block font-normal text-[11px] leading-relaxed text-[#5c5c70]">
+            <span className="mt-1 block font-normal text-[11px] leading-relaxed text-[#527867]">
               Ini yang membuat tombol <b>Simpan kartu ke WhatsApp</b> muncul. Pelanggan
               mengirim kartunya sebagai chat ke nomor ini, jadi tautannya tersimpan di
               WhatsApp mereka sendiri dan tidak hilang. Tanpa nomor, tombolnya tidak
@@ -236,17 +238,17 @@ export default function KartuClient({
               value={jam}
               onChange={(e) => setJam(e.target.value.slice(0, 120))}
               placeholder="Setiap hari 08.00 - 22.00"
-              className="mt-1 w-full rounded-lg border-2 border-[#232331] px-3 py-2 text-sm font-normal"
+              className="mt-1 w-full rounded-lg border border-[#d8e3de] px-3 py-2 text-sm font-normal"
             />
           </label>
 
           <label className="block text-xs font-bold">
-            Instagram <span className="font-normal text-[#5c5c70]">(tanpa @)</span>
+            Instagram <span className="font-normal text-[#527867]">(tanpa @)</span>
             <input
               value={ig}
               onChange={(e) => setIg(e.target.value.slice(0, 100))}
               placeholder="kaelcafe"
-              className="mt-1 w-full rounded-lg border-2 border-[#232331] px-3 py-2 font-mono text-sm font-normal"
+              className="mt-1 w-full rounded-lg border border-[#d8e3de] px-3 py-2 font-mono text-sm font-normal"
             />
           </label>
 
@@ -259,13 +261,13 @@ export default function KartuClient({
             />
             <span>
               Tampilkan daftar menu di kartu member
-              <span className="mt-0.5 block font-normal text-[11px] text-[#5c5c70]">
+              <span className="mt-0.5 block font-normal text-[11px] text-[#527867]">
                 Menu diambil otomatis dari KAEL POS. Matikan kalau usahamu tidak punya menu.
               </span>
             </span>
           </label>
 
-          <p className="rounded-xl border border-[#dedee8] bg-[#fcfcfe] p-3 text-[11px] leading-relaxed text-[#5c5c70]">
+          <p className="rounded-xl border border-[#d8e3de] bg-[#fcfcfe] p-3 text-[11px] leading-relaxed text-[#527867]">
             Alamat toko diambil dari data tenant dan diatur tim KAEL. Hubungi KAEL kalau
             alamatnya berubah.
           </p>
@@ -275,7 +277,7 @@ export default function KartuClient({
           <button
             type="submit"
             disabled={simpan}
-            className="flex min-h-12 flex-1 items-center justify-center gap-2 rounded-xl border-2 border-[#232331] bg-[#d9ff57] px-4 py-3 text-sm font-black disabled:opacity-60"
+            className="flex min-h-12 flex-1 items-center justify-center gap-2 rounded-xl border border-[#d8e3de] bg-[#c8f53a] px-4 py-3 text-sm font-black disabled:opacity-60"
           >
             {simpan && <Loader2 size={15} className="animate-spin" />}
             Simpan
@@ -285,7 +287,7 @@ export default function KartuClient({
               href={`/loyalty/register?toko=${encodeURIComponent(storeCode)}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex min-h-12 items-center justify-center gap-2 rounded-xl border-2 border-[#232331] bg-white px-4 py-3 text-sm font-black"
+              className="flex min-h-12 items-center justify-center gap-2 rounded-xl border border-[#d8e3de] bg-white px-4 py-3 text-sm font-black"
             >
               <ExternalLink size={15} /> Lihat form daftar
             </a>

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 
 import { db } from "@/lib/db";
 import { guardOwnerPage } from "@/lib/licensing";
+import { mochiThemeClass } from "@/lib/mochi-theme";
 import KartuClient from "./kartu-client";
 
 /**
@@ -32,6 +33,7 @@ export default async function KartuMemberPage() {
 
   return (
     <KartuClient
+      themeClassName={mochiThemeClass(business)}
       settings={settings}
       storeCode={business?.store_code ?? null}
       businessName={business?.name ?? "Usaha Anda"}
