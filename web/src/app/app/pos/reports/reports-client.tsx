@@ -27,6 +27,8 @@ import { FEEDBACK_REASONS } from "@/lib/types";
 import { refundOrderAction } from "@/lib/actions";
 import { serviceTypeLabel } from "@/lib/pos-engine";
 import { formatRupiah, formatBusinessDateTime } from "@/lib/formatters";
+import { isMochiBusiness } from "@/lib/mochi-brand";
+import { BusinessMark } from "@/components/business-mark";
 
 type SoldItem = {
   name: string; qty: number; revenue: number;
@@ -70,6 +72,7 @@ export default function PosOwnerReportsPage({
   themeClassName?: string;
 }) {
   const router = useRouter();
+  const isMochi = isMochiBusiness(business);
 
   // Refund Modal State
   const [refundingOrderId, setRefundingOrderId] = useState<string | null>(null);
@@ -102,40 +105,79 @@ export default function PosOwnerReportsPage({
   };
 
   return (
-    <div className={`${themeClassName} mochi-shell min-h-screen bg-[#f7f6fc] text-[#232331] font-sans flex flex-col pb-16 sm:pb-8`}>
+    <div className={`${themeClassName} mochi-shell min-h-screen ${isMochi ? "bg-[#f0f5f2] text-[#1a382d]" : "bg-[#f7f6fc] text-[#232331]"} font-sans flex flex-col pb-16 sm:pb-8`}>
       
       {/* Top Header */}
-      <header className="mochi-header sticky top-0 z-30 border-b-2 border-[#232331] bg-white/95 backdrop-blur-md px-3 sm:px-8 py-2.5 sm:py-3.5">
+      <header
+        className={`sticky top-0 z-30 border-b backdrop-blur-md px-3 sm:px-8 py-2.5 sm:py-3.5 transition-colors ${
+          isMochi
+            ? "border-[#07281e] bg-[#0b3d2e]/98 text-white shadow-sm"
+            : "mochi-header border-b-2 border-[#232331] bg-white/95"
+        }`}
+      >
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-2">
-          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
             <Link
-              href="/app/pos"
-              className="flex h-8 w-8 sm:h-9 sm:w-9 shrink-0 items-center justify-center rounded-xl border border-[#232331] bg-[#fcfcfe] text-[#232331] shadow-ink-xs hover:bg-[#f0edff]"
-              title="Kembali ke Terminal Kasir"
+              href="/app/pos/owner"
+              className={
+                isMochi
+                  ? "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-emerald-700/50 bg-[#144f3d] text-white hover:bg-[#1b634d] transition-colors"
+                  : "flex h-8 w-8 sm:h-9 sm:w-9 shrink-0 items-center justify-center rounded-xl border border-[#232331] bg-[#fcfcfe] text-[#232331] shadow-ink-xs hover:bg-[#f0edff]"
+              }
+              title="Kembali ke Dashboard Owner Utama"
             >
-              <ArrowLeft size={15} />
+              <ArrowLeft size={16} />
             </Link>
+
+            {isMochi && (
+              <BusinessMark
+                name={business?.name}
+                logoUrl={business?.logo_url}
+                brandColor={business?.brand_color}
+                className="h-9 w-9 shrink-0 rounded-xl border border-emerald-600/40"
+              />
+            )}
+
             <div className="min-w-0">
-              <div className="flex items-center gap-1.5">
-                <h1 className="font-extrabold text-xs sm:text-base text-[#232331] truncate">
+              <div className="flex items-center gap-1.5 sm:gap-2">
+                <h1
+                  className={`font-black text-xs sm:text-base truncate ${
+                    isMochi ? "text-white" : "text-[#232331]"
+                  }`}
+                >
                   Laporan Omzet &amp; Laba Kasir
                 </h1>
-                <span className="rounded-md bg-[#dcfce7] px-1.5 py-0.2 font-mono text-[8.5px] sm:text-[9px] font-bold text-[#16a34a] border border-[#16a34a] shrink-0">
+                <span
+                  className={
+                    isMochi
+                      ? "rounded-full bg-[#c8f53a] px-2 py-0.5 font-mono text-[9px] font-black text-[#073829] shadow-xs shrink-0"
+                      : "rounded-md bg-[#dcfce7] px-1.5 py-0.2 font-mono text-[8.5px] sm:text-[9px] font-bold text-[#16a34a] border border-[#16a34a] shrink-0"
+                  }
+                >
                   Finance Terintegrasi
                 </span>
               </div>
-              <span className="text-[9.5px] sm:text-[11px] text-[#7b7b8e] font-mono block truncate">
-                {business?.name} · Analisis Laba Riil Toko
+              <span
+                className={`text-[9.5px] sm:text-[11px] font-mono block truncate ${
+                  isMochi ? "text-emerald-200/80" : "text-[#7b7b8e]"
+                }`}
+              >
+                {business?.name ?? "Mochi Cafe n Resto"} · Analisis Laba Riil Toko &amp; HPP
               </span>
             </div>
           </div>
 
           <Link
             href="/app/pos/owner"
-            className="btn-tactile flex items-center gap-1 rounded-xl border-2 border-[#232331] bg-[#d9ff57] px-3.5 py-1.5 font-mono text-xs font-black text-[#232331] shadow-ink-xs"
+            className={
+              isMochi
+                ? "flex items-center gap-1.5 rounded-xl bg-[#c8f53a] hover:bg-[#d9ff57] px-3.5 py-2 font-mono text-xs font-black text-[#073829] shadow-sm transition-all active:scale-95 shrink-0"
+                : "btn-tactile flex items-center gap-1 rounded-xl border-2 border-[#232331] bg-[#d9ff57] px-3.5 py-1.5 font-mono text-xs font-black text-[#232331] shadow-ink-xs shrink-0"
+            }
           >
-            <LayoutDashboard size={13} />
-            <span>Dashboard Owner Utama</span>
+            <LayoutDashboard size={14} />
+            <span className="hidden sm:inline">Dashboard Owner Utama</span>
+            <span className="sm:hidden">Dashboard</span>
           </Link>
         </div>
       </header>
@@ -144,35 +186,57 @@ export default function PosOwnerReportsPage({
       <main className="flex-1 mx-auto w-full max-w-6xl p-3 sm:p-6 lg:p-8 space-y-5">
 
         {/* Quick Report Switcher Bar */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-1 font-mono text-xs">
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 font-mono text-xs scrollbar-none">
           <Link
             href="/app/pos/owner"
-            className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-[#dedee8] bg-white px-3 py-1.5 font-bold text-[#7b7b8e] hover:border-[#232331] hover:text-[#232331] transition-colors"
+            className={`inline-flex shrink-0 items-center gap-1.5 rounded-xl border px-3 py-1.5 font-bold transition-all ${
+              isMochi
+                ? "border-[#ccd9d3] bg-[#edf8f3] text-[#0b3d2e] hover:bg-[#e0f1e8]"
+                : "border-[#dedee8] bg-white text-[#7b7b8e] hover:border-[#232331] hover:text-[#232331]"
+            }`}
           >
             <ArrowLeft size={13} />
             <span>Dashboard Owner Utama</span>
           </Link>
-          <span className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border-2 border-[#232331] bg-[#232331] px-3 py-1.5 font-bold text-white shadow-ink-xs">
+          <span
+            className={`inline-flex shrink-0 items-center gap-1.5 rounded-xl border px-3 py-1.5 font-bold ${
+              isMochi
+                ? "border-[#0b3d2e] bg-[#0b3d2e] text-[#c8f53a] shadow-sm"
+                : "border-2 border-[#232331] bg-[#232331] text-white shadow-ink-xs"
+            }`}
+          >
             <Receipt size={13} />
             <span>Laporan Penjualan &amp; Laba</span>
           </span>
           <Link
             href="/app/loyalty/analytics"
-            className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-[#dedee8] bg-white px-3 py-1.5 font-bold text-[#7b7b8e] hover:border-[#232331] hover:text-[#232331] transition-colors"
+            className={`inline-flex shrink-0 items-center gap-1.5 rounded-xl border px-3 py-1.5 font-bold transition-all ${
+              isMochi
+                ? "border-[#d8e3de] bg-white text-[#20372e] hover:bg-[#edf8f3] hover:border-[#167052]/40"
+                : "border-[#dedee8] bg-white text-[#7b7b8e] hover:border-[#232331] hover:text-[#232331]"
+            }`}
           >
             <Sparkles size={13} />
             <span>Laporan Loyalty Member</span>
           </Link>
           <Link
             href="/app/pos/owner#laporan-review"
-            className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-[#dedee8] bg-white px-3 py-1.5 font-bold text-[#7b7b8e] hover:border-[#232331] hover:text-[#232331] transition-colors"
+            className={`inline-flex shrink-0 items-center gap-1.5 rounded-xl border px-3 py-1.5 font-bold transition-all ${
+              isMochi
+                ? "border-[#d8e3de] bg-white text-[#20372e] hover:bg-[#edf8f3] hover:border-[#167052]/40"
+                : "border-[#dedee8] bg-white text-[#7b7b8e] hover:border-[#232331] hover:text-[#232331]"
+            }`}
           >
             <Star size={13} />
             <span>Laporan Review &amp; Keluhan</span>
           </Link>
           <Link
             href="/app/finance/reports"
-            className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-[#dedee8] bg-white px-3 py-1.5 font-bold text-[#7b7b8e] hover:border-[#232331] hover:text-[#232331] transition-colors"
+            className={`inline-flex shrink-0 items-center gap-1.5 rounded-xl border px-3 py-1.5 font-bold transition-all ${
+              isMochi
+                ? "border-[#d8e3de] bg-white text-[#20372e] hover:bg-[#edf8f3] hover:border-[#167052]/40"
+                : "border-[#dedee8] bg-white text-[#7b7b8e] hover:border-[#232331] hover:text-[#232331]"
+            }`}
           >
             <Clock size={13} />
             <span>Laporan Keuangan</span>
@@ -183,7 +247,7 @@ export default function PosOwnerReportsPage({
         {/* KPI OVERVIEW WITH FINANCE GROSS PROFIT */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
           
-          <div className="card-tactile rounded-2xl sm:rounded-3xl border sm:border-2 border-[#232331] bg-white p-3.5 sm:p-5 shadow-ink-xs sm:shadow-ink-md">
+          <div className={isMochi ? "rounded-2xl sm:rounded-3xl border border-[#d8e3de] bg-white p-3.5 sm:p-5 shadow-sm hover:border-[#167052]/40 transition-all" : "card-tactile rounded-2xl sm:rounded-3xl border sm:border-2 border-[#232331] bg-white p-3.5 sm:p-5 shadow-ink-xs sm:shadow-ink-md"}>
             <div className="flex items-center justify-between border-b border-[#dedee8] pb-1.5 sm:pb-2.5">
               <span className="font-mono text-[9px] sm:text-[10px] font-bold text-[#7958d8] uppercase">TOTAL OMZET BERSIH</span>
               <span className="flex h-6 w-6 sm:h-7 sm:w-7 items-center justify-center rounded-lg bg-[#f0edff] text-[#7958d8]">
@@ -200,7 +264,7 @@ export default function PosOwnerReportsPage({
             </div>
           </div>
 
-          <div className="card-tactile rounded-2xl sm:rounded-3xl border sm:border-2 border-[#232331] bg-white p-3.5 sm:p-5 shadow-ink-xs sm:shadow-ink-md">
+          <div className={isMochi ? "rounded-2xl sm:rounded-3xl border border-[#d8e3de] bg-white p-3.5 sm:p-5 shadow-sm hover:border-[#167052]/40 transition-all" : "card-tactile rounded-2xl sm:rounded-3xl border sm:border-2 border-[#232331] bg-white p-3.5 sm:p-5 shadow-ink-xs sm:shadow-ink-md"}>
             <div className="flex items-center justify-between border-b border-[#dedee8] pb-1.5 sm:pb-2.5">
               <span className="font-mono text-[9px] sm:text-[10px] font-bold text-[#16a34a] uppercase">ESTIMASI LABA KOTOR</span>
               <span className="flex h-6 w-6 sm:h-7 sm:w-7 items-center justify-center rounded-lg bg-[#dcfce7] text-[#16a34a]">
@@ -217,7 +281,7 @@ export default function PosOwnerReportsPage({
             </div>
           </div>
 
-          <div className="card-tactile rounded-2xl sm:rounded-3xl border sm:border-2 border-[#232331] bg-white p-3.5 sm:p-5 shadow-ink-xs sm:shadow-ink-md">
+          <div className={isMochi ? "rounded-2xl sm:rounded-3xl border border-[#d8e3de] bg-white p-3.5 sm:p-5 shadow-sm hover:border-[#167052]/40 transition-all" : "card-tactile rounded-2xl sm:rounded-3xl border sm:border-2 border-[#232331] bg-white p-3.5 sm:p-5 shadow-ink-xs sm:shadow-ink-md"}>
             <div className="flex items-center justify-between border-b border-[#dedee8] pb-1.5 sm:pb-2.5">
               <span className="font-mono text-[9px] sm:text-[10px] font-bold text-[#c2410c] uppercase">TOTAL HPP MODAL</span>
               <span className="flex h-6 w-6 sm:h-7 sm:w-7 items-center justify-center rounded-lg bg-[#ffedd5] text-[#c2410c]">
@@ -234,7 +298,7 @@ export default function PosOwnerReportsPage({
             </div>
           </div>
 
-          <div className="card-tactile rounded-2xl sm:rounded-3xl border sm:border-2 border-[#232331] bg-white p-3.5 sm:p-5 shadow-ink-xs sm:shadow-ink-md">
+          <div className={isMochi ? "rounded-2xl sm:rounded-3xl border border-[#d8e3de] bg-white p-3.5 sm:p-5 shadow-sm hover:border-[#167052]/40 transition-all" : "card-tactile rounded-2xl sm:rounded-3xl border sm:border-2 border-[#232331] bg-white p-3.5 sm:p-5 shadow-ink-xs sm:shadow-ink-md"}>
             <div className="flex items-center justify-between border-b border-[#dedee8] pb-1.5 sm:pb-2.5">
               <span className="font-mono text-[9px] sm:text-[10px] font-bold text-[#d97706] uppercase">METODE BAYAR QRIS</span>
               <span className="flex h-6 w-6 sm:h-7 sm:w-7 items-center justify-center rounded-lg bg-[#fef3c7] text-[#d97706]">
@@ -254,12 +318,12 @@ export default function PosOwnerReportsPage({
         </div>
 
         {/* SECTION 1: TOP SELLING MENU WITH REAL PROFIT FROM FINANCE HPP */}
-        <div className="rounded-2xl sm:rounded-3xl border sm:border-2 border-[#232331] bg-white p-4 sm:p-6 shadow-ink-md space-y-4">
+        <div className={isMochi ? "rounded-2xl sm:rounded-3xl border border-[#d8e3de] bg-white p-4 sm:p-6 shadow-sm space-y-4" : "rounded-2xl sm:rounded-3xl border sm:border-2 border-[#232331] bg-white p-4 sm:p-6 shadow-ink-md space-y-4"}>
           <div className="border-b border-[#dedee8] pb-3">
-            <h3 className="font-extrabold text-sm sm:text-base text-[#232331]">
+            <h3 className={isMochi ? "font-black text-sm sm:text-base text-[#0b3d2e]" : "font-extrabold text-sm sm:text-base text-[#232331]"}>
               Menu Terlaris &amp; Kontribusi Laba Riil (Koneksi Modul Finance)
             </h3>
-            <p className="text-[11px] sm:text-xs text-[#7b7b8e]">
+            <p className={isMochi ? "text-[11px] sm:text-xs text-[#526159]" : "text-[11px] sm:text-xs text-[#7b7b8e]"}>
               Dihitung otomatis dari data transaksi kasir dan resep HPP bahan baku KAEL Finance.
             </p>
           </div>
@@ -267,7 +331,7 @@ export default function PosOwnerReportsPage({
           <div className="overflow-x-auto">
             <table className="w-full text-left font-mono text-xs">
               <thead>
-                <tr className="border-b border-[#dedee8] text-[#7b7b8e] text-[10px] uppercase">
+                <tr className={isMochi ? "border-b border-[#d8e3de] bg-[#edf8f3] text-[#167052] text-[10px] uppercase font-extrabold" : "border-b border-[#dedee8] text-[#7b7b8e] text-[10px] uppercase"}>
                   <th className="py-2.5 px-3">Nama Menu</th>
                   <th className="py-2.5 px-3">Qty Terjual</th>
                   <th className="py-2.5 px-3">Total Omzet</th>
@@ -280,7 +344,7 @@ export default function PosOwnerReportsPage({
                 {reports.topSellingItems.map((item, idx) => {
                   const marginPct = item.revenue > 0 ? Math.round((item.grossProfit / item.revenue) * 100) : 0;
                   return (
-                    <tr key={idx} className="hover:bg-[#fcfcfe]">
+                    <tr key={idx} className={isMochi ? "hover:bg-[#f7fcf9] transition-colors" : "hover:bg-[#fcfcfe]"}>
                       <td className="py-3 px-3 font-extrabold text-[#232331] font-sans">
                         {item.name}
                       </td>
@@ -308,12 +372,12 @@ export default function PosOwnerReportsPage({
         </div>
 
         {/* SECTION 1.5: FEEDBACK PASCATRANSAKSI */}
-        <div className="rounded-2xl sm:rounded-3xl border sm:border-2 border-[#232331] bg-white p-4 sm:p-6 shadow-ink-md space-y-4">
+        <div className={isMochi ? "rounded-2xl sm:rounded-3xl border border-[#d8e3de] bg-white p-4 sm:p-6 shadow-sm space-y-4" : "rounded-2xl sm:rounded-3xl border sm:border-2 border-[#232331] bg-white p-4 sm:p-6 shadow-ink-md space-y-4"}>
           <div className="border-b border-[#dedee8] pb-3">
-            <h3 className="font-extrabold text-sm sm:text-base text-[#232331]">
+            <h3 className={isMochi ? "font-black text-sm sm:text-base text-[#0b3d2e]" : "font-extrabold text-sm sm:text-base text-[#232331]"}>
               Feedback Pelanggan
             </h3>
-            <p className="text-[11px] sm:text-xs text-[#7b7b8e]">
+            <p className={isMochi ? "text-[11px] sm:text-xs text-[#526159]" : "text-[11px] sm:text-xs text-[#7b7b8e]"}>
               Rating dan alasan singkat yang dikirim pelanggan dari halaman struk, sesudah transaksi.
             </p>
           </div>
@@ -385,12 +449,12 @@ export default function PosOwnerReportsPage({
         </div>
 
         {/* SECTION 2: RECENT ORDERS & OWNER REFUND */}
-        <div className="rounded-2xl sm:rounded-3xl border sm:border-2 border-[#232331] bg-white p-4 sm:p-6 shadow-ink-md space-y-4">
+        <div className={isMochi ? "rounded-2xl sm:rounded-3xl border border-[#d8e3de] bg-white p-4 sm:p-6 shadow-sm space-y-4" : "rounded-2xl sm:rounded-3xl border sm:border-2 border-[#232331] bg-white p-4 sm:p-6 shadow-ink-md space-y-4"}>
           <div className="border-b border-[#dedee8] pb-3">
-            <h3 className="font-extrabold text-sm sm:text-base text-[#232331]">
+            <h3 className={isMochi ? "font-black text-sm sm:text-base text-[#0b3d2e]" : "font-extrabold text-sm sm:text-base text-[#232331]"}>
               Riwayat Transaksi &amp; Pengembalian Dana (Refund)
             </h3>
-            <p className="text-[11px] sm:text-xs text-[#7b7b8e]">
+            <p className={isMochi ? "text-[11px] sm:text-xs text-[#526159]" : "text-[11px] sm:text-xs text-[#7b7b8e]"}>
               Transaksi bersifat immutable. Pembatalan/refund wajib disetujui owner dan dicatat terpisah.
             </p>
           </div>
@@ -398,7 +462,7 @@ export default function PosOwnerReportsPage({
           <div className="overflow-x-auto">
             <table className="w-full text-left font-mono text-xs">
               <thead>
-                <tr className="border-b border-[#dedee8] text-[#7b7b8e] text-[10px] uppercase">
+                <tr className={isMochi ? "border-b border-[#d8e3de] bg-[#edf8f3] text-[#167052] text-[10px] uppercase font-extrabold" : "border-b border-[#dedee8] text-[#7b7b8e] text-[10px] uppercase"}>
                   <th className="py-2.5 px-3">No. Order</th>
                   <th className="py-2.5 px-3">Waktu</th>
                   <th className="py-2.5 px-3">Tipe &amp; Meja</th>
@@ -410,7 +474,7 @@ export default function PosOwnerReportsPage({
               </thead>
               <tbody className="divide-y divide-[#dedee8]">
                 {orders.map((ord) => (
-                  <tr key={ord.id} className="hover:bg-[#fcfcfe]">
+                  <tr key={ord.id} className={isMochi ? "hover:bg-[#f7fcf9] transition-colors" : "hover:bg-[#fcfcfe]"}>
                     <td className="py-3 px-3 font-black text-sm text-[#232331]">
                       {ord.order_no}
                     </td>
@@ -443,7 +507,7 @@ export default function PosOwnerReportsPage({
                       <Link
                         href={`/receipt/${ord.id}`}
                         target="_blank"
-                        className="btn-tactile rounded-lg border border-[#7958d8] bg-[#f0edff] px-2.5 py-1 text-[10.5px] font-bold text-[#7958d8]"
+                        className={isMochi ? "rounded-xl border border-[#ccd9d3] bg-[#edf8f3] hover:bg-[#e0f1e8] px-3 py-1 text-[11px] font-mono font-bold text-[#167052] transition-colors" : "btn-tactile rounded-lg border border-[#7958d8] bg-[#f0edff] px-2.5 py-1 text-[10.5px] font-bold text-[#7958d8]"}
                       >
                         Struk
                       </Link>
@@ -451,7 +515,7 @@ export default function PosOwnerReportsPage({
                         <button
                           type="button"
                           onClick={() => handleOpenRefund(ord)}
-                          className="btn-tactile rounded-lg border border-[#ef4444] bg-[#feebee] px-2 py-1 text-[10.5px] font-bold text-[#ef4444]"
+                          className={isMochi ? "rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 px-3 py-1 text-[11px] font-mono font-bold text-rose-700 transition-colors" : "btn-tactile rounded-lg border border-[#ef4444] bg-[#feebee] px-2 py-1 text-[10.5px] font-bold text-[#ef4444]"}
                         >
                           Refund
                         </button>
@@ -465,12 +529,12 @@ export default function PosOwnerReportsPage({
         </div>
 
         {/* SECTION 3: SHIFTS AUDIT & CASH DRAWER VARIANCE */}
-        <div className="rounded-2xl sm:rounded-3xl border sm:border-2 border-[#232331] bg-white p-4 sm:p-6 shadow-ink-md space-y-4">
+        <div className={isMochi ? "rounded-2xl sm:rounded-3xl border border-[#d8e3de] bg-white p-4 sm:p-6 shadow-sm space-y-4" : "rounded-2xl sm:rounded-3xl border sm:border-2 border-[#232331] bg-white p-4 sm:p-6 shadow-ink-md space-y-4"}>
           <div className="border-b border-[#dedee8] pb-3">
-            <h3 className="font-extrabold text-sm sm:text-base text-[#232331]">
+            <h3 className={isMochi ? "font-black text-sm sm:text-base text-[#0b3d2e]" : "font-extrabold text-sm sm:text-base text-[#232331]"}>
               Histori Shift Kasir &amp; Rekonsiliasi Laci Kas
             </h3>
-            <p className="text-[11px] sm:text-xs text-[#7b7b8e]">
+            <p className={isMochi ? "text-[11px] sm:text-xs text-[#526159]" : "text-[11px] sm:text-xs text-[#7b7b8e]"}>
               Audit selisih uang tunai laci untuk mencegah kehilangan uang kasir.
             </p>
           </div>
@@ -478,7 +542,7 @@ export default function PosOwnerReportsPage({
           <div className="overflow-x-auto">
             <table className="w-full text-left font-mono text-xs">
               <thead>
-                <tr className="border-b border-[#dedee8] text-[#7b7b8e] text-[10px] uppercase">
+                <tr className={isMochi ? "border-b border-[#d8e3de] bg-[#edf8f3] text-[#167052] text-[10px] uppercase font-extrabold" : "border-b border-[#dedee8] text-[#7b7b8e] text-[10px] uppercase"}>
                   <th className="py-2.5 px-3">Kasir</th>
                   <th className="py-2.5 px-3">Waktu Buka</th>
                   <th className="py-2.5 px-3 text-right">Dilayani</th>
@@ -492,7 +556,7 @@ export default function PosOwnerReportsPage({
               </thead>
               <tbody className="divide-y divide-[#dedee8]">
                 {shifts.map((sh) => (
-                  <tr key={sh.id} className="hover:bg-[#fcfcfe]">
+                  <tr key={sh.id} className={isMochi ? "hover:bg-[#f7fcf9] transition-colors" : "hover:bg-[#fcfcfe]"}>
                     <td className="py-3 px-3 font-sans text-xs font-black text-[#232331]">
                       {sh.staff_name}
                     </td>
@@ -537,11 +601,11 @@ export default function PosOwnerReportsPage({
 
       
         {/* LAPORAN REVIEW & AUDIT KEPUASAN PELANGGAN (SMART ROUTING) */}
-        <div className="rounded-2xl sm:rounded-3xl border-2 border-[#232331] bg-white p-4 sm:p-6 shadow-ink space-y-4">
+        <div className={isMochi ? "rounded-2xl sm:rounded-3xl border border-[#d8e3de] bg-white p-4 sm:p-6 shadow-sm space-y-4" : "rounded-2xl sm:rounded-3xl border-2 border-[#232331] bg-white p-4 sm:p-6 shadow-ink space-y-4"}>
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#dedee8] pb-4">
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="font-black text-sm sm:text-base text-[#232331]">
+                <h2 className={isMochi ? "font-black text-sm sm:text-base text-[#0b3d2e]" : "font-black text-sm sm:text-base text-[#232331]"}>
                   Laporan Review &amp; Audit Kepuasan Pelanggan
                 </h2>
                 <span className="inline-flex items-center gap-1 rounded-full bg-[#dcfce7] px-2.5 py-0.5 font-mono text-[9px] font-black text-[#15803d]">
@@ -603,7 +667,7 @@ export default function PosOwnerReportsPage({
           {recentFeedback && recentFeedback.length > 0 ? (
             <div className="overflow-x-auto rounded-xl border border-[#dedee8]">
               <table className="w-full text-left font-mono text-xs">
-                <thead className="border-b border-[#dedee8] bg-[#f7f6fc] text-[10px] font-bold uppercase text-[#7b7b8e]">
+                <thead className={isMochi ? "border-b border-[#d8e3de] bg-[#edf8f3] text-[#167052] text-[10px] font-extrabold uppercase" : "border-b border-[#dedee8] bg-[#f7f6fc] text-[10px] font-bold uppercase text-[#7b7b8e]"}>
                   <tr>
                     <th className="py-2.5 px-3">Rating</th>
                     <th className="py-2.5 px-3">Tujuan / Status</th>
@@ -617,7 +681,7 @@ export default function PosOwnerReportsPage({
                   {recentFeedback.map((f) => {
                     const isLow = f.rating <= 3;
                     return (
-                      <tr key={f.id} className="hover:bg-[#fcfcfe]">
+                      <tr key={f.id} className={isMochi ? "hover:bg-[#f7fcf9] transition-colors" : "hover:bg-[#fcfcfe]"}>
                         <td className="py-3 px-3 font-black text-[#232331]">
                           <span className="inline-flex items-center gap-1">
                             <Star size={13} className={isLow ? "fill-amber-400 text-amber-400" : "fill-emerald-500 text-emerald-500"} />
@@ -666,16 +730,18 @@ export default function PosOwnerReportsPage({
 
       {/* MODAL: OWNER REFUND PROCESSING */}
       {refundingOrderId && (
-        <div className="fixed inset-0 z-50 bg-[#232331]/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="w-full max-w-md rounded-3xl border-2 border-[#232331] bg-white p-6 shadow-ink-lg space-y-4 animate-in zoom-in-95 font-mono text-xs">
-            <div className="flex items-center justify-between border-b border-[#dedee8] pb-3">
-              <h3 className="font-extrabold text-base text-[#232331] font-sans">
+        <div className={`fixed inset-0 z-50 backdrop-blur-xs flex items-center justify-center p-4 ${isMochi ? "bg-[#07281e]/65" : "bg-[#232331]/60"}`}>
+          <div className={`w-full max-w-md rounded-3xl p-6 font-mono text-xs space-y-4 animate-in zoom-in-95 ${
+            isMochi ? "border border-[#d8e3de] bg-white shadow-xl" : "border-2 border-[#232331] bg-white shadow-ink-lg"
+          }`}>
+            <div className={`flex items-center justify-between border-b pb-3 ${isMochi ? "border-[#edf2ef]" : "border-[#dedee8]"}`}>
+              <h3 className={`font-extrabold text-base font-sans ${isMochi ? "text-[#0b3d2e]" : "text-[#232331]"}`}>
                 Persetujuan Refund (Owner Only)
               </h3>
               <button
                 type="button"
                 onClick={() => setRefundingOrderId(null)}
-                className="text-[#7b7b8e] hover:text-[#232331] font-bold p-1"
+                className={`font-bold p-1 ${isMochi ? "text-[#526159] hover:text-[#0b3d2e]" : "text-[#7b7b8e] hover:text-[#232331]"}`}
               >
                 ✕
               </button>
@@ -683,44 +749,50 @@ export default function PosOwnerReportsPage({
 
             <form onSubmit={handleProcessRefund} className="space-y-3 font-sans text-xs">
               <div className="space-y-1 font-mono">
-                <label className="block font-bold text-[#232331]">Nominal Refund (Rp):</label>
+                <label className={`block font-bold ${isMochi ? "text-[#0b3d2e]" : "text-[#232331]"}`}>Nominal Refund (Rp):</label>
                 <input
                   type="number"
                   required
                   min={1}
                   value={refundAmount}
                   onChange={(e) => setRefundAmount(Number(e.target.value))}
-                  className="w-full rounded-xl border-2 border-[#232331] p-2.5 font-black text-base text-[#ef4444]"
+                  className={`w-full rounded-xl p-2.5 font-black text-base text-[#ef4444] ${
+                    isMochi ? "border border-[#ccd9d3] bg-[#fdfefe] focus:border-[#0b3d2e] focus:outline-none" : "border-2 border-[#232331]"
+                  }`}
                 />
               </div>
 
               <div className="space-y-1 font-mono">
-                <label className="block font-bold text-[#232331]">Alasan Refund:</label>
+                <label className={`block font-bold ${isMochi ? "text-[#0b3d2e]" : "text-[#232331]"}`}>Alasan Refund:</label>
                 <textarea
                   required
                   rows={2}
                   value={refundReason}
                   onChange={(e) => setRefundReason(e.target.value)}
                   placeholder="Misal: Pelanggan salah pesan / barang habis..."
-                  className="w-full rounded-xl border border-[#dedee8] p-2 text-xs text-[#232331]"
+                  className={`w-full rounded-xl p-2 text-xs ${
+                    isMochi ? "border border-[#ccd9d3] text-[#0b3d2e] placeholder:text-[#889990] focus:border-[#0b3d2e] focus:outline-none" : "border border-[#dedee8] text-[#232331]"
+                  }`}
                 />
               </div>
 
-              <p className="text-[10px] text-[#7b7b8e] leading-relaxed">
+              <p className={`text-[10px] leading-relaxed ${isMochi ? "text-[#526159]" : "text-[#7b7b8e]"}`}>
                 Transaksi asli tetap tercatat sebagai penjualan. Nominal refund mengurangi omzet dan laci kas pada shift pengembaliannya.
               </p>
 
-              <div className="flex justify-end gap-2 pt-2 border-t border-[#dedee8] font-mono">
+              <div className={`flex justify-end gap-2 pt-2 border-t font-mono ${isMochi ? "border-[#edf2ef]" : "border-[#dedee8]"}`}>
                 <button
                   type="button"
                   onClick={() => setRefundingOrderId(null)}
-                  className="rounded-xl border border-[#dedee8] bg-white px-3 py-2 font-bold text-[#7b7b8e]"
+                  className={`rounded-xl px-3 py-2 font-bold transition-colors ${
+                    isMochi ? "border border-[#ccd9d3] bg-[#f8faf9] text-[#526159] hover:bg-[#edf8f3]" : "border border-[#dedee8] bg-white text-[#7b7b8e]"
+                  }`}
                 >
                   Batal
                 </button>
                 <button
                   type="submit"
-                  className="btn-tactile rounded-xl bg-[#ef4444] px-5 py-2 font-black text-white shadow-ink-xs"
+                  className="rounded-xl bg-rose-600 hover:bg-rose-700 px-5 py-2 font-black text-white shadow-xs transition-colors"
                 >
                   Setujui Refund ✓
                 </button>
@@ -731,7 +803,9 @@ export default function PosOwnerReportsPage({
       )}
 
       {/* Footer */}
-      <footer className="border-t border-[#dedee8] bg-white py-4 text-center text-xs font-mono text-[#7b7b8e]">
+      <footer className={`border-t py-4 text-center text-xs font-mono transition-colors ${
+        isMochi ? "border-[#d8e3de] bg-white text-[#526159]" : "border-[#dedee8] bg-white text-[#7b7b8e]"
+      }`}>
         KAEL POS &amp; Ordering Engine · Integrated Finance &amp; Immutable Audit
       </footer>
 
