@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 
 import { db } from "@/lib/db";
 import { guardOwnerPage, getModuleViews } from "@/lib/licensing";
+import { mochiThemeClass } from "@/lib/mochi-theme";
 import { MODULE_BY_KEY, type ModuleKey } from "@/lib/modules-catalog";
 import SettingsClient, { type ModuleRow } from "./settings-client";
 import ReadinessPanel from "./readiness-panel";
@@ -54,6 +55,8 @@ export default async function SettingsPage() {
   return (
     <>
     <SettingsClient
+      business={business}
+      themeClassName={mochiThemeClass(business)}
       businessName={business?.name ?? "Usahamu"}
       storeCode={business?.store_code ?? null}
       qris={{

@@ -5,6 +5,8 @@ import { ArrowLeft, QrCode, CheckCircle2, AlertTriangle, Wrench, ArrowRight } fr
 
 import QrisSetup from "./qris-setup";
 import PosChargeSetup from "./pos-charge-setup";
+import { BusinessMark } from "@/components/business-mark";
+import type { Business } from "@/lib/types";
 import type { ModuleStatus } from "@/lib/licensing";
 import type { ModuleKey } from "@/lib/modules-catalog";
 
@@ -18,10 +20,6 @@ export interface ModuleRow {
 
 /**
  * Lencana status modul.
- *
- * "perlu_disiapkan" ada di sini karena inilah pembedaan yang dulu tidak ada:
- * modul yang sudah dibayar tapi belum bisa dipakai dulu tampil "Aktif", jadi
- * pemilik usaha menyimpulkan produknya rusak alih-alih belum disetel.
  */
 const BADGE: Record<ModuleStatus, { teks: string; warna: string; bg: string; garis: string }> = {
   aktif: { teks: "Aktif", warna: "#16a34a", bg: "#dcfce7", garis: "#16a34a" },
@@ -38,6 +36,8 @@ export default function SettingsClient({
   qris,
   posCharges,
   modules,
+  business,
+  themeClassName,
 }: {
   businessName: string;
   storeCode: string | null;
@@ -49,22 +49,36 @@ export default function SettingsClient({
   };
   posCharges: { taxRate: number; serviceChargeRate: number };
   modules: ModuleRow[];
+  business?: Business | null;
+  themeClassName?: string;
 }) {
   const perluDisiapkan = modules.filter((m) => m.setupHint);
 
   return (
-    <div className="min-h-screen bg-[#f7f6fc] text-[#232331] font-sans">
-      <header className="sticky top-0 z-30 border-b-2 border-[#232331] bg-white px-4 sm:px-8 py-3.5">
+    <div className={`${themeClassName || ""} min-h-screen bg-[#f0f5f2] text-[#1a382d] font-sans`}>
+      <header className="sticky top-0 z-30 border-b border-emerald-800/60 bg-[#0b3d2e] px-4 sm:px-8 py-3 text-white backdrop-blur-md shadow-sm">
         <div className="mx-auto flex max-w-3xl items-center gap-3">
           <Link
             href="/app"
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-[#232331] bg-[#fcfcfe] shadow-ink-xs"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-emerald-600/40 bg-white/10 text-white hover:bg-white/15 transition-colors"
+            title="Kembali ke Beranda"
           >
             <ArrowLeft size={16} />
           </Link>
+          <BusinessMark
+            name={business?.name || businessName}
+            logoUrl={business?.logo_url}
+            brandColor={business?.brand_color}
+            className="h-9 w-9 shrink-0 rounded-full border border-emerald-400/40 bg-white p-0.5 shadow-xs"
+          />
           <div className="min-w-0">
-            <h1 className="font-black text-sm sm:text-base truncate">Pengaturan Usaha</h1>
-            <span className="text-[11px] text-[#7b7b8e] font-mono block truncate">
+            <div className="flex items-center gap-2">
+              <h1 className="font-extrabold text-sm sm:text-base truncate text-white tracking-tight">Pengaturan Usaha</h1>
+              <span className="rounded-full bg-[#c8f53a] px-2 py-0.5 font-mono text-[9px] font-bold text-[#073829] shrink-0">
+                Admin Toko
+              </span>
+            </div>
+            <span className="text-[10.5px] text-emerald-200/80 font-mono block truncate">
               {businessName}
               {storeCode ? ` · kode toko ${storeCode}` : ""}
             </span>
@@ -74,7 +88,7 @@ export default function SettingsClient({
 
       <main className="mx-auto max-w-3xl px-4 sm:px-8 py-6 space-y-5">
         {perluDisiapkan.length > 0 && (
-          <div className="flex items-start gap-2.5 rounded-2xl border-2 border-[#e5b800] bg-[#fff8e1] px-4 py-3 text-[#8a6d00]">
+          <div className="flex items-start gap-2.5 rounded-2xl border border-amber-200/90 bg-[#fffbeb] px-4 py-3.5 text-[#92400e] shadow-xs">
             <AlertTriangle size={18} className="shrink-0 mt-0.5" />
             <div className="font-mono text-xs">
               <p className="font-bold">
@@ -88,12 +102,12 @@ export default function SettingsClient({
         )}
 
         {/* --- QRIS --- */}
-        <section className="rounded-3xl border-2 border-[#232331] bg-white p-6 shadow-ink-md space-y-4">
-          <div className="flex items-center gap-2 border-b border-[#dedee8] pb-4">
-            <QrCode size={20} className="text-[#7958d8]" />
+        <section className="rounded-3xl border border-[#d8e3de] bg-white p-6 shadow-[0_4px_20px_rgba(11,61,46,0.04)] space-y-4">
+          <div className="flex items-center gap-2 border-b border-[#d8e3de] pb-4">
+            <QrCode size={20} className="text-[#167052]" />
             <div>
-              <h2 className="font-extrabold text-base">QRIS Toko</h2>
-              <p className="font-mono text-[11px] text-[#7b7b8e]">
+              <h2 className="font-extrabold text-base text-[#0b3d2e]">QRIS Toko</h2>
+              <p className="font-mono text-[11px] text-[#527867]">
                 Hanya pemilik usaha yang bisa mengubah ini
               </p>
             </div>
@@ -107,38 +121,38 @@ export default function SettingsClient({
           />
         </section>
 
-        <section className="rounded-3xl border-2 border-[#232331] bg-white p-6 shadow-ink-md">
+        <section className="rounded-3xl border border-[#d8e3de] bg-white p-6 shadow-[0_4px_20px_rgba(11,61,46,0.04)]">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div><h2 className="font-extrabold text-base">Brand, White Label & WhatsApp</h2><p className="mt-1 font-mono text-[11px] text-[#7b7b8e]">Nama aplikasi, domain tenant, dan nomor pengirim WhatsApp per usaha.</p></div>
-            <Link href="/app/settings/brand" className="btn-tactile rounded-xl border-2 border-[#232331] bg-[#d9ff57] px-3 py-2 text-xs font-bold">Atur Brand</Link>
+            <div><h2 className="font-extrabold text-base text-[#0b3d2e]">Brand, White Label & WhatsApp</h2><p className="mt-1 font-mono text-[11px] text-[#527867]">Nama aplikasi, domain tenant, dan nomor pengirim WhatsApp per usaha.</p></div>
+            <Link href="/app/settings/brand" className="rounded-xl bg-[#0b3d2e] hover:bg-[#0e4837] px-3.5 py-2 font-mono text-xs font-bold text-[#c8f53a] shadow-xs transition-colors">Atur Brand</Link>
           </div>
         </section>
 
-        <section className="rounded-3xl border-2 border-[#232331] bg-white p-6 shadow-ink-md space-y-4">
-          <div className="flex items-center gap-2 border-b border-[#dedee8] pb-4">
-            <Wrench size={20} className="text-[#7958d8]" />
+        <section className="rounded-3xl border border-[#d8e3de] bg-white p-6 shadow-[0_4px_20px_rgba(11,61,46,0.04)] space-y-4">
+          <div className="flex items-center gap-2 border-b border-[#d8e3de] pb-4">
+            <Wrench size={20} className="text-[#167052]" />
             <div>
-              <h2 className="font-extrabold text-base">Tarif Kasir</h2>
-              <p className="font-mono text-[11px] text-[#7b7b8e]">Pajak dan service charge dipakai otomatis di setiap struk.</p>
+              <h2 className="font-extrabold text-base text-[#0b3d2e]">Tarif Kasir</h2>
+              <p className="font-mono text-[11px] text-[#527867]">Pajak dan service charge dipakai otomatis di setiap struk.</p>
             </div>
           </div>
           <PosChargeSetup taxRate={posCharges.taxRate} serviceChargeRate={posCharges.serviceChargeRate} />
         </section>
 
         {/* --- Kesiapan modul --- */}
-        <section className="rounded-3xl border-2 border-[#232331] bg-white p-6 shadow-ink-md space-y-4">
-          <div className="flex items-center gap-2 border-b border-[#dedee8] pb-4">
-            <Wrench size={20} className="text-[#7958d8]" />
+        <section className="rounded-3xl border border-[#d8e3de] bg-white p-6 shadow-[0_4px_20px_rgba(11,61,46,0.04)] space-y-4">
+          <div className="flex items-center gap-2 border-b border-[#d8e3de] pb-4">
+            <Wrench size={20} className="text-[#167052]" />
             <div>
-              <h2 className="font-extrabold text-base">Kesiapan Modul</h2>
-              <p className="font-mono text-[11px] text-[#7b7b8e]">
+              <h2 className="font-extrabold text-base text-[#0b3d2e]">Kesiapan Modul</h2>
+              <p className="font-mono text-[11px] text-[#527867]">
                 Sudah dibayar belum tentu sudah bisa dipakai
               </p>
             </div>
           </div>
 
           {modules.length === 0 ? (
-            <p className="font-mono text-xs text-[#7b7b8e]">Belum ada modul yang aktif.</p>
+            <p className="font-mono text-xs text-[#527867]">Belum ada modul yang aktif.</p>
           ) : (
             <div className="space-y-2.5">
               {modules.map((m) => {
@@ -146,7 +160,7 @@ export default function SettingsClient({
                 return (
                   <div
                     key={m.key}
-                    className="rounded-2xl border border-[#dedee8] bg-[#fcfcfe] px-4 py-3 space-y-2"
+                    className="rounded-2xl border border-[#d8e3de] bg-[#fbfdfc] px-4 py-3 space-y-2"
                   >
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <span className="font-extrabold text-sm">{m.name}</span>
@@ -164,14 +178,14 @@ export default function SettingsClient({
                     </div>
 
                     {m.setupHint && (
-                      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[#dedee8] pt-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[#d8e3de] pt-2">
                         <p className="font-mono text-[11px] text-[#8a6d00] flex-1 min-w-[200px]">
                           {m.setupHint}
                         </p>
                         {m.setupHref && (
                           <Link
                             href={m.setupHref}
-                            className="btn-tactile inline-flex items-center gap-1.5 rounded-xl border-2 border-[#232331] bg-[#d9ff57] px-3 py-1.5 font-mono text-[11px] font-extrabold shadow-ink-xs"
+                            className="inline-flex items-center gap-1.5 rounded-xl border border-[#d8e3de] bg-[#c8f53a] px-3 py-1.5 font-mono text-[11px] font-extrabold shadow-xs"
                           >
                             Siapkan
                             <ArrowRight size={12} />

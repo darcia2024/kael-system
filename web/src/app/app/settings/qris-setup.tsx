@@ -153,28 +153,28 @@ export default function QrisSetup({
 
         <div className="grid gap-4 sm:grid-cols-[auto_1fr] sm:items-start">
           {contoh?.ok && (
-            <div className="justify-self-center rounded-2xl border-2 border-[#232331] bg-white p-2.5 shadow-ink-xs">
+            <div className="justify-self-center rounded-2xl border border-[#d8e3de] bg-white p-2.5 shadow-xs">
               <QrCode value={contoh.payload} size={150} label="Contoh QRIS bernominal" />
-              <p className="mt-1.5 text-center font-mono text-[10px] text-[#7b7b8e]">
+              <p className="mt-1.5 text-center font-mono text-[10px] text-[#527867]">
                 contoh Rp 47.000
               </p>
             </div>
           )}
 
-          <div className="rounded-2xl border border-[#dedee8] bg-[#fcfcfe] px-4 py-3 font-mono text-xs space-y-1">
+          <div className="rounded-2xl border border-[#d8e3de] bg-[#fbfdfc] px-4 py-3 font-mono text-xs space-y-1">
             <div className="flex justify-between gap-3">
-              <span className="text-[#7b7b8e]">Merchant</span>
+              <span className="text-[#527867]">Merchant</span>
               <span className="font-bold text-right break-words">{merchantName || "—"}</span>
             </div>
             {merchantCity && (
               <div className="flex justify-between gap-3">
-                <span className="text-[#7b7b8e]">Kota</span>
+                <span className="text-[#527867]">Kota</span>
                 <span className="text-right">{merchantCity}</span>
               </div>
             )}
             {nmid && (
               <div className="flex justify-between gap-3">
-                <span className="text-[#7b7b8e]">NMID</span>
+                <span className="text-[#527867]">NMID</span>
                 <span className="text-[10.5px] text-right break-all">{nmid}</span>
               </div>
             )}
@@ -193,7 +193,7 @@ export default function QrisSetup({
             type="button"
             onClick={() => setGantiMode(true)}
             disabled={busy}
-            className="flex-1 rounded-xl border-2 border-[#232331] bg-white px-3 py-2.5 font-mono text-xs font-extrabold shadow-ink-xs disabled:opacity-50"
+            className="flex-1 rounded-xl border border-[#d8e3de] bg-white px-3 py-2.5 font-mono text-xs font-extrabold shadow-xs disabled:opacity-50"
           >
             Ganti QRIS
           </button>
@@ -201,7 +201,7 @@ export default function QrisSetup({
             type="button"
             onClick={hapus}
             disabled={busy}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-[#dedee8] bg-white px-3 py-2.5 font-mono text-xs font-bold text-[#c0392b] hover:border-[#c0392b] disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-[#d8e3de] bg-white px-3 py-2.5 font-mono text-xs font-bold text-[#c0392b] hover:border-[#c0392b] disabled:opacity-50"
           >
             <Trash2 size={13} />
             Hapus
@@ -216,7 +216,7 @@ export default function QrisSetup({
   // -----------------------------------------------------------------------
   return (
     <div className="space-y-3">
-      <p className="font-mono text-xs text-[#7b7b8e]">
+      <p className="font-mono text-xs text-[#527867]">
         Unggah QRIS statis yang biasa dipajang di meja kasir. Setelah terpasang, nominal
         belanja terisi otomatis dan pelanggan tidak perlu mengetik angka.
       </p>
@@ -237,7 +237,7 @@ export default function QrisSetup({
             type="button"
             onClick={() => fileRef.current?.click()}
             disabled={busy}
-            className="btn-tactile w-full inline-flex items-center justify-center gap-2 rounded-2xl border-2 border-[#232331] bg-[#d9ff57] px-4 py-3 font-mono text-sm font-extrabold shadow-ink-xs disabled:opacity-50"
+            className="w-full inline-flex items-center justify-center gap-2 rounded-2xl bg-[#0b3d2e] hover:bg-[#0e4837] px-4 py-3.5 font-mono text-sm font-bold text-[#c8f53a] shadow-xs disabled:opacity-50 transition-colors"
           >
             {busy ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />}
             {busy ? "Membaca QR..." : "Unggah gambar QRIS"}
@@ -247,7 +247,7 @@ export default function QrisSetup({
             <button
               type="button"
               onClick={() => setModeTempel(true)}
-              className="w-full inline-flex items-center justify-center gap-1.5 font-mono text-[11px] font-bold text-[#7958d8] underline"
+              className="w-full inline-flex items-center justify-center gap-1.5 font-mono text-[11px] font-bold text-[#167052] underline"
             >
               <ClipboardPaste size={12} />
               Atau tempel kode QRIS sebagai teks
@@ -265,7 +265,7 @@ export default function QrisSetup({
                 type="button"
                 onClick={() => periksaPayload(tempel)}
                 disabled={busy || tempel.trim().length < 20}
-                className="w-full rounded-xl border-2 border-[#232331] bg-white px-3 py-2 font-mono text-xs font-bold disabled:opacity-50"
+                className="w-full rounded-xl border border-[#d8e3de] bg-white px-3 py-2 font-mono text-xs font-bold disabled:opacity-50"
               >
                 Periksa kode
               </button>
@@ -282,18 +282,18 @@ export default function QrisSetup({
       */}
       {pratinjau && (
         <div className="space-y-2.5">
-          <div className="rounded-2xl border-2 border-[#232331] bg-white p-4 space-y-1.5">
-            <p className="font-mono text-[11px] font-bold text-[#7b7b8e]">
+          <div className="rounded-2xl border border-[#d8e3de] bg-white p-4 space-y-1.5">
+            <p className="font-mono text-[11px] font-bold text-[#527867]">
               Pastikan ini QRIS toko kamu:
             </p>
             <p className="font-black text-base break-words">
               {pratinjau.merchantName || "(nama tidak terbaca)"}
             </p>
             {pratinjau.merchantCity && (
-              <p className="font-mono text-[11px] text-[#7b7b8e]">{pratinjau.merchantCity}</p>
+              <p className="font-mono text-[11px] text-[#527867]">{pratinjau.merchantCity}</p>
             )}
             {pratinjau.nmid && (
-              <p className="font-mono text-[10.5px] text-[#7b7b8e] break-all">
+              <p className="font-mono text-[10.5px] text-[#527867] break-all">
                 NMID {pratinjau.nmid}
               </p>
             )}
@@ -304,7 +304,7 @@ export default function QrisSetup({
               type="button"
               onClick={simpan}
               disabled={busy}
-              className="btn-tactile flex-1 inline-flex items-center justify-center gap-1.5 rounded-2xl border-2 border-[#232331] bg-[#d9ff57] px-3 py-3 font-mono text-xs font-extrabold shadow-ink-xs disabled:opacity-50"
+              className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-2xl border border-[#d8e3de] bg-[#d9ff57] px-3 py-3 font-mono text-xs font-extrabold shadow-xs disabled:opacity-50"
             >
               {busy ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
               Benar, simpan
@@ -316,7 +316,7 @@ export default function QrisSetup({
                 setTempel("");
               }}
               disabled={busy}
-              className="rounded-2xl border border-[#c9c9d4] px-4 py-3 font-mono text-xs font-bold text-[#7b7b8e] disabled:opacity-50"
+              className="rounded-2xl border border-[#c9c9d4] px-4 py-3 font-mono text-xs font-bold text-[#527867] disabled:opacity-50"
             >
               Batal
             </button>
@@ -338,7 +338,7 @@ export default function QrisSetup({
             setGantiMode(false);
             setGalat(null);
           }}
-          className="w-full font-mono text-[11px] font-bold text-[#7b7b8e] underline"
+          className="w-full font-mono text-[11px] font-bold text-[#527867] underline"
         >
           Kembali
         </button>
