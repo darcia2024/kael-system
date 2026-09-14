@@ -147,7 +147,16 @@ export default function PosClient({
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
-  const [selectedStaffId, setSelectedStaffId] = useState<string>(currentUserId || staffList[0]?.id || "");
+  // Filter out any owner accounts so owner never appears as a cashier
+  const activeCashiers = useMemo(() => {
+    return (staffList || []).filter(
+      (s) => !s.name.toLowerCase().includes("owner")
+    );
+  }, [staffList]);
+
+  const [selectedStaffId, setSelectedStaffId] = useState<string>(
+    activeCashiers.find((s) => s.id === currentUserId)?.id || activeCashiers[0]?.id || ""
+  );
   const [activeCategory, setActiveCategory] = useState<string>("all");
   const [menuSearchQuery, setMenuSearchQuery] = useState("");
   const [showMobileCart, setShowMobileCart] = useState(false);
@@ -500,7 +509,7 @@ export default function PosClient({
       paymentMethod,
       tableNo: selectedTableNo || null,
       serviceType,
-      cashierName: staffList.find((staff) => staff.id === selectedStaffId)?.name || "Kasir",
+      cashierName: activeCashiers.find((staff) => staff.id === selectedStaffId)?.name || activeCashiers[0]?.name || "Kasir",
       createdAt: new Date().toISOString(),
       subtotal: res.data.subtotal,
       discount: res.data.discount,
@@ -785,7 +794,7 @@ export default function PosClient({
     created_at: string;
     items: { name_snapshot: string; qty: number; note?: string | null }[];
   }) => {
-    const activeCashier = staffList.find((staff) => staff.id === selectedStaffId)?.name || "Kasir";
+    const activeCashier = activeCashiers.find((staff) => staff.id === selectedStaffId)?.name || activeCashiers[0]?.name || "Kasir";
     const ticketText = generateKitchenTicketText({
       businessName: business?.name || "KAEL POS",
       orderNo: order.order_no,
@@ -837,7 +846,7 @@ export default function PosClient({
 
     if (!orderData) return;
 
-    const activeCashier = staffList.find((staff) => staff.id === selectedStaffId)?.name || (completedOrder?.cashierName || "Kasir");
+    const activeCashier = activeCashiers.find((staff) => staff.id === selectedStaffId)?.name || activeCashiers[0]?.name || (completedOrder?.cashierName || "Kasir");
     const numTotal = Number(orderData.total) || 0;
 
     const receiptText = generateThreePlyReceiptText({
@@ -1167,12 +1176,12 @@ export default function PosClient({
               </div>
               <div className={`truncate text-[10.5px] sm:text-xs flex items-center gap-1.5 ${isMochiPos ? "text-emerald-200/90 font-medium" : "text-[#75837c]"}`}>
                 <span>{isMochiPos ? "Pesan langsung ·" : ""}</span>
-                {staffList.length > 0 ? (
+                {activeCashiers.length > 0 ? (
                   <button
                     type="button"
                     onClick={() => {
-                      const idx = staffList.findIndex((s) => s.id === selectedStaffId);
-                      const next = staffList[(idx + 1) % staffList.length];
+                      const idx = activeCashiers.findIndex((s) => s.id === selectedStaffId);
+                      const next = activeCashiers[(idx + 1) % activeCashiers.length];
                       if (next) setSelectedStaffId(next.id);
                     }}
                     className={`inline-flex items-center gap-1 font-bold underline decoration-dotted transition-colors ${
@@ -1181,7 +1190,7 @@ export default function PosClient({
                     title="Klik untuk ganti staf kasir yang bertugas"
                   >
                     <Users size={11} />
-                    <span>{staffList.find((staff) => staff.id === selectedStaffId)?.name || "Staf Toko"} ⇄</span>
+                    <span>{activeCashiers.find((staff) => staff.id === selectedStaffId)?.name || activeCashiers[0]?.name || "Staf Kasir"} ⇄</span>
                   </button>
                 ) : (
                   <span>{staffList.find((staff) => staff.id === selectedStaffId)?.name || "Kasir"}</span>
@@ -1788,18 +1797,18 @@ export default function PosClient({
                 </div>
               </div>
 
-              {/* Staf Kasir yang Melayani (Fleksibel: Siapapun Bisa Jadi Kasir) */}
-              {staffList.length > 0 && (
+              {/* Staf Kasir yang Melayani */}
+              {activeCashiers.length > 0 && (
                 <div className="space-y-1 font-mono">
                   <div className="flex items-center justify-between">
                     <label className={`block font-bold flex items-center gap-1.5 ${isMochiPos ? "text-[#0b3d2e]" : "text-[#232331]"}`}>
                       <Users size={12} />
-                      <span>Kasir / Staf yang Melayani:</span>
+                      <span>Kasir yang Bertugas:</span>
                     </label>
-                    <span className="text-[10px] text-[#718078]">Pilih nama staf</span>
+                    <span className="text-[10px] text-[#718078]">Pilih kasir</span>
                   </div>
                   <div className="flex flex-wrap gap-1.5 pt-0.5">
-                    {staffList.map((st) => (
+                    {activeCashiers.map((st) => (
                       <button
                         key={st.id}
                         type="button"

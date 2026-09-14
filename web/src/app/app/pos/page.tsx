@@ -37,7 +37,7 @@ export default async function PosPage() {
       activeShift={activeShift}
       pendingQrOrders={pendingQrOrders}
       staffList={users
-        .filter((u) => u.is_active)
+        .filter((u) => u.is_active && u.role !== "owner" && !u.name.toLowerCase().includes("owner"))
         .map((u) => ({ id: u.id, name: u.name }))}
       currentUserId={session.userId}
       userRole={session.role === "owner" ? "owner" : "staff"}
