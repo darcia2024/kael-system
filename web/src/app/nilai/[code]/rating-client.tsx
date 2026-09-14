@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Star, Check, ExternalLink, Loader2, MessageSquare } from "lucide-react";
+import { Star, Check, ExternalLink, Loader2, MessageSquare, Sparkles } from "lucide-react";
 
 import { BusinessMark } from "@/components/business-mark";
 import { brandSurface, normalizeBrandColor } from "@/lib/branding";
@@ -12,9 +12,9 @@ import { FEEDBACK_REASONS, type FeedbackReasonCode } from "@/lib/types";
  * Empat layar dalam satu halaman.
  *
  * `bintang`  - lima bintang, belum ada yang dipilih.
- * `apresiasi` - apresiasi untuk rating 4-5, dengan pilihan Google yang netral.
- * `keluhan`  - masukan privat yang dibaca pemilik usaha.
- * `selesai`  - ucapan terima kasih dan pilihan Google setelah masukan terkirim.
+ * `apresiasi` - apresiasi untuk rating 4-5, dengan auto redirect ke Google.
+ * `keluhan`  - masukan privat yang langsung masuk ke Dashboard Owner.
+ * `selesai`  - ucapan terima kasih setelah keluhan terkirim ke owner.
  */
 type Layar = "bintang" | "apresiasi" | "keluhan" | "selesai";
 
@@ -62,8 +62,21 @@ export default function RatingClient({
     }
 
     setIdPenilaian(res.data.feedbackId);
-    setUrlGoogle(res.data.reviewUrl);
-    setLayar(nilai <= 3 ? "keluhan" : "apresiasi");
+    const googleLink = res.data.reviewUrl;
+    setUrlGoogle(googleLink);
+
+    if (nilai >= 4) {
+      // Rating 4-5: Auto direct ke Google Review!
+      setLayar("apresiasi");
+      if (googleLink) {
+        setTimeout(() => {
+          window.location.href = googleLink;
+        }, 600);
+      }
+    } else {
+      // Rating 1-3: Auto direct ke Dashboard Owner (form keluhan privat)
+      setLayar("keluhan");
+    }
   };
 
   /** Melengkapi baris yang sudah tersimpan, bukan menambah baris baru. */
@@ -141,52 +154,51 @@ export default function RatingClient({
         )}
 
         {layar === "apresiasi" && (
-          <div className="mt-8 text-center">
-            <p className="text-center text-sm font-bold text-[#66667a]">
-              Makasih banyak. Senang pengalamanmu di {businessName} menyenangkan.
-            </p>
-            <p className="mt-2 text-sm leading-relaxed text-[#66667a]">
-              Kamu boleh membagikan pengalamanmu di Google.
-            </p>
+          <div className="mt-8 text-center space-y-4">
+            <div
+              className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl border-2 border-[#232331] shadow-ink-xs animate-bounce"
+              style={tombolUtama}
+            >
+              <Sparkles size={32} />
+            </div>
+            <div>
+              <p className="text-xl font-black text-[#232331]">
+                Terima kasih atas {bintang} bintangnya! ✨
+              </p>
+              <p className="mt-1 text-sm text-[#66667a]">
+                Senang pengalamanmu menyenangkan. Sedang mengalihkan kamu ke Google Ulasan...
+              </p>
+            </div>
 
             {urlGoogle ? (
-              <button
-                type="button"
-                onClick={bukaGoogle}
-                style={tombolUtama}
-                className="mt-6 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border-2 border-[#232331] px-4 py-3 text-sm font-black"
-              >
-                <ExternalLink size={17} /> Tulis ulasan di Google
-              </button>
+              <div className="pt-2">
+                <a
+                  href={urlGoogle}
+                  style={tombolUtama}
+                  className="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border-2 border-[#232331] px-4 py-3 text-sm font-black shadow-ink-xs transition-transform active:scale-95"
+                >
+                  <ExternalLink size={17} /> Buka Google Ulasan Sekarang →
+                </a>
+              </div>
             ) : (
-              <p className="mt-3 rounded-xl border border-[#dedee8] bg-white p-4 text-sm">
-                Tautan Google untuk tempat ini belum tersedia.
+              <p className="mt-3 rounded-xl border border-[#dedee8] bg-white p-4 text-xs text-[#7b7b8e]">
+                Tautan Google Ulasan toko sedang disiapkan.
               </p>
             )}
-            <button
-              type="button"
-              onClick={() => setLayar("keluhan")}
-              className="mt-3 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border-2 border-[#232331] bg-white px-4 py-3 text-sm font-black"
-            >
-              <MessageSquare size={17} /> Kirim masukan ke pemilik
-            </button>
-            <p className="mt-4 text-[11px] leading-relaxed text-[#7b7b8e]">
-              Ulasan Google bersifat publik. Masukan ke pemilik hanya masuk ke dashboard usaha ini.
-            </p>
           </div>
         )}
 
         {layar === "keluhan" && (
           <div className="mt-8">
-            <p className="text-center text-sm font-bold text-[#66667a]">
+            <p className="text-center text-sm font-black text-[#c2410c]">
               Wah, kayaknya ada yang belum sesuai.
             </p>
-            <p className="mt-2 text-center text-sm leading-relaxed text-[#66667a]">
-              Ceritain ke kami supaya tim {businessName} bisa memperbaikinya.
+            <p className="mt-1.5 text-center text-sm leading-relaxed text-[#66667a]">
+              Ceritakan ke kami agar tim <strong>{businessName}</strong> bisa langsung mengevaluasi dan memperbaikinya.
             </p>
 
             <p className="mt-5 font-mono text-[11px] font-bold uppercase text-[#7b7b8e]">
-              Bagian mana
+              Bagian mana yang perlu dievaluasi?
             </p>
             <div className="mt-2 flex flex-wrap gap-2">
               {FEEDBACK_REASONS.map((r) => {
@@ -197,8 +209,8 @@ export default function RatingClient({
                     type="button"
                     onClick={() => setAlasan(aktif ? null : r.key)}
                     style={aktif ? tombolUtama : undefined}
-                    className={`inline-flex items-center gap-1.5 rounded-full border-2 border-[#232331] px-3 py-1.5 text-xs font-bold ${
-                      aktif ? "" : "bg-white"
+                    className={`inline-flex items-center gap-1.5 rounded-full border-2 border-[#232331] px-3.5 py-1.5 text-xs font-bold transition-all ${
+                      aktif ? "shadow-ink-xs" : "bg-white text-[#525266] hover:border-[#7958d8]"
                     }`}
                   >
                     {aktif && <Check size={13} />}
@@ -209,12 +221,12 @@ export default function RatingClient({
             </div>
 
             <label className="mt-5 block font-mono text-[11px] font-bold uppercase text-[#7b7b8e]">
-              Ceritanya
+              Detail Keluhan / Masukan
               <textarea
                 value={komentar}
                 onChange={(e) => setKomentar(e.target.value.slice(0, 500))}
                 rows={4}
-                placeholder="Masukan ini hanya masuk ke dashboard pemilik tempat ini."
+                placeholder="Tulis kritik atau saranmu di sini. Pesan ini dikirim secara privat langsung ke Dashboard Owner..."
                 className="mt-1.5 w-full rounded-xl border-2 border-[#232331] p-3 font-sans text-sm font-normal normal-case text-[#232331] focus:outline-none"
               />
             </label>
@@ -224,56 +236,36 @@ export default function RatingClient({
               onClick={kirimKeluhan}
               disabled={sedangKirim}
               style={tombolUtama}
-              className="mt-5 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border-2 border-[#232331] px-4 py-3 text-sm font-black disabled:opacity-60"
+              className="mt-5 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border-2 border-[#232331] px-4 py-3 text-sm font-black disabled:opacity-60 shadow-ink-xs transition-transform active:scale-95"
             >
               {sedangKirim && <Loader2 size={16} className="animate-spin" />}
-              Kirim ke pemilik
+              Kirim Masukan ke Dashboard Owner
             </button>
 
-            {urlGoogle && (
-              <button
-                type="button"
-                onClick={bukaGoogle}
-                className="mt-3 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border-2 border-[#232331] bg-white px-4 py-3 text-sm font-black"
-              >
-                <ExternalLink size={17} /> Bagikan pengalaman di Google
-              </button>
-            )}
-            <p className="mt-3 text-center text-[11px] leading-relaxed text-[#7b7b8e]">
-              Masukan privat hanya masuk ke dashboard pemilik. Ulasan Google bersifat publik.
+            <p className="mt-3 text-center text-[10.5px] leading-relaxed text-[#7b7b8e]">
+              🔒 <strong>Privat &amp; Terlindungi:</strong> Masukan ini hanya masuk ke Dashboard Owner toko dan tidak akan dipublikasikan ke Google.
             </p>
           </div>
         )}
 
         {layar === "selesai" && (
-          <div className="mt-10 text-center">
+          <div className="mt-10 text-center space-y-3">
             <div
-              className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border-2 border-[#232331]"
-              style={tombolUtama}
+              className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border-2 border-[#232331] shadow-ink-xs bg-emerald-100 text-emerald-800"
             >
-              <Check size={26} />
+              <Check size={28} />
             </div>
-            <p className="mt-4 text-lg font-black">Terima kasih sudah kasih masukan.</p>
-            <p className="mt-2 text-sm leading-relaxed text-[#66667a]">
-              Tim {businessName} akan menggunakan masukanmu untuk memperbaiki layanan.
+            <p className="mt-4 text-lg font-black text-[#232331]">Masukan Berhasil Diteruskan!</p>
+            <p className="text-sm leading-relaxed text-[#66667a]">
+              Keluhan dan saranmu telah masuk langsung ke <strong>Dashboard Owner {businessName}</strong> untuk segera kami pelajari dan tindak lanjuti secara privat.
             </p>
-            {urlGoogle && (
-              <button
-                type="button"
-                onClick={bukaGoogle}
-                style={tombolUtama}
-                className="mt-6 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border-2 border-[#232331] px-4 py-3 text-sm font-black"
-              >
-                <ExternalLink size={17} /> Bagikan pengalaman di Google
-              </button>
-            )}
-            <p className="mt-3 text-[11px] leading-relaxed text-[#7b7b8e]">
-              Ulasan Google bersifat publik dan sepenuhnya pilihanmu.
-            </p>
+            <div className="mt-4 rounded-xl border border-emerald-300 bg-emerald-50/80 p-3 text-xs text-emerald-900 font-medium">
+              Terima kasih telah membantu kami menjadi lebih baik setiap hari! 🙏
+            </div>
           </div>
         )}
 
-        <p className="mt-10 text-center text-xs text-[#7b7b8e]">Powered by KAEL Review</p>
+        <p className="mt-10 text-center text-xs text-[#7b7b8e]">Powered by KAEL Review · Smart Feedback Shield</p>
       </section>
     </main>
   );

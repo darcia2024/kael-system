@@ -11,23 +11,31 @@ import {
   Clock3,
   Coffee,
   CreditCard,
+  Crown,
+  ExternalLink,
   Flame,
+  HeartHandshake,
   LayoutDashboard,
   Lightbulb,
   Loader2,
   ReceiptText,
   RefreshCw,
+  ShieldCheck,
   ShoppingBag,
   Smartphone,
+  Sparkles,
+  Star,
   Timer,
   TrendingDown,
   Trophy,
+  Users,
   UtensilsCrossed,
   WalletCards,
   QrCode,
 } from "lucide-react";
 
-import type { Business, Order } from "@/lib/types";
+import type { Business, Order, FeedbackSummary, FeedbackRow, MemberGrowthSummary } from "@/lib/types";
+import { FEEDBACK_REASONS } from "@/lib/types";
 import { formatBusinessDateTime, formatRupiah } from "@/lib/formatters";
 import { PAYMENT_STATUS_LABEL, serviceTypeLabel } from "@/lib/pos-engine";
 import { retryOrderSyncAction } from "@/lib/actions";
@@ -98,11 +106,17 @@ export default function OwnerDashboardClient({
   business,
   dashboard,
   pendingSync,
+  feedbackSummary,
+  recentFeedback,
+  loyaltySummary,
   themeClassName = "",
 }: {
   business: Business | null;
   dashboard: Dashboard;
   pendingSync: { id: string; order_no: string; sync_error: string | null }[];
+  feedbackSummary: FeedbackSummary;
+  recentFeedback: FeedbackRow[];
+  loyaltySummary: MemberGrowthSummary;
   themeClassName?: string;
 }) {
   const isMochi = isMochiBusiness(business);
@@ -112,6 +126,24 @@ export default function OwnerDashboardClient({
   const [refreshing, setRefreshing] = useState(false);
   const [showTableQrModal, setShowTableQrModal] = useState(false);
   const [menuPeriod, setMenuPeriod] = useState<"today" | "monthly">("today");
+  const [feedbackFilter, setFeedbackFilter] = useState<"all" | "complaints" | "positive">("all");
+
+  const reasonMap = useMemo(() => {
+    const map = new Map<string, string>();
+    FEEDBACK_REASONS.forEach((r) => map.set(r.key, r.label));
+    return map;
+  }, []);
+
+  const filteredFeedback = useMemo(() => {
+    const list = recentFeedback || [];
+    if (feedbackFilter === "complaints") {
+      return list.filter((f) => f.rating <= 3);
+    }
+    if (feedbackFilter === "positive") {
+      return list.filter((f) => f.rating >= 4);
+    }
+    return list;
+  }, [recentFeedback, feedbackFilter]);
   const maxHourlyRevenue = Math.max(...dashboard.hourlySales.map((item) => item.revenue), 1);
   const totalPayment = dashboard.today.payment.cash + dashboard.today.payment.qris + dashboard.today.payment.transfer;
   const latestSync = new Intl.DateTimeFormat("id-ID", {
@@ -914,6 +946,522 @@ export default function OwnerDashboardClient({
                 Manfaatkan menu <strong>Paling Laku</strong> sebagai daya tarik utama (traffic puller) dan gandengkan dengan menu <strong>Kurang Laku</strong> dalam paket promo bundling atau rekomendasi kasir (upselling). Bila menu tetap 0 penjualan selama 30 hari berturut-turut, pertimbangkan untuk menonaktifkan atau memperbarui resep.
               </p>
             </div>
+          </div>
+        </section>
+
+        {/* Laporan Review & Kepuasan Pelanggan (Smart Review Routing) */}
+        <section
+          className={
+            isMochi
+              ? "rounded-3xl border border-[#d8e3de] bg-white p-5 shadow-[0_4px_20px_rgba(11,61,46,0.04)] sm:p-6"
+              : "border-2 border-[#232331] bg-white p-4 shadow-ink-md sm:p-5"
+          }
+        >
+          <div
+            className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 ${
+              isMochi ? "border-b border-[#e5ece8]" : "border-b border-[#dedee8]"
+            }`}
+          >
+            <div>
+              <div className="flex items-center gap-2">
+                <h2
+                  className={`text-sm font-black sm:text-base ${
+                    isMochi ? "text-[#0b3d2e]" : "text-[#232331]"
+                  }`}
+                >
+                  Laporan Review &amp; Kepuasan Pelanggan
+                </h2>
+                <span
+                  className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 font-mono text-[9px] font-black ${
+                    isMochi
+                      ? "bg-[#c8f53a] text-[#073829]"
+                      : "bg-[#dcfce7] text-[#15803d]"
+                  }`}
+                >
+                  <ShieldCheck size={12} /> SMART ROUTING AKTIF
+                </span>
+              </div>
+              <p className={`mt-1 text-[11px] leading-relaxed max-w-2xl ${isMochi ? "text-[#637970]" : "text-[#7b7b8e]"}`}>
+                ⭐ <strong>Bintang 4–5:</strong> Otomatis dialihkan ke Google Review untuk mendongkrak reputasi publik toko.{" "}
+                🔒 <strong>Bintang 1–3:</strong> Disaring privat ke dashboard ini agar komplain pelanggan cepat tertangani tanpa merusak rating publik.
+              </p>
+            </div>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <Link
+                href="/app/pos/reports"
+                className={`inline-flex items-center gap-1 font-mono text-[10px] font-bold ${
+                  isMochi ? "text-[#167052] hover:text-[#0b3d2e]" : "text-[#6d4cc4]"
+                }`}
+              >
+                Audit Laporan Lengkap <ChevronRight size={13} />
+              </Link>
+            </div>
+          </div>
+
+          {/* Review KPI Cards */}
+          <div className="mt-4 grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+            {/* Card 1: Rata-rata Rating */}
+            <div
+              className={`p-3.5 sm:p-4 ${
+                isMochi
+                  ? "rounded-2xl border border-[#e0ebe5] bg-[#fbfdfc]"
+                  : "border border-[#dedee8] bg-[#fcfcfe]"
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-[#7b7b8e]">
+                  Skor Kepuasan
+                </span>
+                <span className="flex items-center gap-1 text-amber-500">
+                  <Star size={14} className="fill-amber-400 text-amber-400" />
+                </span>
+              </div>
+              <div className="mt-2 flex items-baseline gap-2">
+                <span
+                  className={`font-mono text-2xl font-black ${
+                    isMochi ? "text-[#0b3d2e]" : "text-[#232331]"
+                  }`}
+                >
+                  {feedbackSummary?.avgRating > 0 ? feedbackSummary.avgRating.toFixed(1) : "5.0"}
+                </span>
+                <span className="font-mono text-xs text-[#7b7b8e]">/ 5.0</span>
+              </div>
+              <p className="mt-1 text-[10.5px] text-[#637970]">
+                Total <strong>{feedbackSummary?.total ?? 0}</strong> penilaian masuk
+              </p>
+            </div>
+
+            {/* Card 2: Ulasan Positif Bintang 4-5 (Direct Google) */}
+            <div
+              className={`p-3.5 sm:p-4 ${
+                isMochi
+                  ? "rounded-2xl border border-emerald-200 bg-[#edf8f3]"
+                  : "border border-[#86efac] bg-[#f0fdf4]"
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-emerald-800">
+                  Direct ke Google Review (⭐ 4–5)
+                </span>
+                <Sparkles size={15} className="text-emerald-600" />
+              </div>
+              <div className="mt-2 flex items-baseline gap-2">
+                <span className="font-mono text-2xl font-black text-emerald-900">
+                  {Math.max(0, (feedbackSummary?.total ?? 0) - (feedbackSummary?.lowCount ?? 0))}
+                </span>
+                <span className="font-mono text-xs text-emerald-700">ulasan</span>
+              </div>
+              <p className="mt-1 text-[10.5px] text-emerald-800 font-medium">
+                ✓ Otomatis dialihkan ke Google Review
+              </p>
+            </div>
+
+            {/* Card 3: Keluhan Privat Bintang 1-3 (Dilindungi di Dashboard) */}
+            <div
+              className={`p-3.5 sm:p-4 ${
+                (feedbackSummary?.lowCount ?? 0) > 0
+                  ? isMochi
+                    ? "rounded-2xl border border-amber-300 bg-amber-50/90"
+                    : "border border-amber-300 bg-amber-50"
+                  : isMochi
+                  ? "rounded-2xl border border-[#e0ebe5] bg-[#fbfdfc]"
+                  : "border border-[#dedee8] bg-[#fcfcfe]"
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-amber-900">
+                  Masukan Privat (⭐ 1–3)
+                </span>
+                <ShieldCheck size={15} className="text-amber-600" />
+              </div>
+              <div className="mt-2 flex items-baseline gap-2">
+                <span
+                  className={`font-mono text-2xl font-black ${
+                    (feedbackSummary?.lowCount ?? 0) > 0 ? "text-amber-900" : isMochi ? "text-[#0b3d2e]" : "text-[#232331]"
+                  }`}
+                >
+                  {feedbackSummary?.lowCount ?? 0}
+                </span>
+                <span className="font-mono text-xs text-amber-700">keluhan</span>
+              </div>
+              <p className="mt-1 text-[10.5px] text-amber-800 font-medium">
+                🔒 Terlindungi di dashboard (tidak bocor ke Google)
+              </p>
+            </div>
+          </div>
+
+          {/* Breakdown Alasan Keluhan */}
+          {feedbackSummary?.byReason && feedbackSummary.byReason.length > 0 && (
+            <div className="mt-4 pt-3 border-t border-dashed border-[#dedee8]">
+              <p className="font-mono text-[10px] font-bold uppercase tracking-wider text-[#7b7b8e]">
+                Topik yang Sering Dikeluhkan Pelanggan:
+              </p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {feedbackSummary.byReason.map((r) => (
+                  <span
+                    key={r.reason_code}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-bold text-amber-900"
+                  >
+                    <span>{reasonMap.get(r.reason_code) || r.reason_code}</span>
+                    <span className="rounded-full bg-amber-200 px-1.5 py-0.2 font-mono text-[10px]">
+                      {r.count}x
+                    </span>
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Feed Feedback Terbaru */}
+          <div className="mt-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
+              <p
+                className={`font-mono text-xs font-bold uppercase tracking-wider ${
+                  isMochi ? "text-[#0b3d2e]" : "text-[#232331]"
+                }`}
+              >
+                Daftar Masukan &amp; Keluhan Terbaru
+              </p>
+              <div className="flex items-center gap-1 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => setFeedbackFilter("all")}
+                  className={`px-2.5 py-1 text-[10px] font-mono font-bold rounded-lg transition-colors ${
+                    feedbackFilter === "all"
+                      ? isMochi
+                        ? "bg-[#0b3d2e] text-white"
+                        : "bg-[#232331] text-white"
+                      : "bg-[#f0f3f1] text-[#637970] hover:bg-[#e2e8e4]"
+                  }`}
+                >
+                  Semua ({recentFeedback?.length ?? 0})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFeedbackFilter("complaints")}
+                  className={`px-2.5 py-1 text-[10px] font-mono font-bold rounded-lg transition-colors ${
+                    feedbackFilter === "complaints"
+                      ? "bg-amber-600 text-white"
+                      : "bg-amber-50 text-amber-800 hover:bg-amber-100"
+                  }`}
+                >
+                  Keluhan Bintang 1–3 ({feedbackSummary?.lowCount ?? 0})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFeedbackFilter("positive")}
+                  className={`px-2.5 py-1 text-[10px] font-mono font-bold rounded-lg transition-colors ${
+                    feedbackFilter === "positive"
+                      ? "bg-emerald-700 text-white"
+                      : "bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
+                  }`}
+                >
+                  Bintang 4–5 ({Math.max(0, (feedbackSummary?.total ?? 0) - (feedbackSummary?.lowCount ?? 0))})
+                </button>
+              </div>
+            </div>
+
+            {filteredFeedback.length > 0 ? (
+              <div className="space-y-2.5 max-h-[420px] overflow-y-auto pr-1">
+                {filteredFeedback.map((item) => {
+                  const isLow = item.rating <= 3;
+                  return (
+                    <div
+                      key={item.id}
+                      className={`p-3.5 sm:p-4 rounded-2xl border transition-colors ${
+                        isLow
+                          ? isMochi
+                            ? "border-amber-200/90 bg-[#fffdf9]"
+                            : "border-amber-200 bg-[#fffcf7]"
+                          : isMochi
+                          ? "border-[#e0ebe5] bg-[#fbfdfc]"
+                          : "border-[#dedee8] bg-[#fcfcfe]"
+                      }`}
+                    >
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {/* Stars */}
+                          <div className="flex items-center gap-0.5">
+                            {[1, 2, 3, 4, 5].map((s) => (
+                              <Star
+                                key={s}
+                                size={14}
+                                className={
+                                  s <= item.rating
+                                    ? isLow
+                                      ? "fill-amber-400 text-amber-400"
+                                      : "fill-emerald-500 text-emerald-500"
+                                    : "text-[#dedee8]"
+                                }
+                              />
+                            ))}
+                          </div>
+                          <span className="font-mono text-xs font-bold text-[#232331]">
+                            {item.rating}/5
+                          </span>
+
+                          {/* Routing Badge */}
+                          {isLow ? (
+                            <span className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-100 px-2 py-0.5 font-mono text-[9px] font-bold text-amber-900">
+                              <ShieldCheck size={11} /> Keluhan Privat (Hanya Owner)
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 rounded-full border border-emerald-300 bg-emerald-100 px-2 py-0.5 font-mono text-[9px] font-bold text-emerald-900">
+                              <ExternalLink size={11} /> Auto Direct Google Review
+                            </span>
+                          )}
+
+                          {item.reason_code && (
+                            <span className="rounded-full bg-rose-50 border border-rose-200 px-2 py-0.5 text-[9px] font-bold text-rose-800">
+                              Isu: {reasonMap.get(item.reason_code) || item.reason_code}
+                            </span>
+                          )}
+                        </div>
+
+                        <span className="font-mono text-[10px] text-[#7b7b8e]">
+                          {formatBusinessDateTime(item.created_at)}
+                        </span>
+                      </div>
+
+                      {/* Comment text */}
+                      {item.comment ? (
+                        <div className="mt-2.5 rounded-xl border border-[#eceeed] bg-white p-3 text-xs text-[#232331] leading-relaxed">
+                          <p className="italic font-medium">"{item.comment}"</p>
+                        </div>
+                      ) : (
+                        <p className="mt-1.5 text-[11px] text-[#7b7b8e] italic">
+                          (Tanpa komentar tambahan)
+                        </p>
+                      )}
+
+                      {/* Origin & Metadata */}
+                      <div className="mt-2.5 flex items-center gap-3 text-[10px] text-[#637970] font-mono flex-wrap">
+                        <span>
+                          Pelanggan: <strong>{item.customer_name || "Pelanggan Tanpa Nama"}</strong>
+                        </span>
+                        {item.card_label && (
+                          <span>
+                            · Meja / Kartu: <strong>{item.card_label}</strong>
+                          </span>
+                        )}
+                        {item.order_no && (
+                          <span>
+                            · No. Pesanan: <strong>#{item.order_no}</strong>
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div
+                className={`py-8 text-center rounded-2xl border border-dashed ${
+                  isMochi ? "border-[#d8e3de] bg-[#fbfdfc]" : "border-[#dedee8] bg-[#fcfcfe]"
+                }`}
+              >
+                <ShieldCheck
+                  size={32}
+                  className={`mx-auto mb-2 ${isMochi ? "text-[#167052]" : "text-[#7958d8]"}`}
+                />
+                <p className="text-xs font-bold text-[#232331]">
+                  Belum ada ulasan atau keluhan yang masuk.
+                </p>
+                <p className="mt-1 text-[11px] text-[#7b7b8e] max-w-md mx-auto">
+                  Pelanggan yang menilai bintang 4–5 otomatis diarahkan ke Google Review, sementara bintang 1–3 akan ditampung di sini secara privat.
+                </p>
+              </div>
+            )}
+          </div>
+        </section>
+
+        {/* Laporan Loyalty & Retensi Member */}
+        <section
+          className={
+            isMochi
+              ? "rounded-3xl border border-[#d8e3de] bg-white p-5 shadow-[0_4px_20px_rgba(11,61,46,0.04)] sm:p-6"
+              : "border-2 border-[#232331] bg-white p-4 shadow-ink-md sm:p-5"
+          }
+        >
+          <div
+            className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 ${
+              isMochi ? "border-b border-[#e5ece8]" : "border-b border-[#dedee8]"
+            }`}
+          >
+            <div>
+              <div className="flex items-center gap-2">
+                <h2
+                  className={`text-sm font-black sm:text-base ${
+                    isMochi ? "text-[#0b3d2e]" : "text-[#232331]"
+                  }`}
+                >
+                  Laporan Loyalty &amp; Retensi Member
+                </h2>
+                <span
+                  className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 font-mono text-[9px] font-black ${
+                    isMochi
+                      ? "bg-[#edf8f3] text-[#167052]"
+                      : "bg-[#ddd9ff] text-[#6d4cc4]"
+                  }`}
+                >
+                  <Crown size={12} /> 30 HARI TERAKHIR
+                </span>
+              </div>
+              <p className={`mt-0.5 text-[11px] ${isMochi ? "text-[#637970]" : "text-[#7b7b8e]"}`}>
+                Pantau pertumbuhan member aktif, repeat visit, dan omzet belanja pelanggan setia.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <Link
+                href="/app/loyalty/analytics"
+                className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 font-mono text-xs font-bold transition-transform active:scale-95 ${
+                  isMochi
+                    ? "bg-[#c8f53a] text-[#073829] shadow-sm hover:bg-[#bbf028]"
+                    : "bg-[#232331] text-white"
+                }`}
+              >
+                Analitik Lengkap <ChevronRight size={13} />
+              </Link>
+            </div>
+          </div>
+
+          {/* Loyalty KPI Grid */}
+          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            {/* Card 1: Member Aktif */}
+            <div
+              className={`p-3.5 sm:p-4 ${
+                isMochi
+                  ? "rounded-2xl border border-[#e0ebe5] bg-[#fbfdfc]"
+                  : "border border-[#dedee8] bg-[#fcfcfe]"
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-[#7b7b8e]">
+                  Member Aktif
+                </span>
+                <Users size={15} className={isMochi ? "text-[#167052]" : "text-[#6d4cc4]"} />
+              </div>
+              <p
+                className={`mt-2 font-mono text-xl font-black sm:text-2xl ${
+                  isMochi ? "text-[#0b3d2e]" : "text-[#232331]"
+                }`}
+              >
+                {loyaltySummary?.activeMembers ?? 0}
+              </p>
+              <p className="mt-0.5 text-[10px] text-[#7b7b8e]">
+                {loyaltySummary?.activeMembersPrior !== undefined
+                  ? `Periode lalu: ${loyaltySummary.activeMembersPrior} orang`
+                  : "Transaksi dalam 30 hari"}
+              </p>
+            </div>
+
+            {/* Card 2: Pelanggan Berulang (Repeat) */}
+            <div
+              className={`p-3.5 sm:p-4 ${
+                isMochi
+                  ? "rounded-2xl border border-[#e0ebe5] bg-[#fbfdfc]"
+                  : "border border-[#dedee8] bg-[#fcfcfe]"
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-[#7b7b8e]">
+                  Repeat Order
+                </span>
+                <RefreshCw size={15} className="text-emerald-600" />
+              </div>
+              <p className="mt-2 font-mono text-xl font-black sm:text-2xl text-emerald-700">
+                {loyaltySummary?.repeatCustomers ?? 0}
+              </p>
+              <p className="mt-0.5 text-[10px] text-[#7b7b8e]">
+                Belanja &ge; 2 kali di toko
+              </p>
+            </div>
+
+            {/* Card 3: Omzet Member */}
+            <div
+              className={`p-3.5 sm:p-4 ${
+                isMochi
+                  ? "rounded-2xl border border-[#e0ebe5] bg-[#fbfdfc]"
+                  : "border border-[#dedee8] bg-[#fcfcfe]"
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-[#7b7b8e]">
+                  Omzet Member
+                </span>
+                <CircleDollarSign size={15} className={isMochi ? "text-[#167052]" : "text-[#15803d]"} />
+              </div>
+              <p
+                className={`mt-2 font-mono text-base font-black sm:text-lg truncate ${
+                  isMochi ? "text-[#167052]" : "text-[#15803d]"
+                }`}
+              >
+                {formatRupiah(loyaltySummary?.revenue ?? 0)}
+              </p>
+              <p className="mt-0.5 text-[10px] text-[#7b7b8e]">
+                Kontribusi 30 hari terakhir
+              </p>
+            </div>
+
+            {/* Card 4: Member Kembali (Returning) */}
+            <div
+              className={`p-3.5 sm:p-4 ${
+                isMochi
+                  ? "rounded-2xl border border-[#e0ebe5] bg-[#fbfdfc]"
+                  : "border border-[#dedee8] bg-[#fcfcfe]"
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-[#7b7b8e]">
+                  Member Kembali
+                </span>
+                <HeartHandshake size={15} className="text-rose-500" />
+              </div>
+              <p
+                className={`mt-2 font-mono text-xl font-black sm:text-2xl ${
+                  isMochi ? "text-[#0b3d2e]" : "text-[#232331]"
+                }`}
+              >
+                {loyaltySummary?.returningMembers ?? 0}
+              </p>
+              <p className="mt-0.5 text-[10px] text-[#7b7b8e]">
+                Member lama yang aktif lagi
+              </p>
+            </div>
+          </div>
+
+          {/* Action Links */}
+          <div className="mt-4 pt-3 border-t border-[#edf4f0] flex flex-wrap gap-2">
+            <Link
+              href="/app/loyalty"
+              className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 font-mono text-xs font-bold transition-colors ${
+                isMochi
+                  ? "border-[#d8e3de] bg-[#fbfdfc] text-[#0b3d2e] hover:bg-[#edf8f3]"
+                  : "border-[#dedee8] bg-white text-[#232331] hover:bg-[#f7f6fc]"
+              }`}
+            >
+              <Users size={13} /> Kelola Database Member
+            </Link>
+            <Link
+              href="/app/loyalty/kartu"
+              className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 font-mono text-xs font-bold transition-colors ${
+                isMochi
+                  ? "border-[#d8e3de] bg-[#fbfdfc] text-[#0b3d2e] hover:bg-[#edf8f3]"
+                  : "border-[#dedee8] bg-white text-[#232331] hover:bg-[#f7f6fc]"
+              }`}
+            >
+              <QrCode size={13} /> Cetak Kartu Fisik &amp; QR Meja
+            </Link>
+            <Link
+              href="/app/loyalty/analytics"
+              className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 font-mono text-xs font-bold transition-colors ${
+                isMochi
+                  ? "border-emerald-300 bg-[#edf8f3] text-[#167052] hover:bg-[#e2f4eb]"
+                  : "border-[#ddd9ff] bg-[#f5f3ff] text-[#6d4cc4]"
+              }`}
+            >
+              <TrendingDown size={13} className="rotate-180" /> Analitik Pertumbuhan &amp; Retensi
+            </Link>
           </div>
         </section>
 

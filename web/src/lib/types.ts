@@ -717,6 +717,15 @@ export interface FeedbackRow extends MemberFeedback {
   card_label: string | null;
 }
 
+export interface MemberGrowthSummary {
+  activeMembers: number;
+  activeMembersPrior: number;
+  repeatCustomers: number;
+  returningMembers: number;
+  revenue: number;
+  revenuePrior: number;
+}
+
 // -----------------------------------------------------------------------------
 // INITIAL SEED DATA
 // -----------------------------------------------------------------------------

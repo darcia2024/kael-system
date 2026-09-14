@@ -498,6 +498,133 @@ export default function PosOwnerReportsPage({
           </div>
         </div>
 
+      
+        {/* LAPORAN REVIEW & AUDIT KEPUASAN PELANGGAN (SMART ROUTING) */}
+        <div className="rounded-2xl sm:rounded-3xl border-2 border-[#232331] bg-white p-4 sm:p-6 shadow-ink space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#dedee8] pb-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="font-black text-sm sm:text-base text-[#232331]">
+                  Laporan Review &amp; Audit Kepuasan Pelanggan
+                </h2>
+                <span className="inline-flex items-center gap-1 rounded-full bg-[#dcfce7] px-2.5 py-0.5 font-mono text-[9px] font-black text-[#15803d]">
+                  <CheckCircle2 size={12} /> SMART ROUTING
+                </span>
+              </div>
+              <p className="mt-1 text-xs text-[#7b7b8e] max-w-xl">
+                ⭐ Bintang 4–5 otomatis dialihkan ke Google Review publik. 🔒 Bintang 1–3 disaring privat ke dashboard ini.
+              </p>
+            </div>
+          </div>
+
+          {/* Stat Ringkas */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="rounded-xl border border-[#dedee8] bg-[#fcfcfe] p-3.5">
+              <div className="flex items-center justify-between">
+                <span className="font-mono text-[10px] font-bold uppercase text-[#7b7b8e]">Skor Kepuasan</span>
+                <Star size={14} className="fill-amber-400 text-amber-400" />
+              </div>
+              <div className="mt-2 flex items-baseline gap-1">
+                <span className="font-mono text-2xl font-black text-[#232331]">
+                  {feedbackSummary?.avgRating > 0 ? feedbackSummary.avgRating.toFixed(1) : "5.0"}
+                </span>
+                <span className="font-mono text-xs text-[#7b7b8e]">/ 5.0</span>
+              </div>
+              <p className="mt-0.5 text-[10px] text-[#7b7b8e]">Dari {feedbackSummary?.total ?? 0} penilaian</p>
+            </div>
+
+            <div className="rounded-xl border border-[#86efac] bg-[#f0fdf4] p-3.5">
+              <div className="flex items-center justify-between">
+                <span className="font-mono text-[10px] font-bold uppercase text-emerald-800">Direct ke Google (⭐ 4-5)</span>
+                <Sparkles size={14} className="text-emerald-600" />
+              </div>
+              <div className="mt-2 flex items-baseline gap-1">
+                <span className="font-mono text-2xl font-black text-emerald-900">
+                  {Math.max(0, (feedbackSummary?.total ?? 0) - (feedbackSummary?.lowCount ?? 0))}
+                </span>
+                <span className="font-mono text-xs text-emerald-700">ulasan</span>
+              </div>
+              <p className="mt-0.5 text-[10px] text-emerald-700 font-medium">Otomatis dialihkan ke Google Review</p>
+            </div>
+
+            <div className="rounded-xl border border-amber-300 bg-amber-50 p-3.5">
+              <div className="flex items-center justify-between">
+                <span className="font-mono text-[10px] font-bold uppercase text-amber-900">Keluhan Privat (⭐ 1-3)</span>
+                <AlertTriangle size={14} className="text-amber-600" />
+              </div>
+              <div className="mt-2 flex items-baseline gap-1">
+                <span className="font-mono text-2xl font-black text-amber-900">
+                  {feedbackSummary?.lowCount ?? 0}
+                </span>
+                <span className="font-mono text-xs text-amber-700">keluhan</span>
+              </div>
+              <p className="mt-0.5 text-[10px] text-amber-800 font-medium">Terlindungi di dashboard (tidak bocor ke publik)</p>
+            </div>
+          </div>
+
+          {/* Tabel / Daftar Feedback */}
+          {recentFeedback && recentFeedback.length > 0 ? (
+            <div className="overflow-x-auto rounded-xl border border-[#dedee8]">
+              <table className="w-full text-left font-mono text-xs">
+                <thead className="border-b border-[#dedee8] bg-[#f7f6fc] text-[10px] font-bold uppercase text-[#7b7b8e]">
+                  <tr>
+                    <th className="py-2.5 px-3">Rating</th>
+                    <th className="py-2.5 px-3">Tujuan / Status</th>
+                    <th className="py-2.5 px-3">Topik Evaluasi</th>
+                    <th className="py-2.5 px-3">Komentar / Masukan</th>
+                    <th className="py-2.5 px-3">Pelanggan / Titik</th>
+                    <th className="py-2.5 px-3 text-right">Waktu</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#dedee8] bg-white">
+                  {recentFeedback.map((f) => {
+                    const isLow = f.rating <= 3;
+                    return (
+                      <tr key={f.id} className="hover:bg-[#fcfcfe]">
+                        <td className="py-3 px-3 font-black text-[#232331]">
+                          <span className="inline-flex items-center gap-1">
+                            <Star size={13} className={isLow ? "fill-amber-400 text-amber-400" : "fill-emerald-500 text-emerald-500"} />
+                            {f.rating}/5
+                          </span>
+                        </td>
+                        <td className="py-3 px-3">
+                          {isLow ? (
+                            <span className="inline-block rounded-full border border-amber-300 bg-amber-100 px-2 py-0.5 text-[9px] font-bold text-amber-900">
+                              🔒 Privat (Dashboard)
+                            </span>
+                          ) : (
+                            <span className="inline-block rounded-full border border-emerald-300 bg-emerald-100 px-2 py-0.5 text-[9px] font-bold text-emerald-900">
+                              ⭐ Direct Google
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-3 px-3 text-[#232331] font-bold">
+                          {f.reason_code ? f.reason_code.toUpperCase() : "-"}
+                        </td>
+                        <td className="py-3 px-3 font-sans text-xs text-[#232331] max-w-xs">
+                          {f.comment ? `"${f.comment}"` : <span className="text-[#7b7b8e] italic">(Tanpa pesan)</span>}
+                        </td>
+                        <td className="py-3 px-3 text-[11px] text-[#7b7b8e]">
+                          <div>{f.customer_name || "Pelanggan"}</div>
+                          {f.card_label && <div className="text-[10px] text-[#637970]">{f.card_label}</div>}
+                          {f.order_no && <div className="text-[10px]">Order #{f.order_no}</div>}
+                        </td>
+                        <td className="py-3 px-3 text-right text-[11px] text-[#7b7b8e]">
+                          {formatBusinessDateTime(f.created_at)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="py-6 text-center text-xs text-[#7b7b8e] font-mono">
+              Belum ada ulasan atau masukan pelanggan tercatat.
+            </div>
+          )}
+        </div>
+
       </main>
 
       {/* MODAL: OWNER REFUND PROCESSING */}

@@ -17,11 +17,24 @@ export const revalidate = 0;
 export default async function PosOwnerDashboardPage() {
   const { session } = await guardModulePage("pos", "/app/pos/owner");
   if (session.role !== "owner") redirect("/app/pos");
-  const [business, dashboard, pendingSync] = await Promise.all([
+  const [business, dashboard, pendingSync, feedbackSummary, recentFeedback, loyaltySummary] = await Promise.all([
     db.getBusiness(session.businessId),
     db.getPosOwnerDashboard(session.businessId),
     db.getPendingOrderSync(session.businessId),
+    db.getFeedbackSummary(session.businessId),
+    db.getRecentFeedback(session.businessId, 20),
+    db.getMemberGrowthSummary(session.businessId),
   ]);
 
-  return <OwnerDashboardClient business={business} dashboard={dashboard} pendingSync={pendingSync} themeClassName={mochiThemeClass(business)} />;
+  return (
+    <OwnerDashboardClient
+      business={business}
+      dashboard={dashboard}
+      pendingSync={pendingSync}
+      feedbackSummary={feedbackSummary}
+      recentFeedback={recentFeedback}
+      loyaltySummary={loyaltySummary}
+      themeClassName={mochiThemeClass(business)}
+    />
+  );
 }
