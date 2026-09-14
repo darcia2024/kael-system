@@ -44,7 +44,7 @@ export default async function FinanceReportsPage() {
                   logoUrl={business?.logo_url}
                   brandColor={business?.brand_color}
                   size="sm"
-                  className="h-5 w-5 rounded-md object-cover shrink-0"
+                  className="h-7 w-7 rounded-full border border-emerald-400/40 shadow-xs shrink-0"
                 />
                 <h1 className="truncate text-xs font-black sm:text-base tracking-tight">Laporan Formal Keuangan</h1>
               </div>

@@ -415,7 +415,7 @@ export default function LoginClient({
                       logoUrl={selectedBusiness.logo_url}
                       brandColor={selectedBusiness.brand_color}
                       size="sm"
-                      className="rounded-lg"
+                      className="rounded-full border border-emerald-400/40 shadow-xs"
                     />
                     <div className="min-w-0 flex-1">
                       <p className="truncate font-sans text-xs font-extrabold text-[#232331]">

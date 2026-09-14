@@ -134,7 +134,7 @@ export default function PosOwnerReportsPage({
                 name={business?.name}
                 logoUrl={business?.logo_url}
                 brandColor={business?.brand_color}
-                className="h-9 w-9 shrink-0 rounded-xl border border-emerald-600/40"
+                className="h-9 w-9 shrink-0 rounded-full border border-emerald-400/40 shadow-xs"
               />
             )}
 

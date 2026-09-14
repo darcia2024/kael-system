@@ -12,7 +12,7 @@ export default async function SmartTouchPage({params}:{params:Promise<{code:stri
   return <main className="min-h-screen bg-[#f7f6fc] px-4 py-8 text-[#232331]">
     <section className="mx-auto max-w-md border-t-4 pt-6" style={{borderColor:profile.brand_color}}>
       <header className="mb-6 text-center">
-        <div className="flex justify-center"><BusinessMark name={profile.business_name} logoUrl={profile.logo_url} brandColor={profile.brand_color} size="lg"/></div>
+        <div className="flex justify-center"><BusinessMark name={profile.business_name} logoUrl={profile.logo_url} brandColor={profile.brand_color} size="lg" className="h-16 w-16 rounded-full border-2 border-emerald-400/40 shadow-sm" /></div>
         <h1 className="mt-4 break-words text-2xl font-bold">{profile.title}</h1>
         <p className="mt-2 break-words text-sm text-[#66667a]">{profile.subtitle || profile.business_name}</p>
       </header>

@@ -107,7 +107,7 @@ export default function CustomerRegistrationPage({
                 name={business?.name || "Mochi Cafe"}
                 logoUrl={business?.logo_url}
                 brandColor={business?.brand_color}
-                className="h-16 w-16 rounded-2xl border-2 border-emerald-500/40 shadow-md"
+                className="h-16 w-16 rounded-full border-2 border-emerald-400/50 shadow-md"
               />
             </div>
             {business?.is_demo && (

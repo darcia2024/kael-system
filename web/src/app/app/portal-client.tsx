@@ -242,7 +242,7 @@ export default function AppPortalHub({
               name={business?.name}
               logoUrl={business?.logo_url}
               brandColor={business?.brand_color}
-              className="rounded-xl shadow-ink-xs"
+              className="rounded-full shadow-ink-xs border border-emerald-400/40"
             />
             <div>
               <div className="flex items-center gap-2">

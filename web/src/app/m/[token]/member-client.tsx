@@ -256,7 +256,7 @@ export default function CustomerMemberProgressPage({
               name={business.name}
               logoUrl={business.logo_url}
               brandColor={business.brand_color}
-              className="rounded-xl border border-[#232331]"
+              className="rounded-full border border-emerald-400/40 shadow-xs"
             />
             <div className="min-w-0">
               <h1 className="truncate text-sm font-black">{business.name}</h1>

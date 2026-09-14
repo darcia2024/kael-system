@@ -15,8 +15,9 @@ import {
   uploadImageAction,
 } from "@/lib/actions";
 import { kompresGambar } from "@/lib/kompres-gambar";
-import type { Category, MenuItem } from "@/lib/types";
+import type { Business, Category, MenuItem } from "@/lib/types";
 import { PLACEHOLDER_MENU } from "@/lib/types";
+import { isMochiBusiness } from "@/lib/mochi-brand";
 
 const rupiah = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 
@@ -43,16 +44,19 @@ const DRAF_KOSONG: Draf = {
 };
 
 export default function MenuClient({
+  business,
   categories,
   menuItems,
   recipes,
   themeClassName = "",
 }: {
+  business?: Business | null;
   categories: Category[];
   menuItems: MenuItem[];
   recipes: { id: string; name: string }[];
   themeClassName?: string;
 }) {
+  const isMochi = isMochiBusiness(business);
   const router = useRouter();
   const [draf, setDraf] = useState<Draf | null>(null);
   const [sedangSimpan, setSedangSimpan] = useState(false);
@@ -170,12 +174,21 @@ export default function MenuClient({
           <ArrowLeft size={17} />
         </Link>
 
-        <header className="rounded-lg border border-transparent px-1 py-2">
-          <p className="font-mono text-[11px] font-bold text-[#7958d8]">KAEL POS</p>
-          <h1 className="text-2xl font-black">Kelola Menu</h1>
-          <p className="mt-1 text-xs text-[#7b7b8e]">
-            Yang ditambahkan di sini langsung muncul di layar kasir dan di halaman pesan dari meja.
-          </p>
+        <header className={`flex items-center gap-3.5 px-1 py-2 ${isMochi ? "rounded-3xl border border-[#d8e3de] bg-white p-4 shadow-sm" : "rounded-lg border border-transparent"}`}>
+          {isMochi && (
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white p-0.5 border border-emerald-400/40 shadow-xs overflow-hidden">
+              <img src="/logo-mochi.png" alt="Mochi Logo" className="h-full w-full object-contain" />
+            </div>
+          )}
+          <div>
+            <p className={`font-mono text-[11px] font-bold ${isMochi ? "text-[#167052] uppercase tracking-wider" : "text-[#7958d8]"}`}>
+              {isMochi ? "Mochi Cafe n Resto · POS" : "KAEL POS"}
+            </p>
+            <h1 className={`text-xl sm:text-2xl font-black ${isMochi ? "text-[#0b3d2e]" : ""}`}>Kelola Menu</h1>
+            <p className={`mt-0.5 text-xs ${isMochi ? "text-[#637970]" : "text-[#7b7b8e]"}`}>
+              Yang ditambahkan di sini langsung muncul di layar kasir dan di halaman pesan dari meja.
+            </p>
+          </div>
         </header>
 
         {galat && (

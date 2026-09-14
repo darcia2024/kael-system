@@ -222,7 +222,7 @@ export default function DigitalReceiptPage({ data, staffName, hasFeedback, revie
             logoUrl={business.logo_url}
             brandColor={business.brand_color}
             size="lg"
-            className="rounded-2xl border border-[#232331]"
+            className={`mx-auto ${isMochi ? "rounded-full border border-emerald-400/40 shadow-xs" : "rounded-2xl border border-[#232331]"}`}
           />
           <h2 className="text-base font-black text-[#232331] uppercase tracking-wider font-sans mt-1">
             {business.name}

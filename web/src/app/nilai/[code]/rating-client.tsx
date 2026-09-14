@@ -106,7 +106,7 @@ export default function RatingClient({
       <section className="mx-auto max-w-md">
         <header className="text-center">
           <div className="flex justify-center">
-            <BusinessMark name={businessName} logoUrl={logoUrl} brandColor={warna} size="lg" />
+            <BusinessMark name={businessName} logoUrl={logoUrl} brandColor={warna} size="lg" className="h-16 w-16 rounded-full border-2 border-emerald-400/40 shadow-sm" />
           </div>
           <h1 className="mt-4 break-words text-2xl font-black">{businessName}</h1>
         </header>

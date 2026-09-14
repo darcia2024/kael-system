@@ -1154,9 +1154,19 @@ export default function PosClient({
       <header className={`z-30 shrink-0 border-b ${isMochiPos ? "bg-[#0b3d2e] border-emerald-800/60 text-white shadow-sm" : "bg-white border-[#d8e1dc]"}`}>
         <div className="flex min-h-16 items-center justify-between gap-3 px-3 sm:px-5">
           <div className="flex min-w-0 items-center gap-3">
-            <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl shadow-xs ${isMochiPos ? "bg-[#c8f53a] text-[#073829]" : "bg-[#1d5d47] text-white"}`}>
-              {isMochiPos ? <Coffee size={20} aria-hidden="true" /> : <Receipt size={20} aria-hidden="true" />}
-            </div>
+            {isMochiPos ? (
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white p-0.5 shadow-sm border border-emerald-400/40 overflow-hidden">
+                <img
+                  src="/logo-mochi.png"
+                  alt={business?.name || "Mochi Cafe n Resto"}
+                  className="h-full w-full object-contain"
+                />
+              </div>
+            ) : (
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl shadow-xs bg-[#1d5d47] text-white">
+                <Receipt size={20} aria-hidden="true" />
+              </div>
+            )}
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <h1 className={`truncate text-sm font-black sm:text-base tracking-tight ${isMochiPos ? "text-white" : ""}`}>

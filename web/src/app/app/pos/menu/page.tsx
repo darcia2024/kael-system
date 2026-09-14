@@ -34,6 +34,7 @@ export default async function MenuPage() {
 
   return (
     <MenuClient
+      business={business}
       categories={categories}
       menuItems={menuItems}
       recipes={recipes.map((r) => ({ id: r.id, name: r.name }))}

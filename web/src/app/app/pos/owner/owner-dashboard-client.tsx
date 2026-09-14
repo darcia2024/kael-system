@@ -280,7 +280,7 @@ export default function OwnerDashboardClient({
                 name={business?.name}
                 logoUrl={business?.logo_url}
                 brandColor={business?.brand_color}
-                className="h-9 w-9 shrink-0 rounded-xl border border-emerald-600/40"
+                className="h-9 w-9 shrink-0 rounded-full border border-emerald-400/40 shadow-xs"
               />
             )}
 
@@ -1955,11 +1955,15 @@ export default function OwnerDashboardClient({
             <div className="flex items-start justify-between gap-3 pb-4 border-b border-[#edf4f0]">
               <div className="flex items-center gap-3">
                 <div
-                  className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${
-                    isMochi ? "bg-[#c8f53a] text-[#073829]" : "bg-[#f0edff] text-[#7958d8]"
+                  className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl overflow-hidden ${
+                    isMochi ? "bg-white border border-emerald-400/40 p-0.5 shadow-sm" : "bg-[#f0edff] text-[#7958d8]"
                   }`}
                 >
-                  <FileText size={22} />
+                  {isMochi ? (
+                    <img src="/logo-mochi.png" alt="Mochi Logo" className="h-full w-full object-contain" />
+                  ) : (
+                    <FileText size={22} />
+                  )}
                 </div>
                 <div>
                   <h3

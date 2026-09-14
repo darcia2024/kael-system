@@ -66,22 +66,25 @@ export function BusinessMark({
    * `complete` bernilai true dan `naturalWidth` nol hanya terjadi kalau
    * pemuatan sudah selesai TANPA menghasilkan gambar, yang berarti gagal.
    */
+  const isMochi = Boolean((name && name.toLowerCase().includes("mochi")) || logoUrl?.includes("logo-mochi"));
+  const resolvedLogoUrl = logoUrl || (isMochi ? "/logo-mochi.png" : null);
+
   useEffect(() => {
     const img = imgRef.current;
     if (img && img.complete && img.naturalWidth === 0) {
-      setGagalUntuk(logoUrl ?? null);
+      setGagalUntuk(resolvedLogoUrl ?? null);
     }
-  }, [logoUrl]);
+  }, [resolvedLogoUrl]);
 
   const dim = SIZES[size];
   const surface = brandSurface(brandColor);
   const inisial = businessInitials(name);
-  const pakaiLogo = !!logoUrl && gagalUntuk !== logoUrl;
+  const pakaiLogo = !!resolvedLogoUrl && gagalUntuk !== resolvedLogoUrl;
 
   return (
     <span
-      className={`inline-flex shrink-0 items-center justify-center overflow-hidden font-black ${dim.box} ${dim.text} ${className}`}
-      style={surface}
+      className={`inline-flex shrink-0 items-center justify-center overflow-hidden font-black ${dim.box} ${dim.text} ${isMochi ? "bg-white" : ""} ${className}`}
+      style={isMochi ? undefined : surface}
     >
       {pakaiLogo ? (
         /*
@@ -97,10 +100,10 @@ export function BusinessMark({
          */
         <img
           ref={imgRef}
-          src={logoUrl ?? ""}
+          src={resolvedLogoUrl ?? ""}
           alt=""
-          className="h-full w-full object-cover"
-          onError={() => setGagalUntuk(logoUrl ?? null)}
+          className={`h-full w-full ${isMochi ? "object-contain p-0.5 bg-white" : "object-cover"}`}
+          onError={() => setGagalUntuk(resolvedLogoUrl ?? null)}
         />
       ) : inisial ? (
         <span className="leading-none tracking-tight">{inisial}</span>

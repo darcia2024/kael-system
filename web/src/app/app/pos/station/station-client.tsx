@@ -210,6 +210,11 @@ export default function OrderStationClient({
               >
                 <ArrowLeft size={18} />
               </Link>
+              {isMochiStation && (
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white p-0.5 border border-emerald-400/40 shadow-xs overflow-hidden">
+                  <img src="/logo-mochi.png" alt="Mochi Logo" className="h-full w-full object-contain" />
+                </div>
+              )}
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
                   <h1 className="text-base sm:text-lg font-black tracking-tight text-white leading-tight">

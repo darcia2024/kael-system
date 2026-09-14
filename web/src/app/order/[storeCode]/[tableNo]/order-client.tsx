@@ -485,7 +485,7 @@ export default function CustomerQrOrderPage({
               name={business?.name}
               logoUrl={business?.logo_url}
               brandColor={business?.brand_color}
-              className={`rounded-xl border ${isMochi ? "border-emerald-600/40" : "border-[#cdd8d2]"}`}
+              className={`rounded-full border ${isMochi ? "border-emerald-400/40 shadow-xs" : "border-[#cdd8d2]"}`}
             />
             <div className="min-w-0">
               <h1 className={`truncate text-base font-extrabold ${isMochi ? "text-white" : "text-[#18392f]"}`}>
