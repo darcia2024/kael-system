@@ -1108,27 +1108,7 @@ export default function PosClient({
       </div>
 
       <div className="space-y-2.5 border-t border-[#dfe6e2] bg-[#f8faf9] p-3.5 sm:p-4">
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-xs font-bold text-[#5c6c64]">Diskon Cepat</span>
-          <div className="grid grid-cols-4 gap-1 flex-1 max-w-[220px]">
-            {[0, 5000, 10000, 15000].map((discount) => (
-              <button
-                key={discount}
-                type="button"
-                onClick={() => setDiscountNominal(discount)}
-                className={`h-8 rounded-xl border px-1 text-[11px] font-extrabold font-mono transition-all ${
-                  discountNominal === discount
-                    ? (isMochiPos ? "border-[#0b3d2e] bg-[#0b3d2e] text-[#c8f53a] shadow-xs" : "border-[#1f4437] bg-[#1f4437] text-white")
-                    : "border-[#d3ddd8] bg-white text-[#65736c] hover:border-[#167052]/40"
-                }`}
-              >
-                {discount === 0 ? "0" : `${discount / 1000}k`}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <dl className="space-y-1 text-xs tabular-nums font-mono border-t border-[#e8efe9] pt-2">
+        <dl className="space-y-1 text-xs tabular-nums font-mono">
           <div className="flex justify-between text-[#68766f]"><dt>Subtotal</dt><dd>{formatRupiah(cartTotals.subtotal)}</dd></div>
           {cartTotals.discount > 0 && <div className="flex justify-between text-[#b34539] font-bold"><dt>Diskon</dt><dd>-{formatRupiah(cartTotals.discount)}</dd></div>}
           {cartTotals.serviceCharge > 0 && <div className="flex justify-between text-[#68766f]"><dt>Service</dt><dd>{formatRupiah(cartTotals.serviceCharge)}</dd></div>}
