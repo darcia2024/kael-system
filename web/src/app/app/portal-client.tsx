@@ -32,6 +32,7 @@ import {
 import { STAFF_PERMISSIONS, type StaffPermission } from "@/lib/types";
 import { formatBusinessDate } from "@/lib/formatters";
 import { BusinessMark } from "@/components/business-mark";
+import { mochiThemeClass } from "@/lib/mochi-theme";
 
 /**
  * Satu modul sebagaimana ditampilkan di beranda.
@@ -230,7 +231,7 @@ export default function AppPortalHub({
         : null;
 
   return (
-    <div className="min-h-screen bg-[#f7f6fc] text-[#232331] font-sans flex flex-col">
+    <div className={`${mochiThemeClass(business)} min-h-screen bg-[#f7f6fc] text-[#232331] font-sans flex flex-col`}>
       {business?.is_demo && <p className="bg-amber-100 px-4 py-2 text-center text-xs font-bold text-amber-950">AKUN DEMO - data simulasi untuk pengujian</p>}
       
       {/* Top App Header */}

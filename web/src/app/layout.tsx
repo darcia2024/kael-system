@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Manrope, DM_Mono } from "next/font/google";
+import { Manrope, DM_Mono, Plus_Jakarta_Sans } from "next/font/google";
 
 import { site } from "@/lib/site";
 import PwaRegister from "@/components/pwa-register";
@@ -17,6 +17,13 @@ const dmMono = DM_Mono({
   display: "swap",
   variable: "--font-dm-mono",
   weight: ["400", "500"],
+});
+
+const plusJakartaSans = Plus_Jakarta_Sans({
+  subsets: ["latin"],
+  display: "swap",
+  variable: "--font-plus-jakarta-sans",
+  weight: ["300", "400", "500", "600", "700", "800"],
 });
 
 export const metadata: Metadata = {
@@ -88,7 +95,7 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="id" className={`${manrope.variable} ${dmMono.variable}`}>
+    <html lang="id" className={`${manrope.variable} ${dmMono.variable} ${plusJakartaSans.variable}`}>
       <body className="font-sans antialiased">
         <a
           href="#solusi"

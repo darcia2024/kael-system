@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { guardOwnerPage } from "@/lib/licensing";
 import { BusinessMark } from "@/components/business-mark";
 import { isMochiBusiness } from "@/lib/mochi-brand";
+import { mochiThemeClass } from "@/lib/mochi-theme";
 
 function isoDate(days: number) {
   return new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
@@ -25,7 +26,7 @@ export default async function FinanceReportsPage() {
   const isMochi = isMochiBusiness(business);
 
   return (
-    <div className="min-h-screen bg-[#f0f5f2] text-[#1a382d] font-sans">
+    <div className={`${mochiThemeClass(business)} min-h-screen bg-[#f0f5f2] text-[#1a382d] font-sans`}>
       <header className="sticky top-0 z-30 border-b border-[#07281e] bg-[#0b3d2e] text-white shadow-md">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-2 px-3 py-2.5 sm:px-6">
           <div className="flex min-w-0 items-center gap-2.5">

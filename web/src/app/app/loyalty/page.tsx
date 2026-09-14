@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 
 import { db } from "@/lib/db";
 import { guardModulePage } from "@/lib/licensing";
+import { mochiThemeClass } from "@/lib/mochi-theme";
 import LoyaltyClient from "./loyalty-client";
 import LoyaltySetup from "./loyalty-setup";
 
@@ -65,26 +66,28 @@ export default async function LoyaltyPage() {
   }
 
   return (
-    <LoyaltyClient
-      business={business}
-      initialProgram={program}
-      customers={customers}
-      memberInsights={memberInsights}
-      rewards={rewards}
-      staffList={users
-        .filter((u) => u.role === "staff" && u.is_active)
-        .map((u) => ({ id: u.id, name: u.name }))}
-      staffAudit={staffAudit}
-      initialCampaigns={campaigns}
-      initialCampaignRecipients={latestCampaignRecipients}
-      expiryDue={expiryDue}
-      expirySoon={expirySoon}
-      weeklySignups={weeklySignups}
-      referralReport={referralReport}
-      birthdayCandidates={birthdayCandidates}
-      anniversaryCandidates={anniversaryCandidates}
-      tiers={tiers}
-      sessionRole={session.role}
-    />
+    <div className={mochiThemeClass(business)}>
+      <LoyaltyClient
+        business={business}
+        initialProgram={program}
+        customers={customers}
+        memberInsights={memberInsights}
+        rewards={rewards}
+        staffList={users
+          .filter((u) => u.role === "staff" && u.is_active)
+          .map((u) => ({ id: u.id, name: u.name }))}
+        staffAudit={staffAudit}
+        initialCampaigns={campaigns}
+        initialCampaignRecipients={latestCampaignRecipients}
+        expiryDue={expiryDue}
+        expirySoon={expirySoon}
+        weeklySignups={weeklySignups}
+        referralReport={referralReport}
+        birthdayCandidates={birthdayCandidates}
+        anniversaryCandidates={anniversaryCandidates}
+        tiers={tiers}
+        sessionRole={session.role}
+      />
+    </div>
   );
 }

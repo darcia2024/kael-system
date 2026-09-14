@@ -47,6 +47,7 @@
 
   --font-sans: var(--font-manrope), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --font-mono: var(--font-dm-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --font-jakarta: var(--font-plus-jakarta-sans), "Plus Jakarta Sans", sans-serif;
 }
 
 /* ---------------------------------------------------------------------------
@@ -76,6 +77,32 @@ html {
   --mochi-muted: #718078;
   --mochi-price: #0b3d2e;
   color: var(--mochi-ink);
+
+  /* Semua font pada tenant Mochi diselaraskan ke Plus Jakarta Sans */
+  --font-sans: var(--font-plus-jakarta-sans), "Plus Jakarta Sans", sans-serif;
+  --font-manrope: var(--font-plus-jakarta-sans), "Plus Jakarta Sans", sans-serif;
+  font-family: var(--font-plus-jakarta-sans), "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+}
+
+.mochi-ui *,
+.mochi-ui button,
+.mochi-ui input,
+.mochi-ui select,
+.mochi-ui textarea,
+.mochi-ui h1,
+.mochi-ui h2,
+.mochi-ui h3,
+.mochi-ui h4,
+.mochi-ui p,
+.mochi-ui span,
+.mochi-ui a,
+.mochi-ui div {
+  font-family: var(--font-plus-jakarta-sans), "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+.mochi-ui .font-sans,
+.mochi-ui [class*="font-sans"] {
+  font-family: var(--font-plus-jakarta-sans), "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
 }
 
 .mochi-ui.mochi-shell,

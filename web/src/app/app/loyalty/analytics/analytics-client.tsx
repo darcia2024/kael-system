@@ -15,6 +15,7 @@ import {
 import type { Business } from "@/lib/types";
 import { formatRupiah } from "@/lib/formatters";
 import { isMochiBusiness } from "@/lib/mochi-brand";
+import { mochiThemeClass } from "@/lib/mochi-theme";
 import { BusinessMark } from "@/components/business-mark";
 
 export interface MemberGrowthTrendRow {
@@ -93,7 +94,7 @@ export default function AnalyticsClient({
     : 0;
 
   return (
-    <div className="min-h-screen bg-[#f0f5f2] text-[#1a382d] font-sans">
+    <div className={`${mochiThemeClass(business)} min-h-screen bg-[#f0f5f2] text-[#1a382d] font-sans`}>
       <header className="sticky top-0 z-30 border-b border-[#07281e] bg-[#0b3d2e] text-white shadow-md">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-2 px-3 py-2.5 sm:px-6">
           <div className="flex min-w-0 items-center gap-2.5">
