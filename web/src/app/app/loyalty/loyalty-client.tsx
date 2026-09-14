@@ -630,7 +630,7 @@ export default function KaelLoyaltyDashboard({
   };
 
   return (
-    <div className="min-h-screen bg-[#f0f5f2] text-[#1a382d] font-sans flex flex-col pb-16 sm:pb-8">
+    <div className="min-h-screen bg-[#f0f5f2] text-[#0b3d2e] font-sans flex flex-col pb-16 sm:pb-8">
       
       {/* Top Header */}
       <header className="sticky top-0 z-30 border-b border-emerald-800/60 bg-[#0b3d2e] text-white backdrop-blur-md px-3 sm:px-8 py-2.5 sm:py-3.5 shadow-sm">
@@ -847,7 +847,7 @@ export default function KaelLoyaltyDashboard({
           <div className="grid gap-4 lg:grid-cols-12 items-start">
             
             {/* Left Column (7 cols): Fast Customer Search & Actions */}
-            <div className="lg:col-span-7 rounded-2xl sm:rounded-3xl border sm:border border-[#d8e3de] bg-white p-4 sm:p-6 shadow-[0_4px_20px_rgba(11,61,46,0.04)] space-y-4">
+            <div className="lg:col-span-7 rounded-2xl sm:rounded-3xl border border-[#d8e3de] bg-white p-4 sm:p-6 shadow-[0_4px_20px_rgba(11,61,46,0.04)] space-y-4">
               
               <div className="flex items-center justify-between border-b border-[#d8e3de] pb-3">
                 <div className="flex items-center gap-2">
@@ -904,7 +904,7 @@ export default function KaelLoyaltyDashboard({
                         className="w-full flex items-center justify-between p-2.5 rounded-xl bg-white hover:bg-[#c8f53a] transition-all text-left border border-[#d8e3de]"
                       >
                         <div>
-                          <span className="font-bold text-[#1a382d] font-sans block text-sm">{cust.name}</span>
+                          <span className="font-bold text-[#0b3d2e] font-sans block text-sm">{cust.name}</span>
                           <span className="text-[10.5px] text-[#527867]">{cust.phone_masked}</span>
                         </div>
                         <span className="font-black text-sm text-[#16a34a] bg-[#dcfce7] px-2 py-0.5 rounded-lg border border-[#16a34a]/30">
@@ -935,7 +935,7 @@ export default function KaelLoyaltyDashboard({
                       <span className="text-[10px] text-[#167052] font-bold uppercase block">
                         PELANGGAN TERPILIH
                       </span>
-                      <h4 className="font-black text-base text-[#1a382d] font-sans">
+                      <h4 className="font-black text-base text-[#0b3d2e] font-sans">
                         {selectedCustomer.name}
                       </h4>
                       <span className="text-[11px] text-[#527867]">
@@ -1124,13 +1124,13 @@ export default function KaelLoyaltyDashboard({
             </div>
 
             {/* Right Column (5 cols): Table Standee QR Preview & Fast Onboarding */}
-            <div className="lg:col-span-5 rounded-2xl sm:rounded-3xl border sm:border border-[#d8e3de] bg-white p-4 sm:p-6 shadow-[0_4px_20px_rgba(11,61,46,0.04)] space-y-4">
+            <div className="lg:col-span-5 rounded-2xl sm:rounded-3xl border border-[#d8e3de] bg-white p-4 sm:p-6 shadow-[0_4px_20px_rgba(11,61,46,0.04)] space-y-4">
               
               <div className="border-b border-[#d8e3de] pb-3">
                 <span className="font-mono text-[10px] font-bold uppercase text-[#167052] block">
                   UNTUK PELANGGAN BARU
                 </span>
-                <h3 className="font-extrabold text-sm sm:text-base text-[#1a382d] font-sans mt-0.5">
+                <h3 className="font-extrabold text-sm sm:text-base text-[#0b3d2e] font-sans mt-0.5">
                   Daftar Member lewat QR di Meja Kasir
                 </h3>
               </div>
@@ -1160,7 +1160,7 @@ export default function KaelLoyaltyDashboard({
                 <Link
                   href={`/loyalty/register?toko=${encodeURIComponent(business?.store_code ?? "")}`}
                   target="_blank"
-                  className="inline-flex items-center justify-center gap-1.5 w-full rounded-xl border border-[#d8e3de] bg-white py-2 text-xs font-bold text-[#073829] shadow-xs"
+                  className="inline-flex items-center justify-center gap-1.5 w-full rounded-xl border border-[#d8e3de] bg-white hover:bg-[#edf8f3] py-2.5 text-xs font-bold text-[#0b3d2e] shadow-xs transition-colors"
                 >
                   <UserPlus size={13} />
                   <span>Buka Form Pendaftaran Member Baru</span>
@@ -1175,7 +1175,7 @@ export default function KaelLoyaltyDashboard({
                     dan nomor WhatsApp yang menyalakan tombol simpan kartu. */}
                 <Link
                   href="/app/loyalty/kartu"
-                  className="mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-xl border border-[#d8e3de] bg-[#c8f53a] py-2 text-xs font-black text-[#073829] shadow-xs"
+                  className="mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-[#0b3d2e] hover:bg-[#0e4837] py-2.5 text-xs font-bold text-[#c8f53a] shadow-xs transition-colors"
                 >
                   <IdCard size={13} />
                   <span>Atur Isi Kartu Member</span>
@@ -1191,7 +1191,7 @@ export default function KaelLoyaltyDashboard({
         {/* TAB 2: DATA PELANGGAN (PDP COMPLIANT) */}
         {/* ============================================================= */}
         {activeTab === "customers" && (
-          <div className="rounded-2xl sm:rounded-3xl border sm:border border-[#d8e3de] bg-white p-4 sm:p-6 shadow-[0_4px_20px_rgba(11,61,46,0.04)] space-y-4">
+          <div className="rounded-2xl sm:rounded-3xl border border-[#d8e3de] bg-white p-4 sm:p-6 shadow-[0_4px_20px_rgba(11,61,46,0.04)] space-y-4">
             
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#d8e3de] pb-3 sm:pb-4">
               <div>
@@ -1236,7 +1236,7 @@ export default function KaelLoyaltyDashboard({
 
                     return (
                       <tr key={cust.id} className="hover:bg-[#fbfdfc]">
-                        <td className="py-3 px-3 font-extrabold text-[#1a382d] font-sans">
+                        <td className="py-3 px-3 font-extrabold text-[#0b3d2e] font-sans">
                           {cust.name}
                         </td>
                         <td className="py-3 px-3">
@@ -1289,7 +1289,7 @@ export default function KaelLoyaltyDashboard({
 
         {activeTab === "segments" && (
           <section className="space-y-4">
-            <div className="rounded-2xl sm:rounded-3xl border sm:border border-[#d8e3de] bg-white p-4 sm:p-6 shadow-[0_4px_20px_rgba(11,61,46,0.04)]">
+            <div className="rounded-2xl sm:rounded-3xl border border-[#d8e3de] bg-white p-4 sm:p-6 shadow-[0_4px_20px_rgba(11,61,46,0.04)]">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                 <div>
                   <span className="font-mono text-[10px] font-bold text-[#167052]">PERTUMBUHAN MEMBER</span>
@@ -1334,7 +1334,7 @@ export default function KaelLoyaltyDashboard({
               )}
             </div>
 
-            <div className="rounded-2xl sm:rounded-3xl border sm:border border-[#d8e3de] bg-white p-4 sm:p-6 shadow-[0_4px_20px_rgba(11,61,46,0.04)]">
+            <div className="rounded-2xl sm:rounded-3xl border border-[#d8e3de] bg-white p-4 sm:p-6 shadow-[0_4px_20px_rgba(11,61,46,0.04)]">
               <div className="flex flex-col gap-2 border-b border-[#d8e3de] pb-4 sm:flex-row sm:items-end sm:justify-between">
                 <div>
                   <span className="font-mono text-[10px] font-bold text-[#167052]">DATA MEMBER</span>
@@ -1367,7 +1367,7 @@ export default function KaelLoyaltyDashboard({
               </div>
             </div>
 
-            <div className="rounded-2xl sm:rounded-3xl border sm:border border-[#d8e3de] bg-white p-3 sm:p-5 shadow-[0_4px_20px_rgba(11,61,46,0.04)]">
+            <div className="rounded-2xl sm:rounded-3xl border border-[#d8e3de] bg-white p-3 sm:p-5 shadow-[0_4px_20px_rgba(11,61,46,0.04)]">
               <div className="flex items-center justify-between gap-3 border-b border-[#d8e3de] pb-3">
                 <div>
                   <h3 className="text-sm font-extrabold">{selectedSegment === "all" ? "Semua member" : MEMBER_SEGMENT_COPY[selectedSegment].label}</h3>
@@ -1566,7 +1566,7 @@ export default function KaelLoyaltyDashboard({
             )}
 
           <section className="grid gap-4 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
-            <div className="rounded-2xl sm:rounded-3xl border sm:border border-[#d8e3de] bg-[#0b3d2e] p-4 text-white shadow-[0_4px_20px_rgba(11,61,46,0.04)] sm:p-6">
+            <div className="rounded-2xl sm:rounded-3xl border border-[#d8e3de] bg-[#0b3d2e] p-4 text-white shadow-[0_4px_20px_rgba(11,61,46,0.04)] sm:p-6">
               <span className="font-mono text-[10px] font-bold text-[#c8f53a]">AJAKAN KEMBALI</span>
               <h3 className="mt-1 text-lg font-black">Buat daftar chat yang bisa dilacak</h3>
               <p className="mt-2 text-sm leading-5 text-[#dedee8]">Pilih kelompok member, buat daftar, lalu buka WhatsApp satu per satu. KAEL hanya memasukkan member yang sudah setuju menerima promo.</p>
@@ -1586,7 +1586,7 @@ export default function KaelLoyaltyDashboard({
               )}
             </div>
 
-            <div className="rounded-2xl sm:rounded-3xl border sm:border border-[#d8e3de] bg-white p-4 shadow-[0_4px_20px_rgba(11,61,46,0.04)] sm:p-6">
+            <div className="rounded-2xl sm:rounded-3xl border border-[#d8e3de] bg-white p-4 shadow-[0_4px_20px_rgba(11,61,46,0.04)] sm:p-6">
               <div className="flex flex-col gap-2 border-b border-[#d8e3de] pb-3 sm:flex-row sm:items-end sm:justify-between">
                 <div>
                   <p className="font-mono text-[10px] font-bold text-[#167052]">CAMPAIGN TERBARU</p>
@@ -1644,7 +1644,7 @@ export default function KaelLoyaltyDashboard({
         {/* TAB 3: KATALOG REWARD & PROTEKSI BIAYA OWNER */}
         {/* ============================================================= */}
         {activeTab === "rewards" && (
-          <div className="rounded-2xl sm:rounded-3xl border sm:border border-[#d8e3de] bg-white p-4 sm:p-6 shadow-[0_4px_20px_rgba(11,61,46,0.04)] space-y-4">
+          <div className="rounded-2xl sm:rounded-3xl border border-[#d8e3de] bg-white p-4 sm:p-6 shadow-[0_4px_20px_rgba(11,61,46,0.04)] space-y-4">
             
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#d8e3de] pb-3 sm:pb-4">
               <div>
@@ -1666,7 +1666,7 @@ export default function KaelLoyaltyDashboard({
                   setRewardStock("");
                   setShowRewardModal(true);
                 }}
-                className="inline-flex items-center gap-1.5 rounded-xl border sm:border border-[#d8e3de] bg-[#c8f53a] px-3 py-1.5 font-mono text-xs font-bold text-[#073829] shadow-xs"
+                className="inline-flex items-center gap-1.5 rounded-xl border border-[#d8e3de] bg-[#c8f53a] px-3 py-1.5 font-mono text-xs font-bold text-[#073829] shadow-xs"
               >
                 <Plus size={13} strokeWidth={3} />
                 <span>Tambah Reward</span>
@@ -1681,7 +1681,7 @@ export default function KaelLoyaltyDashboard({
                   <div key={rw.id} className="rounded-2xl border border-[#d8e3de] bg-[#fbfdfc] p-4 space-y-3 shadow-xs">
                     <div className="flex justify-between items-start">
                       <div className="min-w-0">
-                        <h4 className="font-black text-sm text-[#1a382d] font-sans truncate">{rw.name}</h4>
+                        <h4 className="font-black text-sm text-[#0b3d2e] font-sans truncate">{rw.name}</h4>
                         <span className="text-[10px] text-[#527867]">Nilai Jual: {formatRupiah(rw.market_value)}</span>
                       </div>
                       <span className="rounded-xl border border-emerald-300 bg-[#edf8f3] px-2 py-0.5 font-black text-xs text-[#167052] shrink-0">
@@ -1724,7 +1724,7 @@ export default function KaelLoyaltyDashboard({
         {/* TAB 4: ATURAN PROGRAM (POIN VS STAMP) */}
         {/* ============================================================= */}
         {activeTab === "settings" && (
-          <form onSubmit={handleSaveProgramSettings} className="rounded-2xl sm:rounded-3xl border sm:border border-[#d8e3de] bg-white p-4 sm:p-6 shadow-[0_4px_20px_rgba(11,61,46,0.04)] space-y-5">
+          <form onSubmit={handleSaveProgramSettings} className="rounded-2xl sm:rounded-3xl border border-[#d8e3de] bg-white p-4 sm:p-6 shadow-[0_4px_20px_rgba(11,61,46,0.04)] space-y-5">
             
             <div className="border-b border-[#d8e3de] pb-3">
               <h3 className="font-extrabold text-sm sm:text-base text-[#1a382d]">
@@ -1951,7 +1951,7 @@ export default function KaelLoyaltyDashboard({
         )}
 
         {activeTab === "settings" && sessionRole === "owner" && program.tiers_is_active && (
-          <section className="rounded-2xl sm:rounded-3xl border sm:border border-[#d8e3de] bg-white p-4 shadow-[0_4px_20px_rgba(11,61,46,0.04)] sm:p-6">
+          <section className="rounded-2xl sm:rounded-3xl border border-[#d8e3de] bg-white p-4 shadow-[0_4px_20px_rgba(11,61,46,0.04)] sm:p-6">
             <div className="flex flex-col gap-3 border-b border-[#d8e3de] pb-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <p className="font-mono text-[10px] font-bold text-[#167052]">KELOLA LEVEL MEMBER</p>
@@ -1973,7 +1973,7 @@ export default function KaelLoyaltyDashboard({
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex items-center gap-1.5">
                       <Crown size={14} className="text-[#d97706]" />
-                      <h4 className="font-black text-sm text-[#1a382d] font-sans">{tier.name}</h4>
+                      <h4 className="font-black text-sm text-[#0b3d2e] font-sans">{tier.name}</h4>
                     </div>
                     <span className="shrink-0 rounded-lg border border-emerald-300 bg-[#edf8f3] px-2 py-0.5 font-black text-[#167052]">{Number(tier.earn_multiplier).toFixed(2)}x</span>
                   </div>
@@ -2016,7 +2016,7 @@ export default function KaelLoyaltyDashboard({
         {/* TAB 5: AUDIT KASIR & ANTI-KECURANGAN */}
         {/* ============================================================= */}
         {activeTab === "audit" && (
-          <div className="rounded-2xl sm:rounded-3xl border sm:border border-[#d8e3de] bg-white p-4 sm:p-6 shadow-[0_4px_20px_rgba(11,61,46,0.04)] space-y-4">
+          <div className="rounded-2xl sm:rounded-3xl border border-[#d8e3de] bg-white p-4 sm:p-6 shadow-[0_4px_20px_rgba(11,61,46,0.04)] space-y-4">
             
             <div className="border-b border-[#d8e3de] pb-3">
               <h3 className="font-extrabold text-sm sm:text-base text-[#1a382d]">
@@ -2031,7 +2031,7 @@ export default function KaelLoyaltyDashboard({
               {staffAudit.map((audit) => (
                 <div key={audit.id} className="rounded-2xl border border-[#d8e3de] bg-[#fbfdfc] p-4 space-y-2 shadow-xs">
                   <div className="flex justify-between items-start">
-                    <h4 className="font-black text-sm text-[#1a382d] font-sans">{audit.name}</h4>
+                    <h4 className="font-black text-sm text-[#0b3d2e] font-sans">{audit.name}</h4>
                     <span className="text-[10px] bg-[#dcfce7] text-[#16a34a] px-2 py-0.5 rounded font-bold">
                       {audit.total_entries} Transaksi
                     </span>
@@ -2055,7 +2055,7 @@ export default function KaelLoyaltyDashboard({
         )}
 
         {activeTab === "audit" && (
-          <div className="rounded-2xl sm:rounded-3xl border sm:border border-[#d8e3de] bg-white p-4 sm:p-6 shadow-[0_4px_20px_rgba(11,61,46,0.04)] space-y-4">
+          <div className="rounded-2xl sm:rounded-3xl border border-[#d8e3de] bg-white p-4 sm:p-6 shadow-[0_4px_20px_rgba(11,61,46,0.04)] space-y-4">
 
             <div className="border-b border-[#d8e3de] pb-3">
               <h3 className="font-extrabold text-sm sm:text-base text-[#1a382d]">
@@ -2095,7 +2095,7 @@ export default function KaelLoyaltyDashboard({
         <div className="fixed inset-0 z-50 bg-emerald-950/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="w-full max-w-md rounded-3xl border border-[#d8e3de] bg-white p-6 shadow-md space-y-4 animate-in fade-in zoom-in duration-150 font-mono text-xs">
             <div className="flex items-center justify-between border-b border-[#d8e3de] pb-3">
-              <h3 className="font-extrabold text-base text-[#1a382d] font-sans">
+              <h3 className="font-extrabold text-base text-[#0b3d2e] font-sans">
                 {editingRewardId ? "Edit Reward" : "Buat Reward Baru"}
               </h3>
               <button
@@ -2185,7 +2185,7 @@ export default function KaelLoyaltyDashboard({
         <div className="fixed inset-0 z-50 bg-emerald-950/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="w-full max-w-md rounded-3xl border border-[#d8e3de] bg-white p-6 shadow-md space-y-4 animate-in fade-in zoom-in duration-150 font-mono text-xs">
             <div className="flex items-center justify-between border-b border-[#d8e3de] pb-3">
-              <h3 className="font-extrabold text-base text-[#1a382d] font-sans">
+              <h3 className="font-extrabold text-base text-[#0b3d2e] font-sans">
                 {editingTierId ? "Edit Level" : "Tambah Level Baru"}
               </h3>
               <button
@@ -2279,7 +2279,7 @@ export default function KaelLoyaltyDashboard({
           <div className="w-full max-w-lg rounded-3xl border border-[#d8e3de] bg-white p-6 shadow-md space-y-4 animate-in fade-in font-mono text-xs">
             <div className="flex items-center justify-between border-b border-[#d8e3de] pb-3">
               <div>
-                <h3 className="font-black text-base text-[#1a382d] font-sans">
+                <h3 className="font-black text-base text-[#0b3d2e] font-sans">
                   Buku Ledger: {viewingCustomer.name}
                 </h3>
                 <span className="text-[11px] text-[#527867]">
@@ -2299,7 +2299,7 @@ export default function KaelLoyaltyDashboard({
               {(viewingDetail?.ledger ?? []).map((item) => (
                 <div key={item.id} className="p-2.5 rounded-xl border border-[#d8e3de] bg-[#fbfdfc] flex justify-between items-center">
                   <div>
-                    <span className="font-bold text-[#1a382d] font-sans block text-xs">{item.note}</span>
+                    <span className="font-bold text-[#0b3d2e] font-sans block text-xs">{item.note}</span>
                     <span className="text-[10px] text-[#527867]">{formatBusinessDateTime(item.created_at)}</span>
                   </div>
                   <span className={`font-black text-sm ${item.delta > 0 ? "text-[#16a34a]" : "text-[#ef4444]"}`}>
