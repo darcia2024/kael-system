@@ -1506,23 +1506,20 @@ export default function PosClient({
               )}
             </div>
 
-            <div className="mt-2 sm:mt-3 flex overflow-x-auto gap-1.5 pb-0.5 scrollbar-none sm:grid sm:grid-flow-col sm:grid-rows-2 sm:auto-cols-[140px] sm:gap-2 sm:pb-1">
+            <div className="mt-2 flex overflow-x-auto gap-1.5 pb-1 scrollbar-none">
               <button
                 type="button"
                 onClick={() => setActiveCategory("all")}
-                className={`shrink-0 flex items-center gap-1.5 sm:gap-2 rounded-xl border px-2.5 py-1.5 sm:min-h-14 sm:px-3 text-left transition-all ${
+                className={`shrink-0 flex items-center gap-1.5 rounded-xl border px-3 py-2 text-left transition-all ${
                   activeCategory === "all"
                     ? (isMochiPos ? "border-[#0b3d2e] bg-[#0b3d2e] text-[#c8f53a] shadow-xs" : "border-[#167052] bg-[#e1f2ea] text-[#15533e]")
                     : (isMochiPos ? "border-[#d8e3de] bg-white text-[#20372e] hover:border-[#167052]/40" : "border-[#d5ded9] bg-white text-[#526159]")
                 }`}
               >
-                <LayoutGrid size={15} strokeWidth={1.8} aria-hidden="true" className="sm:h-5 sm:w-5 shrink-0" />
-                <span className="flex items-center gap-1 sm:block sm:min-w-0">
-                  <span className="text-xs font-extrabold whitespace-nowrap">Semua</span>
-                  <span className={`text-[10px] font-mono sm:text-[9px] sm:block ${activeCategory === "all" && isMochiPos ? "text-emerald-200" : "text-[#7c8982]"}`}>
-                    <span className="sm:hidden">({menuItems.length})</span>
-                    <span className="hidden sm:inline">{menuItems.length} menu</span>
-                  </span>
+                <LayoutGrid size={15} strokeWidth={2} aria-hidden="true" className="shrink-0" />
+                <span className="text-xs font-extrabold whitespace-nowrap">Semua</span>
+                <span className={`text-[10px] font-mono rounded-full px-1.5 py-0.5 ${activeCategory === "all" && isMochiPos ? "bg-[#c8f53a]/25 text-[#c8f53a]" : "bg-slate-100 text-[#7c8982]"}`}>
+                  {menuItems.length}
                 </span>
               </button>
               {categories.map((category) => {
@@ -1534,19 +1531,16 @@ export default function PosClient({
                     key={category.id}
                     type="button"
                     onClick={() => setActiveCategory(category.id)}
-                    className={`shrink-0 flex items-center gap-1.5 sm:gap-2 rounded-xl border px-2.5 py-1.5 sm:min-h-14 sm:px-3 text-left transition-all ${
+                    className={`shrink-0 flex items-center gap-1.5 rounded-xl border px-3 py-2 text-left transition-all ${
                       isSelected
                         ? (isMochiPos ? "border-[#0b3d2e] bg-[#0b3d2e] text-[#c8f53a] shadow-xs" : "border-[#167052] bg-[#e1f2ea] text-[#15533e]")
                         : (isMochiPos ? "border-[#d8e3de] bg-white text-[#20372e] hover:border-[#167052]/40" : "border-[#d5ded9] bg-white text-[#526159]")
                     }`}
                   >
-                    <CategoryIcon size={15} strokeWidth={1.8} aria-hidden="true" className="sm:h-5 sm:w-5 shrink-0" />
-                    <span className="flex items-center gap-1 sm:block sm:min-w-0">
-                      <span className="text-xs font-extrabold whitespace-nowrap sm:line-clamp-2 leading-tight">{category.name}</span>
-                      <span className={`text-[10px] font-mono sm:text-[9px] sm:block ${isSelected && isMochiPos ? "text-emerald-200" : "text-[#7c8982]"}`}>
-                        <span className="sm:hidden">({itemCount})</span>
-                        <span className="hidden sm:inline">{itemCount} menu</span>
-                      </span>
+                    <CategoryIcon size={15} strokeWidth={2} aria-hidden="true" className="shrink-0" />
+                    <span className="text-xs font-extrabold whitespace-nowrap">{category.name}</span>
+                    <span className={`text-[10px] font-mono rounded-full px-1.5 py-0.5 ${isSelected && isMochiPos ? "bg-[#c8f53a]/25 text-[#c8f53a]" : "bg-slate-100 text-[#7c8982]"}`}>
+                      {itemCount}
                     </span>
                   </button>
                 );
@@ -1554,7 +1548,7 @@ export default function PosClient({
             </div>
           </div>
 
-          <div className="flex items-end justify-between px-3 pb-1.5 pt-2 sm:pb-2 sm:pt-3 sm:px-4">
+          <div className="flex items-end justify-between px-3 pb-1.5 pt-2 sm:pb-2 sm:pt-2 sm:px-4">
             <div>
               <p className="text-[9px] sm:text-[10px] font-bold uppercase text-[#78867f]">
                 {isMochiPos ? "Pilihan Menu" : "Katalog kasir"}
@@ -1568,7 +1562,7 @@ export default function PosClient({
 
           <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-24 sm:px-4 lg:pb-4">
             {filteredMenu.length > 0 ? (
-              <div className="grid grid-cols-2 gap-2.5 sm:gap-3 xl:grid-cols-3 2xl:grid-cols-4">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-2 sm:gap-2.5">
                 {filteredMenu.map((item) => {
                   const inCart = cart[item.id];
                   const categoryName = categories.find((category) => category.id === item.category_id)?.name ?? "Menu";
@@ -1577,34 +1571,39 @@ export default function PosClient({
                   return (
                     <article
                       key={item.id}
-                      className={`flex min-w-0 flex-col justify-between rounded-2xl border bg-white p-2.5 sm:p-3 transition-all hover:shadow-md ${
+                      onClick={() => {
+                        if (item.is_available) {
+                          handleAddToCart(item);
+                        }
+                      }}
+                      className={`group relative flex min-w-0 flex-col justify-between rounded-2xl border bg-white p-2 sm:p-2.5 transition-all cursor-pointer select-none active:scale-[0.97] hover:shadow-md hover:border-[#167052]/50 ${
                         inCart
-                          ? (isMochiPos ? "border-2 border-[#167052] ring-2 ring-[#167052]/10 shadow-xs bg-[#fbfdfc]" : "border-[#167052] shadow-[0_4px_14px_rgba(22,112,82,0.1)]")
+                          ? (isMochiPos ? "border-2 border-[#167052] ring-2 ring-[#167052]/15 shadow-xs bg-[#f7fcf9]" : "border-[#167052] shadow-[0_4px_14px_rgba(22,112,82,0.1)]")
                           : (isMochiPos ? "border-[#d8e3de]" : "border-[#d8e1dc]")
-                      } ${!item.is_available ? "opacity-55" : ""}`}
+                      } ${!item.is_available ? "opacity-55 cursor-not-allowed" : ""}`}
                     >
-                      <div className="space-y-2">
-                        <div className="relative aspect-4/3 w-full overflow-hidden rounded-xl bg-[#e8f2ed] text-[#34745d] flex items-center justify-center">
+                      <div className="space-y-1.5">
+                        <div className="relative aspect-[16/11] sm:aspect-[4/3] max-h-32 sm:max-h-36 w-full overflow-hidden rounded-xl bg-[#e8f2ed] text-[#34745d] flex items-center justify-center">
                           {hasPhoto ? (
                             // eslint-disable-next-line @next/next/no-img-element
                             <img
                               src={item.photo_url ?? undefined}
                               alt={item.name}
                               loading="lazy"
-                              className="h-full w-full object-cover transition-transform duration-300 hover:scale-105"
+                              className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
                             />
                           ) : (
-                            <CategoryIcon size={26} strokeWidth={1.6} aria-hidden="true" />
+                            <CategoryIcon size={24} strokeWidth={1.6} aria-hidden="true" />
                           )}
                           {inCart && (
-                            <span className="absolute right-1.5 top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#0b3d2e] px-1 font-mono text-[9.5px] font-black text-[#c8f53a] shadow-xs">
+                            <span className="absolute right-1.5 top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#0b3d2e] px-1.5 font-mono text-[10px] font-black text-[#c8f53a] shadow-sm animate-in zoom-in-75">
                               {inCart.qty}
                             </span>
                           )}
                         </div>
 
                         <div className="min-w-0">
-                          <h3 className="line-clamp-2 text-xs sm:text-[13px] font-extrabold leading-snug text-[#20372e]">
+                          <h3 className="line-clamp-2 text-xs sm:text-[13px] font-extrabold leading-snug text-[#20372e] group-hover:text-[#167052] transition-colors">
                             {item.name}
                           </h3>
                           <p className="mt-0.5 truncate text-[10px] font-semibold text-[#718078]">
@@ -1613,9 +1612,9 @@ export default function PosClient({
                         </div>
                       </div>
 
-                      <div className="mt-2.5 flex items-end justify-between gap-1 border-t border-[#f0f4f2] pt-2">
+                      <div className="mt-2 flex items-center justify-between gap-1 border-t border-[#f0f4f2] pt-1.5">
                         <strong
-                          className={`text-xs sm:text-sm font-black tabular-nums font-mono ${
+                          className={`text-xs sm:text-[13px] font-black tabular-nums font-mono ${
                             isMochiPos ? "text-[#0b3d2e]" : "text-[#9b5332]"
                           }`}
                         >
@@ -1628,14 +1627,17 @@ export default function PosClient({
                               <button
                                 type="button"
                                 aria-label={`Kurangi ${item.name}`}
-                                onClick={() => handleUpdateQty(item.id, -1)}
-                                className={`flex h-8 w-8 items-center justify-center rounded-lg border transition-colors ${
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleUpdateQty(item.id, -1);
+                                }}
+                                className={`flex h-7 w-7 sm:h-8 sm:w-8 items-center justify-center rounded-lg border transition-colors ${
                                   isMochiPos
                                     ? "border-[#ccd9d3] bg-[#edf8f3] text-[#167052] hover:bg-[#e0f1e8]"
                                     : "border-[#c5d4cd] text-[#315d4b]"
                                 }`}
                               >
-                                <Minus size={13} aria-hidden="true" />
+                                <Minus size={12} aria-hidden="true" />
                               </button>
                               <span className="w-4 text-center text-xs font-black tabular-nums font-mono">
                                 {inCart.qty}
@@ -1643,30 +1645,36 @@ export default function PosClient({
                               <button
                                 type="button"
                                 aria-label={`Tambah ${item.name}`}
-                                onClick={() => handleUpdateQty(item.id, 1)}
-                                className={`flex h-8 w-8 items-center justify-center rounded-lg text-white transition-colors ${
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleAddToCart(item);
+                                }}
+                                className={`flex h-7 w-7 sm:h-8 sm:w-8 items-center justify-center rounded-lg text-white transition-colors ${
                                   isMochiPos ? "bg-[#0b3d2e] hover:bg-[#124d3b]" : "bg-[#167052]"
                                 }`}
                               >
-                                <Plus size={13} aria-hidden="true" />
+                                <Plus size={12} aria-hidden="true" />
                               </button>
                             </div>
                           ) : (
                             <button
                               type="button"
                               aria-label={`Tambah ${item.name}`}
-                              onClick={() => handleAddToCart(item)}
-                              className={`flex h-8 w-8 sm:h-9 sm:w-9 shrink-0 items-center justify-center rounded-xl transition-all active:scale-95 shadow-xs ${
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleAddToCart(item);
+                              }}
+                              className={`flex h-7 w-7 sm:h-8 sm:w-8 shrink-0 items-center justify-center rounded-xl transition-all active:scale-95 shadow-xs ${
                                 isMochiPos
                                   ? "bg-[#c8f53a] hover:bg-[#d9ff57] text-[#073829] font-black"
                                   : "bg-[#0aae6f] hover:bg-[#079760] text-white"
                               }`}
                             >
-                              <Plus size={16} strokeWidth={2.5} aria-hidden="true" />
+                              <Plus size={14} strokeWidth={2.5} aria-hidden="true" />
                             </button>
                           )
                         ) : (
-                          <span className="flex items-center rounded-lg bg-[#fff0ed] px-2 py-1 text-[10px] font-bold text-[#a44237]">
+                          <span className="flex items-center rounded-lg bg-[#fff0ed] px-1.5 py-0.5 text-[9.5px] font-bold text-[#a44237]">
                             Habis
                           </span>
                         )}
