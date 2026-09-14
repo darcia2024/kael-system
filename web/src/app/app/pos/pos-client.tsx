@@ -88,6 +88,7 @@ import { PLACEHOLDER_MENU } from "@/lib/types";
 import TableQrModal from "./table-qr-modal";
 import PosMemberScannerModal from "./pos-member-scanner-modal";
 import PosBellSettingsModal from "./pos-bell-settings-modal";
+import { usePwaInstall } from "@/components/pwa-register";
 import { alertNewIncomingOrder, buildPrinterBuzzerPayload } from "@/lib/pos-audio";
 
 function getPosCategoryIcon(categoryName: string): LucideIcon {
@@ -229,6 +230,9 @@ export default function PosClient({
     total: number;
     count: number;
   } | null>(null);
+
+  // PWA Install Prompt State
+  const { isInstallable, isInstalled, triggerInstall } = usePwaInstall();
 
   // Sync props to state if props change
   useEffect(() => {
@@ -1178,9 +1182,39 @@ export default function PosClient({
             >
               <Clock size={17} aria-hidden="true" />
             </button>
+            {isInstallable && !isInstalled && (
+              <button
+                type="button"
+                aria-label="Install POS"
+                title="Install POS di tablet / HP"
+                onClick={triggerInstall}
+                className={`flex h-10 w-10 sm:h-11 sm:w-11 items-center justify-center rounded-xl border transition-all ${
+                  isMochiPos
+                    ? "bg-[#c8f53a] text-[#073829] border-[#c8f53a] shadow-xs"
+                    : "bg-[#1d5d47] text-white border-[#1d5d47] shadow-xs"
+                }`}
+              >
+                <MonitorSmartphone size={17} aria-hidden="true" />
+              </button>
+            )}
           </div>
 
           <div className="hidden lg:flex items-center gap-2">
+            {isInstallable && !isInstalled && (
+              <button
+                type="button"
+                onClick={triggerInstall}
+                className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-bold transition-all shadow-xs ${
+                  isMochiPos
+                    ? "bg-[#c8f53a] text-[#073829] hover:bg-[#d9ff57]"
+                    : "bg-[#1d5d47] text-white hover:bg-[#154635]"
+                }`}
+                title="Pasang aplikasi POS di tablet kasir"
+              >
+                <MonitorSmartphone size={15} />
+                <span>Install POS</span>
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setShowBellModal(true)}

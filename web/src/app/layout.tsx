@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Manrope, DM_Mono } from "next/font/google";
 
 import { site } from "@/lib/site";
+import PwaRegister from "@/components/pwa-register";
 import "./globals.css";
 
 const manrope = Manrope({
@@ -54,6 +55,15 @@ export const metadata: Metadata = {
     follow: true,
     googleBot: { index: true, follow: true, "max-image-preview": "large" },
   },
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "KAEL POS",
+  },
+  icons: {
+    icon: "/icon-192.png",
+    apple: "/apple-touch-icon.png",
+  },
 };
 
 export const viewport: Viewport = {
@@ -86,6 +96,7 @@ export default function RootLayout({
         >
           Lewati ke konten utama
         </a>
+        <PwaRegister />
         {children}
         <script
           type="application/ld+json"
