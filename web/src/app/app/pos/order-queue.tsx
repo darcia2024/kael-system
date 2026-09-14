@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { X, Check, Ban, Loader2, Clock, AlertTriangle, ChefHat, MessageSquare } from "lucide-react";
+import { X, Check, Ban, Loader2, Clock, AlertTriangle, ChefHat, MessageSquare, Printer } from "lucide-react";
 
 import {
   confirmPaymentAction,
@@ -37,11 +37,26 @@ export default function OrderQueue({
   onClose,
   isMochi,
   onPrintKitchenTicket,
+  onPrintThreePly,
+  autoPrintThreePly,
+  onToggleAutoPrintThreePly,
 }: {
   orders: Antrean[];
   onClose: () => void;
   isMochi?: boolean;
   onPrintKitchenTicket?: (order: Antrean) => void;
+  onPrintThreePly?: (order: {
+    order_no: string;
+    table_no?: string | null;
+    service_type: string;
+    created_at: string;
+    items: { name_snapshot: string; qty: number; unit_price_snapshot?: number; subtotal?: number; note?: string | null }[];
+    total: number | string;
+    payment_method: string;
+    customer_name?: string | null;
+  }) => void;
+  autoPrintThreePly?: boolean;
+  onToggleAutoPrintThreePly?: (val: boolean) => void;
 }) {
   const router = useRouter();
   const [sibuk, setSibuk] = useState<string | null>(null);
@@ -90,26 +105,42 @@ export default function OrderQueue({
       <div className={`w-full sm:max-w-lg max-h-[92vh] overflow-y-auto rounded-t-3xl sm:rounded-3xl bg-white ${
         isMochi ? "border border-[#d8e3de] shadow-2xl" : "border-2 border-[#232331] shadow-ink-lg"
       }`}>
-        <div className={`sticky top-0 z-10 flex items-center justify-between gap-3 bg-white px-5 py-3.5 border-b ${
+        <div className={`sticky top-0 z-10 flex flex-col gap-2 bg-white px-5 py-3.5 border-b ${
           isMochi ? "border-[#d8e3de]" : "border-b-2 border-[#232331]"
         }`}>
-          <div>
-            <h2 className={`font-black text-base ${isMochi ? "text-[#0b3d2e]" : "text-[#232331]"}`}>Pesanan Masuk</h2>
-            <p className="font-mono text-[11px] text-[#7b7b8e]">
-              {menunggu.length} menunggu pembayaran · {diproses.length} diproses
-            </p>
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <h2 className={`font-black text-base ${isMochi ? "text-[#0b3d2e]" : "text-[#232331]"}`}>Pesanan Masuk</h2>
+              <p className="font-mono text-[11px] text-[#7b7b8e]">
+                {menunggu.length} menunggu pembayaran · {diproses.length} diproses
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className={`flex h-9 w-9 items-center justify-center rounded-xl border transition-colors ${
+                isMochi
+                  ? "border-[#d8e3de] bg-[#f0f5f2] text-[#0b3d2e] hover:bg-[#e2ede7]"
+                  : "border-[#232331] bg-[#fcfcfe] shadow-ink-xs"
+              }`}
+            >
+              <X size={16} />
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className={`flex h-9 w-9 items-center justify-center rounded-xl border transition-colors ${
-              isMochi
-                ? "border-[#d8e3de] bg-[#f0f5f2] text-[#0b3d2e] hover:bg-[#e2ede7]"
-                : "border-[#232331] bg-[#fcfcfe] shadow-ink-xs"
-            }`}
-          >
-            <X size={16} />
-          </button>
+
+          {onToggleAutoPrintThreePly && (
+            <label className={`flex items-center justify-between gap-2 px-3 py-1.5 rounded-xl border cursor-pointer font-mono text-[10.5px] font-bold transition-colors ${
+              isMochi ? "bg-[#edf8f3] border-[#d8e3de] text-[#0b3d2e]" : "bg-slate-50 border-slate-200 text-slate-700"
+            }`}>
+              <span>🖨️ Cetak otomatis 3 rangkap saat pesanan diterima</span>
+              <input
+                type="checkbox"
+                checked={autoPrintThreePly ?? true}
+                onChange={(e) => onToggleAutoPrintThreePly(e.target.checked)}
+                className="h-3.5 w-3.5 rounded accent-[#0b3d2e]"
+              />
+            </label>
+          )}
         </div>
 
         <div className="p-4 space-y-3">
@@ -194,7 +225,12 @@ export default function OrderQueue({
                         <button
                           type="button"
                           disabled={busy}
-                          onClick={() => jalankan(o.id, () => setFulfillmentAction(o.id, "accepted"))}
+                          onClick={async () => {
+                            await jalankan(o.id, () => setFulfillmentAction(o.id, "accepted"));
+                            if (autoPrintThreePly && onPrintThreePly) {
+                              onPrintThreePly(o);
+                            }
+                          }}
                           className={`w-full flex items-center justify-center gap-1.5 rounded-xl py-2 px-3 text-xs font-black transition-all ${
                             isMochi
                               ? "bg-[#0b3d2e] hover:bg-[#124d3a] text-[#c8f53a] shadow-xs"
@@ -293,6 +329,26 @@ export default function OrderQueue({
                 )}
 
                 <div className="flex flex-col sm:flex-row gap-2 pt-1">
+                  {onPrintThreePly && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (o.fulfillment_status === "pending") {
+                          void jalankan(o.id, () => setFulfillmentAction(o.id, "accepted"));
+                        }
+                        onPrintThreePly(o);
+                      }}
+                      className={`flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl py-2 px-3 font-mono text-[11px] font-black transition-all ${
+                        isMochi
+                          ? "bg-[#c8f53a] hover:bg-[#d9ff57] text-[#073829] shadow-xs ring-1 ring-[#c8f53a]"
+                          : "btn-tactile border-2 border-[#232331] bg-[#d9ff57] text-[#232331] shadow-ink-xs"
+                      }`}
+                      title="Cetak 3 rangkap sekaligus (Dapur + Kasir + Pelanggan)"
+                    >
+                      <Printer size={13} />
+                      <span>Cetak 3 Rangkap 🖨️</span>
+                    </button>
+                  )}
                   {onPrintKitchenTicket && (
                     <button
                       type="button"
@@ -302,22 +358,22 @@ export default function OrderQueue({
                         }
                         onPrintKitchenTicket(o);
                       }}
-                      className={`flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl py-2 px-3 font-mono text-[11px] font-black transition-all ${
+                      className={`inline-flex items-center justify-center gap-1.5 rounded-xl border py-2 px-3 font-mono text-[11px] font-bold transition-all ${
                         isMochi
-                          ? "bg-[#c8f53a] hover:bg-[#d9ff57] text-[#073829] shadow-xs"
-                          : "btn-tactile border-2 border-[#232331] bg-[#d9ff57] text-[#232331] shadow-ink-xs"
+                          ? "border-emerald-800/20 bg-white text-[#0b3d2e] hover:bg-[#edf8f3]"
+                          : "border border-[#232331] bg-white text-[#232331]"
                       }`}
                       title="Cetak tiket dapur via printer thermal"
                     >
                       <ChefHat size={13} />
-                      <span>Cetak Tiket Dapur 🍳</span>
+                      <span>Tiket Dapur</span>
                     </button>
                   )}
                   <button
                     type="button"
                     onClick={() => forwardToWhatsapp(o)}
                     className={`inline-flex items-center justify-center gap-1.5 rounded-xl border py-2 px-3 font-mono text-[11px] font-bold transition-colors ${
-                      onPrintKitchenTicket ? "sm:w-auto" : "w-full"
+                      onPrintThreePly || onPrintKitchenTicket ? "sm:w-auto" : "w-full"
                     } ${
                       isMochi
                         ? "border-emerald-600/30 bg-emerald-50 text-emerald-800 hover:bg-emerald-100"
@@ -326,7 +382,7 @@ export default function OrderQueue({
                     title="Kirim detail pesanan ini ke nomor WhatsApp staf atau grup dapur"
                   >
                     <MessageSquare size={13} />
-                    <span>{onPrintKitchenTicket ? "Kirim WA" : "Kirim Rincian ke WhatsApp Staf / Dapur"}</span>
+                    <span>WA</span>
                   </button>
                 </div>
               </div>

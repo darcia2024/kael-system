@@ -74,6 +74,7 @@ import {
   calculateCashChange, 
   generateEscPosReceiptText,
   generateKitchenTicketText,
+  generateThreePlyReceiptText,
   SERVICE_TYPES,
   serviceTypeLabel,
   PAYMENT_STATUS_LABEL,
@@ -223,6 +224,7 @@ export default function PosClient({
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [printerBuzzerEnabled, setPrinterBuzzerEnabled] = useState(false);
+  const [autoPrintThreePly, setAutoPrintThreePly] = useState(true);
   const [staffWhatsapp, setStaffWhatsapp] = useState(business?.phone || "");
   const [incomingToast, setIncomingToast] = useState<{
     orderNo: string;
@@ -240,7 +242,7 @@ export default function PosClient({
     pendingQrOrders.forEach((o) => knownOrderIds.current.add(o.id));
   }, [pendingQrOrders]);
 
-  // Load bell preferences from localStorage on mount
+  // Load bell preferences & auto-print from localStorage on mount
   useEffect(() => {
     try {
       const savedSound = localStorage.getItem("kael_pos_bell_enabled");
@@ -252,10 +254,18 @@ export default function PosClient({
       const savedBuzzer = localStorage.getItem("kael_pos_printer_buzzer");
       if (savedBuzzer !== null) setPrinterBuzzerEnabled(savedBuzzer === "true");
 
+      const savedAutoPrint = localStorage.getItem("kael_pos_autoprint_3ply");
+      if (savedAutoPrint !== null) setAutoPrintThreePly(savedAutoPrint === "true");
+
       const savedWa = localStorage.getItem("kael_pos_wa_staff");
       if (savedWa) setStaffWhatsapp(savedWa);
     } catch {}
   }, []);
+
+  const handleToggleAutoPrintThreePly = (val: boolean) => {
+    setAutoPrintThreePly(val);
+    try { localStorage.setItem("kael_pos_autoprint_3ply", String(val)); } catch {}
+  };
 
   const handleToggleSound = (val: boolean) => {
     setSoundEnabled(val);
@@ -514,6 +524,28 @@ export default function PosClient({
     setAttachedCustomer(null);
     setCompletedOrder(completed);
     refreshAll();
+
+    // Otomatis cetak 3 rangkap jika preferensi auto-print aktif
+    if (autoPrintThreePly) {
+      setTimeout(() => {
+        void handlePrintThreePlyBluetooth({
+          order_no: completed.orderNo,
+          table_no: completed.tableNo,
+          service_type: completed.serviceType,
+          created_at: completed.createdAt,
+          items: completed.items.map((i) => ({
+            name_snapshot: i.name,
+            qty: i.qty,
+            unit_price_snapshot: i.price,
+            subtotal: i.price * i.qty,
+            note: i.note,
+          })),
+          total: completed.total,
+          payment_method: completed.paymentMethod,
+          customer_name: completed.customerName,
+        });
+      }, 250);
+    }
   };
 
   // Accept incoming QR order
@@ -773,6 +805,74 @@ export default function PosClient({
       orderNo: order.order_no,
       openCashDrawer: false,
       isCustomerReceipt: false,
+    });
+  };
+
+  const handlePrintThreePlyBluetooth = async (customOrder?: {
+    order_no: string;
+    table_no?: string | null;
+    service_type: string;
+    created_at: string;
+    items: { name_snapshot: string; qty: number; unit_price_snapshot?: number; subtotal?: number; note?: string | null }[];
+    total: number | string;
+    payment_method: string;
+    customer_name?: string | null;
+  }) => {
+    const orderData = customOrder || (completedOrder ? {
+      order_no: completedOrder.orderNo,
+      table_no: completedOrder.tableNo,
+      service_type: completedOrder.serviceType,
+      created_at: completedOrder.createdAt,
+      items: completedOrder.items.map((i) => ({
+        name_snapshot: i.name,
+        qty: i.qty,
+        unit_price_snapshot: i.price,
+        subtotal: i.price * i.qty,
+        note: i.note,
+      })),
+      total: completedOrder.total,
+      payment_method: completedOrder.paymentMethod,
+      customer_name: completedOrder.customerName,
+    } : null);
+
+    if (!orderData) return;
+
+    const activeCashier = staffList.find((staff) => staff.id === selectedStaffId)?.name || (completedOrder?.cashierName || "Kasir");
+    const numTotal = Number(orderData.total) || 0;
+
+    const receiptText = generateThreePlyReceiptText({
+      businessName: business?.name || "Mochi Cafe n Resto",
+      businessAddress: business?.address || "",
+      businessPhone: business?.phone || "",
+      orderNo: orderData.order_no,
+      tableNo: orderData.table_no,
+      serviceType: (orderData.service_type || "dine_in") as "dine_in" | "takeaway" | "delivery",
+      cashierName: activeCashier,
+      createdAt: orderData.created_at,
+      items: orderData.items.map((i) => ({
+        name: i.name_snapshot,
+        qty: i.qty,
+        price: Number(i.unit_price_snapshot) || Math.round(Number(i.subtotal) / Math.max(1, i.qty)) || 0,
+        note: i.note || undefined,
+      })),
+      subtotal: completedOrder ? completedOrder.subtotal : numTotal,
+      discount: completedOrder ? completedOrder.discount : 0,
+      tax: completedOrder ? completedOrder.tax : 0,
+      serviceCharge: completedOrder ? completedOrder.serviceCharge : 0,
+      deliveryFee: completedOrder ? completedOrder.deliveryFee : 0,
+      total: numTotal,
+      paymentMethod: orderData.payment_method || "tunai",
+      cashGiven: completedOrder?.cashGiven,
+      cashChange: completedOrder?.change,
+      customerName: orderData.customer_name,
+    });
+
+    await sendRawEscPosToBluetooth(receiptText, {
+      jobName: "Struk 3 Rangkap (Dapur + Kasir + Pelanggan)",
+      orderNo: orderData.order_no,
+      openCashDrawer: orderData.payment_method === "cash",
+      isCustomerReceipt: true,
+      orderId: completedOrder?.orderId,
     });
   };
 
@@ -2071,6 +2171,9 @@ export default function PosClient({
           onClose={() => setShowQueue(false)}
           isMochi={isMochiPos}
           onPrintKitchenTicket={handlePrintKitchenTicketFromQueue}
+          onPrintThreePly={handlePrintThreePlyBluetooth}
+          autoPrintThreePly={autoPrintThreePly}
+          onToggleAutoPrintThreePly={handleToggleAutoPrintThreePly}
         />
       )}
 
@@ -2116,31 +2219,63 @@ export default function PosClient({
             <div className="space-y-2 pt-2">
               <button
                 type="button"
-                onClick={handlePrintBluetoothThermal}
+                onClick={() => handlePrintThreePlyBluetooth()}
                 disabled={printerState === "printing"}
-                className={`w-full flex items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-bold disabled:opacity-60 transition-all ${
+                className={`w-full flex items-center justify-center gap-2 rounded-xl py-3 text-xs font-black disabled:opacity-60 transition-all ${
                   isMochiPos
-                    ? "bg-[#0b3d2e] hover:bg-[#124d3b] text-white border border-[#0b3d2e] shadow-xs"
-                    : "btn-tactile border-2 border-[#232331] bg-[#232331] text-white shadow-ink-xs"
+                    ? "bg-[#c8f53a] hover:bg-[#d9ff57] text-[#073829] shadow-md ring-2 ring-[#c8f53a]/50"
+                    : "btn-tactile border-2 border-[#232331] bg-[#d9ff57] text-[#232331] shadow-ink-md"
                 }`}
               >
-                <Printer size={14} />
-                <span>{printerState === "printing" ? "Mengirim ke printer..." : completedOrder.paymentMethod === "cash" ? "Cetak Struk & Buka Laci" : "Cetak Struk Pelanggan"}</span>
+                <Printer size={15} />
+                <span>Cetak 3 Rangkap (Dapur + Kasir + Meja) 🖨️</span>
               </button>
 
-              <button
-                type="button"
-                onClick={handlePrintKitchenTicketBluetooth}
-                disabled={printerState === "printing"}
-                className={`w-full flex items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-black disabled:opacity-60 transition-all ${
-                  isMochiPos
-                    ? "bg-[#c8f53a] hover:bg-[#d9ff57] text-[#073829] shadow-xs"
-                    : "btn-tactile border-2 border-[#232331] bg-[#d9ff57] text-[#232331] shadow-ink-xs"
-                }`}
-              >
-                <ChefHat size={14} />
-                <span>Cetak Tiket Dapur / Barista 🍳</span>
-              </button>
+              <label className={`flex items-center justify-between gap-2 p-2.5 rounded-xl border cursor-pointer text-[11px] font-bold transition-colors ${
+                isMochiPos
+                  ? "bg-[#edf8f3] border-[#d8e3de] text-[#0b3d2e]"
+                  : "bg-slate-50 border-slate-200 text-slate-700"
+              }`}>
+                <span>Cetak otomatis 3 rangkap tiap pesanan</span>
+                <input
+                  type="checkbox"
+                  checked={autoPrintThreePly}
+                  onChange={(e) => handleToggleAutoPrintThreePly(e.target.checked)}
+                  className="h-4 w-4 rounded accent-[#0b3d2e]"
+                />
+              </label>
+
+              <div className="flex gap-1.5 pt-1">
+                <button
+                  type="button"
+                  onClick={handlePrintBluetoothThermal}
+                  disabled={printerState === "printing"}
+                  className={`flex-1 flex items-center justify-center gap-1.5 rounded-xl py-2 text-[11px] font-bold disabled:opacity-60 transition-all ${
+                    isMochiPos
+                      ? "bg-[#0b3d2e] hover:bg-[#124d3b] text-white border border-[#0b3d2e] shadow-xs"
+                      : "btn-tactile border-2 border-[#232331] bg-[#232331] text-white shadow-ink-xs"
+                  }`}
+                  title="Cetak struk belanja pelanggan saja"
+                >
+                  <Printer size={13} />
+                  <span>Struk Pelanggan</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handlePrintKitchenTicketBluetooth}
+                  disabled={printerState === "printing"}
+                  className={`flex-1 flex items-center justify-center gap-1.5 rounded-xl py-2 text-[11px] font-bold disabled:opacity-60 transition-all ${
+                    isMochiPos
+                      ? "border border-emerald-800/30 bg-white text-[#0b3d2e] hover:bg-[#edf8f3]"
+                      : "border border-[#232331] bg-white text-[#232331]"
+                  }`}
+                  title="Cetak tiket dapur barista saja"
+                >
+                  <ChefHat size={13} />
+                  <span>Tiket Dapur</span>
+                </button>
+              </div>
               {completedOrder.paymentMethod === "cash" && (
                 <p className={`rounded-lg border px-3 py-2 text-left text-[10px] font-bold ${
                   isMochiPos

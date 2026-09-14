@@ -252,6 +252,159 @@ export function generateKitchenTicketText(params: {
 }
 
 /**
+ * Format cetak 3 rangkap otomatis (Dapur + Kasir + Pelanggan) 58mm / 80mm monospace.
+ * Mencetak 3 struk sekaligus dalam satu antrean print job dengan garis pemisah sobekan yang jelas:
+ * 1. TIKET DAPUR / BARISTA (Rangkuman menu, qty tebal, catatan rasa/pedas tanpa harga)
+ * 2. COPY KASIR / ARSIP TOKO (Bukti transaksi kasir & rekonsiliasi kas shift)
+ * 3. STRUK PELANGGAN (Rincian lengkap harga, diskon, pajak, nominal tunai & kembalian)
+ */
+export function generateThreePlyReceiptText(params: {
+  businessName: string;
+  businessAddress?: string;
+  businessPhone?: string;
+  orderNo: string;
+  tableNo?: string | null;
+  serviceType: "dine_in" | "takeaway" | "delivery";
+  cashierName: string;
+  createdAt: string;
+  items: { name: string; qty: number; price: number; note?: string }[];
+  subtotal: number;
+  discount: number;
+  tax: number;
+  serviceCharge: number;
+  deliveryFee?: number;
+  total: number;
+  paymentMethod: string;
+  cashGiven?: number;
+  cashChange?: number;
+  customerName?: string | null;
+}): string {
+  const W = 32;
+  const center = (str: string) => {
+    const space = Math.max(0, Math.floor((W - str.length) / 2));
+    return " ".repeat(space) + str;
+  };
+  const row = (left: string, right: string) => {
+    const space = Math.max(1, W - left.length - right.length);
+    return left + " ".repeat(space) + right;
+  };
+  const divider = "-".repeat(W);
+  const doubleDivider = "=".repeat(W);
+  const tearLine = "- - - - - - - - - - - - - - - -";
+  const tearGap = [
+    "",
+    tearLine,
+    center("[ SOBEK DI SINI ]"),
+    tearLine,
+    "",
+    "",
+  ];
+
+  const service = params.serviceType === "dine_in"
+    ? `MEJA ${params.tableNo || "-"}`
+    : params.serviceType === "takeaway"
+      ? "TAKE AWAY (BUNGKUS)"
+      : "DELIVERY";
+
+  const lines: string[] = [];
+
+  // ========================================================
+  // RANGKAP 1: TIKET DAPUR / BARISTA
+  // ========================================================
+  lines.push(doubleDivider);
+  lines.push(center("*** 1. TIKET DAPUR / BARISTA ***"));
+  lines.push(center(params.businessName.toUpperCase()));
+  lines.push(doubleDivider);
+  lines.push(center(`>> ${service} <<`));
+  lines.push(row(`No: #${params.orderNo}`, (params.createdAt || "").slice(11, 16) + " WIB"));
+  lines.push(row(`Kasir: ${params.cashierName.slice(0, 12)}`, "DAPUR"));
+  lines.push(divider);
+
+  params.items.forEach((item) => {
+    lines.push(`[ ${item.qty}x ] ${item.name.toUpperCase()}`);
+    if (item.note) {
+      lines.push(`  ** NOTE: ${item.note.toUpperCase()}`);
+    }
+  });
+
+  lines.push(doubleDivider);
+  lines.push(center("MOHON SEGERA DISIAPKAN"));
+  lines.push(...tearGap);
+
+  // ========================================================
+  // RANGKAP 2: COPY KASIR / ARSIP TOKO
+  // ========================================================
+  lines.push(doubleDivider);
+  lines.push(center("*** 2. COPY KASIR / ARSIP ***"));
+  lines.push(center(params.businessName.toUpperCase()));
+  lines.push(doubleDivider);
+  lines.push(row(`No: #${params.orderNo}`, service));
+  lines.push(row(`Kasir: ${params.cashierName.slice(0, 12)}`, (params.createdAt || "").slice(11, 16) + " WIB"));
+  if (params.customerName) {
+    lines.push(row(`Member: ${params.customerName.slice(0, 14)}`, "TERCATAT"));
+  }
+  lines.push(divider);
+
+  params.items.forEach((item) => {
+    const itemTotal = (item.price * item.qty).toLocaleString("id-ID");
+    lines.push(item.name.slice(0, 32));
+    lines.push(row(`  ${item.qty}x @${item.price.toLocaleString("id-ID")}`, `Rp ${itemTotal}`));
+  });
+
+  lines.push(divider);
+  lines.push(row("TOTAL", `Rp ${params.total.toLocaleString("id-ID")}`));
+  lines.push(row("BAYAR", params.paymentMethod.toUpperCase()));
+  lines.push(doubleDivider);
+  lines.push(center("ARSIP KASIR & REKONSILIASI"));
+  lines.push(...tearGap);
+
+  // ========================================================
+  // RANGKAP 3: STRUK PELANGGAN (CUSTOMER BILL)
+  // ========================================================
+  lines.push(doubleDivider);
+  lines.push(center(params.businessName.toUpperCase()));
+  if (params.businessAddress) lines.push(center(params.businessAddress.slice(0, 32)));
+  if (params.businessPhone) lines.push(center(params.businessPhone));
+  lines.push(doubleDivider);
+  lines.push(row(`No: #${params.orderNo}`, service));
+  lines.push(row(`Kasir: ${params.cashierName.slice(0, 12)}`, (params.createdAt || "").slice(11, 16) + " WIB"));
+  if (params.customerName) {
+    lines.push(row(`Member: ${params.customerName.slice(0, 14)}`, "LOYALTY ✓"));
+  }
+  lines.push(divider);
+
+  params.items.forEach((item) => {
+    const itemTotal = (item.price * item.qty).toLocaleString("id-ID");
+    lines.push(item.name.slice(0, 32));
+    lines.push(row(`  ${item.qty}x @${item.price.toLocaleString("id-ID")}`, `Rp ${itemTotal}`));
+    if (item.note) {
+      lines.push(`  * ${item.note.slice(0, 28)}`);
+    }
+  });
+
+  lines.push(divider);
+  lines.push(row("Subtotal", `Rp ${params.subtotal.toLocaleString("id-ID")}`));
+  if (params.discount > 0) lines.push(row("Diskon", `-Rp ${params.discount.toLocaleString("id-ID")}`));
+  if (params.serviceCharge > 0) lines.push(row("Service", `Rp ${params.serviceCharge.toLocaleString("id-ID")}`));
+  if (params.tax > 0) lines.push(row("Pajak PB1", `Rp ${params.tax.toLocaleString("id-ID")}`));
+  if (params.deliveryFee && params.deliveryFee > 0) lines.push(row("Ongkir", `Rp ${params.deliveryFee.toLocaleString("id-ID")}`));
+  lines.push(doubleDivider);
+  lines.push(row("TOTAL BAYAR", `Rp ${params.total.toLocaleString("id-ID")}`));
+
+  if (params.paymentMethod === "cash" && params.cashGiven) {
+    lines.push(row("Tunai", `Rp ${params.cashGiven.toLocaleString("id-ID")}`));
+    lines.push(row("Kembalian", `Rp ${(params.cashChange || 0).toLocaleString("id-ID")}`));
+  }
+
+  lines.push(doubleDivider);
+  lines.push(center("Terima Kasih Atas Kunjungan Anda!"));
+  lines.push(center("Selamat Menikmati Hidangan Kami"));
+  lines.push("\n\n\n");
+
+  return lines.join("\n");
+}
+
+/**
  * Ringkasan struk untuk WhatsApp. Berbeda dengan cetak thermal, pesan ini
  * dioptimalkan untuk dibaca di layar chat: total dan tautan struk berada di
  * bagian akhir, sementara rincian transaksi tetap utuh di atasnya.
