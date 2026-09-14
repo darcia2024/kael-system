@@ -57,7 +57,10 @@ export function proxy(request: NextRequest) {
    * /order, /m, serta /receipt. Karena itu batasnya ditegaskan di sini.
    * Tanpa baris ini, setiap halaman publik ikut dilempar ke layar masuk.
    */
-  if (!path.startsWith("/app") && !path.startsWith("/admin")) {
+  const isApp = path === "/app" || path.startsWith("/app/");
+  const isAdmin = path === "/admin" || path.startsWith("/admin/");
+
+  if (!isApp && !isAdmin) {
     return NextResponse.next();
   }
 
@@ -76,7 +79,7 @@ export function proxy(request: NextRequest) {
    * tidak punya tab admin, jadi mengarahkan tim ke sana berarti mendaratkan
    * mereka di layar yang tidak bisa dipakai masuk.
    */
-  if (path.startsWith("/admin")) {
+  if (isAdmin) {
     return NextResponse.redirect(new URL("/admin", request.url));
   }
 
