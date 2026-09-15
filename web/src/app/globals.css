@@ -343,6 +343,38 @@ html {
   .kael-hr .money { @apply w-24 rounded-lg border border-[#dedee8] p-2 text-right outline-none focus:ring-2 focus:ring-[#7958d8] disabled:bg-[#f7f6fc]; }
   .kael-hr table th { @apply border-y border-[#dedee8] py-2 text-left text-xs text-[#66667a]; }
   .kael-hr table td { @apply border-b border-[#eee] py-2; }
+
+  /* Mochi HR Design System */
+  .mochi-ui.kael-hr .field,
+  .mochi-ui .kael-hr .field { @apply mt-1 min-h-11 w-full rounded-xl border border-[#d8e3de] bg-[#fbfdfc] px-3.5 py-2 text-xs font-mono text-[#0b3d2e] outline-none transition-colors focus:border-emerald-600 focus:bg-white focus:ring-2 focus:ring-emerald-600/20; }
+  .mochi-ui.kael-hr .primary,
+  .mochi-ui .kael-hr .primary { @apply mt-3 inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-[#0b3d2e] hover:bg-[#0e4837] px-4 text-xs font-bold text-[#c8f53a] shadow-xs transition-colors disabled:opacity-50; }
+  .mochi-ui.kael-hr .secondary,
+  .mochi-ui .kael-hr .secondary { @apply inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-[#d8e3de] bg-white hover:bg-[#edf8f3] px-3.5 text-xs font-bold text-[#0b3d2e] shadow-xs transition-colors disabled:opacity-50; }
+  .mochi-ui.kael-hr .small,
+  .mochi-ui .kael-hr .small { @apply inline-flex min-h-8 items-center justify-center gap-1.5 rounded-lg border border-[#d8e3de] bg-white hover:bg-[#edf8f3] px-2.5 text-xs font-bold text-[#0b3d2e] transition-colors; }
+  .mochi-ui.kael-hr .danger,
+  .mochi-ui .kael-hr .danger { @apply inline-flex min-h-8 items-center justify-center rounded-lg border border-red-200 bg-red-50 hover:bg-red-100 px-2.5 text-xs font-bold text-red-700 transition-colors; }
+  .mochi-ui.kael-hr .ok,
+  .mochi-ui .kael-hr .ok { @apply inline-flex min-h-8 items-center justify-center rounded-lg border border-emerald-200 bg-emerald-50 hover:bg-emerald-100 px-2.5 text-xs font-bold text-emerald-800 transition-colors; }
+  .mochi-ui.kael-hr .row,
+  .mochi-ui .kael-hr .row { @apply flex flex-wrap items-start justify-between gap-3 rounded-2xl border border-[#d8e3de] bg-white p-3.5 text-sm shadow-[0_2px_10px_rgba(11,61,46,0.02)]; }
+  .mochi-ui.kael-hr .row small,
+  .mochi-ui .kael-hr .row small,
+  .mochi-ui.kael-hr .period small,
+  .mochi-ui .kael-hr .period small { @apply mt-1 block text-xs font-normal text-[#527867]; }
+  .mochi-ui.kael-hr .period,
+  .mochi-ui .kael-hr .period { @apply min-h-11 shrink-0 rounded-2xl border border-[#d8e3de] bg-white px-3.5 py-2 text-left text-xs font-bold text-[#18392f] transition-colors hover:bg-[#edf8f3]; }
+  .mochi-ui.kael-hr .period.active,
+  .mochi-ui .kael-hr .period.active { @apply border-[#0b3d2e] bg-[#0b3d2e] text-[#c8f53a] shadow-xs; }
+  .mochi-ui.kael-hr .period.active small,
+  .mochi-ui .kael-hr .period.active small { @apply text-emerald-200/80; }
+  .mochi-ui.kael-hr .money,
+  .mochi-ui .kael-hr .money { @apply w-24 rounded-xl border border-[#d8e3de] bg-white p-2 text-right text-xs font-mono font-bold text-[#0b3d2e] outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/20 disabled:bg-[#f0f5f2]; }
+  .mochi-ui.kael-hr table th,
+  .mochi-ui .kael-hr table th { @apply border-y border-[#d8e3de] py-2.5 text-left text-xs font-bold text-[#527867] bg-[#f8faf9]; }
+  .mochi-ui.kael-hr table td,
+  .mochi-ui .kael-hr table td { @apply border-b border-[#e5ede9] py-2.5; }
 }
 
 body {

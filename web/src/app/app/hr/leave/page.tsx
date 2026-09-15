@@ -15,6 +15,8 @@ export default async function LeavePage() {
       <div className={mochiThemeClass(business)}>
         <LeaveClient
           staffName={session.name}
+          business={business}
+          themeClassName={mochiThemeClass(business)}
           requests={
             requests as unknown as {
               id: string;

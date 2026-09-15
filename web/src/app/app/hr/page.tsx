@@ -11,7 +11,11 @@ export default async function HrPage() {
   ]);
   return (
     <div className={mochiThemeClass(business)}>
-      <HrClient data={data as never} />
+      <HrClient
+        data={data as never}
+        business={business}
+        themeClassName={mochiThemeClass(business)}
+      />
     </div>
   );
 }

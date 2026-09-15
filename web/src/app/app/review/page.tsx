@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 
 import { db } from "@/lib/db";
 import { guardModulePage } from "@/lib/licensing";
+import { mochiThemeClass } from "@/lib/mochi-theme";
 import ReviewClient from "./review-client";
 
 /**
@@ -29,13 +30,16 @@ export default async function ReviewDashboardPage() {
   ]);
 
   return (
-    <ReviewClient
-      business={business}
-      cards={cards}
-      rawTaps={rawTaps}
-      googleReport={googleReport}
-      suspiciousTapCount={suspiciousTaps.length}
-      sessionRole={session.role === "owner" ? "owner" : "staff"}
-    />
+    <div className={mochiThemeClass(business)}>
+      <ReviewClient
+        business={business}
+        cards={cards}
+        rawTaps={rawTaps}
+        googleReport={googleReport}
+        suspiciousTapCount={suspiciousTaps.length}
+        sessionRole={session.role === "owner" ? "owner" : "staff"}
+        themeClassName={mochiThemeClass(business)}
+      />
+    </div>
   );
 }

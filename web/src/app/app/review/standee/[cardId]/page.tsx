@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 
 import { db } from "@/lib/db";
 import { guardOwnerPage } from "@/lib/licensing";
+import { mochiThemeClass } from "@/lib/mochi-theme";
 import StandeeClient from "./standee-client";
 
 export default async function ReviewStandeePage({ params }: { params: Promise<{ cardId: string }> }) {
@@ -14,5 +15,9 @@ export default async function ReviewStandeePage({ params }: { params: Promise<{ 
   ]);
   if (!card || !business) notFound();
 
-  return <StandeeClient card={card} business={business} saved={saved as { headline?: string; body?: string; print_size?: "A6" | "A5" | "A4" } | null} />;
+  return (
+    <div className={mochiThemeClass(business)}>
+      <StandeeClient card={card} business={business} saved={saved as { headline?: string; body?: string; print_size?: "A6" | "A5" | "A4" } | null} />
+    </div>
+  );
 }
