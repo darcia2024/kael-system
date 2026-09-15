@@ -926,20 +926,15 @@ export default function CustomerQrOrderPage({
                 <button
                   type="button"
                   onClick={handleSaveModalItem}
-                  className={`flex h-12 flex-1 items-center justify-between rounded-xl px-4 text-xs sm:text-sm font-extrabold shadow-md transition-all active:scale-[0.98] ${
+                  className={`flex h-12 flex-1 items-center justify-center gap-2 rounded-xl px-4 text-xs sm:text-sm font-extrabold shadow-md transition-all active:scale-[0.98] ${
                     isMochi
                       ? "bg-[#c8f53a] text-[#0b3d2e] hover:bg-[#d9ff57] shadow-[#c8f53a]/25"
                       : "bg-[#0aae6f] text-white hover:bg-[#079760]"
                   }`}
                 >
-                  <span className="flex items-center gap-1.5">
-                    <ShoppingBag size={17} strokeWidth={2.2} />
-                    <span>
-                      {cart[selectedMenuItem.id] ? "Simpan Pesanan" : "Tambah ke Keranjang"}
-                    </span>
-                  </span>
-                  <span className="text-sm font-black">
-                    {formatRupiah(selectedMenuItem.price * modalQty)}
+                  <ShoppingBag size={17} strokeWidth={2.2} />
+                  <span>
+                    {cart[selectedMenuItem.id] ? "Simpan Pesanan" : "Tambah ke Keranjang"}
                   </span>
                 </button>
               </div>
