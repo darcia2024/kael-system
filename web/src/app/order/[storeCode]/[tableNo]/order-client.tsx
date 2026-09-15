@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   Coffee,
   CupSoda,
+  Eye,
   MessageSquare,
   Minus,
   Package,
@@ -63,6 +64,9 @@ export default function CustomerQrOrderPage({
   const [searchQuery, setSearchQuery] = useState("");
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [cart, setCart] = useState<Record<string, { item: MenuItem; qty: number; note: string }>>({});
+  const [selectedMenuItem, setSelectedMenuItem] = useState<MenuItem | null>(null);
+  const [modalQty, setModalQty] = useState(1);
+  const [modalNote, setModalNote] = useState("");
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -87,13 +91,13 @@ export default function CustomerQrOrderPage({
   }, [business]);
 
   useEffect(() => {
-    if (!isCartOpen) return;
+    if (!isCartOpen && !selectedMenuItem) return;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
       document.body.style.overflow = previousOverflow;
     };
-  }, [isCartOpen]);
+  }, [isCartOpen, selectedMenuItem]);
 
   const categorizedMenu = useMemo(
     () =>
@@ -185,6 +189,26 @@ export default function CustomerQrOrderPage({
         [itemId]: { ...existing, note },
       };
     });
+  };
+
+  const handleOpenDetailModal = (item: MenuItem) => {
+    setSelectedMenuItem(item);
+    const existing = cart[item.id];
+    setModalQty(existing ? existing.qty : 1);
+    setModalNote(existing ? existing.note : "");
+  };
+
+  const handleSaveModalItem = () => {
+    if (!selectedMenuItem) return;
+    setCart((prev) => ({
+      ...prev,
+      [selectedMenuItem.id]: {
+        item: selectedMenuItem,
+        qty: modalQty,
+        note: modalNote.trim(),
+      },
+    }));
+    setSelectedMenuItem(null);
   };
 
   const handleCheckout = async () => {
@@ -600,16 +624,21 @@ export default function CustomerQrOrderPage({
                   return (
                     <article
                       key={item.id}
-                      className="flex min-h-[250px] min-w-0 flex-col overflow-hidden rounded-lg border border-[#d7e0db] bg-white shadow-[0_5px_18px_rgba(25,67,52,0.06)]"
+                      className="group flex min-h-[250px] min-w-0 flex-col overflow-hidden rounded-xl border border-[#d7e0db] bg-white shadow-[0_5px_18px_rgba(25,67,52,0.06)] hover:border-[#176c4f]/40 hover:shadow-[0_8px_24px_rgba(25,67,52,0.1)] transition-all"
                     >
-                      <div className="relative aspect-[4/3] w-full overflow-hidden border-b border-[#e0e7e3] bg-[#e8f2ed]">
+                      <button
+                        type="button"
+                        onClick={() => handleOpenDetailModal(item)}
+                        aria-label={`Lihat foto dan detail ${item.name}`}
+                        className="relative aspect-[4/3] w-full cursor-pointer overflow-hidden border-b border-[#e0e7e3] bg-[#e8f2ed] p-0 text-left block focus:outline-none"
+                      >
                         {hasPhoto ? (
                           // eslint-disable-next-line @next/next/no-img-element
                           <img
                             src={item.photo_url ?? undefined}
                             alt={item.name}
                             loading="lazy"
-                            className="h-full w-full object-cover"
+                            className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
                           />
                         ) : (
                           <div className="flex h-full flex-col items-center justify-center gap-2 text-[#34745c]">
@@ -619,14 +648,27 @@ export default function CustomerQrOrderPage({
                             </span>
                           </div>
                         )}
-                      </div>
+                        <span className="absolute bottom-2 right-2 flex items-center gap-1 rounded-full bg-black/60 px-2 py-0.5 text-[9px] font-semibold text-white backdrop-blur-xs shadow-xs">
+                          <Eye size={11} aria-hidden="true" />
+                          <span>Detail</span>
+                        </span>
+                      </button>
 
                       <div className="flex flex-1 flex-col p-2.5">
-                        <h3 className="break-words text-[14px] font-extrabold leading-tight text-[#18392f]">
-                          {item.name}
-                        </h3>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenDetailModal(item)}
+                          className="text-left w-full group/title"
+                        >
+                          <h3 className="break-words text-[14px] font-extrabold leading-tight text-[#18392f] group-hover/title:text-[#0b3d2e] transition-colors">
+                            {item.name}
+                          </h3>
+                        </button>
                         {item.description && (
-                          <p className="mt-1 line-clamp-2 text-[10px] leading-relaxed text-[#78857e]">
+                          <p
+                            onClick={() => handleOpenDetailModal(item)}
+                            className="mt-1 cursor-pointer line-clamp-2 text-[10px] leading-relaxed text-[#78857e] hover:text-[#495e54] transition-colors"
+                          >
                             {item.description}
                           </p>
                         )}
@@ -752,6 +794,169 @@ export default function CustomerQrOrderPage({
           <div className="relative max-h-[88dvh] w-full overflow-y-auto rounded-t-2xl bg-white p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-[0_-16px_40px_rgba(17,42,33,0.2)]">
             <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-[#cbd6d0]" />
             {renderCartContent(true)}
+          </div>
+        </div>
+      )}
+
+      {/* Detail Menu Popup Modal with Keterangan & Add to Cart */}
+      {selectedMenuItem && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/70 backdrop-blur-xs animate-in fade-in-50"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="modal-menu-title"
+        >
+          {/* Backdrop dismiss */}
+          <button
+            type="button"
+            aria-label="Tutup detail menu"
+            onClick={() => setSelectedMenuItem(null)}
+            className="absolute inset-0 cursor-default"
+          />
+
+          {/* Modal Card */}
+          <div className="relative z-10 flex max-h-[90vh] w-full max-w-md flex-col overflow-hidden rounded-3xl bg-white shadow-2xl animate-in zoom-in-95 duration-150">
+            {/* Close Button */}
+            <button
+              type="button"
+              aria-label="Tutup detail menu"
+              onClick={() => setSelectedMenuItem(null)}
+              className="absolute right-3 top-3 z-20 flex h-9 w-9 items-center justify-center rounded-full bg-black/55 text-white backdrop-blur-md transition-transform hover:scale-105 active:scale-95 hover:bg-black/75 shadow-md"
+            >
+              <X size={18} strokeWidth={2.5} />
+            </button>
+
+            {/* Scrollable Content Container */}
+            <div className="flex-1 overflow-y-auto">
+              {/* Photo Area */}
+              <div className="relative aspect-[4/3] w-full overflow-hidden bg-[#e8f2ed]">
+                {selectedMenuItem.photo_url && selectedMenuItem.photo_url !== PLACEHOLDER_MENU ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={selectedMenuItem.photo_url}
+                    alt={selectedMenuItem.name}
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <div className="flex h-full flex-col items-center justify-center gap-2 text-[#34745c]">
+                    <Package size={48} strokeWidth={1.5} aria-hidden="true" />
+                    <span className="text-xs font-bold uppercase tracking-wider text-[#698278]">
+                      Foto Menu
+                    </span>
+                  </div>
+                )}
+                {/* Category Pill */}
+                <div className="absolute bottom-3 left-3 flex items-center gap-1.5 rounded-full bg-[#0b3d2e]/90 px-3 py-1 text-[11px] font-bold text-white backdrop-blur-md shadow-md">
+                  <span className="inline-block h-2 w-2 rounded-full bg-[#c8f53a]" />
+                  <span>
+                    {categories.find((c) => c.id === selectedMenuItem.category_id)?.name ?? "Menu"}
+                  </span>
+                </div>
+              </div>
+
+              {/* Information Body */}
+              <div className="space-y-3.5 p-4 sm:p-5">
+                <div>
+                  <div className="flex items-start justify-between gap-3">
+                    <h2 id="modal-menu-title" className="text-lg sm:text-xl font-extrabold leading-tight text-[#18392f]">
+                      {selectedMenuItem.name}
+                    </h2>
+                    <span className="shrink-0 text-base sm:text-lg font-black text-[#8f5032]">
+                      {formatRupiah(selectedMenuItem.price)}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Keterangan Menu / Description */}
+                <div className="rounded-2xl border border-[#dce6e1] bg-[#f7faf8] p-3.5">
+                  <span className="block text-[10px] font-bold uppercase tracking-wider text-[#497060]">
+                    Keterangan Menu
+                  </span>
+                  <p className="mt-1 text-xs sm:text-sm leading-relaxed text-[#2c4b3f]">
+                    {selectedMenuItem.description || "Menu pilihan istimewa dengan bahan-bahan berkualitas khas Mochi Cafe n Resto."}
+                  </p>
+                </div>
+
+                {/* Catatan Khusus */}
+                <div>
+                  <label htmlFor="modal-item-note" className="block text-xs font-bold text-[#1e3e33]">
+                    Catatan Pesanan <span className="font-normal text-[#78857e]">(opsional)</span>
+                  </label>
+                  <input
+                    id="modal-item-note"
+                    type="text"
+                    value={modalNote}
+                    onChange={(e) => setModalNote(e.target.value)}
+                    placeholder="Contoh: pedas sedang, es dipisah, tanpa seledri..."
+                    maxLength={150}
+                    className="mt-1.5 w-full rounded-xl border border-[#cbd9d2] bg-white px-3 py-2.5 text-xs sm:text-sm text-[#18392f] placeholder:text-[#95a39c] outline-none focus:border-[#0b3d2e] focus:ring-1 focus:ring-[#0b3d2e] transition-all"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Sticky Bottom Actions Bar */}
+            <div className="border-t border-[#dce6e1] bg-white p-3.5 sm:p-4 shadow-[0_-4px_16px_rgba(0,0,0,0.05)]">
+              <div className="flex items-center gap-3">
+                {/* Quantity Stepper */}
+                <div className="flex h-12 items-center rounded-xl border border-[#bad0c4] bg-[#f6f9f7] px-1 shadow-xs">
+                  <button
+                    type="button"
+                    aria-label="Kurangi jumlah"
+                    onClick={() => setModalQty((prev) => Math.max(1, prev - 1))}
+                    disabled={modalQty <= 1}
+                    className="flex h-10 w-10 items-center justify-center rounded-lg text-[#18392f] disabled:opacity-30 hover:bg-white active:scale-95 transition-all"
+                  >
+                    <Minus size={15} strokeWidth={2.5} />
+                  </button>
+                  <span className="w-9 text-center text-sm font-extrabold text-[#18392f]">
+                    {modalQty}
+                  </span>
+                  <button
+                    type="button"
+                    aria-label="Tambah jumlah"
+                    onClick={() => setModalQty((prev) => prev + 1)}
+                    className="flex h-10 w-10 items-center justify-center rounded-lg text-[#18392f] hover:bg-white active:scale-95 transition-all"
+                  >
+                    <Plus size={15} strokeWidth={2.5} />
+                  </button>
+                </div>
+
+                {/* Add to Cart CTA Button */}
+                <button
+                  type="button"
+                  onClick={handleSaveModalItem}
+                  className={`flex h-12 flex-1 items-center justify-between rounded-xl px-4 text-xs sm:text-sm font-extrabold shadow-md transition-all active:scale-[0.98] ${
+                    isMochi
+                      ? "bg-[#c8f53a] text-[#0b3d2e] hover:bg-[#d9ff57] shadow-[#c8f53a]/25"
+                      : "bg-[#0aae6f] text-white hover:bg-[#079760]"
+                  }`}
+                >
+                  <span className="flex items-center gap-1.5">
+                    <ShoppingBag size={17} strokeWidth={2.2} />
+                    <span>
+                      {cart[selectedMenuItem.id] ? "Simpan Pesanan" : "Tambah ke Keranjang"}
+                    </span>
+                  </span>
+                  <span className="text-sm font-black">
+                    {formatRupiah(selectedMenuItem.price * modalQty)}
+                  </span>
+                </button>
+              </div>
+
+              {cart[selectedMenuItem.id] && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleUpdateQty(selectedMenuItem.id, -cart[selectedMenuItem.id].qty);
+                    setSelectedMenuItem(null);
+                  }}
+                  className="mt-2 w-full text-center text-[11px] font-semibold text-rose-600 hover:underline"
+                >
+                  Hapus menu ini dari pesanan
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}
