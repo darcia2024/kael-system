@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 
 import { db } from "@/lib/db";
 import MemberClient from "./member-client";
@@ -15,6 +15,14 @@ export const metadata: Metadata = {
   title: "Kartu Member",
   // Halaman ini berisi data pribadi dan tidak boleh muncul di hasil pencarian.
   robots: { index: false, follow: false },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  viewportFit: "cover",
 };
 
 export default async function MemberPage({

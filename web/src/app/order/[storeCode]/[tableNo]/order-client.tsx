@@ -79,6 +79,49 @@ export default function CustomerQrOrderPage({
   const [caraBayar, setCaraBayar] = useState<"qris" | "cash">("cash");
   const [pesananSelesai, setPesananSelesai] = useState<{ no: string; total: number } | null>(null);
 
+  // Kunci halaman agar tidak bisa di-zoom out atau zoom in di HP (terkunci di skala optimal 1.0)
+  useEffect(() => {
+    // 1. Cegah pinch-to-zoom gesture Safari iOS
+    const preventGesture = (e: Event) => {
+      e.preventDefault();
+    };
+
+    // 2. Cegah multi-touch pinch (cubit 2 jari)
+    const handleTouchStart = (e: TouchEvent) => {
+      if (e.touches.length > 1) {
+        e.preventDefault();
+      }
+    };
+
+    // 3. Cegah double-tap zoom cepat di layar selain elemen form
+    let lastTouchEnd = 0;
+    const handleTouchEnd = (e: TouchEvent) => {
+      const now = Date.now();
+      if (now - lastTouchEnd <= 300) {
+        const target = e.target as HTMLElement | null;
+        const isInteractive = target?.closest("input, textarea, select, button, a");
+        if (!isInteractive) {
+          e.preventDefault();
+        }
+      }
+      lastTouchEnd = now;
+    };
+
+    document.addEventListener("gesturestart", preventGesture, { passive: false });
+    document.addEventListener("gesturechange", preventGesture, { passive: false });
+    document.addEventListener("gestureend", preventGesture, { passive: false });
+    document.addEventListener("touchstart", handleTouchStart, { passive: false });
+    document.addEventListener("touchend", handleTouchEnd, { passive: false });
+
+    return () => {
+      document.removeEventListener("gesturestart", preventGesture);
+      document.removeEventListener("gesturechange", preventGesture);
+      document.removeEventListener("gestureend", preventGesture);
+      document.removeEventListener("touchstart", handleTouchStart);
+      document.removeEventListener("touchend", handleTouchEnd);
+    };
+  }, []);
+
   useEffect(() => {
     if (!isCartOpen && !selectedMenuItem) return;
     const previousOverflow = document.body.style.overflow;
