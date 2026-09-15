@@ -3023,7 +3023,7 @@ export const db = {
     return (await sql`
       SELECT * FROM menu_items
       WHERE business_id = ${businessId} AND is_available = TRUE AND price > 0
-      ORDER BY sort_order, name LIMIT 30
+      ORDER BY sort_order, name
     `) as unknown as MenuItem[];
   },
 
