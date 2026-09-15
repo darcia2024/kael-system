@@ -7,32 +7,33 @@ import qrcode from "qrcode-generator";
  * Penggambar QR.
  *
  * Digambar sebagai SVG dari modul-modulnya sendiri, bukan lewat layanan
- * gambar dari luar. Untuk QR pembayaran itu bukan soal selera: mengirim
- * payload QRIS ke server pihak ketiga hanya untuk digambar berarti isi
- * transaksi tiap toko lewat sana, dan QR-nya berhenti muncul begitu koneksi
- * kasir putus.
- *
- * Warna dipatok hitam di atas putih dan TIDAK ikut tema gelap. Pemindai
- * bergantung pada kontras, dan QR terang di atas latar gelap adalah cara
- * paling umum membuat QR yang benar jadi tidak terbaca.
+ * gambar dari luar. Mendukung custom colorDark dan centerLogoUrl
+ * (otomatis memakai error correction level H agar logo di tengah
+ * tidak mengganggu keterbacaan pemindai).
  */
 export default function QrCode({
   value,
   size = 240,
   className = "",
   label,
+  colorDark = "#000000",
+  centerLogoUrl,
+  errorCorrectionLevel,
 }: {
   value: string;
   size?: number;
   className?: string;
   /** Teks alternatif untuk pembaca layar. */
   label?: string;
+  colorDark?: string;
+  centerLogoUrl?: string | null;
+  errorCorrectionLevel?: "L" | "M" | "Q" | "H";
 }) {
+  const ecLevel = errorCorrectionLevel ?? (centerLogoUrl ? "H" : "M");
+
   const hasil = useMemo(() => {
     try {
-      // Tingkat koreksi galat M: cukup tahan terhadap layar tergores dan
-      // pantulan cahaya, tanpa memperbesar modul sampai QR-nya jadi rapat.
-      const qr = qrcode(0, "M");
+      const qr = qrcode(0, ecLevel);
       qr.addData(value, "Byte");
       qr.make();
 
@@ -47,7 +48,7 @@ export default function QrCode({
     } catch {
       return null;
     }
-  }, [value]);
+  }, [value, ecLevel]);
 
   if (!hasil) {
     return (
@@ -60,23 +61,41 @@ export default function QrCode({
     );
   }
 
-  // Zona sunyi 4 modul di tiap sisi, sesuai spesifikasi QR. Tanpa itu sebagian
-  // pemindai gagal menemukan batas kodenya.
+  // Zona sunyi 4 modul di tiap sisi, sesuai spesifikasi QR.
   const m = 4;
   const total = hasil.n + m * 2;
+  const logoBoxSize = Math.round(size * 0.23);
 
   return (
-    <svg
-      viewBox={`${-m} ${-m} ${total} ${total}`}
-      width={size}
-      height={size}
-      className={className}
-      shapeRendering="crispEdges"
-      role="img"
-      aria-label={label ?? "Kode QR"}
+    <div
+      className={`relative inline-flex items-center justify-center ${className}`}
+      style={{ width: size, height: size }}
     >
-      <rect x={-m} y={-m} width={total} height={total} fill="#ffffff" />
-      <path d={hasil.d} fill="#000000" />
-    </svg>
+      <svg
+        viewBox={`${-m} ${-m} ${total} ${total}`}
+        width={size}
+        height={size}
+        className="block h-full w-full"
+        shapeRendering="crispEdges"
+        role="img"
+        aria-label={label ?? "Kode QR"}
+      >
+        <rect x={-m} y={-m} width={total} height={total} fill="#ffffff" />
+        <path d={hasil.d} fill={colorDark} />
+      </svg>
+      {centerLogoUrl && (
+        <div
+          className="absolute inset-0 m-auto flex items-center justify-center rounded-full bg-white p-1.5 shadow-md border-2 border-[#0b3d2e]"
+          style={{ width: logoBoxSize, height: logoBoxSize }}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={centerLogoUrl}
+            alt="Brand Logo"
+            className="h-full w-full rounded-full object-contain"
+          />
+        </div>
+      )}
+    </div>
   );
 }
