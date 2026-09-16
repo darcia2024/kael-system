@@ -151,30 +151,34 @@ export default function TableQrModal({
     logoImg.src = "/logo-mochi.png";
 
     const renderCanvasContent = () => {
-      // 1. Top Logo (Crisp & Balanced)
-      const logoW = 280;
-      const logoH = 115;
-      const logoX = (size - logoW) / 2;
-      const logoY = 95;
+      // 1. Top Logo (1:1 Aspect Ratio Square / Circular Logo)
+      const logoSize = 170;
+      const logoX = (size - logoSize) / 2;
+      const logoY = 90;
       if (logoImg.naturalWidth > 0) {
-        ctx.drawImage(logoImg, logoX, logoY, logoW, logoH);
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(size / 2, logoY + logoSize / 2, logoSize / 2, 0, Math.PI * 2);
+        ctx.clip();
+        ctx.drawImage(logoImg, logoX, logoY, logoSize, logoSize);
+        ctx.restore();
       }
 
       // 2. Store Title & Tagline
       ctx.fillStyle = "#072e22";
-      ctx.font = "900 42px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+      ctx.font = "900 44px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
       ctx.textAlign = "center";
-      ctx.fillText((storeName || "MOCHI CAFE N RESTO").toUpperCase(), size / 2, 250);
+      ctx.fillText((storeName || "MOCHI CAFE N RESTO").toUpperCase(), size / 2, 305);
 
       ctx.fillStyle = "#4a6b5e";
-      ctx.font = "bold 20px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
-      ctx.fillText("BUKU MENU DIGITAL · SELF-SERVICE DINING", size / 2, 288);
+      ctx.font = "bold 21px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+      ctx.fillText("BUKU MENU DIGITAL · SELF-SERVICE DINING", size / 2, 344);
 
       // 3. Central Table Badge (Dark Emerald & Lime Glow)
       const tableBadgeW = 540;
       const tableBadgeH = 92;
       const tableBadgeX = (size - tableBadgeW) / 2;
-      const tableBadgeY = 325;
+      const tableBadgeY = 385;
 
       ctx.fillStyle = "#072e22";
       ctx.beginPath();
@@ -195,9 +199,9 @@ export default function TableQrModal({
       qr.addData(targetUrl, "Byte");
       qr.make();
       const n = qr.getModuleCount();
-      const qrBoxSize = 560;
+      const qrBoxSize = 620;
       const qrX = (size - qrBoxSize) / 2;
-      const qrY = 450;
+      const qrY = 515;
 
       // QR White Card Background with Soft Border
       const cardPadding = 26;
@@ -216,9 +220,9 @@ export default function TableQrModal({
       ctx.stroke();
 
       // Corner Viewfinder Precision Brackets
-      const cornerLen = 34;
+      const cornerLen = 38;
       ctx.strokeStyle = "#072e22";
-      ctx.lineWidth = 6;
+      ctx.lineWidth = 6.5;
       ctx.lineCap = "round";
 
       // Top Left
@@ -267,7 +271,7 @@ export default function TableQrModal({
       }
 
       // Center Logo Badge on QR (Circular Squircle)
-      const centerBadgeSize = 124;
+      const centerBadgeSize = 136;
       const cbX = (size - centerBadgeSize) / 2;
       const cbY = qrY + (qrBoxSize - centerBadgeSize) / 2;
 
@@ -292,28 +296,28 @@ export default function TableQrModal({
       ctx.restore();
 
       // 5. Instruction Scan Pill
-      const pillW = 580;
-      const pillH = 64;
+      const pillW = 600;
+      const pillH = 66;
       const pillX = (size - pillW) / 2;
-      const pillY = 1100;
+      const pillY = 1205;
 
       ctx.fillStyle = "#edf8f3";
       ctx.beginPath();
-      ctx.roundRect(pillX, pillY, pillW, pillH, 32);
+      ctx.roundRect(pillX, pillY, pillW, pillH, 33);
       ctx.fill();
       ctx.strokeStyle = "#a3d4c0";
       ctx.lineWidth = 2.5;
       ctx.stroke();
 
       ctx.fillStyle = "#072e22";
-      ctx.font = "900 23px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
-      ctx.fillText("📷 SCAN DENGAN KAMERA HP / WA", size / 2, pillY + 41);
+      ctx.font = "900 24px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+      ctx.fillText("📷 SCAN DENGAN KAMERA HP / WA", size / 2, pillY + 42);
 
       // 6. 3 Steps Instruction Cards Box (Balanced Grid)
-      const stepsW = 1440;
-      const stepsH = 190;
+      const stepsW = 1460;
+      const stepsH = 200;
       const stepsX = (size - stepsW) / 2;
-      const stepsY = 1195;
+      const stepsY = 1295;
 
       ctx.fillStyle = "#f6faf8";
       ctx.beginPath();
@@ -324,14 +328,14 @@ export default function TableQrModal({
       ctx.stroke();
 
       // Step 1
-      ctx.font = "36px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
-      ctx.fillText("📷", stepsX + stepsW * 0.17, stepsY + 62);
+      ctx.font = "38px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+      ctx.fillText("📷", stepsX + stepsW * 0.17, stepsY + 66);
       ctx.fillStyle = "#072e22";
-      ctx.font = "900 24px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
-      ctx.fillText("1. Buka Kamera", stepsX + stepsW * 0.17, stepsY + 106);
+      ctx.font = "900 25px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+      ctx.fillText("1. Buka Kamera", stepsX + stepsW * 0.17, stepsY + 112);
       ctx.fillStyle = "#557266";
-      ctx.font = "17px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
-      ctx.fillText("iPhone / Android / WA", stepsX + stepsW * 0.17, stepsY + 144);
+      ctx.font = "18px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+      ctx.fillText("iPhone / Android / WA", stepsX + stepsW * 0.17, stepsY + 152);
 
       // Separator 1
       ctx.strokeStyle = "#dce8e2";
@@ -342,14 +346,14 @@ export default function TableQrModal({
       ctx.stroke();
 
       // Step 2
-      ctx.font = "36px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
-      ctx.fillText("📲", stepsX + stepsW * 0.5, stepsY + 62);
+      ctx.font = "38px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+      ctx.fillText("📲", stepsX + stepsW * 0.5, stepsY + 66);
       ctx.fillStyle = "#072e22";
-      ctx.font = "900 24px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
-      ctx.fillText("2. Arahkan QR", stepsX + stepsW * 0.5, stepsY + 106);
+      ctx.font = "900 25px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+      ctx.fillText("2. Arahkan QR", stepsX + stepsW * 0.5, stepsY + 112);
       ctx.fillStyle = "#557266";
-      ctx.font = "17px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
-      ctx.fillText("Buka menu & pilih sajian", stepsX + stepsW * 0.5, stepsY + 144);
+      ctx.font = "18px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+      ctx.fillText("Buka menu & pilih sajian", stepsX + stepsW * 0.5, stepsY + 152);
 
       // Separator 2
       ctx.beginPath();
@@ -358,31 +362,31 @@ export default function TableQrModal({
       ctx.stroke();
 
       // Step 3
-      ctx.font = "36px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
-      ctx.fillText("🍽️", stepsX + stepsW * 0.83, stepsY + 62);
+      ctx.font = "38px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+      ctx.fillText("🍽️", stepsX + stepsW * 0.83, stepsY + 66);
       ctx.fillStyle = "#072e22";
-      ctx.font = "900 24px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
-      ctx.fillText("3. Pesan & Santap", stepsX + stepsW * 0.83, stepsY + 106);
+      ctx.font = "900 25px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+      ctx.fillText("3. Pesan & Santap", stepsX + stepsW * 0.83, stepsY + 112);
       ctx.fillStyle = "#557266";
-      ctx.font = "17px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
-      ctx.fillText("Diantar langsung ke meja", stepsX + stepsW * 0.83, stepsY + 144);
+      ctx.font = "18px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+      ctx.fillText("Diantar langsung ke meja", stepsX + stepsW * 0.83, stepsY + 152);
 
       // 7. Footer Member & Assurance
       ctx.fillStyle = "#125740";
-      ctx.font = "bold 23px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
-      ctx.fillText("✨ Kumpulkan Poin Member di Setiap Pemesanan! ✨", size / 2, 1445);
+      ctx.font = "bold 25px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+      ctx.fillText("✨ Kumpulkan Poin Member di Setiap Pemesanan! ✨", size / 2, 1545);
 
       ctx.fillStyle = "#71897f";
-      ctx.font = "bold 17px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+      ctx.font = "bold 18px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
       ctx.fillText(
         "PESANAN OTOMATIS TERHUBUNG KE KASIR & DAPUR · KAEL POS",
         size / 2,
-        1490,
+        1590,
       );
 
       ctx.fillStyle = "#9db2a8";
-      ctx.font = "13.5px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
-      ctx.fillText("Buku Menu Digital Meja · Self-Service Dining", size / 2, 1525);
+      ctx.font = "14px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+      ctx.fillText("Buku Menu Digital Meja · Self-Service Dining", size / 2, 1625);
 
       const link = document.createElement("a");
       link.download = `Standee-Meja-${formattedTableNumber}-MochiCafe-1x1.png`;
@@ -400,10 +404,9 @@ export default function TableQrModal({
 
     logoImg.onload = doRender;
     logoImg.onerror = doRender;
-    if (logoImg.complete) {
+    if (logoImg.complete && logoImg.naturalWidth > 0) {
       doRender();
     } else {
-      // Fallback timeout in case image loading is blocked or stalls
       setTimeout(doRender, 300);
     }
   };
@@ -496,18 +499,18 @@ export default function TableQrModal({
           .brand-logo-wrap {
             display: flex;
             justify-content: center;
-            margin-bottom: 4px;
+            margin-bottom: 6px;
             position: relative;
             z-index: 2;
           }
           .brand-logo-wrap img {
-            height: 48px;
-            width: auto;
-            max-width: 180px;
+            height: 56px;
+            width: 56px;
+            border-radius: 50%;
             object-fit: contain;
           }
           .store-title {
-            font-size: 18px;
+            font-size: 16px;
             font-weight: 900;
             color: #072e22;
             letter-spacing: 0.5px;
@@ -517,7 +520,7 @@ export default function TableQrModal({
             z-index: 2;
           }
           .store-subtitle {
-            font-size: 9.5px;
+            font-size: 9px;
             color: #4a6b5e;
             font-weight: 800;
             letter-spacing: 0.5px;
@@ -533,15 +536,15 @@ export default function TableQrModal({
             background: #072e22;
             color: #c8f53a;
             border: 2px solid #c8f53a;
-            padding: 6px 28px;
-            border-radius: 14px;
-            margin-bottom: 8px;
+            padding: 5px 24px;
+            border-radius: 12px;
+            margin-bottom: 10px;
             box-shadow: 0 4px 16px rgba(7, 46, 34, 0.2);
             position: relative;
             z-index: 2;
           }
           .table-banner-no {
-            font-size: 18px;
+            font-size: 16px;
             font-weight: 900;
             font-family: ui-monospace, SFMono-Regular, monospace;
             letter-spacing: 1.5px;
@@ -555,7 +558,7 @@ export default function TableQrModal({
             border-radius: 22px;
             border: 2px solid #d4e2dc;
             box-shadow: 0 4px 16px rgba(7, 46, 34, 0.08);
-            margin-bottom: 8px;
+            margin-bottom: 10px;
             z-index: 2;
           }
           .qr-frame .corner {
@@ -608,7 +611,7 @@ export default function TableQrModal({
             font-size: 10px;
             font-weight: 900;
             letter-spacing: 0.5px;
-            margin-bottom: 8px;
+            margin-bottom: 10px;
             position: relative;
             z-index: 2;
           }
@@ -618,8 +621,8 @@ export default function TableQrModal({
             background: #f6faf8;
             border: 1.5px solid #d4e4dc;
             border-radius: 16px;
-            padding: 8px 6px;
-            margin-bottom: 6px;
+            padding: 10px 8px;
+            margin-bottom: 8px;
             position: relative;
             z-index: 2;
           }
@@ -862,13 +865,13 @@ export default function TableQrModal({
               <div className="pointer-events-none absolute inset-3 rounded-[22px] border border-dashed border-[#072e22]/20" />
 
               <div>
-                {/* Logo Header (Borderless, Prominent) */}
-                <div className="relative z-10 flex justify-center mb-0.5">
+                {/* Logo Header (1:1 Circle Logo, Borderless, Crisp) */}
+                <div className="relative z-10 flex justify-center mb-1">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src="/logo-mochi.png"
                     alt="Mochi Cafe Logo"
-                    className="h-10 sm:h-12 w-auto max-w-[150px] object-contain mx-auto"
+                    className="h-12 w-12 rounded-full object-contain mx-auto shadow-xs"
                   />
                 </div>
 
