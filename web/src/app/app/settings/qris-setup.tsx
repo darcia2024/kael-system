@@ -154,7 +154,13 @@ export default function QrisSetup({
         <div className="grid gap-4 sm:grid-cols-[auto_1fr] sm:items-start">
           {contoh?.ok && (
             <div className="justify-self-center rounded-2xl border border-[#d8e3de] bg-white p-2.5 shadow-xs">
-              <QrCode value={contoh.payload} size={150} label="Contoh QRIS bernominal" />
+              <QrCode
+                value={contoh.payload}
+                size={150}
+                colorDark="#07251a"
+                centerLogoUrl="/logo-mochi.png"
+                label="Contoh QRIS bernominal"
+              />
               <p className="mt-1.5 text-center font-mono text-[10px] text-[#527867]">
                 contoh Rp 47.000
               </p>
