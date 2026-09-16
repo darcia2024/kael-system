@@ -76,8 +76,11 @@ export default function ReviewReportsClient({
     const thisMonthPrefix = now.toISOString().slice(0, 7); // YYYY-MM
 
     return initialFeedbacks.filter((f) => {
-      const fDate = new Date(f.created_at);
-      const fIso = f.created_at || "";
+      const fIso = f.created_at
+        ? typeof f.created_at === "string"
+          ? f.created_at
+          : new Date(f.created_at).toISOString()
+        : "";
       const fDay = fIso.slice(0, 10);
 
       // 1. Date Filter
