@@ -57,6 +57,7 @@ import { getMemberSegment, MEMBER_SEGMENT_COPY, type MemberSegment } from "@/lib
 import { CAMPAIGN_GOALS, type CampaignGoalKey } from "@/lib/campaign-templates";
 import { BusinessMark } from "@/components/business-mark";
 import { MemberQrCard, MemberQrModal } from "@/components/member-qr-modal";
+import { siteHost } from "@/lib/site";
 
 /** Semua data awal datang dari komponen server; halaman ini tidak menyentuh
  *  database sama sekali. Perubahan dikirim lewat server action, lalu
@@ -134,6 +135,57 @@ export default function KaelLoyaltyDashboard({
   const [showMemberQrModal, setShowMemberQrModal] = useState(false);
 
   const isMochi = (business?.store_code?.toUpperCase() ?? "") === "MOCHIKAFE" || (business?.name?.toLowerCase().includes("mochi") ?? false);
+
+  // ---------------------------------------------------------------------------
+  // PERSONAL MEMBER NOTIFICATION MODAL (Direct WA & Voucher Generator)
+  // ---------------------------------------------------------------------------
+  const [notifTargetCustomer, setNotifTargetCustomer] = useState<{
+    id: string;
+    name: string | null;
+    phone: string;
+    phone_masked: string;
+    balance: number;
+    token?: string;
+  } | null>(null);
+  const [notifTemplateType, setNotifTemplateType] = useState<"voucher" | "event" | "birthday" | "reengage" | "custom">("voucher");
+  const [notifCustomText, setNotifCustomText] = useState("");
+
+  const activeNotifMessage = useMemo(() => {
+    if (!notifTargetCustomer) return "";
+    const name = notifTargetCustomer.name?.trim().split(/\s+/)[0] || "Kak";
+    const store = business?.name || "Mochi Cafe n Resto";
+    const balance = notifTargetCustomer.balance;
+    const link = notifTargetCustomer.token ? `https://${siteHost}/m/${notifTargetCustomer.token}` : `https://${siteHost}/m`;
+
+    if (notifTemplateType === "voucher") {
+      return `Halo Kak ${name}! 🎉 Terima kasih sudah setia jadi member ${store}.\n\nKamu memiliki saldo ${balance} poin yang siap ditukarkan dengan berbagai voucher & menu gratis.\n\nCek kartu member & katalog hadiahmu di sini:\n${link}\n\nSampai jumpa di kasir ${store} ya!`;
+    }
+    if (notifTemplateType === "event") {
+      return `Halo Kak ${name}! Ada kabar gembira dari ${store} 📅✨\n\nMinggu ini kami mengadakan promo & event spesial khusus member! Kumpulkan poin lebih banyak dan nikmati menu spesial kami.\n\nLihat info lengkap dan kartu membermu:\n${link}\n\nJangan sampai terlewat ya!`;
+    }
+    if (notifTemplateType === "birthday") {
+      return `Selamat Ulang Tahun Kak ${name}! 🎂🎉🎁\n\nSeluruh tim ${store} mengucapkan selamat bertambah usia! Kami sudah menyiapkan traktiran & voucher spesial untuk hari bahagiamu.\n\nTunjukkan kartu membermu ke kasir saat mampir:\n${link}\n\nSemoga hari-harimu selalu menyenangkan!`;
+    }
+    if (notifTemplateType === "reengage") {
+      return `Halo Kak ${name}! Udah lama nih gak ketemu di ${store} ☕✨\n\nKami kangen kehadiranmu! Saldo poinmu masih tersimpan aman (${balance} poin) dan ada menu baru yang siap kamu coba.\n\nBuka kartu membermu di sini:\n${link}\n\nMampir lagi yuk!`;
+    }
+    return notifCustomText || `Halo Kak ${name}, ada info spesial dari ${store} untuk kartu membermu (${link}).`;
+  }, [notifTargetCustomer, notifTemplateType, notifCustomText, business?.name]);
+
+  const handleOpenNotifModal = (cust: CustomerDirectoryEntry) => {
+    const insight = memberInsights.find((m) => m.id === cust.id);
+    setNotifTargetCustomer({
+      id: cust.id,
+      name: cust.name,
+      phone: insight?.phone || cust.phone_masked,
+      phone_masked: cust.phone_masked,
+      balance: cust.balance,
+      token: insight?.token,
+    });
+    setNotifTemplateType("voucher");
+    setNotifCustomText("");
+  };
+
 
   // ---------------------------------------------------------------------------
   // CASHIER FAST POS STATE (Tab 1)
@@ -2307,6 +2359,132 @@ export default function KaelLoyaltyDashboard({
               >
                 Tutup
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+            {/* ============================================================= */}
+      {/* MODAL: DIRECT PERSONAL MEMBER NOTIFICATION (WHATSAPP SENDER)  */}
+      {/* ============================================================= */}
+      {notifTargetCustomer && (
+        <div className="fixed inset-0 z-50 bg-emerald-950/70 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="w-full max-w-lg rounded-3xl border border-[#d8e3de] bg-white p-5 sm:p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in font-sans">
+            <div className="flex items-center justify-between border-b border-[#d8e3de] pb-3">
+              <div className="flex items-center gap-2.5">
+                <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#edf8f3] text-[#167052]">
+                  <MessageCircle size={18} />
+                </span>
+                <div>
+                  <h3 className="font-black text-base text-[#0b3d2e]">
+                    Kirim Pesan ke {notifTargetCustomer.name || "Member"}
+                  </h3>
+                  <p className="text-[11px] font-mono text-[#527867]">
+                    WhatsApp: {notifTargetCustomer.phone_masked} · Saldo: {notifTargetCustomer.balance} Pts
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setNotifTargetCustomer(null)}
+                className="flex h-8 w-8 items-center justify-center rounded-full bg-[#edf1ef] text-[#718078] hover:text-[#1a382d]"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Template Selector Tabs */}
+            <div className="space-y-1.5 font-mono text-xs">
+              <label className="block font-bold text-[#1a382d]">Pilih Jenis Notifikasi / Template:</label>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setNotifTemplateType("voucher")}
+                  className={`p-2 rounded-xl text-left border text-[11px] font-bold transition-all ${
+                    notifTemplateType === "voucher"
+                      ? "border-[#167052] bg-[#0b3d2e] text-[#c8f53a]"
+                      : "border-[#d8e3de] bg-white text-[#527867] hover:bg-[#edf8f3]"
+                  }`}
+                >
+                  🎁 Voucher Poin
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setNotifTemplateType("event")}
+                  className={`p-2 rounded-xl text-left border text-[11px] font-bold transition-all ${
+                    notifTemplateType === "event"
+                      ? "border-[#167052] bg-[#0b3d2e] text-[#c8f53a]"
+                      : "border-[#d8e3de] bg-white text-[#527867] hover:bg-[#edf8f3]"
+                  }`}
+                >
+                  📅 Undangan Event
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setNotifTemplateType("birthday")}
+                  className={`p-2 rounded-xl text-left border text-[11px] font-bold transition-all ${
+                    notifTemplateType === "birthday"
+                      ? "border-[#167052] bg-[#0b3d2e] text-[#c8f53a]"
+                      : "border-[#d8e3de] bg-white text-[#527867] hover:bg-[#edf8f3]"
+                  }`}
+                >
+                  🎂 Ulang Tahun
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setNotifTemplateType("reengage")}
+                  className={`p-2 rounded-xl text-left border text-[11px] font-bold transition-all ${
+                    notifTemplateType === "reengage"
+                      ? "border-[#167052] bg-[#0b3d2e] text-[#c8f53a]"
+                      : "border-[#d8e3de] bg-white text-[#527867] hover:bg-[#edf8f3]"
+                  }`}
+                >
+                  ☕ Ajakan Mampir
+                </button>
+              </div>
+            </div>
+
+            {/* Live Editable Message Area */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between font-mono text-xs">
+                <label className="font-bold text-[#1a382d]">Isi Pesan WhatsApp (Bisa diedit):</label>
+                <span className="text-[10px] text-[#527867]">Link kartu member tertanam otomatis</span>
+              </div>
+              <textarea
+                value={notifTemplateType === "custom" ? notifCustomText : activeNotifMessage}
+                onChange={(e) => {
+                  setNotifTemplateType("custom");
+                  setNotifCustomText(e.target.value);
+                }}
+                rows={5}
+                className="w-full rounded-2xl border border-[#d8e3de] bg-[#fbfdfc] p-3 text-xs leading-relaxed text-[#1a382d] focus:border-[#167052] focus:outline-hidden font-sans"
+              />
+            </div>
+
+            {/* Launch WhatsApp CTA */}
+            <div className="space-y-2 pt-1 border-t border-[#d8e3de]">
+              {(() => {
+                const cleanPhone = (notifTargetCustomer.phone || "").replace(/\D/g, "");
+                const waUrl = cleanPhone
+                  ? `https://wa.me/${cleanPhone}?text=${encodeURIComponent(activeNotifMessage)}`
+                  : `https://wa.me/?text=${encodeURIComponent(activeNotifMessage)}`;
+
+                return (
+                  <a
+                    href={waUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-[#25D366] hover:bg-[#20bd5a] px-4 py-3 text-sm font-black text-white shadow-sm transition-all active:scale-95 text-center font-sans tracking-tight"
+                  >
+                    <MessageCircle size={18} />
+                    <span>Buka WhatsApp &amp; Kirim Pesan ke Member</span>
+                  </a>
+                );
+              })()}
+
+              <p className="text-center text-[10.5px] text-[#718078] font-mono">
+                Pesan akan langsung terbuka di aplikasi WhatsApp / WhatsApp Web Anda.
+              </p>
             </div>
           </div>
         </div>

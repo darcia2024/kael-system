@@ -19,6 +19,8 @@ import { Crown } from "lucide-react";
 import type { CustomerProfileSummary, LoyaltyProgram, PointLedger, Redemption, Reward, LoyaltyTier } from "@/lib/types";
 import { formatBusinessDate, formatBusinessDateTime, formatRupiah } from "@/lib/formatters";
 import { maskPhoneNumber, resolveTier } from "@/lib/loyalty-engine";
+import { siteHost } from "@/lib/site";
+import { MessageCircle } from "lucide-react";
 
 type Props = {
   profile: CustomerProfileSummary;
@@ -60,7 +62,7 @@ function eventLabel(item: PointLedger) {
   }
 }
 
-export default function MemberProfileClient({ profile, program, rewards, ledger, redemptions, tiers, themeClassName }: Props) {
+export default function MemberProfileClient({ profile, program, rewards, ledger, redemptions, tiers, business, themeClassName }: Props) {
   const status = getMemberStatus(profile);
   const currentTier = program.tiers_is_active ? resolveTier(Number(profile.lifetime_spend), tiers) : null;
   const nextReward = rewards
@@ -116,9 +118,22 @@ export default function MemberProfileClient({ profile, program, rewards, ledger,
                 <p className="mt-1 text-xs text-[#dedee8]">{maskPhoneNumber(profile.phone)} · Gabung {formatBusinessDate(profile.created_at)}</p>
               </div>
             </div>
-            <div className={`w-fit rounded-lg border px-3 py-2 text-xs font-bold ${statusClass}`}>
-              <span className="block">{status.label}</span>
-              <span className="mt-0.5 block font-normal">{status.note}</span>
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2.5">
+              <a
+                href={`https://wa.me/${profile.phone.replace(/\D/g, "")}?text=${encodeURIComponent(
+                  `Halo Kak ${(profile.name || "Member").trim().split(/\s+/)[0]}! Terima kasih sudah jadi member ${business?.name || "Mochi"}. Saldo poinmu sekarang ${profile.balance} ${unit}. Cek kartu & kuponmu di: https://${siteHost}/m/${profile.token}`
+                )}`}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-emerald-400/40 bg-[#c8f53a] px-3.5 py-2 text-xs font-black text-[#073829] hover:bg-[#d9ff57] transition-all shadow-xs shrink-0"
+              >
+                <MessageCircle size={14} />
+                <span>Kirim WA ke Member</span>
+              </a>
+              <div className={`w-fit rounded-lg border px-3 py-2 text-xs font-bold ${statusClass}`}>
+                <span className="block">{status.label}</span>
+                <span className="mt-0.5 block font-normal">{status.note}</span>
+              </div>
             </div>
           </div>
         </section>
