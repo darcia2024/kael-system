@@ -11,6 +11,8 @@ import {
   AlertCircle,
   Sparkles,
   Zap,
+  Image as ImageIcon,
+  CheckCircle2,
 } from "lucide-react";
 import type { CustomerDirectoryEntry } from "@/lib/types";
 import { lookupMemberAction, registerCustomerByStaffAction } from "@/lib/actions";
@@ -18,7 +20,9 @@ import { lookupMemberAction, registerCustomerByStaffAction } from "@/lib/actions
 // Web Audio API Beep helper for scan feedback
 function playScanBeep() {
   try {
-    const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    const AudioCtx =
+      window.AudioContext ||
+      (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
     if (!AudioCtx) return;
     const ctx = new AudioCtx();
     const osc = ctx.createOscillator();
@@ -55,6 +59,8 @@ export default function PosMemberScannerModal({
 
   // Camera state
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [cameraLoading, setCameraLoading] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [cameraFacing, setCameraFacing] = useState<"environment" | "user">("environment");
   const [isScanningActive, setIsScanningActive] = useState(false);
@@ -76,6 +82,20 @@ export default function PosMemberScannerModal({
   const [registerError, setRegisterError] = useState<string | null>(null);
 
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Dynamically load jsQR fallback if BarcodeDetector is not natively present
+  useEffect(() => {
+    if (typeof window !== "undefined" && !(window as any).jsQR && !(window as any).BarcodeDetector) {
+      const existing = document.querySelector('script[src*="jsqr"]');
+      if (!existing) {
+        const script = document.createElement("script");
+        script.src = "https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js";
+        script.async = true;
+        document.head.appendChild(script);
+      }
+    }
+  }, []);
 
   // Stop camera helper
   const stopCamera = useCallback(() => {
@@ -84,10 +104,18 @@ export default function PosMemberScannerModal({
       scanningRafRef.current = null;
     }
     if (mediaStreamRef.current) {
-      mediaStreamRef.current.getTracks().forEach((t) => t.stop());
+      mediaStreamRef.current.getTracks().forEach((t) => {
+        try {
+          t.stop();
+        } catch {}
+      });
       mediaStreamRef.current = null;
     }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
     setIsScanningActive(false);
+    setCameraLoading(false);
   }, []);
 
   // Handle scanned/typed text lookup
@@ -131,84 +159,196 @@ export default function PosMemberScannerModal({
     [onSelectCustomer, onClose],
   );
 
-  // Start camera stream
+  // Progressive Multi-tier Camera Starter
   const startCamera = useCallback(async () => {
     stopCamera();
     setCameraError(null);
+    setCameraLoading(true);
 
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      setCameraError("Kamera tidak didukung di browser ini. Silakan gunakan input manual.");
-      setActiveMode("manual");
+    if (typeof window === "undefined" || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setCameraError(
+        "Kamera tidak didukung pada browser ini atau halaman tidak diakses lewat HTTPS. Silakan gunakan input manual / barcode gun.",
+      );
+      setCameraLoading(false);
       return;
     }
 
+    let stream: MediaStream | null = null;
+
+    // Tier 1: Try ideal facingMode with preferred dimensions
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
+      stream = await navigator.mediaDevices.getUserMedia({
         video: {
-          facingMode: cameraFacing,
+          facingMode: { ideal: cameraFacing },
           width: { ideal: 1280 },
           height: { ideal: 720 },
         },
         audio: false,
       });
-
-      mediaStreamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-        setIsScanningActive(true);
+    } catch {
+      // Tier 2: Try simple ideal facingMode without width/height constraints
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: cameraFacing },
+          audio: false,
+        });
+      } catch {
+        // Tier 3: Universal fallback to ANY available video device (laptop webcam, USB camera, desktop)
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: true,
+            audio: false,
+          });
+        } catch (err3: unknown) {
+          const msg = err3 instanceof Error ? err3.message : String(err3);
+          if (
+            msg.includes("Permission") ||
+            msg.includes("NotAllowed") ||
+            msg.includes("denied") ||
+            msg.includes("SecurityError")
+          ) {
+            setCameraError(
+              "Izin kamera belum diberikan atau diblokir browser. Klik ikon gembok / kamera di samping kolom alamat URL browser untuk mengaktifkan izin kamera.",
+            );
+          } else if (
+            msg.includes("NotFound") ||
+            msg.includes("DevicesNotFoundError") ||
+            msg.includes("no camera")
+          ) {
+            setCameraError(
+              "Tidak ada perangkat kamera / webcam yang terdeteksi di perangkat kasir ini.",
+            );
+          } else if (msg.includes("NotReadable") || msg.includes("TrackStartError")) {
+            setCameraError(
+              "Kamera sedang dipakai oleh aplikasi lain (misal Zoom, Meet, atau tab lain). Tutup aplikasi tersebut lalu coba lagi.",
+            );
+          } else {
+            setCameraError(
+              `Gagal membuka kamera: ${msg || "Kendala hardware"}. Coba klik 'Coba Buka Kamera Lagi' atau gunakan input manual.`,
+            );
+          }
+          setCameraLoading(false);
+          return;
+        }
       }
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (msg.includes("Permission") || msg.includes("NotAllowed")) {
-        setCameraError("Izin kamera ditolak. Berikan izin di browser atau gunakan input manual.");
-      } else {
-        setCameraError("Gagal mengakses kamera. Gunakan input manual atau scanner fisik.");
-      }
-      setActiveMode("manual");
     }
+
+    if (!stream) {
+      setCameraError("Kamera tidak dapat dimulai. Silakan gunakan input manual.");
+      setCameraLoading(false);
+      return;
+    }
+
+    mediaStreamRef.current = stream;
+
+    if (videoRef.current) {
+      const vid = videoRef.current;
+      vid.srcObject = stream;
+      vid.setAttribute("playsinline", "true");
+      vid.setAttribute("webkit-playsinline", "true");
+      vid.muted = true;
+
+      try {
+        await vid.play();
+        setIsScanningActive(true);
+      } catch {
+        // Retry playing once loadedmetadata fires
+        vid.onloadedmetadata = async () => {
+          try {
+            await vid.play();
+            setIsScanningActive(true);
+          } catch (e) {
+            console.warn("Video play error on loadedmetadata:", e);
+          }
+        };
+      }
+    }
+    setCameraLoading(false);
   }, [cameraFacing, stopCamera]);
 
-  // BarcodeDetector loop
+  // Dual-Engine QR Scanning Loop (BarcodeDetector + Canvas jsQR)
   useEffect(() => {
     if (!isOpen || activeMode !== "camera" || !isScanningActive || !videoRef.current) {
       return;
     }
 
-    // Check BarcodeDetector support
-    const hasBarcodeDetector = typeof window !== "undefined" && "BarcodeDetector" in window;
-    if (!hasBarcodeDetector) {
-      return;
-    }
-
     let isScanning = true;
     let detector: any = null;
-    try {
-      detector = new (window as any).BarcodeDetector({ formats: ["qr_code", "data_matrix"] });
-    } catch {
-      detector = null;
+
+    if (typeof window !== "undefined" && "BarcodeDetector" in window) {
+      try {
+        detector = new (window as any).BarcodeDetector({ formats: ["qr_code", "data_matrix"] });
+      } catch {
+        detector = null;
+      }
     }
 
-    if (!detector) return;
+    // Canvas buffer for jsQR fallback
+    let canvas: HTMLCanvasElement | null = null;
+    let ctx: CanvasRenderingContext2D | null = null;
 
     const detectFrame = async () => {
       if (!isScanning || !videoRef.current) return;
+      const vid = videoRef.current;
 
-      try {
-        if (videoRef.current.readyState >= 2) {
-          const barcodes = await detector.detect(videoRef.current);
-          if (barcodes && barcodes.length > 0) {
-            const rawVal = barcodes[0].rawValue;
-            if (rawVal) {
-              isScanning = false;
-              stopCamera();
-              processQuery(rawVal);
-              return;
+      if (vid.readyState >= 2 && vid.videoWidth > 0 && vid.videoHeight > 0) {
+        // 1. Try Native BarcodeDetector
+        if (detector) {
+          try {
+            const barcodes = await detector.detect(vid);
+            if (barcodes && barcodes.length > 0) {
+              const rawVal = barcodes[0].rawValue;
+              if (rawVal) {
+                isScanning = false;
+                stopCamera();
+                processQuery(rawVal);
+                return;
+              }
             }
+          } catch {
+            // Frame detect error, continue to fallback
           }
         }
-      } catch {
-        // Frame detect error, continue next frame
+
+        // 2. Try jsQR Fallback (runs on all browsers: iOS Safari, Firefox, Desktop Chrome)
+        const jsQR = (window as any).jsQR;
+        if (jsQR && isScanning) {
+          try {
+            if (!canvas) {
+              canvas = document.createElement("canvas");
+            }
+            // Scale frame slightly for faster scan processing
+            const maxDimension = 480;
+            const scale = Math.min(1, maxDimension / Math.max(vid.videoWidth, vid.videoHeight));
+            const w = Math.floor(vid.videoWidth * scale);
+            const h = Math.floor(vid.videoHeight * scale);
+
+            if (canvas.width !== w || canvas.height !== h) {
+              canvas.width = w;
+              canvas.height = h;
+            }
+
+            if (!ctx) {
+              ctx = canvas.getContext("2d", { willReadFrequently: true });
+            }
+
+            if (ctx) {
+              ctx.drawImage(vid, 0, 0, w, h);
+              const imageData = ctx.getImageData(0, 0, w, h);
+              const code = jsQR(imageData.data, imageData.width, imageData.height, {
+                inversionAttempts: "dontInvert",
+              });
+              if (code && code.data) {
+                isScanning = false;
+                stopCamera();
+                processQuery(code.data);
+                return;
+              }
+            }
+          } catch {
+            // jsQR parse error, skip frame
+          }
+        }
       }
 
       if (isScanning) {
@@ -222,6 +362,7 @@ export default function PosMemberScannerModal({
       isScanning = false;
       if (scanningRafRef.current) {
         cancelAnimationFrame(scanningRafRef.current);
+        scanningRafRef.current = null;
       }
     };
   }, [isOpen, activeMode, isScanningActive, processQuery, stopCamera]);
@@ -248,6 +389,65 @@ export default function PosMemberScannerModal({
       stopCamera();
     };
   }, [isOpen, activeMode, startCamera, stopCamera]);
+
+  // Handle image file scan fallback
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsSearching(true);
+    setSearchError(null);
+
+    try {
+      const img = new Image();
+      img.src = URL.createObjectURL(file);
+      img.onload = async () => {
+        try {
+          // Try BarcodeDetector
+          if (typeof window !== "undefined" && "BarcodeDetector" in window) {
+            try {
+              const detector = new (window as any).BarcodeDetector({ formats: ["qr_code"] });
+              const barcodes = await detector.detect(img);
+              if (barcodes && barcodes.length > 0 && barcodes[0].rawValue) {
+                processQuery(barcodes[0].rawValue);
+                return;
+              }
+            } catch {}
+          }
+
+          // Try jsQR
+          const jsQR = (window as any).jsQR;
+          if (jsQR) {
+            const canvas = document.createElement("canvas");
+            canvas.width = img.width;
+            canvas.height = img.height;
+            const ctx = canvas.getContext("2d");
+            if (ctx) {
+              ctx.drawImage(img, 0, 0);
+              const imgData = ctx.getImageData(0, 0, img.width, img.height);
+              const code = jsQR(imgData.data, imgData.width, imgData.height);
+              if (code && code.data) {
+                processQuery(code.data);
+                return;
+              }
+            }
+          }
+
+          setSearchError("QR Code tidak terbaca dari foto. Coba foto lebih jelas atau gunakan input manual.");
+        } finally {
+          setIsSearching(false);
+          URL.revokeObjectURL(img.src);
+        }
+      };
+      img.onerror = () => {
+        setSearchError("Gagal memuat gambar foto.");
+        setIsSearching(false);
+      };
+    } catch {
+      setSearchError("Gagal memproses file foto QR.");
+      setIsSearching(false);
+    }
+  };
 
   const handleRegisterNewMember = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -369,46 +569,111 @@ export default function PosMemberScannerModal({
                 <video
                   ref={videoRef}
                   playsInline
+                  webkit-playsinline="true"
                   muted
                   autoPlay
                   className="h-full w-full object-cover"
                 />
+                <canvas ref={canvasRef} className="hidden" />
 
-                {/* Scanning Frame Overlay */}
-                <div className="absolute inset-0 flex items-center justify-center pointer-events-none p-8">
-                  <div className="relative h-48 w-48 rounded-2xl border-2 border-[#c8f53a] shadow-[0_0_0_9999px_rgba(0,0,0,0.5)]">
-                    {/* Corner Reticles */}
-                    <span className="absolute -top-1 -left-1 h-4 w-4 border-t-4 border-l-4 border-[#c8f53a] rounded-tl-lg" />
-                    <span className="absolute -top-1 -right-1 h-4 w-4 border-t-4 border-r-4 border-[#c8f53a] rounded-tr-lg" />
-                    <span className="absolute -bottom-1 -left-1 h-4 w-4 border-b-4 border-l-4 border-[#c8f53a] rounded-bl-lg" />
-                    <span className="absolute -bottom-1 -right-1 h-4 w-4 border-b-4 border-r-4 border-[#c8f53a] rounded-br-lg" />
-
-                    {/* Animated Scanning Laser Line */}
-                    <div className="absolute inset-x-2 h-0.5 bg-[#c8f53a] shadow-[0_0_12px_#c8f53a] animate-pulse top-1/2 -translate-y-1/2" />
+                {/* Loading indicator */}
+                {cameraLoading && (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/80 text-white gap-2 z-10">
+                    <RefreshCw size={28} className="animate-spin text-[#c8f53a]" />
+                    <span className="text-xs font-mono">Menyiapkan Kamera...</span>
                   </div>
-                </div>
+                )}
 
-                {/* Flip Camera Button */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setCameraFacing((prev) => (prev === "environment" ? "user" : "environment"));
-                  }}
-                  className="absolute bottom-3 right-3 flex items-center gap-1.5 rounded-full bg-black/70 px-3 py-1.5 text-[11px] font-bold text-white backdrop-blur-xs hover:bg-black/90 active:scale-95 transition-transform"
-                >
-                  <RefreshCw size={12} />
-                  <span>Balik Kamera</span>
-                </button>
+                {/* Scanning Frame Overlay (Only when active and no error) */}
+                {!cameraError && isScanningActive && (
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none p-8">
+                    <div className="relative h-48 w-48 rounded-2xl border-2 border-[#c8f53a] shadow-[0_0_0_9999px_rgba(0,0,0,0.55)]">
+                      {/* Corner Reticles */}
+                      <span className="absolute -top-1 -left-1 h-4 w-4 border-t-4 border-l-4 border-[#c8f53a] rounded-tl-lg" />
+                      <span className="absolute -top-1 -right-1 h-4 w-4 border-t-4 border-r-4 border-[#c8f53a] rounded-tr-lg" />
+                      <span className="absolute -bottom-1 -left-1 h-4 w-4 border-b-4 border-l-4 border-[#c8f53a] rounded-bl-lg" />
+                      <span className="absolute -bottom-1 -right-1 h-4 w-4 border-b-4 border-r-4 border-[#c8f53a] rounded-br-lg" />
+
+                      {/* Animated Scanning Laser Line */}
+                      <div className="absolute inset-x-2 h-0.5 bg-[#c8f53a] shadow-[0_0_12px_#c8f53a] animate-pulse top-1/2 -translate-y-1/2" />
+                    </div>
+                  </div>
+                )}
+
+                {/* Camera Control Action Buttons */}
+                {!cameraError && (
+                  <div className="absolute bottom-3 inset-x-3 flex items-center justify-between pointer-events-auto">
+                    {/* Upload QR File fallback */}
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="flex items-center gap-1.5 rounded-full bg-black/70 px-3 py-1.5 text-[11px] font-bold text-white backdrop-blur-xs hover:bg-black/90 active:scale-95 transition-transform"
+                      title="Unggah Foto QR"
+                    >
+                      <ImageIcon size={12} />
+                      <span>Foto QR</span>
+                    </button>
+
+                    {/* Flip Camera Button */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const nextFacing = cameraFacing === "environment" ? "user" : "environment";
+                        setCameraFacing(nextFacing);
+                      }}
+                      className="flex items-center gap-1.5 rounded-full bg-black/70 px-3 py-1.5 text-[11px] font-bold text-white backdrop-blur-xs hover:bg-black/90 active:scale-95 transition-transform"
+                    >
+                      <RefreshCw size={12} />
+                      <span>Balik Kamera</span>
+                    </button>
+                  </div>
+                )}
+
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleFileUpload}
+                  className="hidden"
+                />
               </div>
 
               {cameraError ? (
-                <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-700 flex items-start gap-2">
-                  <AlertCircle size={16} className="shrink-0 mt-0.5" />
-                  <span>{cameraError}</span>
+                <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-xs text-red-800 space-y-3">
+                  <div className="flex items-start gap-2.5">
+                    <AlertCircle size={18} className="shrink-0 mt-0.5 text-red-600" />
+                    <div className="space-y-1">
+                      <p className="font-bold text-red-900">Kamera Belum Dapat Dibuka</p>
+                      <p className="text-[11.5px] leading-relaxed text-red-700">{cameraError}</p>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={startCamera}
+                      className="flex-1 flex items-center justify-center gap-1.5 rounded-xl bg-red-700 hover:bg-red-800 text-white font-bold py-2.5 px-3 text-xs active:scale-95 transition-transform shadow-xs"
+                    >
+                      <RefreshCw size={13} />
+                      <span>Coba Buka Kamera Lagi</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveMode("manual");
+                        stopCamera();
+                        setTimeout(() => inputRef.current?.focus(), 150);
+                      }}
+                      className="rounded-xl border border-red-300 bg-white hover:bg-red-50 text-red-900 font-bold py-2.5 px-3 text-xs"
+                    >
+                      Beralih ke Input Manual
+                    </button>
+                  </div>
                 </div>
               ) : (
-                <p className="text-center text-xs text-gray-500">
-                  Arahkan kamera ke QR Member pelanggan (pada kartu fisik NFC atau HP pelanggan).
+                <p className="text-center text-xs text-gray-500 leading-snug">
+                  Arahkan kamera ke QR Member pelanggan (pada kartu fisik atau layar HP pelanggan).
                 </p>
               )}
             </div>
@@ -418,7 +683,7 @@ export default function PosMemberScannerModal({
           <div className="space-y-2">
             <label className="block text-[11px] font-bold uppercase tracking-wider text-gray-500 font-mono">
               {activeMode === "camera"
-                ? "Atau Ketik / Tembak Scanner Fisik:"
+                ? "Atau Ketik Nomor WA / Tembak Barcode Gun:"
                 : "Nomor WhatsApp / Nama / Tembak Barcode Gun:"}
             </label>
 
@@ -468,8 +733,8 @@ export default function PosMemberScannerModal({
           {detectedCustomer && (
             <div className="rounded-2xl border-2 border-[#16a34a] bg-[#ecfdf5] p-3.5 flex items-center justify-between gap-3 animate-in zoom-in-95">
               <div className="flex items-center gap-3 min-w-0">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#16a34a] text-white font-extrabold text-sm">
-                  ✓
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#16a34a] text-white font-extrabold text-sm shadow-xs">
+                  <CheckCircle2 size={20} />
                 </div>
                 <div className="min-w-0">
                   <div className="flex items-center gap-1.5">
@@ -477,10 +742,10 @@ export default function PosMemberScannerModal({
                       {detectedCustomer.name}
                     </h3>
                     <span className="rounded-md bg-[#bbf7d0] px-1.5 py-0.5 text-[9px] font-black text-[#166534]">
-                      MEMBER
+                      MEMBER RESMI
                     </span>
                   </div>
-                  <p className="text-xs font-mono text-[#166534]">
+                  <p className="text-xs font-mono text-[#166534] mt-0.5">
                     {detectedCustomer.phone_masked} · Saldo:{" "}
                     <strong>{detectedCustomer.balance} Pts</strong>
                   </p>
@@ -493,7 +758,7 @@ export default function PosMemberScannerModal({
                   onSelectCustomer(detectedCustomer);
                   onClose();
                 }}
-                className="shrink-0 rounded-xl bg-[#16a34a] text-white px-3 py-1.5 text-xs font-black hover:bg-[#15803d] active:scale-95 shadow-xs"
+                className="shrink-0 rounded-xl bg-[#16a34a] text-white px-3.5 py-2 text-xs font-black hover:bg-[#15803d] active:scale-95 shadow-xs"
               >
                 Pasang
               </button>
@@ -506,7 +771,7 @@ export default function PosMemberScannerModal({
               <p className="text-[11px] font-bold text-gray-500">
                 Pilih member yang sesuai ({searchResults.length}):
               </p>
-              <div className="divide-y divide-gray-100 rounded-2xl border border-gray-200 bg-white max-h-48 overflow-y-auto">
+              <div className="divide-y divide-gray-100 rounded-2xl border border-gray-200 bg-white max-h-48 overflow-y-auto shadow-xs">
                 {searchResults.map((c) => (
                   <button
                     key={c.id}
@@ -516,7 +781,7 @@ export default function PosMemberScannerModal({
                       onSelectCustomer(c);
                       onClose();
                     }}
-                    className="w-full flex items-center justify-between p-2.5 text-left hover:bg-[#edf8f3] transition-colors"
+                    className="w-full flex items-center justify-between p-3 text-left hover:bg-[#edf8f3] transition-colors"
                   >
                     <div>
                       <span className="text-xs font-black text-gray-900 block">{c.name}</span>
@@ -525,7 +790,7 @@ export default function PosMemberScannerModal({
                       </span>
                     </div>
                     <div className="text-right shrink-0">
-                      <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-black text-emerald-800">
+                      <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-black text-emerald-800 font-mono">
                         {c.balance} Pts
                       </span>
                     </div>
