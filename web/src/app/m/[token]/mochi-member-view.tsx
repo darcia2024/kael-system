@@ -33,10 +33,6 @@ import {
   Plus,
   Search,
   Lock,
-  Unlock,
-  Zap,
-  Flame,
-  Award,
 } from "lucide-react";
 
 import type { MemberPageData } from "./member-client";
@@ -106,7 +102,7 @@ export default function MochiMemberView({
       name: "Perak",
       min_lifetime_spend: 250000,
       earn_multiplier: 1.25,
-      benefit_note: "Dapat 1.25x poin tiap transaksi, voucher ulang tahun, dan diskon promo seasonal.",
+      benefit_note: "1.25x Poin Booster · Voucher Ulang Tahun · Promo Prioritas",
     };
 
     const emasTier = sortedTiers.find((t) => t.name.toLowerCase().includes("emas") || t.name.toLowerCase().includes("gold")) || {
@@ -114,7 +110,7 @@ export default function MochiMemberView({
       name: "Emas",
       min_lifetime_spend: 1000000,
       earn_multiplier: 1.5,
-      benefit_note: "Dapat 1.5x poin tiap transaksi, 1 complimentary menu ulang tahun, dan prioritas VIP table.",
+      benefit_note: "1.5x Poin Booster · 1 Minuman/Pastry Ulang Tahun · VIP Table",
     };
 
     const regulerTier = sortedTiers.find((t) => t.name.toLowerCase().includes("reguler") || t.min_lifetime_spend === 0) || {
@@ -122,7 +118,7 @@ export default function MochiMemberView({
       name: "Reguler",
       min_lifetime_spend: 0,
       earn_multiplier: 1.0,
-      benefit_note: "Kumpulkan poin di setiap pesanan dan tukar hadiah di katalog.",
+      benefit_note: "1.0x Poin Belanja · Akses Seluruh Hadiah · Bonus Referral",
     };
 
     return { reguler: regulerTier, perak: perakTier, emas: emasTier };
@@ -135,12 +131,10 @@ export default function MochiMemberView({
     return "reguler";
   }, [lifetimeSpend, tierConfig]);
 
-  // Selected card preview tab (user can click to preview locked or unlocked cards)
+  // Selected card preview tab (default to current tier)
   const [selectedCardTier, setSelectedCardTier] = useState<"reguler" | "perak" | "emas">(userCurrentTierKey);
 
   if (!customer || !business || !program) return null;
-
-  const currentTier = useMemo(() => resolveTier(lifetimeSpend, tiers), [lifetimeSpend, tiers]);
 
   const activeVoucher = useMemo(
     () => redemptions.find((r) => r.status === "issued") ?? null,
@@ -258,66 +252,56 @@ export default function MochiMemberView({
     <div className="mx-auto min-h-screen max-w-md bg-[#0b3d2e] font-sans text-white antialiased selection:bg-[#c8f53a] selection:text-[#0b3d2e] relative overflow-x-hidden pb-28">
       
       {/* =================================================================== */}
-      {/* 1. TOP STATUS & PROFILE HEADER                                      */}
+      {/* 1. TOP HEADER & WALLET HERO (CLEAN & MINIMAL)                       */}
       {/* =================================================================== */}
-      <header className="px-5 pt-6 pb-4">
-        {/* Dynamic Island / Time Bar subtle spacing */}
-        <div className="flex items-center justify-between text-[11px] text-emerald-200/80 font-mono pb-3">
+      <header className="px-5 pt-6 pb-6 space-y-5">
+        {/* Status Line */}
+        <div className="flex items-center justify-between text-[11px] text-emerald-200/80 font-mono">
           <span>{new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</span>
           <div className="flex items-center gap-1.5">
             <span className="inline-block h-2 w-2 rounded-full bg-[#c8f53a]" />
-            <span>Mochi Member VIP</span>
+            <span>Mochi Member</span>
           </div>
         </div>
 
+        {/* Profile Greeting */}
         <div className="flex items-center justify-between gap-3">
-          {/* Avatar and Customer Name - CLICKABLE TO OPEN PROFILE SHEET */}
           <button
             type="button"
             onClick={() => setShowProfileModal(true)}
-            className="flex items-center gap-3 min-w-0 text-left group cursor-pointer focus:outline-none"
-            title="Klik untuk membuka Profil & Pengaturan Member"
+            className="flex items-center gap-3 min-w-0 text-left group cursor-pointer focus:outline-hidden"
+            title="Klik untuk membuka Profil Member"
           >
             <div className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-emerald-950 border-2 border-emerald-600/40 text-emerald-100 font-extrabold text-base shadow-sm overflow-hidden group-hover:border-[#c8f53a] group-hover:scale-105 transition-all">
               <span className="font-mono text-sm">{firstName.slice(0, 2).toUpperCase()}</span>
             </div>
 
             <div className="min-w-0">
-              <div className="flex items-center gap-1">
-                <span className="block text-[11px] text-emerald-200/75 leading-tight font-medium">
-                  Halo,
-                </span>
-                <span className="text-[10px] text-[#c8f53a] font-bold group-hover:underline flex items-center">
-                  (Buka Profil <ChevronRight size={11} className="inline" />)
-                </span>
-              </div>
+              <span className="block text-[11px] text-emerald-200/75 leading-tight font-medium">
+                Halo,
+              </span>
               <h1 className="truncate text-base font-extrabold text-white leading-snug tracking-tight group-hover:text-[#c8f53a] transition-colors">
                 {customer.name}
               </h1>
             </div>
           </button>
 
-          {/* Top Right Bell / Notification Pill */}
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setShowProfileModal(true)}
-              aria-label="Profil dan Notifikasi"
-              className="relative flex h-10 w-10 items-center justify-center rounded-full bg-white/10 hover:bg-white/15 border border-white/15 text-emerald-100 transition-colors active:scale-95"
-              title="Profil & Pengaturan"
-            >
-              <Bell size={18} className="text-[#c8f53a]" />
-              {activeVoucherCount > 0 && (
-                <span className="absolute top-2 right-2 h-2 w-2 rounded-full bg-[#c8f53a] ring-2 ring-[#0b3d2e]" />
-              )}
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={() => setShowProfileModal(true)}
+            aria-label="Profil dan Notifikasi"
+            className="relative flex h-10 w-10 items-center justify-center rounded-full bg-white/10 hover:bg-white/15 border border-white/15 text-emerald-100 transition-colors active:scale-95 shrink-0"
+            title="Profil & Pengaturan"
+          >
+            <Bell size={18} className="text-[#c8f53a]" />
+            {activeVoucherCount > 0 && (
+              <span className="absolute top-2 right-2 h-2 w-2 rounded-full bg-[#c8f53a] ring-2 ring-[#0b3d2e]" />
+            )}
+          </button>
         </div>
 
-        {/* ================================================================= */}
-        {/* 2. WALLET HERO BALANCE                                            */}
-        {/* ================================================================= */}
-        <div className="mt-5 text-center space-y-1">
+        {/* Saldo Poin Hero */}
+        <div className="text-center space-y-1 pt-1">
           <span className="text-[12px] font-medium text-emerald-200/80 tracking-wide">
             Saldo Poin Loyalitas
           </span>
@@ -340,97 +324,32 @@ export default function MochiMemberView({
             ≈ Senilai {formatRupiah(balance * 1000)} · {visitCount}x Kunjungan
           </p>
 
-          {/* DUAL PILL ACTION BUTTONS */}
+          {/* Dual Action Buttons */}
           <div className="flex items-center justify-center gap-3 pt-3">
             <button
               type="button"
               onClick={() => setShowRewardModal(true)}
-              className="flex-1 max-w-[130px] rounded-full bg-[#c8f53a] hover:bg-[#d9ff57] py-2.5 px-4 font-bold text-xs text-[#0b3d2e] shadow-sm transition-all active:scale-95 text-center font-sans tracking-tight"
+              className="flex-1 max-w-[130px] rounded-full bg-[#c8f53a] hover:bg-[#d9ff57] py-2.5 px-4 font-bold text-xs text-[#0b3d2e] shadow-sm transition-all active:scale-95 text-center tracking-tight"
             >
               Tukar Hadiah
             </button>
             <button
               type="button"
               onClick={() => setShowQrModal(true)}
-              className="flex-1 max-w-[130px] rounded-full bg-[#c8f53a] hover:bg-[#d9ff57] py-2.5 px-4 font-bold text-xs text-[#0b3d2e] shadow-sm transition-all active:scale-95 text-center font-sans tracking-tight"
+              className="flex-1 max-w-[130px] rounded-full bg-[#c8f53a] hover:bg-[#d9ff57] py-2.5 px-4 font-bold text-xs text-[#0b3d2e] shadow-sm transition-all active:scale-95 text-center tracking-tight"
             >
               Tunjuk QR
-            </button>
-          </div>
-        </div>
-
-        {/* ================================================================= */}
-        {/* 3. TIER STATUS STRIP (QUICK OVERVIEW)                             */}
-        {/* ================================================================= */}
-        <div className="mt-5 rounded-2xl bg-black/25 border border-white/15 p-3 backdrop-blur-md">
-          <div className="flex items-center justify-between pb-2">
-            <span className="text-[11px] font-bold text-emerald-100 tracking-tight flex items-center gap-1.5">
-              <Crown size={13} className="text-[#c8f53a]" />
-              Level Member Aktif
-            </span>
-            <span className="text-[10px] font-mono text-[#c8f53a] font-bold">
-              {userCurrentTierKey === "emas" ? "Member Emas (Gold VIP)" : userCurrentTierKey === "perak" ? "Member Perak (Silver VIP)" : "Member Reguler"}
-            </span>
-          </div>
-
-          <div className="flex items-center gap-2 overflow-x-auto scrollbar-none pb-0.5">
-            {/* Reguler Pill */}
-            <button
-              type="button"
-              onClick={() => setSelectedCardTier("reguler")}
-              className={`rounded-full px-3 py-1 text-[10.5px] font-extrabold whitespace-nowrap transition-all ${
-                selectedCardTier === "reguler"
-                  ? "bg-[#c8f53a] text-[#0b3d2e] shadow-xs"
-                  : "bg-white/10 border border-white/10 text-emerald-100/90"
-              }`}
-            >
-              🌿 Reguler {userCurrentTierKey === "reguler" && "✓"}
-            </button>
-
-            {/* Perak Pill */}
-            <button
-              type="button"
-              onClick={() => setSelectedCardTier("perak")}
-              className={`rounded-full px-3 py-1 text-[10.5px] font-extrabold whitespace-nowrap transition-all ${
-                selectedCardTier === "perak"
-                  ? "bg-slate-100 text-slate-900 shadow-xs ring-2 ring-slate-300"
-                  : "bg-white/10 border border-white/10 text-emerald-100/90"
-              }`}
-            >
-              🥈 Perak {userCurrentTierKey === "perak" ? "✓" : userCurrentTierKey === "emas" ? "✓" : "🔒"}
-            </button>
-
-            {/* Emas Pill */}
-            <button
-              type="button"
-              onClick={() => setSelectedCardTier("emas")}
-              className={`rounded-full px-3 py-1 text-[10.5px] font-extrabold whitespace-nowrap transition-all ${
-                selectedCardTier === "emas"
-                  ? "bg-amber-400 text-amber-950 shadow-xs ring-2 ring-amber-300"
-                  : "bg-white/10 border border-white/10 text-emerald-100/90"
-              }`}
-            >
-              👑 Emas {userCurrentTierKey === "emas" ? "✓" : "🔒"}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setShowRewardModal(true)}
-              className="rounded-full bg-white/10 hover:bg-white/20 border border-white/15 text-emerald-200 px-2.5 py-1 text-[10.5px] font-bold whitespace-nowrap flex items-center gap-1 transition-colors ml-auto"
-            >
-              <Plus size={12} />
-              <span>Hadiah</span>
             </button>
           </div>
         </div>
       </header>
 
       {/* =================================================================== */}
-      {/* 4. WHITE SHEET CONTAINER (MAIN DASHBOARD & CARD SHOWCASE)           */}
+      {/* 2. WHITE CONTAINER (CLEAN APPLE WALLET CARD & CONTENT)              */}
       {/* =================================================================== */}
       <div className="rounded-t-[32px] bg-[#f8faf9] text-[#1c2d26] pt-5 pb-24 px-4 sm:px-5 shadow-[0_-8px_30px_rgba(0,0,0,0.15)] min-h-[520px]">
         
-        {/* SEGMENTED SWITCHER: DOMPET MEMBER vs KATALOG MENU */}
+        {/* Segmented Switcher */}
         <div className="flex rounded-2xl bg-[#e5ede9] p-1.5 mb-5 shadow-inner">
           <button
             type="button"
@@ -460,33 +379,31 @@ export default function MochiMemberView({
 
         {activeNavTab === "home" ? (
           <>
-            {/* QUICK ACTION GRID (4 ROUND BUTTONS) */}
+            {/* Quick Action Grid */}
             <section aria-label="Menu Cepat" className="grid grid-cols-4 gap-2 text-center pb-5">
-              {/* Button 1: QR Member */}
               <button
                 type="button"
                 onClick={() => setShowQrModal(true)}
                 className="flex flex-col items-center gap-1.5 group active:scale-95 transition-transform"
               >
-                <div className="flex h-13 w-13 items-center justify-center rounded-full border-2 border-[#167052] bg-[#edf8f3] text-[#167052] shadow-sm group-hover:bg-[#167052] group-hover:text-white transition-colors">
-                  <QrCode size={22} strokeWidth={2.2} />
+                <div className="flex h-12 w-12 items-center justify-center rounded-full border-2 border-[#167052] bg-[#edf8f3] text-[#167052] shadow-xs group-hover:bg-[#167052] group-hover:text-white transition-colors">
+                  <QrCode size={20} strokeWidth={2.2} />
                 </div>
                 <span className="text-[11px] font-extrabold text-[#20372e] tracking-tight">
                   QR Kasir
                 </span>
               </button>
 
-              {/* Button 2: Voucher */}
               <button
                 type="button"
                 onClick={() => setShowVoucherModal(true)}
                 className="flex flex-col items-center gap-1.5 group active:scale-95 transition-transform relative"
               >
-                <div className="flex h-13 w-13 items-center justify-center rounded-full border-2 border-[#ea580c] bg-[#fff7ed] text-[#ea580c] shadow-sm group-hover:bg-[#ea580c] group-hover:text-white transition-colors">
-                  <Ticket size={22} strokeWidth={2.2} />
+                <div className="flex h-12 w-12 items-center justify-center rounded-full border-2 border-[#ea580c] bg-[#fff7ed] text-[#ea580c] shadow-xs group-hover:bg-[#ea580c] group-hover:text-white transition-colors">
+                  <Ticket size={20} strokeWidth={2.2} />
                 </div>
                 {activeVoucherCount > 0 && (
-                  <span className="absolute top-0 right-3 flex h-4 w-4 items-center justify-center rounded-full bg-[#ea580c] text-[9px] font-black text-white">
+                  <span className="absolute top-0 right-2 flex h-4 w-4 items-center justify-center rounded-full bg-[#ea580c] text-[9px] font-black text-white">
                     {activeVoucherCount}
                   </span>
                 )}
@@ -495,7 +412,6 @@ export default function MochiMemberView({
                 </span>
               </button>
 
-              {/* Button 3: Katalog Menu (Opens Menu Tab) */}
               <button
                 type="button"
                 onClick={() => {
@@ -504,415 +420,276 @@ export default function MochiMemberView({
                 }}
                 className="flex flex-col items-center gap-1.5 group active:scale-95 transition-transform"
               >
-                <div className="flex h-13 w-13 items-center justify-center rounded-full border-2 border-[#167052] bg-[#edf8f3] text-[#167052] shadow-sm group-hover:bg-[#167052] group-hover:text-white transition-colors">
-                  <UtensilsCrossed size={22} strokeWidth={2.2} />
+                <div className="flex h-12 w-12 items-center justify-center rounded-full border-2 border-[#167052] bg-[#edf8f3] text-[#167052] shadow-xs group-hover:bg-[#167052] group-hover:text-white transition-colors">
+                  <UtensilsCrossed size={20} strokeWidth={2.2} />
                 </div>
                 <span className="text-[11px] font-extrabold text-[#20372e] tracking-tight">
-                  Katalog Menu
+                  Menu
                 </span>
               </button>
 
-              {/* Button 4: Profil & Pengaturan (FIXED DIRECT ACCESS) */}
               <button
                 type="button"
                 onClick={() => setShowProfileModal(true)}
                 className="flex flex-col items-center gap-1.5 group active:scale-95 transition-transform"
               >
-                <div className="flex h-13 w-13 items-center justify-center rounded-full border-2 border-[#0b3d2e] bg-[#edf8f3] text-[#0b3d2e] shadow-sm group-hover:bg-[#0b3d2e] group-hover:text-[#c8f53a] transition-colors">
-                  <User size={22} strokeWidth={2.2} />
+                <div className="flex h-12 w-12 items-center justify-center rounded-full border-2 border-[#0b3d2e] bg-[#edf8f3] text-[#0b3d2e] shadow-xs group-hover:bg-[#0b3d2e] group-hover:text-[#c8f53a] transition-colors">
+                  <User size={20} strokeWidth={2.2} />
                 </div>
                 <span className="text-[11px] font-extrabold text-[#20372e] tracking-tight">
-                  Profil Saya
+                  Profil
                 </span>
               </button>
             </section>
 
             {/* ============================================================= */}
-            {/* 3-TIER MEMBERSHIP CARD SHOWCASE (REGULER, PERAK, EMAS)        */}
+            {/* 3. SIMPLE & CLEAN DIGITAL MEMBERSHIP CARD (APPLE WALLET STYLE) */}
             {/* ============================================================= */}
-            <section aria-label="Status & Kartu Keanggotaan" className="mb-6 space-y-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-sm font-black text-[#1c2d26] tracking-tight flex items-center gap-1.5">
-                    <Crown size={15} className="text-[#167052]" />
-                    <span>Kartu Status Keanggotaan</span>
-                  </h2>
-                  <p className="text-[11px] text-[#718078]">
-                    Pilih kartu untuk melihat desain &amp; keuntungan tiap level
-                  </p>
-                </div>
-                <span className="text-[10.5px] font-mono text-[#167052] font-bold bg-[#edf8f3] px-2 py-0.5 rounded-md border border-[#c5d8cf]">
-                  Level Anda: {userCurrentTierKey.toUpperCase()}
+            <section aria-label="Kartu Member Digital" className="mb-6 space-y-3">
+              {/* Header & Minimalist 3-Pill Switcher */}
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-extrabold text-[#1c2d26] tracking-tight">
+                  Kartu Member Digital
                 </span>
+
+                <div className="inline-flex rounded-xl bg-[#e5ede9] p-1 text-[11px] font-bold">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedCardTier("reguler")}
+                    className={`px-2.5 py-1 rounded-lg transition-all ${
+                      selectedCardTier === "reguler"
+                        ? "bg-[#0b3d2e] text-[#c8f53a] shadow-xs"
+                        : "text-[#52665e] hover:text-[#1c2d26]"
+                    }`}
+                  >
+                    Reguler
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedCardTier("perak")}
+                    className={`px-2.5 py-1 rounded-lg transition-all flex items-center gap-1 ${
+                      selectedCardTier === "perak"
+                        ? "bg-slate-800 text-slate-100 shadow-xs"
+                        : "text-[#52665e] hover:text-[#1c2d26]"
+                    }`}
+                  >
+                    <span>Perak</span>
+                    {lifetimeSpend < tierConfig.perak.min_lifetime_spend && (
+                      <Lock size={10} className="text-amber-500" />
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedCardTier("emas")}
+                    className={`px-2.5 py-1 rounded-lg transition-all flex items-center gap-1 ${
+                      selectedCardTier === "emas"
+                        ? "bg-gradient-to-r from-amber-700 to-amber-900 text-amber-100 shadow-xs"
+                        : "text-[#52665e] hover:text-[#1c2d26]"
+                    }`}
+                  >
+                    <span>Emas</span>
+                    {lifetimeSpend < tierConfig.emas.min_lifetime_spend && (
+                      <Lock size={10} className="text-amber-400" />
+                    )}
+                  </button>
+                </div>
               </div>
 
-              {/* TIER TABS SELECTOR (REGULER, PERAK 🔒, EMAS 🔒) */}
-              <div className="grid grid-cols-3 gap-1.5 p-1 rounded-2xl bg-[#e5ede9] text-xs font-bold shadow-inner">
-                <button
-                  type="button"
-                  onClick={() => setSelectedCardTier("reguler")}
-                  className={`flex items-center justify-center gap-1 py-2 px-1 rounded-xl transition-all ${
-                    selectedCardTier === "reguler"
-                      ? "bg-[#0b3d2e] text-[#c8f53a] shadow-sm"
-                      : "text-[#52665e] hover:text-[#1c2d26]"
-                  }`}
-                >
-                  <span>🌿 Reguler</span>
-                  {userCurrentTierKey === "reguler" && <Check size={12} className="text-[#c8f53a]" />}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setSelectedCardTier("perak")}
-                  className={`flex items-center justify-center gap-1 py-2 px-1 rounded-xl transition-all ${
-                    selectedCardTier === "perak"
-                      ? "bg-slate-800 text-slate-100 shadow-sm"
-                      : "text-[#52665e] hover:text-[#1c2d26]"
-                  }`}
-                >
-                  <span>🥈 Perak</span>
-                  {lifetimeSpend >= tierConfig.perak.min_lifetime_spend ? (
-                    <Check size={12} className="text-emerald-400" />
-                  ) : (
-                    <Lock size={11} className="text-amber-600" />
-                  )}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setSelectedCardTier("emas")}
-                  className={`flex items-center justify-center gap-1 py-2 px-1 rounded-xl transition-all ${
-                    selectedCardTier === "emas"
-                      ? "bg-gradient-to-r from-amber-700 to-amber-900 text-amber-100 shadow-sm"
-                      : "text-[#52665e] hover:text-[#1c2d26]"
-                  }`}
-                >
-                  <span>👑 Emas</span>
-                  {lifetimeSpend >= tierConfig.emas.min_lifetime_spend ? (
-                    <Check size={12} className="text-[#c8f53a]" />
-                  ) : (
-                    <Lock size={11} className="text-amber-500" />
-                  )}
-                </button>
-              </div>
-
-              {/* CARD PREVIEW CONTAINER */}
+              {/* CARD 1: REGULER (SIMPLE & CLEAN EMERALD) */}
               {selectedCardTier === "reguler" && (
-                /* CARD 1: REGULER CARD (EMERALD BRONZE) */
-                <div className="relative overflow-hidden rounded-3xl border-2 border-emerald-700/50 bg-gradient-to-br from-[#0a3528] via-[#0d4a37] to-[#06241a] p-5 text-white shadow-xl space-y-4 animate-in fade-in">
-                  <div className="absolute top-0 right-0 w-44 h-44 bg-emerald-400/10 rounded-full blur-3xl pointer-events-none" />
-                  
-                  {/* Top Bar: Brand & Status Badge */}
-                  <div className="flex items-start justify-between gap-2 relative z-10">
-                    <div className="space-y-0.5">
-                      <span className="font-mono text-[10px] tracking-widest text-[#c8f53a] uppercase font-bold">
-                        {business.name} · MEMBER PASS
-                      </span>
-                      <h3 className="text-lg font-black tracking-tight text-white flex items-center gap-1.5">
-                        <span>Mochi Reguler Pass</span>
-                      </h3>
-                    </div>
-
-                    <span className="inline-flex items-center gap-1 rounded-full bg-[#c8f53a] text-[#073829] px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider shadow-xs">
-                      <Check size={11} strokeWidth={3} />
-                      {userCurrentTierKey === "reguler" ? "Kartu Aktif" : "Level Terbuka"}
-                    </span>
-                  </div>
-
-                  {/* Card Chip & Points Multiplier */}
-                  <div className="flex items-center justify-between py-1 relative z-10">
+                <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#0a3528] via-[#0d4a37] to-[#06241a] border border-emerald-500/30 p-5 text-white shadow-lg space-y-4 animate-in fade-in">
+                  <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <div className="h-8 w-11 rounded-md bg-gradient-to-tr from-amber-600 to-amber-300 border border-amber-400/50 shadow-xs flex items-center justify-center">
-                        <div className="h-4 w-6 border-y border-amber-800/40" />
+                      <div className="h-6 w-6 rounded-full bg-[#c8f53a] flex items-center justify-center text-[#0b3d2e] font-black text-[10px]">
+                        M
                       </div>
-                      <span className="font-mono text-[11px] text-emerald-200/90 font-bold">
-                        1.0x Poin Belanja
+                      <span className="font-mono text-xs tracking-wider text-emerald-100/90 font-bold uppercase">
+                        {business.name}
                       </span>
                     </div>
-
-                    <span className="font-mono text-xs font-black text-[#c8f53a]">
-                      Min. Belanja: Rp 0
+                    <span className="rounded-full bg-emerald-950/80 border border-emerald-400/30 px-2.5 py-0.5 font-mono text-[10px] font-extrabold text-[#c8f53a] tracking-wider uppercase">
+                      Reguler · 1.0x
                     </span>
                   </div>
 
-                  {/* Card Footer: Holder Info */}
-                  <div className="flex items-end justify-between border-t border-emerald-600/30 pt-3 relative z-10">
-                    <div>
-                      <span className="text-[9.5px] uppercase font-mono text-emerald-200/70 block">
-                        Nama Pemegang Kartu
-                      </span>
-                      <p className="font-black text-sm text-white tracking-wide truncate max-w-[200px]">
-                        {customer.name}
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <span className="text-[9.5px] uppercase font-mono text-emerald-200/70 block">
-                        Saldo Poin
-                      </span>
-                      <p className="font-mono text-sm font-black text-[#c8f53a]">
-                        {balance} Pts
-                      </p>
-                    </div>
+                  <div className="pt-2 pb-1">
+                    <h3 className="text-lg font-black tracking-tight text-white truncate">
+                      {customer.name}
+                    </h3>
+                    <p className="font-mono text-xs text-emerald-300/75">
+                      {maskPhoneNumber(customer.phone)}
+                    </p>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-3 border-t border-emerald-600/20 text-xs">
+                    <span className="inline-flex items-center gap-1 text-[11px] font-bold text-[#c8f53a]">
+                      <span className="h-2 w-2 rounded-full bg-[#c8f53a]" />
+                      {userCurrentTierKey === "reguler" ? "Kartu Utama Aktif" : "Level Terbuka"}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setShowQrModal(true)}
+                      className="font-mono text-[11px] text-emerald-200 hover:text-white flex items-center gap-1 font-bold"
+                    >
+                      <QrCode size={13} />
+                      <span>Tunjuk QR</span>
+                    </button>
                   </div>
                 </div>
               )}
 
+              {/* CARD 2: PERAK (SIMPLE & CLEAN PLATINUM SILVER) */}
               {selectedCardTier === "perak" && (
-                /* CARD 2: PERAK (SILVER PLATINUM VIP) */
-                <div className="relative overflow-hidden rounded-3xl border-2 border-slate-400/60 bg-gradient-to-br from-[#1e293b] via-[#334155] to-[#0f172a] p-5 text-white shadow-xl space-y-4 animate-in fade-in">
-                  <div className="absolute top-0 right-0 w-44 h-44 bg-slate-300/15 rounded-full blur-3xl pointer-events-none" />
-                  
-                  {/* Top Bar: Brand & Status Badge */}
-                  <div className="flex items-start justify-between gap-2 relative z-10">
-                    <div className="space-y-0.5">
-                      <span className="font-mono text-[10px] tracking-widest text-slate-300 uppercase font-bold flex items-center gap-1">
-                        <Sparkles size={11} className="text-slate-200" />
-                        {business.name} · SILVER VIP
+                <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#242e3b] via-[#1a232e] to-[#101720] border border-slate-400/40 p-5 text-white shadow-lg space-y-4 animate-in fade-in">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="h-6 w-6 rounded-full bg-slate-200 flex items-center justify-center text-slate-900 font-black text-[10px]">
+                        M
+                      </div>
+                      <span className="font-mono text-xs tracking-wider text-slate-200 font-bold uppercase">
+                        {business.name}
                       </span>
-                      <h3 className="text-lg font-black tracking-tight text-white flex items-center gap-1.5">
-                        <span>Mochi Silver VIP Pass</span>
-                      </h3>
                     </div>
-
-                    {lifetimeSpend >= tierConfig.perak.min_lifetime_spend ? (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 text-slate-900 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider shadow-xs">
-                        <Check size={11} strokeWidth={3} />
-                        {userCurrentTierKey === "perak" ? "Kartu Aktif" : "Level Terbuka"}
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/20 border border-amber-400/40 text-amber-300 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider">
-                        <Lock size={10} />
-                        Terkunci
-                      </span>
-                    )}
+                    <span className="rounded-full bg-slate-900/80 border border-slate-300/40 px-2.5 py-0.5 font-mono text-[10px] font-extrabold text-slate-200 tracking-wider uppercase">
+                      Silver VIP · 1.25x
+                    </span>
                   </div>
 
-                  {/* Card Chip & Multiplier */}
-                  <div className="flex items-center justify-between py-1 relative z-10">
-                    <div className="flex items-center gap-2">
-                      <div className="h-8 w-11 rounded-md bg-gradient-to-tr from-slate-400 to-slate-100 border border-slate-200/70 shadow-xs flex items-center justify-center">
-                        <div className="h-4 w-6 border-y border-slate-600/40" />
-                      </div>
-                      <span className="font-mono text-[11px] text-slate-200 font-bold">
-                        ⚡ 1.25x Poin Belanja (+25%)
-                      </span>
-                    </div>
+                  <div className="pt-2 pb-1">
+                    <h3 className="text-lg font-black tracking-tight text-white truncate">
+                      {customer.name}
+                    </h3>
+                    <p className="font-mono text-xs text-slate-300/75">
+                      {maskPhoneNumber(customer.phone)}
+                    </p>
+                  </div>
 
-                    <span className="font-mono text-xs font-black text-slate-200">
+                  <div className="flex items-center justify-between pt-3 border-t border-slate-500/20 text-xs">
+                    {lifetimeSpend >= tierConfig.perak.min_lifetime_spend ? (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-200">
+                        <span className="h-2 w-2 rounded-full bg-slate-200" />
+                        {userCurrentTierKey === "perak" ? "Kartu Utama Aktif" : "Level Terbuka"}
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-300">
+                        <Lock size={12} />
+                        <span>Terkunci</span>
+                      </span>
+                    )}
+                    <span className="font-mono text-[11px] text-slate-300">
                       Min. {formatRupiah(tierConfig.perak.min_lifetime_spend)}
                     </span>
                   </div>
-
-                  {/* Locked / Unlocked Progress Bar */}
-                  {lifetimeSpend < tierConfig.perak.min_lifetime_spend ? (
-                    <div className="rounded-xl bg-black/40 border border-white/10 p-2.5 space-y-1.5 text-xs relative z-10">
-                      <div className="flex items-center justify-between text-[10.5px]">
-                        <span className="text-slate-300 flex items-center gap-1">
-                          <Lock size={11} className="text-amber-400" />
-                          Syarat Buka Level Perak:
-                        </span>
-                        <span className="font-mono text-amber-300 font-bold">
-                          {formatRupiah(lifetimeSpend)} / {formatRupiah(tierConfig.perak.min_lifetime_spend)}
-                        </span>
-                      </div>
-                      <div className="h-2 w-full rounded-full bg-white/15 overflow-hidden">
-                        <div
-                          className="h-full rounded-full bg-gradient-to-r from-amber-400 to-slate-200"
-                          style={{
-                            width: `${Math.min(100, Math.round((lifetimeSpend / Math.max(1, tierConfig.perak.min_lifetime_spend)) * 100))}%`,
-                          }}
-                        />
-                      </div>
-                      <p className="text-[10px] text-slate-300 leading-tight">
-                        Belanja <strong>{formatRupiah(Math.max(0, tierConfig.perak.min_lifetime_spend - lifetimeSpend))}</strong> lagi di kasir untuk otomatis mengaktifkan kartu ini!
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-2 rounded-xl bg-emerald-950/60 border border-emerald-500/30 p-2 text-xs text-emerald-300 relative z-10">
-                      <CheckCircle2 size={14} className="shrink-0" />
-                      <span>Selamat! Anda telah memenuhi syarat level Silver VIP.</span>
-                    </div>
-                  )}
-
-                  {/* Card Footer: Holder Info */}
-                  <div className="flex items-end justify-between border-t border-slate-500/30 pt-3 relative z-10">
-                    <div>
-                      <span className="text-[9.5px] uppercase font-mono text-slate-400 block">
-                        Nama Pemegang Kartu
-                      </span>
-                      <p className="font-black text-sm text-white tracking-wide truncate max-w-[200px]">
-                        {customer.name}
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <span className="text-[9.5px] uppercase font-mono text-slate-400 block">
-                        Poin Boost
-                      </span>
-                      <p className="font-mono text-sm font-black text-slate-200">
-                        1.25x Multiplier
-                      </p>
-                    </div>
-                  </div>
                 </div>
               )}
 
+              {/* CARD 3: EMAS (SIMPLE & CLEAN NOIR GOLD) */}
               {selectedCardTier === "emas" && (
-                /* CARD 3: EMAS (GOLD PRESTIGE VIP) */
-                <div className="relative overflow-hidden rounded-3xl border-2 border-amber-400/70 bg-gradient-to-br from-[#1c1917] via-[#291e0a] to-[#0c0a09] p-5 text-white shadow-2xl space-y-4 animate-in fade-in">
-                  <div className="absolute top-0 right-0 w-44 h-44 bg-amber-400/20 rounded-full blur-3xl pointer-events-none" />
-                  
-                  {/* Top Bar: Brand & Status Badge */}
-                  <div className="flex items-start justify-between gap-2 relative z-10">
-                    <div className="space-y-0.5">
-                      <span className="font-mono text-[10px] tracking-widest text-amber-300 uppercase font-bold flex items-center gap-1">
-                        <Crown size={12} className="text-amber-400" />
-                        {business.name} · GOLD PRESTIGE VIP
-                      </span>
-                      <h3 className="text-lg font-black tracking-tight text-white flex items-center gap-1.5">
-                        <span>Mochi Gold Prestige Pass</span>
-                      </h3>
-                    </div>
-
-                    {lifetimeSpend >= tierConfig.emas.min_lifetime_spend ? (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-amber-400 to-yellow-300 text-amber-950 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider shadow-xs">
-                        <Crown size={11} />
-                        Kartu Aktif
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-amber-950/80 border border-amber-500/40 text-amber-300 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider">
-                        <Lock size={10} />
-                        Terkunci
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Card Chip & Multiplier */}
-                  <div className="flex items-center justify-between py-1 relative z-10">
+                <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#1a1714] via-[#12100e] to-[#080706] border border-amber-400/40 p-5 text-white shadow-lg space-y-4 animate-in fade-in">
+                  <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <div className="h-8 w-11 rounded-md bg-gradient-to-tr from-yellow-600 via-amber-400 to-yellow-200 border border-yellow-300 shadow-md flex items-center justify-center">
-                        <div className="h-4 w-6 border-y border-amber-900/50" />
+                      <div className="h-6 w-6 rounded-full bg-amber-400 flex items-center justify-center text-amber-950 font-black text-[10px]">
+                        M
                       </div>
-                      <span className="font-mono text-[11px] text-amber-300 font-bold">
-                        👑 1.5x Poin Belanja (+50%)
+                      <span className="font-mono text-xs tracking-wider text-amber-200 font-bold uppercase">
+                        {business.name}
                       </span>
                     </div>
-
-                    <span className="font-mono text-xs font-black text-amber-300">
-                      Min. {formatRupiah(tierConfig.emas.min_lifetime_spend)}
+                    <span className="rounded-full bg-amber-950/80 border border-amber-400/40 px-2.5 py-0.5 font-mono text-[10px] font-extrabold text-amber-300 tracking-wider uppercase flex items-center gap-1">
+                      <Crown size={11} />
+                      Gold VIP · 1.5x
                     </span>
                   </div>
 
-                  {/* Locked / Unlocked Progress Bar */}
-                  {lifetimeSpend < tierConfig.emas.min_lifetime_spend ? (
-                    <div className="rounded-xl bg-black/60 border border-amber-500/30 p-2.5 space-y-1.5 text-xs relative z-10">
-                      <div className="flex items-center justify-between text-[10.5px]">
-                        <span className="text-amber-200 flex items-center gap-1">
-                          <Lock size={11} className="text-amber-400" />
-                          Syarat Buka Level Emas:
-                        </span>
-                        <span className="font-mono text-amber-300 font-bold">
-                          {formatRupiah(lifetimeSpend)} / {formatRupiah(tierConfig.emas.min_lifetime_spend)}
-                        </span>
-                      </div>
-                      <div className="h-2 w-full rounded-full bg-white/15 overflow-hidden">
-                        <div
-                          className="h-full rounded-full bg-gradient-to-r from-amber-500 to-yellow-300"
-                          style={{
-                            width: `${Math.min(100, Math.round((lifetimeSpend / Math.max(1, tierConfig.emas.min_lifetime_spend)) * 100))}%`,
-                          }}
-                        />
-                      </div>
-                      <p className="text-[10px] text-amber-200/90 leading-tight">
-                        Belanja <strong>{formatRupiah(Math.max(0, tierConfig.emas.min_lifetime_spend - lifetimeSpend))}</strong> lagi di kasir untuk otomatis mengaktifkan kartu Gold Prestige ini!
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-2 rounded-xl bg-amber-950/80 border border-amber-400/40 p-2 text-xs text-amber-300 relative z-10">
-                      <Crown size={14} className="shrink-0 text-amber-400" />
-                      <span>Prestisius! Anda adalah Member Gold VIP Mochi Cafe.</span>
-                    </div>
-                  )}
+                  <div className="pt-2 pb-1">
+                    <h3 className="text-lg font-black tracking-tight text-white truncate">
+                      {customer.name}
+                    </h3>
+                    <p className="font-mono text-xs text-amber-200/75">
+                      {maskPhoneNumber(customer.phone)}
+                    </p>
+                  </div>
 
-                  {/* Card Footer: Holder Info */}
-                  <div className="flex items-end justify-between border-t border-amber-600/30 pt-3 relative z-10">
-                    <div>
-                      <span className="text-[9.5px] uppercase font-mono text-amber-400/80 block">
-                        Nama Pemegang Kartu
+                  <div className="flex items-center justify-between pt-3 border-t border-amber-500/20 text-xs">
+                    {lifetimeSpend >= tierConfig.emas.min_lifetime_spend ? (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-300">
+                        <span className="h-2 w-2 rounded-full bg-amber-400" />
+                        {userCurrentTierKey === "emas" ? "Kartu Utama Aktif" : "Level Terbuka"}
                       </span>
-                      <p className="font-black text-sm text-white tracking-wide truncate max-w-[200px]">
-                        {customer.name}
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <span className="text-[9.5px] uppercase font-mono text-amber-400/80 block">
-                        Keuntungan Tertinggi
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-300">
+                        <Lock size={12} />
+                        <span>Terkunci</span>
                       </span>
-                      <p className="font-mono text-sm font-black text-amber-300">
-                        1.5x Multiplier &amp; VIP
-                      </p>
-                    </div>
+                    )}
+                    <span className="font-mono text-[11px] text-amber-300">
+                      Min. {formatRupiah(tierConfig.emas.min_lifetime_spend)}
+                    </span>
                   </div>
                 </div>
               )}
 
-              {/* BENEFIT HIGHLIGHT BOX FOR SELECTED TIER */}
-              <div className="rounded-2xl border border-[#d8e3de] bg-white p-3.5 space-y-2 shadow-xs">
-                <h4 className="text-xs font-black text-[#1c2d26] flex items-center gap-1.5">
-                  <Award size={14} className="text-[#167052]" />
-                  <span>Keuntungan Eksklusif Level {selectedCardTier.toUpperCase()}:</span>
-                </h4>
-                <ul className="text-[11px] text-[#556b62] space-y-1.5">
-                  {selectedCardTier === "reguler" && (
-                    <>
-                      <li className="flex items-start gap-2">
-                        <span className="text-[#167052] font-bold">✓</span>
-                        <span>Dapat 1 Poin per kelipatan kurs belanja ({formatRupiah(program.earn_rate || 1000)} = 1 Pts).</span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <span className="text-[#167052] font-bold">✓</span>
-                        <span>Akses tukar seluruh katalog voucher hadiah makanan &amp; minuman Mochi.</span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <span className="text-[#167052] font-bold">✓</span>
-                        <span>Bonus poin referral ajak teman &amp; ucapan ulang tahun.</span>
-                      </li>
-                    </>
-                  )}
+              {/* Progress Bar (Only when previewing a locked card) */}
+              {selectedCardTier === "perak" && lifetimeSpend < tierConfig.perak.min_lifetime_spend && (
+                <div className="rounded-2xl bg-white border border-[#d8e3de] p-3 space-y-1.5 text-xs shadow-xs">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-[#556b62] flex items-center gap-1">
+                      <Lock size={11} className="text-amber-600" />
+                      <span>Buka Level Perak:</span>
+                    </span>
+                    <span className="font-mono font-bold text-[#1c2d26]">
+                      {formatRupiah(lifetimeSpend)} / {formatRupiah(tierConfig.perak.min_lifetime_spend)}
+                    </span>
+                  </div>
+                  <div className="h-1.5 w-full rounded-full bg-[#edf1ef] overflow-hidden">
+                    <div
+                      className="h-full rounded-full bg-slate-700 transition-all"
+                      style={{
+                        width: `${Math.min(100, Math.round((lifetimeSpend / Math.max(1, tierConfig.perak.min_lifetime_spend)) * 100))}%`,
+                      }}
+                    />
+                  </div>
+                  <p className="text-[10.5px] text-[#718078]">
+                    Belanja <strong>{formatRupiah(Math.max(0, tierConfig.perak.min_lifetime_spend - lifetimeSpend))}</strong> lagi untuk membuka level Perak.
+                  </p>
+                </div>
+              )}
 
-                  {selectedCardTier === "perak" && (
-                    <>
-                      <li className="flex items-start gap-2 font-bold text-[#1c2d26]">
-                        <span className="text-amber-600">⚡</span>
-                        <span>1.25x Poin Booster (+25% lebih banyak poin di setiap transaksi).</span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <span className="text-[#167052] font-bold">✓</span>
-                        <span>Voucher hadiah spesial khusus member Perak di bulan ulang tahun.</span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <span className="text-[#167052] font-bold">✓</span>
-                        <span>Akses awal promo seasonal &amp; diskon produk tertentu.</span>
-                      </li>
-                    </>
-                  )}
+              {selectedCardTier === "emas" && lifetimeSpend < tierConfig.emas.min_lifetime_spend && (
+                <div className="rounded-2xl bg-white border border-[#d8e3de] p-3 space-y-1.5 text-xs shadow-xs">
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="text-[#556b62] flex items-center gap-1">
+                      <Lock size={11} className="text-amber-600" />
+                      <span>Buka Level Emas:</span>
+                    </span>
+                    <span className="font-mono font-bold text-[#1c2d26]">
+                      {formatRupiah(lifetimeSpend)} / {formatRupiah(tierConfig.emas.min_lifetime_spend)}
+                    </span>
+                  </div>
+                  <div className="h-1.5 w-full rounded-full bg-[#edf1ef] overflow-hidden">
+                    <div
+                      className="h-full rounded-full bg-amber-500 transition-all"
+                      style={{
+                        width: `${Math.min(100, Math.round((lifetimeSpend / Math.max(1, tierConfig.emas.min_lifetime_spend)) * 100))}%`,
+                      }}
+                    />
+                  </div>
+                  <p className="text-[10.5px] text-[#718078]">
+                    Belanja <strong>{formatRupiah(Math.max(0, tierConfig.emas.min_lifetime_spend - lifetimeSpend))}</strong> lagi untuk membuka level Emas.
+                  </p>
+                </div>
+              )}
 
-                  {selectedCardTier === "emas" && (
-                    <>
-                      <li className="flex items-start gap-2 font-bold text-[#1c2d26]">
-                        <span className="text-amber-500">👑</span>
-                        <span>1.5x Poin Booster (+50% poin maksimal di setiap pesanan).</span>
-                      </li>
-                      <li className="flex items-start gap-2 font-bold text-[#1c2d26]">
-                        <span className="text-[#167052]">☕</span>
-                        <span>Gratis 1 Minuman / Pastry Favorit Spesial saat hari ulang tahun.</span>
-                      </li>
-                      <li className="flex items-start gap-2">
-                        <span className="text-[#167052] font-bold">✓</span>
-                        <span>Undangan eksklusif VIP private tasting menu baru &amp; prioritas meja.</span>
-                      </li>
-                    </>
-                  )}
-                </ul>
+              {/* Clean 1-Line Benefit Summary */}
+              <div className="rounded-xl bg-[#edf8f3] border border-[#c5d8cf] px-3 py-2 text-[11px] text-[#167052] font-medium flex items-center gap-2">
+                <Sparkles size={13} className="shrink-0 text-[#167052]" />
+                <span className="truncate">
+                  {selectedCardTier === "emas"
+                    ? "Keuntungan: 1.5x Poin Booster · 1 Gratis Minuman Ulang Tahun · VIP Table"
+                    : selectedCardTier === "perak"
+                    ? "Keuntungan: 1.25x Poin Booster · Voucher Ulang Tahun · Promo Prioritas"
+                    : "Keuntungan: 1.0x Poin Belanja · Akses Seluruh Hadiah · Bonus Referral"}
+                </span>
               </div>
             </section>
 
@@ -1156,10 +933,9 @@ export default function MochiMemberView({
           </>
         ) : (
           /* ================================================================= */
-          /* DEDICATED MENU VIEW (KATALOG MENU MOCHI - CLEAN NO CONFUSING QR)  */
+          /* DEDICATED MENU VIEW (KATALOG MENU MOCHI - CLEAN)                  */
           /* ================================================================= */
           <section aria-label="Katalog Menu Mochi" className="space-y-4">
-            {/* Elegant Menu Catalog Header */}
             <div className="rounded-2xl border border-[#c5d8cf] bg-white p-4 text-[#1c2d26] shadow-xs space-y-1">
               <div className="flex items-center gap-1.5 text-[#167052] text-[10px] font-black uppercase tracking-wider font-mono">
                 <Coffee size={13} />
@@ -1313,13 +1089,12 @@ export default function MochiMemberView({
       </div>
 
       {/* =================================================================== */}
-      {/* 5. FLOATING BOTTOM NAVIGATION BAR (DOCK)                            */}
+      {/* 4. FLOATING BOTTOM NAVIGATION BAR                                   */}
       {/* =================================================================== */}
       <nav
         aria-label="Navigasi Utama"
         className="fixed bottom-3 inset-x-3 max-w-sm mx-auto z-40 bg-[#073829] text-emerald-100 rounded-[28px] p-2 px-4 shadow-[0_12px_40px_rgba(7,56,41,0.4)] flex items-center justify-between border border-emerald-700/30 backdrop-blur-md"
       >
-        {/* Nav 1: Home */}
         <button
           type="button"
           onClick={() => {
@@ -1334,7 +1109,6 @@ export default function MochiMemberView({
           <span className="text-[9.5px] font-bold tracking-tight">Beranda</span>
         </button>
 
-        {/* Nav 2: Voucher */}
         <button
           type="button"
           onClick={() => setShowVoucherModal(true)}
@@ -1347,7 +1121,6 @@ export default function MochiMemberView({
           <span className="text-[9.5px] font-bold tracking-tight">Voucher</span>
         </button>
 
-        {/* Center Floating FAB Button (QR CODE CASHIER QUICK ACTION) */}
         <button
           type="button"
           onClick={() => setShowQrModal(true)}
@@ -1358,7 +1131,6 @@ export default function MochiMemberView({
           <QrCode size={24} strokeWidth={2.4} />
         </button>
 
-        {/* Nav 3: Menu */}
         <button
           type="button"
           onClick={() => {
@@ -1373,7 +1145,6 @@ export default function MochiMemberView({
           <span className="text-[9.5px] font-bold tracking-tight">Menu</span>
         </button>
 
-        {/* Nav 4: Profil (PROMPTLY OPENS PROFILE MODAL) */}
         <button
           type="button"
           onClick={() => setShowProfileModal(true)}
@@ -1386,7 +1157,7 @@ export default function MochiMemberView({
       </nav>
 
       {/* =================================================================== */}
-      {/* MODAL 1: QR CODE FULLSCREEN (FOR CASHIER SCANNER)                   */}
+      {/* MODAL 1: QR CODE FULLSCREEN                                         */}
       {/* =================================================================== */}
       {showQrModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-xs animate-in fade-in-50">
@@ -1404,7 +1175,6 @@ export default function MochiMemberView({
               </button>
             </div>
 
-            {/* QR Visual */}
             <div className="rounded-2xl border-2 border-[#167052] bg-white p-3 flex justify-center shadow-inner">
               <QrCodeComponent
                 value={customer.token}
@@ -1582,7 +1352,7 @@ export default function MochiMemberView({
       )}
 
       {/* =================================================================== */}
-      {/* MODAL 4: PROFIL, KARTU STATUS & PENGATURAN (RICH & RELIABLE)        */}
+      {/* MODAL 4: PROFIL MEMBER & PENGATURAN                                 */}
       {/* =================================================================== */}
       {showProfileModal && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/75 p-0 sm:p-4 backdrop-blur-xs animate-in fade-in-50">
@@ -1758,7 +1528,6 @@ export default function MochiMemberView({
       {selectedMenuDetail && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/75 p-0 sm:p-4 backdrop-blur-xs animate-in fade-in-50">
           <div className="w-full max-w-sm rounded-t-[32px] sm:rounded-3xl bg-white p-5 text-[#1c2d26] max-h-[88vh] overflow-y-auto shadow-2xl animate-in slide-in-from-bottom-10 space-y-4">
-            {/* Header */}
             <div className="flex items-center justify-between">
               <span className="inline-flex items-center gap-1.5 rounded-full bg-[#edf8f3] px-3 py-1 text-[11px] font-bold text-[#167052]">
                 <Coffee size={13} />
@@ -1776,7 +1545,6 @@ export default function MochiMemberView({
               </button>
             </div>
 
-            {/* Menu Image */}
             <div className="relative aspect-4/3 w-full rounded-2xl overflow-hidden bg-[#edf8f3] border border-[#e5ede9]">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
@@ -1789,7 +1557,6 @@ export default function MochiMemberView({
               </span>
             </div>
 
-            {/* Menu Info */}
             <div className="space-y-1">
               <div className="flex items-baseline justify-between gap-2">
                 <h3 className="text-base font-black text-[#1c2d26]">
@@ -1806,7 +1573,6 @@ export default function MochiMemberView({
               )}
             </div>
 
-            {/* Loyalty Reward Callout */}
             <div className="rounded-xl border border-[#d8e3de] bg-[#f9fbf9] p-3 text-xs space-y-1">
               <div className="flex items-center gap-1.5 text-[#167052] font-black">
                 <Sparkles size={14} />
@@ -1851,7 +1617,6 @@ export default function MochiMemberView({
               </div>
             </div>
 
-            {/* Action Buttons */}
             <div className="flex items-center gap-2 pt-1">
               <button
                 type="button"
