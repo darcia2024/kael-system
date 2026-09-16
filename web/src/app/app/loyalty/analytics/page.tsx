@@ -21,7 +21,7 @@ export const metadata: Metadata = {
 
 export default async function LoyaltyAnalyticsPage() {
   const { session } = await guardModulePage("loyalty", "/app/loyalty/analytics");
-  if (session.role !== "owner") redirect("/app/loyalty");
+  if (session.role !== "owner" && session.role !== "kael_admin") redirect("/app/loyalty");
 
   const [
     business,

@@ -10,7 +10,6 @@ import ReportsClient from "./reports-client";
  * Laporan penjualan. Khusus owner: kasir tidak boleh melihat omzet, laba, atau
  * memproses refund.
  */
-
 export const metadata: Metadata = {
   title: "Laporan Penjualan",
   robots: { index: false, follow: false },
@@ -20,7 +19,7 @@ export default async function PosReportsPage() {
   const { session } = await guardModulePage("pos", "/app/pos/reports");
   // Laporan laba dan rekap shift tetap hanya untuk pemilik, walaupun
   // kasir punya izin POS. Angka margin bukan urusan yang mencatatnya.
-  if (session.role !== "owner") redirect("/app/pos");
+  if (session.role !== "owner" && session.role !== "kael_admin") redirect("/app/pos");
 
   const [business, reports, orders, shifts, feedbackSummary, recentFeedback] = await Promise.all([
     db.getBusiness(session.businessId),

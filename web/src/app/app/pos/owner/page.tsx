@@ -16,7 +16,7 @@ export const revalidate = 0;
 
 export default async function PosOwnerDashboardPage() {
   const { session } = await guardModulePage("pos", "/app/pos/owner");
-  if (session.role !== "owner") redirect("/app/pos");
+  if (session.role !== "owner" && session.role !== "kael_admin") redirect("/app/pos");
   const [business, dashboard, pendingSync, feedbackSummary, recentFeedback, loyaltySummary] = await Promise.all([
     db.getBusiness(session.businessId),
     db.getPosOwnerDashboard(session.businessId),

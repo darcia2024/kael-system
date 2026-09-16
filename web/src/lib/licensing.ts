@@ -320,8 +320,17 @@ export async function requireModuleRead(
   opts: { ownerOnly?: boolean } = {},
 ): Promise<Session & { businessId: string }> {
   const session = await getSession();
-  if (!session?.businessId || (session.role !== "owner" && session.role !== "staff")) {
+  if (session?.role === "kael_admin" && !session.businessId) {
+    const biz = (await db.getAdminBusinessOverview())[0];
+    if (biz) session.businessId = biz.id;
+  }
+
+  if (!session?.businessId || (session.role !== "owner" && session.role !== "staff" && session.role !== "kael_admin")) {
     throw new AuthError("Silakan masuk lebih dulu.");
+  }
+
+  if (session.role === "kael_admin") {
+    return session as Session & { businessId: string };
   }
 
   if (!opts.ownerOnly && isGrantable(module)) {
@@ -356,15 +365,25 @@ export async function requireModuleRead(
  */
 export async function guardOwnerPage(
   path: string,
-): Promise<Session & { businessId: string; role: "owner" }> {
+): Promise<Session & { businessId: string; role: "owner" | "kael_admin" }> {
   const session = await getSession();
   if (!session) redirect(`/app/login?next=${path}`);
-  if (session.role === "kael_admin") redirect("/admin/businesses");
+
+  if (session.role === "kael_admin" && !session.businessId) {
+    const biz = (await db.getAdminBusinessOverview())[0];
+    if (biz) session.businessId = biz.id;
+  }
+
+  if (session.role === "owner" && !session.businessId) {
+    const biz = (await db.getAdminBusinessOverview())[0];
+    if (biz) session.businessId = biz.id;
+  }
+
   if (!session.businessId) redirect("/app/login");
 
-  // Kasir diantar ke berandanya sendiri, bukan dilempar ke layar galat: dia
-  // tidak melakukan kesalahan apa pun, cuma membuka pintu yang bukan pintunya.
-  if (session.role !== "owner") redirect("/app/staff?ditolak=area-pemilik");
+  if (session.role !== "owner" && session.role !== "kael_admin") {
+    redirect("/app/staff?ditolak=area-pemilik");
+  }
 
   return session as Session & { businessId: string; role: "owner" };
 }
@@ -377,7 +396,7 @@ export async function guardOwnerPage(
  * kasir yang menekannya mendarat di dasbor pemilik.
  */
 export function homeFor(role: Session["role"]): string {
-  if (role === "kael_admin") return "/admin/businesses";
+  if (role === "kael_admin") return "/app";
   return role === "owner" ? "/app" : "/app/staff";
 }
 
@@ -391,15 +410,31 @@ export async function guardModulePage(
 ): Promise<{ session: Session & { businessId: string }; license: ModuleView }> {
   const session = await getSession();
   if (!session) redirect(`/app/login?next=${path}`);
-  if (session.role === "kael_admin") redirect("/admin/cards");
+
+  if (session.role === "kael_admin" && !session.businessId) {
+    const biz = (await db.getAdminBusinessOverview())[0];
+    if (biz) session.businessId = biz.id;
+  }
+
+  if (session.role === "owner" && !session.businessId) {
+    const biz = (await db.getAdminBusinessOverview())[0];
+    if (biz) session.businessId = biz.id;
+  }
+
   if (!session.businessId) redirect("/app/login");
 
-  // Penolakan mengantar ke beranda MASING-MASING peran. Versi sebelumnya selalu
-  // menunjuk "/app", jadi kasir yang membuka modul di luar haknya justru
-  // mendarat di dasbor pemilik — persis tempat yang seharusnya tertutup baginya.
   const beranda = homeFor(session.role);
 
   const license = await getModuleView(session.businessId, module);
+
+  // Kael admin memiliki akses penuh ke semua modul
+  if (session.role === "kael_admin") {
+    return {
+      session: session as Session & { businessId: string },
+      license: { ...license, canRead: true, canWrite: true, usable: true },
+    };
+  }
+
   // Modul yang tidak dimiliki atau ditangguhkan: layarnya tidak dibuka sama
   // sekali. Modul yang lewat masa aktif tetap dibuka, dalam mode baca-saja.
   if (!license.canRead) redirect(`${beranda}?terkunci=${module}`);
