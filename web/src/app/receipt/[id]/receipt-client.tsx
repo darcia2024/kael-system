@@ -20,8 +20,10 @@ import { FEEDBACK_REASONS } from "@/lib/types";
 import { generateWhatsAppReceiptMessage, serviceTypeLabel } from "@/lib/pos-engine";
 import { formatRupiah, formatBusinessDateTime } from "@/lib/formatters";
 import { BusinessMark } from "@/components/business-mark";
+import QrCodeComponent from "@/components/qr-code";
 import { submitFeedbackAction } from "@/lib/actions";
 import { isMochiBusiness } from "@/lib/mochi-brand";
+import { siteHost } from "@/lib/site";
 
 export interface ReceiptPageData {
   data:
@@ -216,19 +218,32 @@ export default function DigitalReceiptPage({ data, staffName, hasFeedback, revie
       <div className={`rounded-3xl border-2 ${isMochi ? "border-emerald-700/50" : "border-[#232331]"} bg-white p-6 shadow-ink-lg space-y-4 font-mono text-xs relative overflow-hidden print:border-none print:shadow-none print:p-0`}>
         
         {/* Top Shop Header */}
-        <div className="text-center space-y-1 border-b-2 border-dashed border-[#232331] pb-4">
-          <BusinessMark
-            name={business.name}
-            logoUrl={business.logo_url}
-            brandColor={business.brand_color}
-            size="lg"
-            className={`mx-auto ${isMochi ? "rounded-full border border-emerald-400/40 shadow-xs" : "rounded-2xl border border-[#232331]"}`}
-          />
-          <h2 className="text-base font-black text-[#232331] uppercase tracking-wider font-sans mt-1">
+        <div className="text-center space-y-1.5 border-b-2 border-dashed border-[#232331] pb-4">
+          {isMochi ? (
+            <div className="flex justify-center pb-1">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={business.logo_url || "/logo-mochi.png"}
+                alt={business.name}
+                className="h-14 sm:h-16 w-auto max-w-[200px] object-contain mx-auto"
+              />
+            </div>
+          ) : (
+            <BusinessMark
+              name={business.name}
+              logoUrl={business.logo_url}
+              brandColor={business.brand_color}
+              size="lg"
+              className="mx-auto rounded-2xl border border-[#232331]"
+            />
+          )}
+          <h2 className="text-base font-black text-[#232331] uppercase tracking-wider font-sans">
             {business.name}
           </h2>
-          <p className="text-[10px] text-[#7b7b8e]">{business.address}</p>
-          <p className="text-[10px] text-[#7b7b8e]">Telp/WA: {business.phone}</p>
+          {business.address && (
+            <p className="text-[10px] text-[#7b7b8e]">{business.address}</p>
+          )}
+          <p className="text-[10px] text-[#7b7b8e]">Telp/WA: {business.phone || "-"}</p>
         </div>
 
         {/* Order Meta */}
@@ -333,6 +348,60 @@ export default function DigitalReceiptPage({ data, staffName, hasFeedback, revie
             </>
           )}
         </div>
+
+        {/* Member Loyalty QR Code Block */}
+        {customer?.token ? (
+          <div className="text-center py-4 border-t-2 border-dashed border-[#232331] space-y-2.5">
+            <div className="inline-flex items-center gap-1.5 rounded-full bg-[#edf8f3] px-3.5 py-1 text-[11px] font-black text-[#167052] font-mono border border-[#a3d9be]">
+              <Sparkles size={13} />
+              <span>KARTU MEMBER DIGITAL</span>
+            </div>
+
+            <div className="flex justify-center py-1">
+              <div className="p-2.5 bg-white rounded-2xl border-2 border-[#167052] inline-block shadow-sm">
+                <QrCodeComponent
+                  value={memberCardUrl || `https://${siteHost}/m/${customer.token}`}
+                  size={140}
+                  label={`Kartu Member ${customer.name}`}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-0.5 max-w-xs mx-auto">
+              <p className="text-xs font-black text-[#1c2d26]">{customer.name}</p>
+              <p className="text-[10.5px] text-[#556b62] leading-tight font-sans">
+                Scan QR di atas untuk membuka kartu member Anda, melihat saldo poin terbaru, stempel, dan voucher hadiah!
+              </p>
+              <p className="text-[9.5px] font-mono text-[#718078] pt-0.5">
+                kaels.site/m/{(customer.token || "00000000").slice(0, 8)}...
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div className="text-center py-4 border-t-2 border-dashed border-[#232331] space-y-2.5">
+            <div className="inline-flex items-center gap-1.5 rounded-full bg-[#fef3c7] px-3.5 py-1 text-[11px] font-black text-[#92400e] font-mono border border-[#fcd34d]">
+              <Sparkles size={13} />
+              <span>GABUNG MEMBER {business.name.toUpperCase()}</span>
+            </div>
+
+            <div className="flex justify-center py-1">
+              <div className="p-2.5 bg-white rounded-2xl border-2 border-[#d97706] inline-block shadow-sm">
+                <QrCodeComponent
+                  value={`https://${siteHost}/loyalty/register?toko=${encodeURIComponent(business.store_code || "MOCHIKAFE")}`}
+                  size={140}
+                  label="Daftar Member Mochi"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-0.5 max-w-xs mx-auto">
+              <p className="text-xs font-black text-[#1c2d26]">Scan QR untuk Daftar Member</p>
+              <p className="text-[10.5px] text-[#556b62] leading-tight font-sans">
+                Daftar gratis hanya 5 detik dengan nomor WhatsApp & kumpulkan poin traktiran setiap belanja!
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Footer Greetings */}
         <div className="text-center pt-3 border-t-2 border-dashed border-[#232331] text-[10px] text-[#7b7b8e] space-y-1">
