@@ -748,6 +748,47 @@ export interface BusinessPointLedgerRow extends PointLedger {
   staff_name: string | null;
 }
 
+export interface DeletableOrder {
+  id: string;
+  order_no: string;
+  channel: string;
+  table_no: string | null;
+  status: string;
+  total: number;
+  payment_method: string;
+  customer_name: string | null;
+  item_count: number;
+  created_at: string;
+}
+
+export interface DeletableFeedback {
+  id: string;
+  order_id: string | null;
+  order_no: string | null;
+  rating: number;
+  reason_code: string | null;
+  comment: string | null;
+  customer_name: string | null;
+  created_at: string;
+}
+
+export interface DeletableShift {
+  id: string;
+  opened_by_name: string;
+  opened_at: string;
+  closed_at: string | null;
+  opening_cash: number;
+  closing_cash: number | null;
+  expected_cash: number | null;
+  variance: number | null;
+  order_count: number;
+}
+
+export interface DeletableTestData {
+  orders: DeletableOrder[];
+  feedbacks: DeletableFeedback[];
+  shifts: DeletableShift[];
+}
 
 // -----------------------------------------------------------------------------
 // INITIAL SEED DATA

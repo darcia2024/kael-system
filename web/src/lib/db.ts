@@ -69,6 +69,10 @@ import type {
   Refund,
   SafeUser,
   MemberCardSettings,
+  DeletableTestData,
+  DeletableOrder,
+  DeletableFeedback,
+  DeletableShift,
 } from "./types";
 
 export * from "./types";
@@ -5482,6 +5486,140 @@ export const db = {
         },
       },
     };
+  },
+
+  /**
+   * Mengambil daftar data transaksi, ulasan, dan shift yang dapat dipilih owner untuk dihapus.
+   */
+  async getDeletableTestData(businessId: string): Promise<DeletableTestData> {
+    const [orders, feedbacks, shifts] = await Promise.all([
+      sql<any[]>`
+        SELECT 
+          o.id,
+          o.order_no,
+          o.channel,
+          o.table_no,
+          o.status,
+          o.total::int AS total,
+          o.payment_method,
+          o.created_at,
+          c.name AS customer_name,
+          COALESCE((SELECT COUNT(*) FROM order_items oi WHERE oi.order_id = o.id), 0)::int AS item_count
+        FROM orders o
+        LEFT JOIN customers c ON c.id = o.customer_id
+        WHERE o.business_id = ${businessId}
+        ORDER BY o.created_at DESC
+        LIMIT 200
+      `,
+      sql<any[]>`
+        SELECT 
+          f.id,
+          f.order_id,
+          f.rating,
+          f.reason_code,
+          f.comment,
+          f.created_at,
+          o.order_no,
+          c.name AS customer_name
+        FROM member_feedback f
+        LEFT JOIN orders o ON o.id = f.order_id
+        LEFT JOIN customers c ON c.id = f.customer_id
+        WHERE f.business_id = ${businessId}
+        ORDER BY f.created_at DESC
+        LIMIT 200
+      `,
+      sql<any[]>`
+        SELECT 
+          s.id,
+          s.opened_at,
+          s.closed_at,
+          s.opening_cash::int AS opening_cash,
+          s.closing_cash::int AS closing_cash,
+          s.expected_cash::int AS expected_cash,
+          s.variance::int AS variance,
+          COALESCE(u.name, u.email, 'Kasir') AS opened_by_name,
+          COALESCE((SELECT COUNT(*) FROM orders o WHERE o.shift_id = s.id), 0)::int AS order_count
+        FROM shifts s
+        LEFT JOIN users u ON u.id = s.opened_by
+        WHERE s.business_id = ${businessId}
+        ORDER BY s.opened_at DESC
+        LIMIT 150
+      `,
+    ]);
+
+    return {
+      orders: orders.map((o) => ({
+        id: o.id,
+        order_no: o.order_no,
+        channel: o.channel,
+        table_no: o.table_no,
+        status: o.status,
+        total: Number(o.total) || 0,
+        payment_method: o.payment_method,
+        customer_name: o.customer_name,
+        item_count: Number(o.item_count) || 0,
+        created_at: o.created_at instanceof Date ? o.created_at.toISOString() : String(o.created_at),
+      })),
+      feedbacks: feedbacks.map((f) => ({
+        id: f.id,
+        order_id: f.order_id,
+        order_no: f.order_no,
+        rating: Number(f.rating) || 5,
+        reason_code: f.reason_code,
+        comment: f.comment,
+        customer_name: f.customer_name,
+        created_at: f.created_at instanceof Date ? f.created_at.toISOString() : String(f.created_at),
+      })),
+      shifts: shifts.map((s) => ({
+        id: s.id,
+        opened_by_name: s.opened_by_name,
+        opened_at: s.opened_at instanceof Date ? s.opened_at.toISOString() : String(s.opened_at),
+        closed_at: s.closed_at ? (s.closed_at instanceof Date ? s.closed_at.toISOString() : String(s.closed_at)) : null,
+        opening_cash: Number(s.opening_cash) || 0,
+        closing_cash: s.closing_cash !== null ? Number(s.closing_cash) : null,
+        expected_cash: s.expected_cash !== null ? Number(s.expected_cash) : null,
+        variance: s.variance !== null ? Number(s.variance) : null,
+        order_count: Number(s.order_count) || 0,
+      })),
+    };
+  },
+
+  /**
+   * Hapus daftar transaksi/order testing yang dipilih secara batch.
+   */
+  async deleteOrdersBatch(orderIds: string[], businessId: string): Promise<{ deletedCount: number }> {
+    if (!orderIds || orderIds.length === 0) return { deletedCount: 0 };
+    return sql.begin(async (tx) => {
+      await tx`DELETE FROM member_feedback WHERE order_id IN ${sql(orderIds)} AND business_id = ${businessId}`;
+      await tx`DELETE FROM point_ledger WHERE order_id IN ${sql(orderIds)} AND business_id = ${businessId}`;
+      await tx`DELETE FROM refunds WHERE order_id IN ${sql(orderIds)}`;
+      await tx`DELETE FROM order_items WHERE order_id IN ${sql(orderIds)}`;
+      const res = await tx`DELETE FROM orders WHERE id IN ${sql(orderIds)} AND business_id = ${businessId} RETURNING id`;
+      return { deletedCount: res.length };
+    });
+  },
+
+  /**
+   * Hapus daftar feedback/review testing yang dipilih secara batch.
+   */
+  async deleteFeedbackBatch(feedbackIds: string[], businessId: string): Promise<{ deletedCount: number }> {
+    if (!feedbackIds || feedbackIds.length === 0) return { deletedCount: 0 };
+    const res = await sql`
+      DELETE FROM member_feedback WHERE id IN ${sql(feedbackIds)} AND business_id = ${businessId} RETURNING id
+    `;
+    return { deletedCount: res.length };
+  },
+
+  /**
+   * Hapus daftar shift kasir testing yang dipilih secara batch.
+   */
+  async deleteShiftsBatch(shiftIds: string[], businessId: string): Promise<{ deletedCount: number }> {
+    if (!shiftIds || shiftIds.length === 0) return { deletedCount: 0 };
+    return sql.begin(async (tx) => {
+      await tx`UPDATE orders SET shift_id = NULL WHERE shift_id IN ${sql(shiftIds)} AND business_id = ${businessId}`;
+      const res = await tx`DELETE FROM shifts WHERE id IN ${sql(shiftIds)} AND business_id = ${businessId} RETURNING id`;
+      return { deletedCount: res.length };
+    });
   },
 
   /**

@@ -2192,6 +2192,15 @@ export default function OwnerDashboardClient({
         storeName={business?.name || "Mochi Cafe n Resto"}
         isMochi={true}
       />
+
+      <ClearTestDataModal
+        isOpen={showClearModal}
+        onClose={() => setShowClearModal(false)}
+        onSuccess={() => {
+          router.refresh();
+        }}
+        isMochi={isMochi}
+      />
     </div>
   );
 }

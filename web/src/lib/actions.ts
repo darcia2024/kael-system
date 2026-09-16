@@ -15,6 +15,7 @@ import type {
   CustomerDirectoryEntry,
   MenuItem,
   Category,
+  DeletableTestData,
 } from "./types";
 import {
   FEEDBACK_REASONS,
@@ -2023,6 +2024,49 @@ export async function refundOrderAction(
   revalidatePath("/app/pos/reports");
   revalidatePath("/app/pos/owner");
   return done(null);
+}
+
+/** Mengambil daftar data testing (transaksi, feedback, shift) yang dapat dipilih dan dihapus oleh owner. */
+export async function getDeletableTestDataAction(): Promise<ActionResult<DeletableTestData>> {
+  const { businessId } = await requireOwner();
+  const data = await db.getDeletableTestData(businessId);
+  return done(data);
+}
+
+/** Hapus batch transaksi/order testing yang dipilih oleh owner. */
+export async function deleteOrdersBatchAction(
+  orderIds: string[],
+): Promise<ActionResult<{ deletedCount: number }>> {
+  const { businessId } = await requireOwner();
+  const res = await db.deleteOrdersBatch(orderIds, businessId);
+  revalidatePath("/app/pos");
+  revalidatePath("/app/pos/reports");
+  revalidatePath("/app/pos/owner");
+  revalidatePath("/app/loyalty/analytics");
+  return done(res);
+}
+
+/** Hapus batch feedback/review testing yang dipilih oleh owner. */
+export async function deleteFeedbackBatchAction(
+  feedbackIds: string[],
+): Promise<ActionResult<{ deletedCount: number }>> {
+  const { businessId } = await requireOwner();
+  const res = await db.deleteFeedbackBatch(feedbackIds, businessId);
+  revalidatePath("/app/pos/reports");
+  revalidatePath("/app/pos/owner");
+  revalidatePath("/app/review/reports");
+  return done(res);
+}
+
+/** Hapus batch shift kasir testing yang dipilih oleh owner. */
+export async function deleteShiftsBatchAction(
+  shiftIds: string[],
+): Promise<ActionResult<{ deletedCount: number }>> {
+  const { businessId } = await requireOwner();
+  const res = await db.deleteShiftsBatch(shiftIds, businessId);
+  revalidatePath("/app/pos/reports");
+  revalidatePath("/app/pos/owner");
+  return done(res);
 }
 
 /** Hapus transaksi/order testing untuk owner. */

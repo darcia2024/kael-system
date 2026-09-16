@@ -205,18 +205,35 @@ export default function PosOwnerReportsPage({
             </div>
           </div>
 
-          <Link
-            href="/app/pos/owner"
-            className={
-              isMochi
-                ? "flex items-center gap-1.5 rounded-xl bg-[#c8f53a] hover:bg-[#d9ff57] px-3.5 py-2 font-mono text-xs font-black text-[#073829] shadow-sm transition-all active:scale-95 shrink-0"
-                : "btn-tactile flex items-center gap-1 rounded-xl border-2 border-[#232331] bg-[#d9ff57] px-3.5 py-1.5 font-mono text-xs font-black text-[#232331] shadow-ink-xs shrink-0"
-            }
-          >
-            <LayoutDashboard size={14} />
-            <span className="hidden sm:inline">Dashboard Owner Utama</span>
-            <span className="sm:hidden">Dashboard</span>
-          </Link>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => setShowClearModal(true)}
+              className={
+                isMochi
+                  ? "flex items-center gap-1.5 rounded-xl border border-rose-400/40 bg-rose-600/90 hover:bg-rose-700 px-3 py-2 font-mono text-xs font-bold text-white shadow-sm transition-all active:scale-95 shrink-0"
+                  : "btn-tactile flex items-center gap-1 rounded-xl border-2 border-rose-600 bg-rose-50 text-rose-700 hover:bg-rose-100 px-3 py-1.5 font-mono text-xs font-bold shadow-ink-xs shrink-0"
+              }
+              title="Pembersihan data transaksi & ulasan testing"
+            >
+              <Trash2 size={13} />
+              <span className="hidden sm:inline">Hapus Data Testing</span>
+              <span className="sm:hidden">Hapus Test</span>
+            </button>
+
+            <Link
+              href="/app/pos/owner"
+              className={
+                isMochi
+                  ? "flex items-center gap-1.5 rounded-xl bg-[#c8f53a] hover:bg-[#d9ff57] px-3.5 py-2 font-mono text-xs font-black text-[#073829] shadow-sm transition-all active:scale-95 shrink-0"
+                  : "btn-tactile flex items-center gap-1 rounded-xl border-2 border-[#232331] bg-[#d9ff57] px-3.5 py-1.5 font-mono text-xs font-black text-[#232331] shadow-ink-xs shrink-0"
+              }
+            >
+              <LayoutDashboard size={14} />
+              <span className="hidden sm:inline">Dashboard Owner Utama</span>
+              <span className="sm:hidden">Dashboard</span>
+            </Link>
+          </div>
         </div>
       </header>
 
@@ -860,6 +877,16 @@ export default function PosOwnerReportsPage({
           </div>
         </div>
       )}
+
+      {/* Pembersih Data Testing Modal */}
+      <ClearTestDataModal
+        isOpen={showClearModal}
+        onClose={() => setShowClearModal(false)}
+        onSuccess={() => {
+          refreshAll();
+        }}
+        isMochi={isMochi}
+      />
 
       {/* Footer */}
       <footer className={`border-t py-4 text-center text-xs font-mono transition-colors ${
