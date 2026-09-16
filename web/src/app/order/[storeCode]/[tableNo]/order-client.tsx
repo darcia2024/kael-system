@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import {
   CheckCircle2,
   Coffee,
@@ -20,8 +20,14 @@ import {
   Crown,
   ArrowRight,
   X,
+  Download,
+  Copy,
+  Check,
+  RotateCcw,
+  ArrowLeft,
   type LucideIcon,
 } from "lucide-react";
+import qrcode from "qrcode-generator";
 import type { Business, Category, MenuItem } from "@/lib/types";
 import { PLACEHOLDER_MENU } from "@/lib/types";
 import { createQrOrderAction, getQrOrderStatusAction } from "@/lib/actions";
@@ -74,20 +80,61 @@ export default function CustomerQrOrderPage({
   const [modalNote, setModalNote] = useState("");
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
+  const [nameError, setNameError] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isDownloadingQris, setIsDownloadingQris] = useState(false);
+  const [copiedNominal, setCopiedNominal] = useState(false);
+  const [isBrowsingMenu, setIsBrowsingMenu] = useState(false);
+
+  const customerNameInputRef = useRef<HTMLInputElement>(null);
+
   /**
-   * Cara bayar dipilih pelanggan dari HP-nya, bukan lagi ditanyakan ulang di
-   * kasir. Apa pun pilihannya, pesanan tetap masuk sebagai belum dibayar:
-   * tidak ada gerbang pembayaran yang bisa mengabarkan uangnya sudah masuk,
-   * jadi yang memastikannya tetap kasir.
+   * Cara bayar dipilih pelanggan dari HP-nya:
+   * "qris" = Tampilkan QRIS resmi Bank Nagari dinamis dengan nominal pas
+   * "cash" = Makan dulu, bayar di kasir saat selesai
    */
-  const [caraBayar, setCaraBayar] = useState<"qris" | "cash">("cash");
+  const [caraBayar, setCaraBayar] = useState<"qris" | "cash">("qris");
   const [pesananSelesai, setPesananSelesai] = useState<{ id: string; no: string; total: number } | null>(null);
   const [sudahKirimBukti, setSudahKirimBukti] = useState(false);
   const [paymentStatus, setPaymentStatus] = useState<string>("pending");
   const [fulfillmentStatus, setFulfillmentStatus] = useState<string>("pending");
 
-  // Polling status pesanan secara berkala (tiap 3 detik) jika QRIS belum lunas
+  const storageKey = business?.id ? `kael_active_order_${business.id}_table_${tableNo.toLowerCase()}` : null;
+
+  // ---------------------------------------------------------------------------
+  // 1. Rehidrasi pesanan aktif dari LocalStorage (mencegah QRIS tertutup saat ganti app)
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    if (!storageKey) return;
+    try {
+      const saved = localStorage.getItem(storageKey);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        // Valid jika dibuat kurang dari 6 jam yang lalu
+        if (parsed?.id && parsed?.timestamp && Date.now() - parsed.timestamp < 6 * 3600 * 1000) {
+          setPesananSelesai({ id: parsed.id, no: parsed.no, total: Number(parsed.total) });
+          if (parsed.caraBayar) setCaraBayar(parsed.caraBayar);
+          if (parsed.customerName) setCustomerName(parsed.customerName);
+
+          // Cek status terkini ke server
+          getQrOrderStatusAction(parsed.id).then((res) => {
+            if (res.ok) {
+              setPaymentStatus(res.data.paymentStatus);
+              setFulfillmentStatus(res.data.fulfillmentStatus);
+            }
+          });
+        } else {
+          localStorage.removeItem(storageKey);
+        }
+      }
+    } catch (e) {
+      console.warn("Error reading active order storage:", e);
+    }
+  }, [storageKey]);
+
+  // ---------------------------------------------------------------------------
+  // 2. Polling status pesanan secara berkala (tiap 3 detik) jika QRIS belum lunas
+  // ---------------------------------------------------------------------------
   useEffect(() => {
     if (!pesananSelesai?.id || paymentStatus === "paid") return;
 
@@ -114,21 +161,20 @@ export default function CustomerQrOrderPage({
     };
   }, [pesananSelesai?.id, paymentStatus]);
 
-  // Kunci halaman agar tidak bisa di-zoom out atau zoom in di HP (terkunci di skala optimal 1.0)
+  // ---------------------------------------------------------------------------
+  // 3. Kunci halaman agar tidak bisa di-zoom out atau zoom in di HP (skala 1.0)
+  // ---------------------------------------------------------------------------
   useEffect(() => {
-    // 1. Cegah pinch-to-zoom gesture Safari iOS
     const preventGesture = (e: Event) => {
       e.preventDefault();
     };
 
-    // 2. Cegah multi-touch pinch (cubit 2 jari)
     const handleTouchStart = (e: TouchEvent) => {
       if (e.touches.length > 1) {
         e.preventDefault();
       }
     };
 
-    // 3. Cegah double-tap zoom cepat di layar selain elemen form
     let lastTouchEnd = 0;
     const handleTouchEnd = (e: TouchEvent) => {
       const now = Date.now();
@@ -280,6 +326,14 @@ export default function CustomerQrOrderPage({
 
   const handleCheckout = async () => {
     if (cartList.length === 0) return;
+
+    if (!customerName.trim()) {
+      setNameError(true);
+      customerNameInputRef.current?.focus();
+      return;
+    }
+    setNameError(false);
+
     setIsSubmitting(true);
 
     if (!business) {
@@ -288,8 +342,6 @@ export default function CustomerQrOrderPage({
       return;
     }
 
-    // Harga tidak ikut dikirim: server membacanya ulang dari database, supaya
-    // pemanggil tidak bisa menentukan harganya sendiri.
     const res = await createQrOrderAction(
       business.id,
       tableNo,
@@ -303,15 +355,199 @@ export default function CustomerQrOrderPage({
       alert(res.error);
       return;
     }
+
+    const newOrderData = {
+      id: res.data.orderId,
+      no: res.data.orderNo,
+      total: res.data.total,
+      caraBayar,
+      customerName: customerName.trim(),
+      timestamp: Date.now(),
+    };
+
+    if (storageKey) {
+      try {
+        localStorage.setItem(storageKey, JSON.stringify(newOrderData));
+      } catch (e) {
+        console.warn("Failed saving order to localStorage", e);
+      }
+    }
+
     setPesananSelesai({ id: res.data.orderId, no: res.data.orderNo, total: res.data.total });
     setPaymentStatus("pending");
     setFulfillmentStatus("pending");
     setSudahKirimBukti(false);
     setIsCartOpen(false);
+    setIsBrowsingMenu(false);
     setCart({});
   };
 
-  if (pesananSelesai) {
+  const handleCopyNominal = (amount: number) => {
+    try {
+      navigator.clipboard.writeText(String(Math.round(amount)));
+      setCopiedNominal(true);
+      setTimeout(() => setCopiedNominal(false), 2200);
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleDownloadQrisImage = (
+    payloadValue: string,
+    orderNumber: string,
+    totalAmount: number,
+  ) => {
+    try {
+      setIsDownloadingQris(true);
+      const qr = qrcode(0, "H");
+      qr.addData(payloadValue, "Byte");
+      qr.make();
+      const count = qr.getModuleCount();
+
+      const canvas = document.createElement("canvas");
+      const width = 800;
+      const height = 1120;
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        setIsDownloadingQris(false);
+        return;
+      }
+
+      const brand = isMochi ? "MOCHI CAFE N RESTO" : (business?.name?.toUpperCase() || "RESTO");
+
+      // Deep emerald gradient background
+      const grad = ctx.createLinearGradient(0, 0, 0, height);
+      grad.addColorStop(0, "#052016");
+      grad.addColorStop(0.5, "#0b3d2e");
+      grad.addColorStop(1, "#03160f");
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, width, height);
+
+      // Gold / neon lime border
+      ctx.strokeStyle = "#c8f53a";
+      ctx.lineWidth = 6;
+      ctx.strokeRect(18, 18, width - 36, height - 36);
+
+      // Header Brand
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "bold 26px 'Plus Jakarta Sans', sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText(brand, width / 2, 65);
+
+      ctx.fillStyle = "#c8f53a";
+      ctx.font = "bold 15px 'Plus Jakarta Sans', monospace";
+      ctx.fillText(`ANTREAN #${orderNumber} · MEJA ${tableNo.toUpperCase()}`, width / 2, 96);
+
+      // White Squircle Card for QR
+      const cardX = 50;
+      const cardY = 125;
+      const cardW = width - 100;
+      const cardH = 590;
+
+      ctx.fillStyle = "#ffffff";
+      ctx.beginPath();
+      ctx.roundRect(cardX, cardY, cardW, cardH, 28);
+      ctx.fill();
+      ctx.strokeStyle = "#0e2319";
+      ctx.lineWidth = 4;
+      ctx.stroke();
+
+      // QRIS Red Pill
+      ctx.fillStyle = "#d32f2f";
+      ctx.beginPath();
+      ctx.roundRect(cardX + 28, cardY + 22, 68, 26, 6);
+      ctx.fill();
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "bold 13px sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText("QRIS", cardX + 62, cardY + 39);
+
+      // Bank Nagari / Merchant info
+      ctx.fillStyle = "#0b3d2e";
+      ctx.font = "bold 15px 'Plus Jakarta Sans', sans-serif";
+      ctx.textAlign = "right";
+      ctx.fillText(business?.qris_merchant_name || brand, cardX + cardW - 28, cardY + 40);
+
+      // Draw QR inside card
+      const qrSize = 380;
+      const qrX = cardX + (cardW - qrSize) / 2;
+      const qrY = cardY + 68;
+      const cellSize = qrSize / count;
+
+      for (let r = 0; r < count; r++) {
+        for (let c = 0; c < count; c++) {
+          if (qr.isDark(r, c)) {
+            ctx.fillStyle = "#07251a";
+            ctx.fillRect(qrX + c * cellSize, qrY + r * cellSize, cellSize + 0.35, cellSize + 0.35);
+          }
+        }
+      }
+
+      // Bottom of card: NMID
+      ctx.fillStyle = "#335345";
+      ctx.font = "bold 13px monospace";
+      ctx.textAlign = "center";
+      ctx.fillText(`NMID: ${business?.qris_nmid || "ID1022226423583"} · ${business?.qris_merchant_city || "PADANG PANJANG"}`, width / 2, cardY + cardH - 36);
+      ctx.font = "11.5px 'Plus Jakarta Sans', sans-serif";
+      ctx.fillStyle = "#5d7a6e";
+      ctx.fillText("BCA · Mandiri · BRI · BNI · GoPay · DANA · OVO · ShopeePay & Semua M-Banking", width / 2, cardY + cardH - 16);
+
+      // Nominal Box
+      const nomY = 740;
+      ctx.fillStyle = "#c8f53a";
+      ctx.beginPath();
+      ctx.roundRect(cardX + 15, nomY, cardW - 30, 95, 22);
+      ctx.fill();
+
+      ctx.fillStyle = "#07251a";
+      ctx.font = "bold 13px 'Plus Jakarta Sans', sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText("NOMINAL PEMBAYARAN (PAS):", width / 2, nomY + 30);
+      ctx.font = "bold 36px 'Plus Jakarta Sans', monospace";
+      ctx.fillText(formatRupiah(totalAmount), width / 2, nomY + 72);
+
+      // Instructions
+      ctx.fillStyle = "#e2ece7";
+      ctx.font = "14px 'Plus Jakarta Sans', sans-serif";
+      ctx.fillText("1. Simpan gambar ini ke galeri HP Anda.", width / 2, 885);
+      ctx.fillText("2. Buka BCA / GoPay / DANA / Livin / ShopeePay.", width / 2, 915);
+      ctx.fillText("3. Pilih Scan QR lalu pilih ikon Galeri untuk memindai.", width / 2, 945);
+
+      ctx.fillStyle = "#9cc2b2";
+      ctx.font = "italic 12px 'Plus Jakarta Sans', sans-serif";
+      ctx.fillText("Mochi Cafe n Resto · Padang Panjang", width / 2, 995);
+
+      const link = document.createElement("a");
+      link.download = `QRIS-Meja-${tableNo}-Order-${orderNumber}.png`;
+      link.href = canvas.toDataURL("image/png");
+      link.click();
+      setIsDownloadingQris(false);
+    } catch (e) {
+      console.error("Failed to generate QRIS image", e);
+      setIsDownloadingQris(false);
+    }
+  };
+
+  const handleStartNewOrder = () => {
+    if (storageKey) {
+      try {
+        localStorage.removeItem(storageKey);
+      } catch {}
+    }
+    setPesananSelesai(null);
+    setCart({});
+    setIsBrowsingMenu(false);
+    setPaymentStatus("pending");
+    setFulfillmentStatus("pending");
+    setSudahKirimBukti(false);
+  };
+
+  // ===========================================================================
+  // LAYAR AKTIF: TAMPILAN PESANAN (QRIS / STRUK)
+  // ===========================================================================
+  if (pesananSelesai && !isBrowsingMenu) {
     const isQris = caraBayar === "qris";
     const isPaid = paymentStatus === "paid";
     const qris =
@@ -322,17 +558,29 @@ export default function CustomerQrOrderPage({
     const brandName = isMochi ? "Mochi Cafe n Resto" : (business?.name || "Resto");
     const logoSrc = isMochi ? "/logo-mochi.png" : (business?.logo_url || null);
 
-    // =========================================================================
-    // TAMPILAN KHUSUS QRIS BELUM LUNAS: MASCOT MOCHI HOLDING QR (Monobank-Style)
-    // =========================================================================
+    // -------------------------------------------------------------------------
+    // A. TAMPILAN KHUSUS QRIS BELUM LUNAS: MASCOT MOCHI HOLDING QR
+    // -------------------------------------------------------------------------
     if (isQris && qris?.ok && !isPaid) {
       return (
         <div className={`${fontClassName} flex min-h-screen flex-col items-center justify-center bg-gradient-to-b from-[#052016] via-[#0b3d2e] to-[#03160f] p-4 text-white selection:bg-[#c8f53a] selection:text-[#0b3d2e]`}>
-          <div className="w-full max-w-sm sm:max-w-md mx-auto text-center space-y-4 animate-in zoom-in-95">
-            {/* Top Queue & Table Pill */}
-            <div className="inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-1.5 text-xs font-black tracking-wide text-[#c8f53a] border border-white/15 backdrop-blur-md shadow-xs">
-              <span className="h-2 w-2 rounded-full bg-[#c8f53a] animate-pulse" />
-              <span>ANTREAN #{pesananSelesai.no} · MEJA {tableNo.toUpperCase()}</span>
+          <div className="w-full max-w-sm sm:max-w-md mx-auto text-center space-y-3.5 animate-in zoom-in-95">
+            
+            {/* Top Bar: Navigasi & Meja Badge */}
+            <div className="flex items-center justify-between gap-2">
+              <button
+                type="button"
+                onClick={() => setIsBrowsingMenu(true)}
+                className="inline-flex items-center gap-1.5 rounded-full bg-white/10 hover:bg-white/20 px-3 py-1 text-xs font-bold text-emerald-200 border border-white/15 transition-all active:scale-95 shadow-xs"
+              >
+                <ArrowLeft size={13} />
+                <span>Lihat Menu</span>
+              </button>
+
+              <div className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3.5 py-1 text-xs font-black tracking-wide text-[#c8f53a] border border-white/15 backdrop-blur-md shadow-xs">
+                <span className="h-2 w-2 rounded-full bg-[#c8f53a] animate-pulse" />
+                <span>ANTREAN #{pesananSelesai.no} · MEJA {tableNo.toUpperCase()}</span>
+              </div>
             </div>
 
             {/* Header Title & Subtitle */}
@@ -340,25 +588,19 @@ export default function CustomerQrOrderPage({
               <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white drop-shadow-xs">
                 Pembayaran QRIS Resmi
               </h1>
-              <p className="text-xs sm:text-sm font-medium text-emerald-200/90 mt-1">
+              <p className="text-xs sm:text-sm font-medium text-emerald-200/90 mt-0.5">
                 {brandName} · Padang Panjang
               </p>
             </div>
 
-            {/* Subtle Divider Line */}
-            <div className="w-4/5 h-px bg-white/20 mx-auto" />
-
             {/* MASCOT HOLDING QR CARD */}
-            <div className="relative inline-block mx-auto pt-7 pb-2 px-5 sm:px-6">
-              {/* Mascot Ears (peeking from behind the card) */}
+            <div className="relative inline-block mx-auto pt-6 pb-2 px-5 sm:px-6">
+              {/* Mascot Ears */}
               <div className="absolute -top-1 inset-x-0 flex justify-center pointer-events-none z-0">
                 <svg width="150" height="52" viewBox="0 0 150 52" fill="none" className="drop-shadow-sm">
-                  {/* Head curve between ears */}
                   <path d="M 35 32 Q 75 18 115 32" stroke="#0e2319" strokeWidth="4" fill="none" />
-                  {/* Left Ear */}
                   <path d="M 28 48 L 47 6 C 50 -1, 60 -1, 64 8 L 78 48 Z" fill="#ffffff" stroke="#0e2319" strokeWidth="4.5" strokeLinejoin="round" />
                   <path d="M 44 38 L 52 14 L 62 38" stroke="#0e2319" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" />
-                  {/* Right Ear */}
                   <path d="M 72 48 L 86 8 C 90 -1, 100 -1, 103 6 L 122 48 Z" fill="#ffffff" stroke="#0e2319" strokeWidth="4.5" strokeLinejoin="round" />
                   <path d="M 88 38 L 98 14 L 106 38" stroke="#0e2319" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
@@ -378,8 +620,8 @@ export default function CustomerQrOrderPage({
                 ✨
               </div>
 
-              {/* TOP-LEFT PAW (gripping over card) */}
-              <div className="pointer-events-none absolute top-11 left-0 sm:left-1 z-30">
+              {/* TOP-LEFT PAW */}
+              <div className="pointer-events-none absolute top-10 left-0 sm:left-1 z-30">
                 <svg width="40" height="56" viewBox="0 0 44 60" fill="none" className="drop-shadow-md">
                   <path d="M 0 35 C 0 18, 10 10, 22 13 C 32 15, 36 24, 26 28 C 36 30, 38 39, 28 43 C 36 46, 35 56, 22 58 C 10 59, 0 52, 0 43 Z" fill="#ffffff" stroke="#0e2319" strokeWidth="4.5" strokeLinejoin="round" />
                   <path d="M 14 28 L 26 28" stroke="#0e2319" strokeWidth="3" strokeLinecap="round" />
@@ -387,8 +629,8 @@ export default function CustomerQrOrderPage({
                 </svg>
               </div>
 
-              {/* BOTTOM-RIGHT PAW (gripping over card) */}
-              <div className="pointer-events-none absolute bottom-7 right-0 sm:right-1 z-30">
+              {/* BOTTOM-RIGHT PAW */}
+              <div className="pointer-events-none absolute bottom-6 right-0 sm:right-1 z-30">
                 <svg width="40" height="56" viewBox="0 0 44 60" fill="none" className="drop-shadow-md">
                   <path d="M 44 25 C 44 42, 34 50, 22 47 C 12 45, 8 36, 18 32 C 8 30, 6 21, 16 17 C 8 14, 9 4, 22 2 C 34 1, 44 8, 44 17 Z" fill="#ffffff" stroke="#0e2319" strokeWidth="4.5" strokeLinejoin="round" />
                   <path d="M 30 32 L 18 32" stroke="#0e2319" strokeWidth="3" strokeLinecap="round" />
@@ -397,7 +639,7 @@ export default function CustomerQrOrderPage({
               </div>
 
               {/* THE WHITE SQUIRCLE QR CARD */}
-              <div className="relative z-10 rounded-[34px] sm:rounded-[40px] border-[4px] border-[#0e2319] bg-white p-4 sm:p-5 shadow-[0_24px_50px_rgba(0,0,0,0.55)]">
+              <div className="relative z-10 rounded-[32px] sm:rounded-[38px] border-[4px] border-[#0e2319] bg-white p-4 sm:p-5 shadow-[0_24px_50px_rgba(0,0,0,0.55)]">
                 <div className="relative mx-auto flex items-center justify-center">
                   <QrCode
                     value={qris.payload}
@@ -407,14 +649,14 @@ export default function CustomerQrOrderPage({
                     label={`QRIS pembayaran ${formatRupiah(pesananSelesai.total)}`}
                   />
                 </div>
-                <p className="mt-2 text-[10px] sm:text-[11px] font-extrabold uppercase tracking-wider text-[#355749]">
+                <p className="mt-2 text-[10.5px] font-extrabold uppercase tracking-wider text-[#355749]">
                   Pindai dengan Aplikasi Apa Saja
                 </p>
               </div>
             </div>
 
             {/* KETERANGAN & DETAIL PEMBAYARAN */}
-            <div className="space-y-2 pt-1">
+            <div className="space-y-2 pt-0.5">
               {/* Bank Nagari & QRIS Row */}
               <div className="flex items-center justify-center gap-2 text-xs font-bold">
                 <span className="rounded bg-[#d32f2f] px-2 py-0.5 text-[10px] font-black text-white tracking-wider shadow-xs">
@@ -425,18 +667,26 @@ export default function CustomerQrOrderPage({
                 <span className="text-[#c8f53a] font-extrabold">{business?.qris_merchant_name || brandName}</span>
               </div>
 
-              {/* Nominal Pas Pill */}
+              {/* Nominal Pas Pill with 1-Tap Copy */}
               <div>
                 <div className="inline-flex items-center gap-2 rounded-full bg-[#c8f53a] px-5 py-2 text-base sm:text-lg font-black text-[#07251a] shadow-[0_4px_20px_rgba(200,245,58,0.3)]">
                   <span>🔒 Nominal Pas: {formatRupiah(pesananSelesai.total)}</span>
+                  <button
+                    type="button"
+                    title="Salin nominal"
+                    onClick={() => handleCopyNominal(pesananSelesai.total)}
+                    className="flex h-7 w-7 items-center justify-center rounded-full bg-[#07251a] text-[#c8f53a] hover:bg-[#0b3d2e] transition-all active:scale-90"
+                  >
+                    {copiedNominal ? <Check size={14} /> : <Copy size={13} />}
+                  </button>
                 </div>
                 <p className="mt-1 text-[11px] text-emerald-200/90 font-medium">
-                  Nominal pas otomatis terisi saat scan · Tanpa perlu ketik manual
+                  {copiedNominal ? "✓ Nominal berhasil disalin ke clipboard!" : "Nominal pas otomatis terisi saat scan · Tanpa perlu ketik manual"}
                 </p>
               </div>
 
               {/* NMID & Supported Payment Apps */}
-              <div className="text-center space-y-0.5 pt-1">
+              <div className="text-center space-y-0.5 pt-0.5">
                 <p className="text-xs font-extrabold text-white tracking-wide">
                   NMID: {business?.qris_nmid || "ID1022226423583"} · {business?.qris_merchant_city || "PADANG PANJANG"}
                 </p>
@@ -446,6 +696,23 @@ export default function CustomerQrOrderPage({
               </div>
             </div>
 
+            {/* 1-Tap Action: Simpan Gambar QRIS & Tips */}
+            <div className="grid grid-cols-1 gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => handleDownloadQrisImage(qris.payload, pesananSelesai.no, pesananSelesai.total)}
+                disabled={isDownloadingQris}
+                className="flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-white text-[#07251a] hover:bg-emerald-50 px-4 text-xs sm:text-sm font-black transition-all shadow-md active:scale-[0.98] border border-white"
+              >
+                {isDownloadingQris ? (
+                  <Loader2 size={17} className="animate-spin" />
+                ) : (
+                  <Download size={17} strokeWidth={2.5} className="text-[#07251a]" />
+                )}
+                <span>{isDownloadingQris ? "Menyiapkan Gambar..." : "📥 Download Gambar QRIS ke Galeri HP"}</span>
+              </button>
+            </div>
+
             {/* Tips Scan Langsung */}
             <div className="rounded-2xl border border-white/15 bg-white/10 p-3 text-left backdrop-blur-xs space-y-1">
               <div className="flex items-center gap-1.5 text-xs font-bold text-[#c8f53a]">
@@ -453,13 +720,13 @@ export default function CustomerQrOrderPage({
                 <span>Tips scan langsung dari HP ini:</span>
               </div>
               <p className="text-[11px] text-emerald-100/90 leading-relaxed">
-                1. <strong>Screenshot</strong> QR di atas ke galeri HP Anda.<br />
+                1. Klik tombol <strong>Download Gambar QRIS</strong> di atas (atau screenshot QR).<br />
                 2. Buka aplikasi m-Banking atau E-Wallet (BCA, GoPay, DANA, dll).<br />
-                3. Pilih menu <strong>Scan QR</strong> lalu klik ikon <strong>Galeri</strong> untuk memindai screenshot tadi.
+                3. Pilih menu <strong>Scan QR</strong> lalu klik ikon <strong>Galeri</strong> untuk memindai gambar tadi.
               </p>
             </div>
 
-            {/* ACTION / KONFIRMASI STATUS */}
+            {/* STATUS / KONFIRMASI PEMBAYARAN */}
             {!sudahKirimBukti ? (
               <div className="rounded-2xl border-2 border-[#c8f53a]/40 bg-[#06291e]/80 p-3.5 text-left space-y-2.5 shadow-lg backdrop-blur-xs">
                 <div className="flex items-start gap-2">
@@ -500,7 +767,7 @@ export default function CustomerQrOrderPage({
               </div>
             )}
 
-            {/* Tombol Bantuan & Tambah Menu */}
+            {/* Tombol Bantuan, Struk & Tambah Menu */}
             <div className="space-y-2 pt-1">
               {pesananSelesai?.id && (
                 <a
@@ -530,11 +797,11 @@ export default function CustomerQrOrderPage({
 
               <button
                 type="button"
-                onClick={() => setPesananSelesai(null)}
+                onClick={() => setIsBrowsingMenu(true)}
                 className="min-h-11 w-full rounded-xl bg-white/10 px-4 text-xs font-extrabold text-[#c8f53a] transition-all hover:bg-white/15 active:scale-[0.98] border border-white/15 flex items-center justify-center gap-2"
               >
                 <Plus size={16} />
-                <span>Pesan Menu Tambahan</span>
+                <span>Pesan Menu Tambahan (Buka Menu)</span>
               </button>
             </div>
           </div>
@@ -542,9 +809,9 @@ export default function CustomerQrOrderPage({
       );
     }
 
-    // =========================================================================
-    // TAMPILAN JIKA SUDAH LUNAS (PAID) ATAU BAYAR TUNAI DI KASIR
-    // =========================================================================
+    // -------------------------------------------------------------------------
+    // B. TAMPILAN JIKA SUDAH LUNAS (PAID) ATAU BAYAR TUNAI DI KASIR
+    // -------------------------------------------------------------------------
     return (
       <div className={`${fontClassName} flex min-h-screen items-center justify-center bg-[#f4efe6] p-4 text-[#1d2823]`}>
         <div className="w-full max-w-md space-y-4 rounded-[32px] border-2 border-[#0b3d2e]/20 bg-white p-6 sm:p-7 text-center shadow-[0_20px_60px_rgba(11,61,46,0.12)] animate-in zoom-in-95 relative overflow-hidden">
@@ -659,7 +926,7 @@ export default function CustomerQrOrderPage({
             </a>
           )}
 
-          {/* WhatsApp Confirmation Button (if configured) */}
+          {/* WhatsApp Confirmation Button */}
           {business?.phone ? (
             <a
               href={`https://wa.me/${business.phone.replace(/[^0-9]/g, "").replace(/^0/, "62")}?text=${encodeURIComponent(
@@ -674,22 +941,34 @@ export default function CustomerQrOrderPage({
             </a>
           ) : null}
 
-          {/* Action: Pesan Menu Tambahan */}
-          <button
-            type="button"
-            onClick={() => {
-              setPesananSelesai(null);
-            }}
-            className="relative z-10 min-h-12 w-full rounded-xl bg-[#0b3d2e] px-4 text-xs font-extrabold text-[#c8f53a] transition-all hover:bg-[#124e3c] active:scale-[0.98] shadow-sm flex items-center justify-center gap-2"
-          >
-            <Plus size={16} />
-            <span>Pesan Menu Tambahan</span>
-          </button>
+          {/* Action: Lihat Menu & Tambah Pesanan */}
+          <div className="relative z-10 space-y-2 pt-1">
+            <button
+              type="button"
+              onClick={() => setIsBrowsingMenu(true)}
+              className="min-h-12 w-full rounded-xl bg-[#0b3d2e] px-4 text-xs font-extrabold text-[#c8f53a] transition-all hover:bg-[#124e3c] active:scale-[0.98] shadow-sm flex items-center justify-center gap-2"
+            >
+              <Plus size={16} />
+              <span>Pesan Menu Tambahan</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleStartNewOrder}
+              className="min-h-10 w-full rounded-xl bg-[#e8f2ed] hover:bg-[#d5e7dd] px-4 text-[11px] font-bold text-[#0b3d2e] transition-all flex items-center justify-center gap-1.5"
+            >
+              <RotateCcw size={13} />
+              <span>Selesai &amp; Mulai Pesanan Baru Meja Ini</span>
+            </button>
+          </div>
         </div>
       </div>
     );
   }
 
+  // ===========================================================================
+  // LAYAR KATALOG MENU & KERANJANG BELANJA
+  // ===========================================================================
   const renderCartContent = (showCloseButton: boolean) => (
     <div className="flex min-h-0 flex-col">
       <div className="flex items-start justify-between border-b border-[#dce5e0] pb-4">
@@ -703,7 +982,7 @@ export default function CustomerQrOrderPage({
             type="button"
             aria-label="Tutup pesanan"
             onClick={() => setIsCartOpen(false)}
-            className="flex h-11 w-11 items-center justify-center rounded-lg border border-[#d5ded9] text-[#53635b]"
+            className="flex h-11 w-11 items-center justify-center rounded-lg border border-[#d5ded9] text-[#53635b] hover:bg-[#f2f6f4]"
           >
             <X size={20} aria-hidden="true" />
           </button>
@@ -720,24 +999,24 @@ export default function CustomerQrOrderPage({
                   {formatRupiah(item.price * qty)}
                 </p>
               </div>
-              <div className="grid shrink-0 grid-cols-[44px_32px_44px] items-center">
+              <div className="flex items-center gap-1">
                 <button
                   type="button"
                   aria-label={`Kurangi ${item.name}`}
                   onClick={() => handleUpdateQty(item.id, -1)}
-                  className="flex h-11 w-11 items-center justify-center rounded-lg border border-[#cad6d0] text-[#20483a]"
+                  className="flex h-9 w-9 items-center justify-center rounded-lg border border-[#bad0c4] text-[#1e5a45]"
                 >
                   <Minus size={14} aria-hidden="true" />
                 </button>
-                <span className="text-center text-sm font-extrabold">{qty}</span>
+                <span className="w-8 text-center text-xs font-extrabold text-[#18392f]">{qty}</span>
                 <button
                   type="button"
                   aria-label={`Tambah ${item.name}`}
                   onClick={() => handleUpdateQty(item.id, 1)}
-                  className={`flex h-11 w-11 items-center justify-center rounded-lg font-bold ${
+                  className={`flex h-9 w-9 items-center justify-center rounded-lg font-bold ${
                     isMochi
                       ? "bg-[#c8f53a] text-[#0b3d2e] hover:bg-[#d9ff57]"
-                      : "bg-[#176c4f] text-white"
+                      : "bg-[#0aae6f] text-white"
                   }`}
                 >
                   <Plus size={14} aria-hidden="true" />
@@ -746,7 +1025,7 @@ export default function CustomerQrOrderPage({
             </div>
             <input
               type="text"
-              placeholder="Tambahkan catatan"
+              placeholder="Catatan pesanan (contoh: pedas, tanpa es, dll)"
               value={note}
               onChange={(event) => handleUpdateNote(item.id, event.target.value)}
               className="min-h-11 w-full rounded-lg border border-[#d5ded9] bg-[#f8faf9] px-3 text-xs text-[#263b33] outline-none focus:border-[#176c4f]"
@@ -758,14 +1037,29 @@ export default function CustomerQrOrderPage({
       <div className="space-y-3 border-t border-[#dce5e0] pt-4">
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-1">
           <label className="space-y-1 text-xs font-semibold text-[#35483f]">
-            <span>Nama pemesan</span>
+            <span className="flex items-center justify-between">
+              <span>Nama pemesan <span className="text-rose-600">*</span></span>
+              {nameError && (
+                <span className="text-[11px] font-bold text-rose-600 animate-pulse">
+                  Wajib diisi
+                </span>
+              )}
+            </span>
             <input
+              ref={customerNameInputRef}
               type="text"
               required
-              placeholder="Masukkan nama"
+              placeholder="Masukkan nama Anda"
               value={customerName}
-              onChange={(event) => setCustomerName(event.target.value)}
-              className="min-h-11 w-full rounded-lg border border-[#cfd9d4] bg-white px-3 text-sm outline-none focus:border-[#176c4f]"
+              onChange={(event) => {
+                setCustomerName(event.target.value);
+                if (event.target.value.trim()) setNameError(false);
+              }}
+              className={`min-h-11 w-full rounded-lg border bg-white px-3 text-sm outline-none transition-colors ${
+                nameError
+                  ? "border-rose-500 ring-2 ring-rose-200"
+                  : "border-[#cfd9d4] focus:border-[#176c4f]"
+              }`}
             />
           </label>
           <label className="space-y-1 text-xs font-semibold text-[#35483f]">
@@ -781,29 +1075,46 @@ export default function CustomerQrOrderPage({
         </div>
 
         <fieldset>
-          <legend className="mb-1.5 text-xs font-semibold text-[#35483f]">Cara bayar</legend>
+          <legend className="mb-1.5 text-xs font-semibold text-[#35483f]">Pilihan Cara Bayar</legend>
           <div className="grid grid-cols-2 gap-2">
             {[
-              { id: "cash" as const, label: "Bayar Nanti di Kasir", hint: "Makan dulu, bayar selesai" },
-              { id: "qris" as const, label: "QRIS dari HP", hint: "Bayar langsung sekarang" },
+              { id: "qris" as const, label: "QRIS dari HP", hint: "Bayar langsung di HP" },
+              { id: "cash" as const, label: "Bayar di Kasir", hint: "Makan dulu, bayar selesai" },
             ].map((method) => (
               <button
                 key={method.id}
                 type="button"
                 onClick={() => setCaraBayar(method.id)}
-                className={`min-h-11 rounded-lg border px-3 py-2 text-left transition-colors ${
+                className={`min-h-11 rounded-xl border p-2.5 text-left transition-all ${
                   caraBayar === method.id
                     ? isMochi
-                      ? "border-[#0b3d2e] bg-[#0b3d2e] text-[#c8f53a]"
-                      : "border-[#176c4f] bg-[#e7f4ee] text-[#174a38]"
-                    : "border-[#d5ded9] bg-white text-[#5e6c65]"
+                      ? "border-[#0b3d2e] bg-[#0b3d2e] text-[#c8f53a] shadow-sm scale-[1.02]"
+                      : "border-[#176c4f] bg-[#e7f4ee] text-[#174a38] scale-[1.02]"
+                    : "border-[#d5ded9] bg-white text-[#5e6c65] hover:border-[#b0c4ba]"
                 }`}
               >
-                <span className="block text-xs font-extrabold">{method.label}</span>
-                <span className="block text-[10px]">{method.hint}</span>
+                <div className="flex items-center justify-between">
+                  <span className="block text-xs font-black">{method.label}</span>
+                  {caraBayar === method.id && (
+                    <CheckCircle2 size={14} className={isMochi ? "text-[#c8f53a]" : "text-[#174a38]"} />
+                  )}
+                </div>
+                <span className={`block text-[10px] mt-0.5 ${caraBayar === method.id ? "text-white/90" : "text-[#7b8a82]"}`}>
+                  {method.hint}
+                </span>
               </button>
             ))}
           </div>
+
+          {caraBayar === "qris" ? (
+            <p className="mt-2 text-[10.5px] text-[#2c5243] font-medium bg-[#eaf4ef] rounded-lg p-2 border border-[#cbe0d5]">
+              ✨ <strong>QRIS resmi</strong> dengan nominal pas otomatis langsung muncul di layar setelah tombol ditekan.
+            </p>
+          ) : (
+            <p className="mt-2 text-[10.5px] text-[#556960] font-medium bg-[#f5f8f6] rounded-lg p-2 border border-[#dbe6df]">
+              💵 Pesanan dikirim ke dapur sekarang. Anda dapat membayar tunai di kasir setelah selesai bersantap.
+            </p>
+          )}
         </fieldset>
 
         <div className="flex items-center justify-between border-t border-[#dce5e0] pt-3">
@@ -814,14 +1125,26 @@ export default function CustomerQrOrderPage({
           <button
             type="button"
             onClick={handleCheckout}
-            disabled={isSubmitting || !customerName.trim()}
-            className={`min-h-11 rounded-xl px-5 text-sm font-black transition-all disabled:cursor-not-allowed disabled:opacity-45 ${
+            disabled={isSubmitting}
+            className={`min-h-12 rounded-xl px-5 text-sm font-black transition-all disabled:cursor-not-allowed disabled:opacity-50 flex items-center justify-center gap-2 shadow-md ${
               isMochi
-                ? "bg-[#c8f53a] text-[#0b3d2e] hover:bg-[#d9ff57] shadow-sm"
+                ? "bg-[#c8f53a] text-[#0b3d2e] hover:bg-[#d9ff57] shadow-[#c8f53a]/25 active:scale-[0.98]"
                 : "bg-[#0aae6f] text-white hover:bg-[#079760]"
             }`}
           >
-            {isSubmitting ? "Mengirim..." : "Kirim pesanan"}
+            {isSubmitting ? (
+              <>
+                <Loader2 size={16} className="animate-spin" />
+                <span>Memproses...</span>
+              </>
+            ) : caraBayar === "qris" ? (
+              <>
+                <span>Lanjut Bayar QRIS ({formatRupiah(cartTotal)})</span>
+                <ArrowRight size={15} />
+              </>
+            ) : (
+              <span>Kirim Pesanan ({formatRupiah(cartTotal)})</span>
+            )}
           </button>
         </div>
       </div>
@@ -836,7 +1159,40 @@ export default function CustomerQrOrderPage({
         </p>
       )}
 
-      <header className={`sticky top-0 z-30 border-b backdrop-blur-md ${isMochi ? "border-[#07281e] bg-[#0b3d2e] text-white shadow-sm" : "mochi-header border-[#d8e1dc] bg-white/95"}`}>
+      {/* STICKY TOP ALERT: JIKA ADA PESANAN AKTIF DARI MEJA INI */}
+      {pesananSelesai && (
+        <aside
+          role="region"
+          aria-label="Status antrean pesanan aktif"
+          className="sticky top-0 z-40 bg-gradient-to-r from-[#07281e] via-[#0b3d2e] to-[#041a13] text-white px-4 py-2.5 border-b border-[#c8f53a]/30 shadow-md backdrop-blur-md"
+        >
+          <div className="mx-auto flex max-w-6xl items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="flex h-2.5 w-2.5 relative shrink-0">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#c8f53a] opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-[#c8f53a]"></span>
+              </span>
+              <p className="text-xs font-bold truncate">
+                Pesanan Meja {tableNo} (#{pesananSelesai.no}) ·{" "}
+                <span className="text-[#c8f53a] font-black">
+                  {paymentStatus === "paid" ? "✓ LUNAS" : "Menunggu Bayar"}
+                </span>
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsBrowsingMenu(false)}
+              className="shrink-0 rounded-full bg-[#c8f53a] hover:bg-[#d9ff57] text-[#073829] px-3 py-1 text-[11px] font-black transition-all active:scale-95 shadow-xs"
+            >
+              Lihat QRIS / Status →
+            </button>
+          </div>
+        </aside>
+      )}
+
+      <header className={`sticky ${pesananSelesai ? "top-10" : "top-0"} z-30 border-b backdrop-blur-md ${
+        isMochi ? "border-[#07281e] bg-[#0b3d2e] text-white shadow-sm" : "mochi-header border-[#d8e1dc] bg-white/95"
+      }`}>
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3 lg:px-6">
           <div className="flex min-w-0 items-center gap-3">
             <BusinessMark
@@ -855,9 +1211,24 @@ export default function CustomerQrOrderPage({
             </div>
           </div>
 
-          <div className={`flex h-11 min-w-14 flex-col items-center justify-center rounded-xl px-3 ${isMochi ? "bg-[#c8f53a] text-[#0b3d2e] shadow-sm font-mono" : "border border-[#c8d4ce] bg-[#f5f8f6]"}`}>
-            <span className={`text-[8px] font-bold uppercase ${isMochi ? "text-[#0b3d2e]/80" : "text-[#728078]"}`}>Meja</span>
-            <span className={`text-sm font-extrabold ${isMochi ? "text-[#0b3d2e]" : "text-[#18392f]"}`}>{tableNo}</span>
+          <div className="flex items-center gap-2">
+            {pesananSelesai && (
+              <button
+                type="button"
+                onClick={() => setIsBrowsingMenu(false)}
+                className="hidden sm:flex items-center gap-1.5 rounded-xl bg-white/10 px-3 py-2 text-xs font-extrabold text-[#c8f53a] border border-white/15 hover:bg-white/15 transition-all"
+              >
+                <Receipt size={14} />
+                <span>Antrean #{pesananSelesai.no}</span>
+              </button>
+            )}
+
+            <div className={`flex h-11 min-w-14 flex-col items-center justify-center rounded-xl px-3 ${
+              isMochi ? "bg-[#c8f53a] text-[#0b3d2e] shadow-sm font-mono" : "border border-[#c8d4ce] bg-[#f5f8f6]"
+            }`}>
+              <span className={`text-[8px] font-bold uppercase ${isMochi ? "text-[#0b3d2e]/80" : "text-[#728078]"}`}>Meja</span>
+              <span className={`text-sm font-extrabold ${isMochi ? "text-[#0b3d2e]" : "text-[#18392f]"}`}>{tableNo}</span>
+            </div>
           </div>
         </div>
       </header>
@@ -1103,7 +1474,8 @@ export default function CustomerQrOrderPage({
         </aside>
       </main>
 
-      {cartList.length > 0 && (
+      {/* MOBILE BOTTOM FLOATING BAR: KERANJANG ATAU STATUS PESANAN */}
+      {cartList.length > 0 ? (
         <div className="fixed inset-x-0 bottom-0 z-40 border-t border-[#d1ddd7] bg-white px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 shadow-[0_-8px_24px_rgba(25,67,52,0.12)] lg:hidden">
           <button
             type="button"
@@ -1131,24 +1503,47 @@ export default function CustomerQrOrderPage({
             <span className={`text-sm font-extrabold ${isMochi ? "text-[#c8f53a]" : "text-white"}`}>{formatRupiah(cartTotal)}</span>
           </button>
         </div>
-      )}
-
-      {isCartOpen && cartList.length > 0 && (
-        <div className="fixed inset-0 z-50 flex items-end bg-[#112a21]/45 lg:hidden" role="dialog" aria-modal="true" aria-label="Rincian pesanan">
+      ) : pesananSelesai ? (
+        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-[#d1ddd7] bg-white px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 shadow-[0_-8px_24px_rgba(25,67,52,0.12)] lg:hidden">
           <button
             type="button"
-            aria-label="Tutup rincian pesanan"
+            onClick={() => setIsBrowsingMenu(false)}
+            className="mx-auto flex min-h-12 w-full max-w-md items-center justify-between rounded-xl bg-[#0b3d2e] text-white px-4 border border-[#c8f53a]/40 shadow-xl active:scale-[0.99]"
+          >
+            <span className="flex items-center gap-2 text-left">
+              <span className="flex h-3 w-3 relative shrink-0">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#c8f53a] opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-[#c8f53a]"></span>
+              </span>
+              <span>
+                <span className="block text-xs font-black text-[#c8f53a]">Antrean Meja #{pesananSelesai.no}</span>
+                <span className="block text-[10px] text-emerald-200/80">
+                  {paymentStatus === "paid" ? "Pembayaran Lunas ✓" : "Menunggu Pembayaran QRIS"}
+                </span>
+              </span>
+            </span>
+            <span className="text-xs font-extrabold bg-white/10 px-3 py-1.5 rounded-lg text-white">
+              Buka Layar →
+            </span>
+          </button>
+        </div>
+      ) : null}
+
+      {/* MOBILE CART DRAWER */}
+      {isCartOpen && cartList.length > 0 && (
+        <div className="fixed inset-0 z-50 flex items-end bg-black/60 backdrop-blur-xs lg:hidden" role="dialog" aria-modal="true" aria-label="Rincian pesanan">
+          <div
             onClick={() => setIsCartOpen(false)}
             className="absolute inset-0 cursor-default"
           />
-          <div className="relative max-h-[88dvh] w-full overflow-y-auto rounded-t-2xl bg-white p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-[0_-16px_40px_rgba(17,42,33,0.2)]">
-            <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-[#cbd6d0]" />
+          <div className="relative z-10 max-h-[88dvh] w-full overflow-y-auto rounded-t-3xl bg-white p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] shadow-[0_-16px_40px_rgba(17,42,33,0.3)] animate-in slide-in-from-bottom duration-200">
+            <div className="mx-auto mb-3 h-1.5 w-12 rounded-full bg-[#cbd6d0]" />
             {renderCartContent(true)}
           </div>
         </div>
       )}
 
-      {/* Detail Menu Popup Modal with Keterangan & Add to Cart */}
+      {/* DETAIL MENU POPUP MODAL */}
       {selectedMenuItem && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/70 backdrop-blur-xs animate-in fade-in-50"
@@ -1156,17 +1551,12 @@ export default function CustomerQrOrderPage({
           aria-modal="true"
           aria-labelledby="modal-menu-title"
         >
-          {/* Backdrop dismiss */}
-          <button
-            type="button"
-            aria-label="Tutup detail menu"
+          <div
             onClick={() => setSelectedMenuItem(null)}
             className="absolute inset-0 cursor-default"
           />
 
-          {/* Modal Card */}
           <div className="relative z-10 flex max-h-[90vh] w-full max-w-md flex-col overflow-hidden rounded-3xl bg-white shadow-2xl animate-in zoom-in-95 duration-150">
-            {/* Close Button */}
             <button
               type="button"
               aria-label="Tutup detail menu"
@@ -1176,9 +1566,7 @@ export default function CustomerQrOrderPage({
               <X size={18} strokeWidth={2.5} />
             </button>
 
-            {/* Scrollable Content Container */}
             <div className="flex-1 overflow-y-auto">
-              {/* Photo Area */}
               <div className="relative aspect-[4/3] w-full overflow-hidden bg-[#e8f2ed]">
                 {selectedMenuItem.photo_url && selectedMenuItem.photo_url !== PLACEHOLDER_MENU ? (
                   // eslint-disable-next-line @next/next/no-img-element
@@ -1195,7 +1583,6 @@ export default function CustomerQrOrderPage({
                     </span>
                   </div>
                 )}
-                {/* Category Pill */}
                 <div className="absolute bottom-3 left-3 flex items-center gap-1.5 rounded-full bg-[#0b3d2e]/90 px-3 py-1 text-[11px] font-bold text-white backdrop-blur-md shadow-md">
                   <span className="inline-block h-2 w-2 rounded-full bg-[#c8f53a]" />
                   <span>
@@ -1204,7 +1591,6 @@ export default function CustomerQrOrderPage({
                 </div>
               </div>
 
-              {/* Information Body */}
               <div className="space-y-3.5 p-4 sm:p-5">
                 <div>
                   <div className="flex items-start justify-between gap-3">
@@ -1217,7 +1603,6 @@ export default function CustomerQrOrderPage({
                   </div>
                 </div>
 
-                {/* Keterangan Menu / Description */}
                 <div className="rounded-2xl border border-[#dce6e1] bg-[#f7faf8] p-3.5">
                   <span className="block text-[10px] font-bold uppercase tracking-wider text-[#497060]">
                     Keterangan Menu
@@ -1227,7 +1612,6 @@ export default function CustomerQrOrderPage({
                   </p>
                 </div>
 
-                {/* Catatan Khusus */}
                 <div>
                   <label htmlFor="modal-item-note" className="block text-xs font-bold text-[#1e3e33]">
                     Catatan Pesanan <span className="font-normal text-[#78857e]">(opsional)</span>
@@ -1245,10 +1629,8 @@ export default function CustomerQrOrderPage({
               </div>
             </div>
 
-            {/* Sticky Bottom Actions Bar */}
             <div className="border-t border-[#dce6e1] bg-white p-3.5 sm:p-4 shadow-[0_-4px_16px_rgba(0,0,0,0.05)]">
               <div className="flex items-center gap-3">
-                {/* Quantity Stepper */}
                 <div className="flex h-12 items-center rounded-xl border border-[#bad0c4] bg-[#f6f9f7] px-1 shadow-xs">
                   <button
                     type="button"
@@ -1272,7 +1654,6 @@ export default function CustomerQrOrderPage({
                   </button>
                 </div>
 
-                {/* Add to Cart CTA Button */}
                 <button
                   type="button"
                   onClick={handleSaveModalItem}
