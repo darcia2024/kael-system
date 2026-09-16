@@ -357,6 +357,19 @@ export default function OwnerDashboardClient({
               <span className="hidden sm:inline">Cetak QR Meja</span>
             </button>
             <Link
+              href="/app/pos/menu"
+              className={
+                isMochi
+                  ? "inline-flex items-center gap-1.5 rounded-xl border border-emerald-600/70 bg-[#165a45] px-3 py-2 font-mono text-xs font-black text-white hover:bg-[#1a6850] shadow-sm transition-all active:scale-95"
+                  : "btn-tactile inline-flex items-center gap-1.5 rounded-xl border-2 border-[#232331] bg-white px-3 py-2 font-mono text-xs font-black shadow-ink-xs hover:bg-[#f5f3ff]"
+              }
+              title="Pengaturan & Kelola Daftar Menu"
+            >
+              <UtensilsCrossed size={14} className={isMochi ? "text-[#c8f53a]" : "text-[#7958d8]"} />
+              <span className="hidden sm:inline">Kelola Menu</span>
+              <span className="sm:hidden">Menu</span>
+            </Link>
+            <Link
               href="/app/pos"
               className={
                 isMochi
@@ -821,6 +834,18 @@ export default function OwnerDashboardClient({
                 >
                   {dashboard.menuAnalytics?.totalMenuItems ?? 0} Menu
                 </span>
+                <Link
+                  href="/app/pos/menu"
+                  className={`inline-flex items-center gap-1 rounded-lg px-2 py-0.5 text-[10px] font-black transition-all ${
+                    isMochi
+                      ? "bg-[#0b3d2e] text-[#c8f53a] hover:bg-[#155944]"
+                      : "bg-[#232331] text-white hover:bg-[#39394d]"
+                  }`}
+                  title="Buka Pengaturan Menu"
+                >
+                  <UtensilsCrossed size={11} />
+                  <span>+ Kelola / Tambah Menu</span>
+                </Link>
               </div>
               <p className={`mt-1 text-xs ${isMochi ? "text-[#637970]" : "text-[#7b7b8e]"}`}>
                 Perbandingan menu paling laku (Best Seller) dan menu kurang laku (Slow Moving) dari transaksi kasir lunas.

@@ -13,6 +13,8 @@ import type {
   FinanceCalculatorPreset,
   CardService,
   CustomerDirectoryEntry,
+  MenuItem,
+  Category,
 } from "./types";
 import {
   FEEDBACK_REASONS,
@@ -2037,6 +2039,11 @@ function bersihkanUrlGambar(
     return nilai;
   }
 
+  // Juga menerima berkas statis lokal publik (seperti /logo-mochi.png)
+  if (/^\/[a-zA-Z0-9_\-\.\/]+$/.test(nilai) && !nilai.includes("..")) {
+    return nilai;
+  }
+
   try {
     const url = new URL(nilai);
     if (url.protocol !== "https:") return "invalid";
@@ -2104,7 +2111,7 @@ export async function saveMenuItemAction(input: {
   recipeId?: string | null;
   isAvailable?: boolean;
   sortOrder?: number;
-}): Promise<ActionResult<null>> {
+}): Promise<ActionResult<MenuItem>> {
   // Menyusun daftar menu dan harganya adalah keputusan pemilik usaha, bukan
   // kasir. Kasir cuma boleh menandai menu habis lewat setMenuAvailabilityAction.
   const { businessId } = await requireOwner();
@@ -2124,7 +2131,7 @@ export async function saveMenuItemAction(input: {
 
   const photoUrl = bersihkanUrlGambar(input.photoUrl);
   if (photoUrl === "invalid") {
-    return fail("Alamat gambar harus lengkap dan diawali https://");
+    return fail("Alamat gambar harus diawali dengan https:// atau tautan lokal /api/gambar/...");
   }
 
   const saved = await db.saveMenuItem(businessId, {
@@ -2142,7 +2149,7 @@ export async function saveMenuItemAction(input: {
 
   revalidatePath("/app/pos");
   revalidatePath("/app/pos/menu");
-  return done(null);
+  return done(saved);
 }
 
 export async function deleteMenuItemAction(
@@ -2164,7 +2171,7 @@ export async function saveCategoryAction(input: {
   id?: string;
   name: string;
   sortOrder?: number;
-}): Promise<ActionResult<null>> {
+}): Promise<ActionResult<Category>> {
   const { businessId } = await requireOwner();
   const locked = await moduleLock(businessId, "pos", "write");
   if (locked) return fail(locked);
@@ -2182,7 +2189,7 @@ export async function saveCategoryAction(input: {
 
   revalidatePath("/app/pos");
   revalidatePath("/app/pos/menu");
-  return done(null);
+  return done(saved);
 }
 
 export async function deleteCategoryAction(
@@ -2193,7 +2200,11 @@ export async function deleteCategoryAction(
   if (locked) return fail(locked);
 
   const ok = await db.deleteCategory(categoryId, businessId);
-  if (!ok) return fail("Kategori masih dipakai menu. Pindahkan menunya dulu.");
+  if (!ok) {
+    return fail(
+      "Kategori tidak bisa dihapus karena masih ada menu di dalamnya. Pindahkan atau hapus menunya lebih dulu.",
+    );
+  }
 
   revalidatePath("/app/pos");
   revalidatePath("/app/pos/menu");
@@ -2214,6 +2225,7 @@ export async function setMenuAvailabilityAction(
   );
   if (!ok) return fail("Menu tidak ditemukan.");
   revalidatePath("/app/pos");
+  revalidatePath("/app/pos/menu");
   return done(null);
 }
 
