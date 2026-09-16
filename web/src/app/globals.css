@@ -79,6 +79,26 @@ body {
   }
 }
 
+/* POS Tablet & Kiosk Optimization (Infinix XPAD 30E 16:10 FHD+ display lock) */
+.pos-screen-lock {
+  height: 100dvh !important;
+  max-height: 100dvh !important;
+  width: 100vw !important;
+  max-width: 100vw !important;
+  overflow: hidden !important;
+  overscroll-behavior: none !important;
+  touch-action: pan-x pan-y !important;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.pos-screen-lock input,
+.pos-screen-lock textarea {
+  -webkit-user-select: text;
+  user-select: text;
+  touch-action: manipulation;
+}
+
 /* Theme khusus Mochi dan tenant demo KAEL Cafe yang memakai menu Mochi. */
 .mochi-ui {
   --mochi-ink: #18392f;

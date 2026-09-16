@@ -89,6 +89,7 @@ import { PLACEHOLDER_MENU } from "@/lib/types";
 import TableQrModal from "./table-qr-modal";
 import PosMemberScannerModal from "./pos-member-scanner-modal";
 import PosBellSettingsModal from "./pos-bell-settings-modal";
+import { MemberQrModal } from "@/components/member-qr-modal";
 import { usePwaInstall } from "@/components/pwa-register";
 import { alertNewIncomingOrder, buildPrinterBuzzerPayload } from "@/lib/pos-audio";
 
@@ -221,6 +222,7 @@ export default function PosClient({
   const [showQueue, setShowQueue] = useState(false);
   const [showShiftModal, setShowShiftModal] = useState(false);
   const [showTableQrModal, setShowTableQrModal] = useState(false);
+  const [showMemberQrModal, setShowMemberQrModal] = useState(false);
   const [showMemberScannerModal, setShowMemberScannerModal] = useState(false);
   const [shiftOpeningCashInput, setShiftOpeningCashInput] = useState<number>(100000);
   const [shiftClosingCashInput, setShiftClosingCashInput] = useState<number>(0);
@@ -250,6 +252,39 @@ export default function PosClient({
     setCurrentQrOrders(pendingQrOrders);
     pendingQrOrders.forEach((o) => knownOrderIds.current.add(o.id));
   }, [pendingQrOrders]);
+
+  // Tablet Kiosk Optimization (Infinix XPAD 30E 16:10 display): Cegah gesture pinch zoom dan double-tap zoom
+  useEffect(() => {
+    const preventPinchZoom = (e: TouchEvent) => {
+      if (e.touches && e.touches.length > 1) {
+        e.preventDefault();
+      }
+    };
+    const preventWheelZoom = (e: WheelEvent) => {
+      if (e.ctrlKey) {
+        e.preventDefault();
+      }
+    };
+    const preventGesture = (e: Event) => {
+      e.preventDefault();
+    };
+
+    document.addEventListener("touchstart", preventPinchZoom, { passive: false });
+    document.addEventListener("touchmove", preventPinchZoom, { passive: false });
+    document.addEventListener("wheel", preventWheelZoom, { passive: false });
+    document.addEventListener("gesturestart", preventGesture, { passive: false });
+    document.addEventListener("gesturechange", preventGesture, { passive: false });
+    document.addEventListener("gestureend", preventGesture, { passive: false });
+
+    return () => {
+      document.removeEventListener("touchstart", preventPinchZoom);
+      document.removeEventListener("touchmove", preventPinchZoom);
+      document.removeEventListener("wheel", preventWheelZoom);
+      document.removeEventListener("gesturestart", preventGesture);
+      document.removeEventListener("gesturechange", preventGesture);
+      document.removeEventListener("gestureend", preventGesture);
+    };
+  }, []);
 
   // Load bell preferences & auto-print from localStorage on mount
   useEffect(() => {
@@ -1150,9 +1185,9 @@ export default function PosClient({
   );
 
   return (
-    <div className={`${themeClassName} flex h-[100dvh] min-h-[640px] flex-col overflow-hidden ${isMochiPos ? "bg-[#f0f5f2]" : "bg-[#edf3f0]"} font-sans text-[#21352d]`}>
-      <header className={`z-30 shrink-0 border-b ${isMochiPos ? "bg-[#0b3d2e] border-emerald-800/60 text-white shadow-sm" : "bg-white border-[#d8e1dc]"}`}>
-        <div className="flex min-h-16 items-center justify-between gap-3 px-3 sm:px-5">
+    <div className={`${themeClassName} pos-screen-lock flex h-[100dvh] max-h-[100dvh] w-full flex-col overflow-hidden select-none ${isMochiPos ? "bg-[#f0f5f2]" : "bg-[#edf3f0]"} font-sans text-[#21352d]`}>
+      <header className={`z-30 shrink-0 border-b h-14 min-h-[56px] ${isMochiPos ? "bg-[#0b3d2e] border-emerald-800/60 text-white shadow-sm" : "bg-white border-[#d8e1dc]"}`}>
+        <div className="flex h-14 items-center justify-between gap-2.5 px-3 sm:px-4">
           <div className="flex min-w-0 items-center gap-3">
             {isMochiPos ? (
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white p-0.5 shadow-sm border border-emerald-400/40 overflow-hidden">
@@ -1300,6 +1335,19 @@ export default function PosClient({
             >
               <Clock size={17} aria-hidden="true" />
             </button>
+            <button
+              type="button"
+              aria-label="QR Pendaftaran Member"
+              title="QR Pendaftaran Member"
+              onClick={() => setShowMemberQrModal(true)}
+              className={`flex h-10 w-10 sm:h-11 sm:w-11 items-center justify-center rounded-xl border transition-colors ${
+                isMochiPos
+                  ? "border-[#c8f53a]/40 bg-[#c8f53a] text-[#073829] shadow-xs hover:bg-[#d9ff57]"
+                  : "border-[#ccd7d1] bg-white text-[#1d5d47] hover:bg-[#eef5f1]"
+              }`}
+            >
+              <QrCode size={17} aria-hidden="true" />
+            </button>
             {isInstallable && !isInstalled && (
               <button
                 type="button"
@@ -1318,6 +1366,19 @@ export default function PosClient({
           </div>
 
           <div className="hidden lg:flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowMemberQrModal(true)}
+              className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-bold transition-all shadow-xs ${
+                isMochiPos
+                  ? "bg-[#c8f53a] text-[#073829] hover:bg-[#d9ff57]"
+                  : "bg-white border border-[#ccd7d1] text-[#1d5d47] hover:bg-[#eef5f1]"
+              }`}
+              title="QR & Link Pendaftaran Member"
+            >
+              <QrCode size={15} />
+              <span>QR Member</span>
+            </button>
             {isInstallable && !isInstalled && (
               <button
                 type="button"
@@ -1413,7 +1474,7 @@ export default function PosClient({
         </div>
       )}
 
-      <main id="solusi" className="grid min-h-0 flex-1 lg:grid-cols-[68px_minmax(0,1fr)_390px] xl:grid-cols-[72px_minmax(0,1fr)_430px] 2xl:grid-cols-[76px_minmax(0,1fr)_460px]">
+      <main id="solusi" className="grid min-h-0 flex-1 overflow-hidden lg:grid-cols-[64px_minmax(0,1fr)_370px] xl:grid-cols-[68px_minmax(0,1fr)_390px] 2xl:grid-cols-[72px_minmax(0,1fr)_420px]">
         <nav aria-label="Navigasi kasir" className={`hidden min-h-0 flex-col items-center gap-2 border-r px-1.5 py-3 lg:flex transition-colors ${isMochiPos ? "bg-[#07281e] border-emerald-900/60 text-emerald-100" : "bg-white border-[#d8e1dc]"}`}>
           <div className={`flex h-11 w-11 items-center justify-center rounded-xl transition-transform ${isMochiPos ? "bg-[#c8f53a] text-[#073829] shadow-sm" : "bg-[#1d5d47] text-white"}`} title="Kasir">
             <LayoutGrid size={20} aria-hidden="true" />
@@ -1582,7 +1643,7 @@ export default function PosClient({
 
           <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-24 sm:px-4 lg:pb-4">
             {filteredMenu.length > 0 ? (
-              <div className="grid grid-cols-3 gap-2 sm:gap-2.5 md:gap-3 xl:grid-cols-3 2xl:grid-cols-4">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-4 gap-2 sm:gap-2.5">
                 {filteredMenu.map((item) => {
                   const inCart = cart[item.id];
                   const categoryName = categories.find((category) => category.id === item.category_id)?.name ?? "Menu";
@@ -2475,6 +2536,16 @@ export default function PosClient({
           </div>
         </div>
       )}
+
+      <MemberQrModal
+        isOpen={showMemberQrModal}
+        onClose={() => setShowMemberQrModal(false)}
+        businessName={business?.name}
+        storeCode={business?.store_code || "MOCHIKAFE"}
+        logoUrl={business?.logo_url}
+        isMochi={isMochiPos}
+        earnRate={loyaltyProgram?.earn_rate}
+      />
 
       <TableQrModal
         isOpen={showTableQrModal}

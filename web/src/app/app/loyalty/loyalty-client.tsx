@@ -56,6 +56,7 @@ import { formatRupiah, formatBusinessDateTime } from "@/lib/formatters";
 import { getMemberSegment, MEMBER_SEGMENT_COPY, type MemberSegment } from "@/lib/member-segments";
 import { CAMPAIGN_GOALS, type CampaignGoalKey } from "@/lib/campaign-templates";
 import { BusinessMark } from "@/components/business-mark";
+import { MemberQrCard, MemberQrModal } from "@/components/member-qr-modal";
 
 /** Semua data awal datang dari komponen server; halaman ini tidak menyentuh
  *  database sama sekali. Perubahan dikirim lewat server action, lalu
@@ -130,6 +131,9 @@ export default function KaelLoyaltyDashboard({
   // Master States
   const [program, setProgram] = useState<LoyaltyProgram>(initialProgram);
   const [selectedStaffId, setSelectedStaffId] = useState<string>(staffList[0]?.id || "usr-staff-01");
+  const [showMemberQrModal, setShowMemberQrModal] = useState(false);
+
+  const isMochi = (business?.store_code?.toUpperCase() ?? "") === "MOCHIKAFE" || (business?.name?.toLowerCase().includes("mochi") ?? false);
 
   // ---------------------------------------------------------------------------
   // CASHIER FAST POS STATE (Tab 1)
@@ -666,13 +670,23 @@ export default function KaelLoyaltyDashboard({
             </div>
           </div>
 
-          {/* Active Staff Switcher for Point Logging */}
-          <div className="flex items-center gap-1.5 font-mono text-xs">
-            <span className="text-[10.5px] text-emerald-200/80 hidden sm:inline">Kasir Aktif:</span>
+          {/* Actions: QR Member & Active Staff Switcher */}
+          <div className="flex items-center gap-2 font-mono text-xs">
+            <button
+              type="button"
+              onClick={() => setShowMemberQrModal(true)}
+              className="flex items-center gap-1.5 rounded-xl border border-[#c8f53a]/40 bg-[#c8f53a] px-2.5 sm:px-3 py-1.5 text-xs font-black text-[#073829] hover:bg-[#d9ff57] transition-all shadow-xs shrink-0"
+              title="Buka QR & Link Pendaftaran Member"
+            >
+              <QrCode size={14} />
+              <span className="hidden xs:inline">QR Member</span>
+            </button>
+
+            <span className="text-[10.5px] text-emerald-200/80 hidden sm:inline">Kasir:</span>
             <select
               value={selectedStaffId}
               onChange={(e) => setSelectedStaffId(e.target.value)}
-              className="rounded-xl border border-emerald-600/40 bg-white/10 px-2.5 py-1 text-xs font-bold text-white focus:bg-emerald-900 focus:outline-none transition-colors"
+              className="rounded-xl border border-emerald-600/40 bg-white/10 px-2.5 py-1.5 text-xs font-bold text-white focus:bg-emerald-900 focus:outline-none transition-colors"
             >
               {staffList.map((st) => (
                 <option key={st.id} value={st.id} className="text-[#1a382d] bg-white">
@@ -1123,65 +1137,34 @@ export default function KaelLoyaltyDashboard({
 
             </div>
 
-            {/* Right Column (5 cols): Table Standee QR Preview & Fast Onboarding */}
-            <div className="lg:col-span-5 rounded-2xl sm:rounded-3xl border border-[#d8e3de] bg-white p-4 sm:p-6 shadow-[0_4px_20px_rgba(11,61,46,0.04)] space-y-4">
-              
-              <div className="border-b border-[#d8e3de] pb-3">
-                <span className="font-mono text-[10px] font-bold uppercase text-[#167052] block">
-                  UNTUK PELANGGAN BARU
-                </span>
-                <h3 className="font-extrabold text-sm sm:text-base text-[#0b3d2e] font-sans mt-0.5">
-                  Daftar Member lewat QR di Meja Kasir
-                </h3>
-              </div>
+            {/* Right Column (5 cols): Table Standee QR Card & Fast Onboarding */}
+            <div className="lg:col-span-5 space-y-4">
+              <MemberQrCard
+                businessName={business?.name}
+                storeCode={business?.store_code}
+                logoUrl={business?.logo_url}
+                isMochi={isMochi}
+                earnRate={program.earn_rate}
+              />
 
-              <div className="rounded-2xl border border-[#d8e3de] bg-[#fbfdfc] p-4 text-center space-y-3">
-                <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-[#c8f53a] text-[#1a382d] border border-[#d8e3de] shadow-xs">
-                  <QrCode size={36} />
-                </div>
-
-                <div className="space-y-1 font-mono text-xs">
-                  <span className="font-extrabold text-[#1a382d] block">
-                    Link pendaftaran member
-                  </span>
-                  <Link
-                    href={`/loyalty/register?toko=${encodeURIComponent(business?.store_code ?? "")}`}
-                    target="_blank"
-                    className="text-[#167052] text-[11px] font-bold underline inline-flex items-center gap-1"
-                  >
-                    <span>{`/loyalty/register?toko=${business?.store_code ?? ""}`}</span>
-                    <ExternalLink size={11} />
-                  </Link>
-                  <p className="text-[10px] text-[#527867] font-sans pt-1">
-                    Pelanggan scan QR ini, isi nama dan WhatsApp sendiri, lalu kembali ke kasir untuk mendapat poin pertama.
+              <div className="rounded-2xl sm:rounded-3xl border border-[#d8e3de] bg-white p-4 shadow-xs space-y-2.5">
+                <div className="rounded-xl border border-[#d8e3de] bg-[#fbfdfc] p-3 text-left font-sans text-[11.5px] leading-relaxed text-[#5c5c70]">
+                  <p className="font-bold text-[#1a382d]">💡 Panduan Kasir</p>
+                  <p className="mt-1">
+                    Arahkan pelanggan baru scan QR di atas untuk mengisi formulir di HP sendiri. Setelah sukses terdaftar, cari nama atau 4 angka WhatsApp mereka di panel kiri untuk mencatat poin belanja.
                   </p>
-                </div>
-
-                <Link
-                  href={`/loyalty/register?toko=${encodeURIComponent(business?.store_code ?? "")}`}
-                  target="_blank"
-                  className="inline-flex items-center justify-center gap-1.5 w-full rounded-xl border border-[#d8e3de] bg-white hover:bg-[#edf8f3] py-2.5 text-xs font-bold text-[#0b3d2e] shadow-xs transition-colors"
-                >
-                  <UserPlus size={13} />
-                  <span>Buka Form Pendaftaran Member Baru</span>
-                </Link>
-
-                <div className="rounded-xl border border-[#d8e3de] bg-[#fbfdfc] p-3 text-left font-sans text-[11px] leading-relaxed text-[#5c5c70]">
-                  <p className="font-bold text-[#1a382d]">Cara pakai di kasir</p>
-                  <p className="mt-1">Arahkan pelanggan baru ke QR. Setelah selesai daftar, cari namanya di panel kiri lalu catat belanjanya. Isi kartu member dapat diatur dari tombol di bawah.</p>
                 </div>
 
                 {/* Isi kartu yang dipegang pelanggan: sapaan, jam buka, kabar,
                     dan nomor WhatsApp yang menyalakan tombol simpan kartu. */}
                 <Link
                   href="/app/loyalty/kartu"
-                  className="mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-[#0b3d2e] hover:bg-[#0e4837] py-2.5 text-xs font-bold text-[#c8f53a] shadow-xs transition-colors"
+                  className="inline-flex w-full items-center justify-center gap-1.5 rounded-xl bg-[#0b3d2e] hover:bg-[#0e4837] py-2.5 text-xs font-bold text-[#c8f53a] shadow-xs transition-colors"
                 >
                   <IdCard size={13} />
-                  <span>Atur Isi Kartu Member</span>
+                  <span>Atur Tampilan &amp; Isi Kartu Member</span>
                 </Link>
               </div>
-
             </div>
 
           </div>
@@ -2333,6 +2316,17 @@ export default function KaelLoyaltyDashboard({
       <footer className="border-t border-[#d8e3de] bg-white py-4 text-center text-xs font-mono text-[#527867]">
         KAEL Loyalty Engine · Immutable Append-Only Ledger &amp; UU PDP Protection
       </footer>
+
+      {/* Member QR Code & Tent Card Modal */}
+      <MemberQrModal
+        isOpen={showMemberQrModal}
+        onClose={() => setShowMemberQrModal(false)}
+        businessName={business?.name}
+        storeCode={business?.store_code}
+        logoUrl={business?.logo_url}
+        isMochi={isMochi}
+        earnRate={program.earn_rate}
+      />
 
     </div>
   );
