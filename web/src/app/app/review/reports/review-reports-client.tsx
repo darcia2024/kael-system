@@ -46,16 +46,17 @@ const REASON_LABELS: Record<string, string> = {
 
 export default function ReviewReportsClient({
   business,
-  initialFeedbacks,
+  initialFeedbacks = [],
   initialSummary,
   themeClassName = "",
 }: {
   business: Business | null;
-  initialFeedbacks: FeedbackRow[];
-  initialSummary: FeedbackSummary;
+  initialFeedbacks?: FeedbackRow[];
+  initialSummary?: FeedbackSummary;
   themeClassName?: string;
 }) {
   const isMochi = isMochiBusiness(business);
+  const safeFeedbacks = useMemo(() => (Array.isArray(initialFeedbacks) ? initialFeedbacks : []), [initialFeedbacks]);
 
   // Filter States
   const [datePreset, setDatePreset] = useState<DateFilterPreset>("all");
@@ -75,7 +76,8 @@ export default function ReviewReportsClient({
     const startOf30d = new Date(Date.now() - 30 * 86_400_000).toISOString();
     const thisMonthPrefix = now.toISOString().slice(0, 7); // YYYY-MM
 
-    return initialFeedbacks.filter((f) => {
+    return safeFeedbacks.filter((f) => {
+      if (!f) return false;
       const fIso = f.created_at
         ? typeof f.created_at === "string"
           ? f.created_at
@@ -98,19 +100,20 @@ export default function ReviewReportsClient({
       }
 
       // 2. Sentiment / Star Filter
+      const rating = Number(f.rating || 0);
       if (sentimentFilter === "good") {
-        if (f.rating < 4) return false;
+        if (rating < 4) return false;
       } else if (sentimentFilter === "bad") {
-        if (f.rating > 3) return false;
-      } else if (sentimentFilter === "5" && f.rating !== 5) {
+        if (rating > 3) return false;
+      } else if (sentimentFilter === "5" && rating !== 5) {
         return false;
-      } else if (sentimentFilter === "4" && f.rating !== 4) {
+      } else if (sentimentFilter === "4" && rating !== 4) {
         return false;
-      } else if (sentimentFilter === "3" && f.rating !== 3) {
+      } else if (sentimentFilter === "3" && rating !== 3) {
         return false;
-      } else if (sentimentFilter === "2" && f.rating !== 2) {
+      } else if (sentimentFilter === "2" && rating !== 2) {
         return false;
-      } else if (sentimentFilter === "1" && f.rating !== 1) {
+      } else if (sentimentFilter === "1" && rating !== 1) {
         return false;
       }
 
@@ -139,7 +142,7 @@ export default function ReviewReportsClient({
       return true;
     });
   }, [
-    initialFeedbacks,
+    safeFeedbacks,
     datePreset,
     customFrom,
     customTo,
@@ -151,7 +154,8 @@ export default function ReviewReportsClient({
 
   // Dynamic Metrics Computed for the Filtered Set
   const metrics = useMemo(() => {
-    const total = filteredFeedbacks.length;
+    const list = filteredFeedbacks || [];
+    const total = list.length;
     if (total === 0) {
       return {
         total: 0,
@@ -160,7 +164,7 @@ export default function ReviewReportsClient({
         goodPct: 0,
         badCount: 0,
         badPct: 0,
-        stars: { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 },
+        stars: { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 } as Record<number, number>,
         reasons: {} as Record<string, number>,
       };
     }
@@ -168,15 +172,16 @@ export default function ReviewReportsClient({
     let sumRating = 0;
     let goodCount = 0;
     let badCount = 0;
-    const stars = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
+    const stars: Record<number, number> = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
     const reasons: Record<string, number> = {};
 
-    for (const f of filteredFeedbacks) {
-      sumRating += f.rating;
-      if (f.rating >= 4) goodCount++;
-      if (f.rating <= 3) badCount++;
-      if (f.rating >= 1 && f.rating <= 5) {
-        stars[f.rating as 1 | 2 | 3 | 4 | 5]++;
+    for (const f of list) {
+      const r = Number(f.rating || 0);
+      sumRating += r;
+      if (r >= 4) goodCount++;
+      if (r <= 3) badCount++;
+      if (r >= 1 && r <= 5) {
+        stars[r] = (stars[r] || 0) + 1;
       }
       if (f.reason_code) {
         reasons[f.reason_code] = (reasons[f.reason_code] || 0) + 1;
@@ -185,11 +190,11 @@ export default function ReviewReportsClient({
 
     return {
       total,
-      avgRating: Number((sumRating / total).toFixed(2)),
+      avgRating: Number((sumRating / total).toFixed(2)) || 0,
       goodCount,
-      goodPct: Math.round((goodCount / total) * 100),
+      goodPct: Math.round((goodCount / total) * 100) || 0,
       badCount,
-      badPct: Math.round((badCount / total) * 100),
+      badPct: Math.round((badCount / total) * 100) || 0,
       stars,
       reasons,
     };
@@ -429,7 +434,7 @@ export default function ReviewReportsClient({
                     : "border border-[#d8e3de] bg-[#f9fbf9] text-[#527867] hover:border-[#0b3d2e] hover:text-[#0b3d2e]"
                 }`}
               >
-                Semua Review ({initialFeedbacks.length})
+                Semua Review ({safeFeedbacks.length})
               </button>
 
               <button
@@ -442,7 +447,7 @@ export default function ReviewReportsClient({
                 }`}
               >
                 <CheckCircle2 size={13} />
-                <span>⭐ Review Baik (Bintang 4–5) ({initialFeedbacks.filter((f) => f.rating >= 4).length})</span>
+                <span>⭐ Review Baik (Bintang 4–5) ({safeFeedbacks.filter((f) => Number(f.rating) >= 4).length})</span>
               </button>
 
               <button
@@ -455,7 +460,7 @@ export default function ReviewReportsClient({
                 }`}
               >
                 <ShieldCheck size={13} />
-                <span>⚠️ Review Buruk / Keluhan (Bintang 1–3) ({initialFeedbacks.filter((f) => f.rating <= 3).length})</span>
+                <span>⚠️ Review Buruk / Keluhan (Bintang 1–3) ({safeFeedbacks.filter((f) => Number(f.rating) <= 3).length})</span>
               </button>
 
               <div className="flex items-center gap-1 pl-1 border-l border-[#d8e3de]">
@@ -470,7 +475,7 @@ export default function ReviewReportsClient({
                         : "border border-[#d8e3de] bg-white text-[#527867] hover:bg-[#edf8f3]"
                     }`}
                   >
-                    ⭐{star} ({initialFeedbacks.filter((f) => f.rating === Number(star)).length})
+                    ⭐{star} ({safeFeedbacks.filter((f) => Number(f.rating) === Number(star)).length})
                   </button>
                 ))}
               </div>
@@ -626,9 +631,9 @@ export default function ReviewReportsClient({
                 onChange={(e) => setReasonFilter(e.target.value)}
                 className="w-full rounded-xl border border-[#ccd9d3] bg-white py-2 px-3 text-xs text-[#0b3d2e] focus:border-[#0b3d2e] focus:outline-none"
               >
-                <option value="all">Semua Alasan ({initialFeedbacks.length})</option>
+                <option value="all">Semua Alasan ({safeFeedbacks.length})</option>
                 {Object.entries(REASON_LABELS).map(([code, label]) => {
-                  const count = initialFeedbacks.filter((f) => f.reason_code === code).length;
+                  const count = safeFeedbacks.filter((f) => f.reason_code === code).length;
                   return (
                     <option key={code} value={code}>
                       {label} ({count})
@@ -649,8 +654,8 @@ export default function ReviewReportsClient({
                 className="w-full rounded-xl border border-[#ccd9d3] bg-white py-2 px-3 text-xs text-[#0b3d2e] focus:border-[#0b3d2e] focus:outline-none"
               >
                 <option value="all">Semua Sumber</option>
-                <option value="card">Tap Kartu Meja / NFC / QR ({initialFeedbacks.filter((f) => f.card_id).length})</option>
-                <option value="order">Struk Pembayaran Kasir ({initialFeedbacks.filter((f) => f.order_id).length})</option>
+                <option value="card">Tap Kartu Meja / NFC / QR ({safeFeedbacks.filter((f) => f.card_id).length})</option>
+                <option value="order">Struk Pembayaran Kasir ({safeFeedbacks.filter((f) => f.order_id).length})</option>
               </select>
             </div>
           </div>

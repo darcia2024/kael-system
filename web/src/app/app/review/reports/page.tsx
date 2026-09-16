@@ -10,6 +10,7 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
+export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
 export default async function ReviewReportsPage() {
@@ -17,12 +18,13 @@ export default async function ReviewReportsPage() {
 
   const [business, rawFeedbacks, feedbackSummary] = await Promise.all([
     db.getBusiness(session.businessId),
-    db.getAllFeedback(session.businessId, 1000),
-    db.getFeedbackSummary(session.businessId),
+    db.getAllFeedback(session.businessId, 1000).catch(() => []),
+    db.getFeedbackSummary(session.businessId).catch(() => ({ total: 0, avgRating: 0, lowCount: 0, byReason: [] })),
   ]);
 
   const feedbacks = (rawFeedbacks || []).map((f) => ({
     ...f,
+    rating: Number(f.rating) || 0,
     created_at: f.created_at
       ? typeof f.created_at === "string"
         ? f.created_at

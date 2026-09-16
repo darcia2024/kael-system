@@ -9,7 +9,7 @@ const sql = postgres(process.env.POSTGRES_URL || process.env.DATABASE_URL, {
 });
 
 async function main() {
-  const bizId = 'ab25ae3d-5df7-4143-a429-79d1982ef87f';
+  const bizId = 'e1d8f3fb-40ea-4072-be0e-0119f80b1075';
   
   // 1. Check getBusiness
   const business = (await sql`SELECT * FROM businesses WHERE id = ${bizId}`)[0];
@@ -27,6 +27,7 @@ async function main() {
     LIMIT 1000
   `;
   console.log('Raw feedbacks length:', rawFeedbacks.length);
+  console.log('All feedbacks:', JSON.stringify(rawFeedbacks, null, 2));
 
   // 3. Check getFeedbackSummary
   const totals = await sql`
