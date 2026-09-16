@@ -54,6 +54,11 @@ export function extractPlaceIdFromInput(input: string): string | null {
   return null;
 }
 
+function getPlacesApiKey(): string {
+  const raw = process.env.GOOGLE_PLACES_API_KEY || "";
+  return raw.trim().replace(/^["']|["']$/g, "").trim();
+}
+
 /**
  * Menandai apakah pencarian bisnis tersedia.
  *
@@ -61,7 +66,7 @@ export function extractPlaceIdFromInput(input: string): string | null {
  * jalan yang jujur adalah meminta owner menempelkan Place ID secara manual.
  */
 export function isPlacesSearchConfigured(): boolean {
-  return Boolean(process.env.GOOGLE_PLACES_API_KEY);
+  return Boolean(getPlacesApiKey());
 }
 
 /**
@@ -73,7 +78,7 @@ export async function getGoogleReviewSnapshot(placeId: string): Promise<{
   rating: number;
   reviewCount: number;
 } | null> {
-  const key = process.env.GOOGLE_PLACES_API_KEY;
+  const key = getPlacesApiKey();
   const id = placeId.trim();
   if (!key || !id) return null;
   try {
@@ -88,7 +93,7 @@ export async function getGoogleReviewSnapshot(placeId: string): Promise<{
       console.error("[KAEL] Place Details menolak snapshot review:", response.status);
       return null;
     }
-    const data = await response.json() as { rating?: number; userRatingCount?: number };
+    const data = (await response.json()) as { rating?: number; userRatingCount?: number };
     if (!Number.isFinite(data.rating) || !Number.isFinite(data.userRatingCount)) return null;
     return { rating: Number(data.rating), reviewCount: Number(data.userRatingCount) };
   } catch (error) {
@@ -105,7 +110,7 @@ export async function getGooglePlaceLocation(placeId: string): Promise<{
   latitude: number;
   longitude: number;
 } | null> {
-  const key = process.env.GOOGLE_PLACES_API_KEY;
+  const key = getPlacesApiKey();
   const id = placeId.trim();
   if (!key || !/^[A-Za-z0-9_-]{20,80}$/.test(id)) return null;
   try {
@@ -117,9 +122,20 @@ export async function getGooglePlaceLocation(placeId: string): Promise<{
       cache: "no-store",
     });
     if (!response.ok) return null;
-    const data = await response.json() as { id?: string; displayName?: { text?: string }; formattedAddress?: string; location?: { latitude?: number; longitude?: number } };
+    const data = (await response.json()) as {
+      id?: string;
+      displayName?: { text?: string };
+      formattedAddress?: string;
+      location?: { latitude?: number; longitude?: number };
+    };
     if (!data.id || !Number.isFinite(data.location?.latitude) || !Number.isFinite(data.location?.longitude)) return null;
-    return { placeId: data.id, name: data.displayName?.text ?? "Lokasi Google Maps", address: data.formattedAddress ?? "", latitude: Number(data.location?.latitude), longitude: Number(data.location?.longitude) };
+    return {
+      placeId: data.id,
+      name: data.displayName?.text ?? "Lokasi Google Maps",
+      address: data.formattedAddress ?? "",
+      latitude: Number(data.location?.latitude),
+      longitude: Number(data.location?.longitude),
+    };
   } catch (error) {
     console.error("[KAEL] Place Details gagal mengambil lokasi absensi", error);
     return null;
@@ -142,9 +158,9 @@ export async function getGooglePlaceLocation(placeId: string): Promise<{
  */
 export async function searchPlaces(query: string): Promise<GooglePlaceResult[]> {
   const q = query?.trim();
-  if (!q || q.length < 3) return [];
+  if (!q || q.length < 2) return [];
 
-  const key = process.env.GOOGLE_PLACES_API_KEY;
+  const key = getPlacesApiKey();
   if (!key) return [];
 
   try {
@@ -162,13 +178,12 @@ export async function searchPlaces(query: string): Promise<GooglePlaceResult[]> 
         languageCode: "id",
         maxResultCount: 8,
       }),
-      // Hasil pencarian bisnis jarang berubah dalam hitungan menit, dan tiap
-      // panggilan ada biayanya.
-      next: { revalidate: 3600 },
+      cache: "no-store",
     });
 
     if (!res.ok) {
-      console.error("[KAEL] Places API menolak permintaan:", res.status);
+      const errBody = await res.text().catch(() => "");
+      console.error("[KAEL] Places API menolak permintaan:", res.status, errBody);
       return [];
     }
 
