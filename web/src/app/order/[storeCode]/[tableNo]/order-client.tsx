@@ -17,6 +17,8 @@ import {
   Soup,
   Sparkles,
   UtensilsCrossed,
+  Crown,
+  ArrowRight,
   X,
   type LucideIcon,
 } from "lucide-react";
@@ -861,7 +863,34 @@ export default function CustomerQrOrderPage({
       </header>
 
       <main className="mx-auto grid max-w-6xl gap-5 px-3 py-4 lg:grid-cols-[minmax(0,1fr)_340px] lg:px-6 lg:py-6">
-        <div className="min-w-0 space-y-5">
+        <div className="min-w-0 space-y-4">
+          {/* VIP Member Registration Shortcut Banner */}
+          <a
+            href={`/loyalty/register?toko=${encodeURIComponent(business?.store_code || "MOCHIKAFE")}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center justify-between gap-3 rounded-2xl bg-gradient-to-r from-[#0b3d2e] via-[#072a1f] to-[#041a13] p-3 text-white shadow-md border border-emerald-500/30 transition-all hover:scale-[1.01] active:scale-[0.99] group"
+          >
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-[#c8f53a] text-[#073829] font-black text-xs shadow-xs">
+                <Crown size={15} />
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-black tracking-tight text-white">Daftar Member Mochi</span>
+                  <span className="rounded bg-[#c8f53a] px-1.5 py-0.2 font-mono text-[8.5px] font-black text-[#073829]">VIP</span>
+                </div>
+                <p className="text-[10.5px] text-emerald-200/80 truncate font-medium">
+                  Kumpulkan poin belanja &amp; nikmati traktiran menu spesial!
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-1 text-[11px] font-bold text-[#c8f53a] shrink-0 group-hover:translate-x-0.5 transition-transform">
+              <span>Daftar</span>
+              <ArrowRight size={13} strokeWidth={2.5} />
+            </div>
+          </a>
+
           <div className="relative">
             <Search
               size={19}
