@@ -102,17 +102,17 @@ export default async function MemberPage({
       customer={customer}
       business={business}
       program={program}
-      rewards={rewards.filter((r) => r.is_active)}
-      balance={balance}
-      ledger={ledger}
-      redemptions={redemptions}
-      referralCode={referralCode}
-      tiers={tiers}
-      lifetimeSpend={lifetimeSpend}
-      cardSettings={cardSettings}
-      menuItems={menuItems}
-      categories={categories}
-      visitCount={stamp.totalKunjungan}
+      rewards={Array.isArray(rewards) ? rewards.filter((r) => r?.is_active) : []}
+      balance={typeof balance === "number" ? balance : 0}
+      ledger={Array.isArray(ledger) ? ledger : []}
+      redemptions={Array.isArray(redemptions) ? redemptions : []}
+      referralCode={referralCode ?? null}
+      tiers={Array.isArray(tiers) ? tiers : []}
+      lifetimeSpend={typeof lifetimeSpend === "number" ? lifetimeSpend : 0}
+      cardSettings={cardSettings ?? null}
+      menuItems={Array.isArray(menuItems) ? menuItems : []}
+      categories={Array.isArray(categories) ? categories : []}
+      visitCount={stamp?.totalKunjungan ?? 0}
     />
   );
 }

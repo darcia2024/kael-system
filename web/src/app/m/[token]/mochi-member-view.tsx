@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
 import {
   Bell,
@@ -61,6 +61,23 @@ export default function MochiMemberView({
 }: MemberPageData) {
   // Modal states
   const [showQrModal, setShowQrModal] = useState(false);
+  const [timeStr, setTimeStr] = useState("09:41");
+
+  useEffect(() => {
+    try {
+      setTimeStr(new Date().toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }));
+    } catch {}
+  }, []);
+
+  const safeScroll = (top = 0) => {
+    if (typeof window !== "undefined") {
+      try {
+        window.scrollTo({ top, behavior: "smooth" });
+      } catch {
+        window.scrollTo(0, top);
+      }
+    }
+  };
   const [showRewardModal, setShowRewardModal] = useState(false);
   const [showVoucherModal, setShowVoucherModal] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
@@ -257,7 +274,7 @@ export default function MochiMemberView({
       <header className="px-5 pt-6 pb-6 space-y-5">
         {/* Status Line */}
         <div className="flex items-center justify-between text-[11px] text-emerald-200/80 font-mono">
-          <span>{new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</span>
+          <span suppressHydrationWarning>{timeStr}</span>
           <div className="flex items-center gap-1.5">
             <span className="inline-block h-2 w-2 rounded-full bg-[#c8f53a]" />
             <span>Mochi Member</span>
@@ -358,7 +375,7 @@ export default function MochiMemberView({
             type="button"
             onClick={() => {
               setActiveNavTab("home");
-              window.scrollTo({ top: 220, behavior: "smooth" });
+              safeScroll(220);
             }}
             className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-black transition-all ${
               activeNavTab === "home"
@@ -373,7 +390,7 @@ export default function MochiMemberView({
             type="button"
             onClick={() => {
               setActiveNavTab("menu");
-              window.scrollTo({ top: 220, behavior: "smooth" });
+              safeScroll(220);
             }}
             className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-black transition-all ${
               activeNavTab === "menu"
@@ -388,7 +405,7 @@ export default function MochiMemberView({
             type="button"
             onClick={() => {
               setActiveNavTab("profile");
-              window.scrollTo({ top: 220, behavior: "smooth" });
+              safeScroll(220);
             }}
             className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-black transition-all ${
               activeNavTab === "profile"
@@ -440,7 +457,7 @@ export default function MochiMemberView({
                 type="button"
                 onClick={() => {
                   setActiveNavTab("menu");
-                  window.scrollTo({ top: 380, behavior: "smooth" });
+                  safeScroll(380);
                 }}
                 className="flex flex-col items-center gap-1.5 group active:scale-95 transition-transform"
               >
@@ -456,7 +473,7 @@ export default function MochiMemberView({
                 type="button"
                 onClick={() => {
                   setActiveNavTab("profile");
-                  window.scrollTo({ top: 320, behavior: "smooth" });
+                  safeScroll(320);
                 }}
                 className="flex flex-col items-center gap-1.5 group active:scale-95 transition-transform"
               >
@@ -815,7 +832,7 @@ export default function MochiMemberView({
                     type="button"
                     onClick={() => {
                       setActiveNavTab("menu");
-                      window.scrollTo({ top: 380, behavior: "smooth" });
+                      safeScroll(380);
                     }}
                     className="text-xs font-bold text-[#167052] hover:underline flex items-center gap-0.5 shrink-0"
                   >
@@ -1148,7 +1165,7 @@ export default function MochiMemberView({
                       Level: {userCurrentTierKey}
                     </span>
                     <span className="text-[10px] text-[#718078] font-mono">
-                      · Multiplier {tierConfig[userCurrentTierKey].earn_multiplier}x
+                      · Multiplier {(tierConfig?.[userCurrentTierKey]?.earn_multiplier ?? 1.0)}x
                     </span>
                   </div>
                 </div>
@@ -1283,7 +1300,7 @@ export default function MochiMemberView({
                 </span>
                 {cardSettings?.whatsapp && (
                   <a
-                    href={`https://wa.me/${cardSettings.whatsapp.replace(/\D/g, "")}`}
+                    href={`https://wa.me/${String(cardSettings?.whatsapp || "").replace(/\D/g, "")}`}
                     target="_blank"
                     rel="noreferrer"
                     className="text-[#167052] font-bold hover:underline flex items-center gap-1 bg-[#edf8f3] px-2.5 py-1 rounded-lg"
@@ -1303,7 +1320,7 @@ export default function MochiMemberView({
                 type="button"
                 onClick={() => {
                   setActiveNavTab("home");
-                  window.scrollTo({ top: 0, behavior: "smooth" });
+                  safeScroll(0);
                 }}
                 className="w-full rounded-2xl bg-[#0b3d2e] text-[#c8f53a] py-3 text-xs font-black shadow-md hover:bg-[#124634] active:scale-95 transition-all"
               >
@@ -1326,7 +1343,7 @@ export default function MochiMemberView({
           type="button"
           onClick={() => {
             setActiveNavTab("home");
-            window.scrollTo({ top: 0, behavior: "smooth" });
+            safeScroll(0);
           }}
           className={`flex flex-col items-center gap-1 py-1 px-2.5 transition-colors ${
             activeNavTab === "home" ? "text-[#c8f53a]" : "text-emerald-200/70 hover:text-white"
@@ -1362,7 +1379,7 @@ export default function MochiMemberView({
           type="button"
           onClick={() => {
             setActiveNavTab("menu");
-            window.scrollTo({ top: 380, behavior: "smooth" });
+            safeScroll(380);
           }}
           className={`flex flex-col items-center gap-1 py-1 px-2.5 transition-colors ${
             activeNavTab === "menu" ? "text-[#c8f53a]" : "text-emerald-200/70 hover:text-white"
@@ -1376,7 +1393,7 @@ export default function MochiMemberView({
           type="button"
           onClick={() => {
             setActiveNavTab("profile");
-            window.scrollTo({ top: 320, behavior: "smooth" });
+            safeScroll(320);
           }}
           className={`flex flex-col items-center gap-1 py-1 px-2.5 transition-colors ${
             activeNavTab === "profile" ? "text-[#c8f53a]" : "text-emerald-200/70 hover:text-white"
@@ -1728,7 +1745,7 @@ export default function MochiMemberView({
                 </span>
                 {cardSettings?.whatsapp && (
                   <a
-                    href={`https://wa.me/${cardSettings.whatsapp.replace(/\D/g, "")}`}
+                    href={`https://wa.me/${String(cardSettings?.whatsapp || "").replace(/\D/g, "")}`}
                     target="_blank"
                     rel="noreferrer"
                     className="text-[#167052] font-bold hover:underline flex items-center gap-1"
