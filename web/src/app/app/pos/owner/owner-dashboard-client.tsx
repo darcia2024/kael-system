@@ -58,6 +58,8 @@ type MenuItemStat = {
   isAvailable: boolean;
   todayQty: number;
   todayRevenue: number;
+  weekQty: number;
+  weekRevenue: number;
   monthQty: number;
   monthRevenue: number;
 };
@@ -78,6 +80,10 @@ type Dashboard = {
   menuAnalytics?: {
     totalMenuItems: number;
     today: {
+      bestSellers: MenuItemStat[];
+      slowMovers: MenuItemStat[];
+    };
+    weekly: {
       bestSellers: MenuItemStat[];
       slowMovers: MenuItemStat[];
     };
@@ -132,7 +138,7 @@ export default function OwnerDashboardClient({
   const router = useRouter();
   const [refreshing, setRefreshing] = useState(false);
   const [showTableQrModal, setShowTableQrModal] = useState(false);
-  const [menuPeriod, setMenuPeriod] = useState<"today" | "monthly">("today");
+  const [menuPeriod, setMenuPeriod] = useState<"today" | "weekly" | "monthly">("weekly");
   const [feedbackFilter, setFeedbackFilter] = useState<"all" | "complaints" | "positive">("all");
   const [showReportsModal, setShowReportsModal] = useState(false);
   const [showClearModal, setShowClearModal] = useState(false);
@@ -161,10 +167,22 @@ export default function OwnerDashboardClient({
     timeZone: dashboard.timezone,
   }).format(new Date());
 
+  const getMenuQty = (item: MenuItemStat, period: "today" | "weekly" | "monthly") => {
+    if (period === "today") return item.todayQty;
+    if (period === "weekly") return item.weekQty;
+    return item.monthQty;
+  };
+
+  const getMenuRev = (item: MenuItemStat, period: "today" | "weekly" | "monthly") => {
+    if (period === "today") return item.todayRevenue;
+    if (period === "weekly") return item.weekRevenue;
+    return item.monthRevenue;
+  };
+
   const currentBestSellers = dashboard.menuAnalytics?.[menuPeriod]?.bestSellers ?? [];
   const currentSlowMovers = dashboard.menuAnalytics?.[menuPeriod]?.slowMovers ?? [];
   const maxBestSellerQty = Math.max(
-    ...currentBestSellers.map((item) => (menuPeriod === "today" ? item.todayQty : item.monthQty)),
+    ...currentBestSellers.map((item) => getMenuQty(item, menuPeriod)),
     1
   );
 
@@ -880,7 +898,7 @@ export default function OwnerDashboardClient({
               <button
                 type="button"
                 onClick={() => setMenuPeriod("today")}
-                className={`rounded-lg px-3.5 py-1.5 text-xs font-bold transition-all ${
+                className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-all ${
                   menuPeriod === "today"
                     ? isMochi
                       ? "bg-[#0b3d2e] text-[#c8f53a] shadow-xs"
@@ -894,8 +912,23 @@ export default function OwnerDashboardClient({
               </button>
               <button
                 type="button"
+                onClick={() => setMenuPeriod("weekly")}
+                className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-all ${
+                  menuPeriod === "weekly"
+                    ? isMochi
+                      ? "bg-[#0b3d2e] text-[#c8f53a] shadow-xs"
+                      : "bg-white text-[#232331] shadow-ink-xs"
+                    : isMochi
+                    ? "text-[#637970] hover:text-[#0b3d2e]"
+                    : "text-[#7b7b8e] hover:text-[#232331]"
+                }`}
+              >
+                7 Hari (Mingguan)
+              </button>
+              <button
+                type="button"
                 onClick={() => setMenuPeriod("monthly")}
-                className={`rounded-lg px-3.5 py-1.5 text-xs font-bold transition-all ${
+                className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-all ${
                   menuPeriod === "monthly"
                     ? isMochi
                       ? "bg-[#0b3d2e] text-[#c8f53a] shadow-xs"
@@ -905,7 +938,7 @@ export default function OwnerDashboardClient({
                     : "text-[#7b7b8e] hover:text-[#232331]"
                 }`}
               >
-                30 Hari Terakhir
+                30 Hari (Bulanan)
               </button>
             </div>
           </div>
@@ -941,7 +974,11 @@ export default function OwnerDashboardClient({
                       🏆 Menu Paling Laku
                     </h3>
                     <p className={`text-[10px] ${isMochi ? "text-[#167052]" : "text-[#166534]"}`}>
-                      Produk terfavorit & kontributor omzet tertinggi
+                      {menuPeriod === "today"
+                        ? "Produk terfavorit hari ini"
+                        : menuPeriod === "weekly"
+                        ? "Produk terfavorit 7 hari terakhir (Mingguan)"
+                        : "Produk terfavorit 30 hari terakhir (Bulanan)"}
                     </p>
                   </div>
                 </div>
@@ -961,8 +998,8 @@ export default function OwnerDashboardClient({
               >
                 {currentBestSellers.length > 0 ? (
                   currentBestSellers.map((item, index) => {
-                    const qty = menuPeriod === "today" ? item.todayQty : item.monthQty;
-                    const rev = menuPeriod === "today" ? item.todayRevenue : item.monthRevenue;
+                    const qty = getMenuQty(item, menuPeriod);
+                    const rev = getMenuRev(item, menuPeriod);
                     const pct = Math.max(8, Math.round((qty / maxBestSellerQty) * 100));
 
                     const rankBadge =
@@ -1077,15 +1114,22 @@ export default function OwnerDashboardClient({
                     <TrendingDown size={14} />
                   </span>
                   <div>
-                    <h3
-                      className={`text-xs font-black sm:text-sm ${
-                        isMochi ? "text-[#b45309]" : "text-[#c2410c]"
-                      }`}
-                    >
-                      ⚠️ Menu Kurang Laku
-                    </h3>
+                    <div className="flex items-center gap-1.5 sm:gap-2">
+                      <h3
+                        className={`text-xs font-black sm:text-sm ${
+                          isMochi ? "text-[#b45309]" : "text-[#c2410c]"
+                        }`}
+                      >
+                        ⚠️ Menu Kurang Laku
+                      </h3>
+                      <span className="rounded-full bg-amber-100/90 border border-amber-300 text-amber-800 font-mono text-[9px] font-black px-2 py-0.2">
+                        {menuPeriod === "monthly" ? "Evaluasi 30 Hari" : "Evaluasi Mingguan (7 Hari)"}
+                      </span>
+                    </div>
                     <p className={`text-[10px] ${isMochi ? "text-[#9a3412]" : "text-[#9a3412]"}`}>
-                      Perlu evaluasi strategi harga, promo, atau bundling
+                      {menuPeriod === "monthly"
+                        ? "Berdasarkan penjualan 30 hari terakhir · Evaluasi harga, promo, atau bundling"
+                        : "Berdasarkan penjualan 7 hari terakhir · Evaluasi mingguan untuk bundling & promo"}
                     </p>
                   </div>
                 </div>
@@ -1101,7 +1145,7 @@ export default function OwnerDashboardClient({
               >
                 {currentSlowMovers.length > 0 ? (
                   currentSlowMovers.map((item) => {
-                    const qty = menuPeriod === "today" ? item.todayQty : item.monthQty;
+                    const qty = menuPeriod === "monthly" ? item.monthQty : item.weekQty;
                     const isZero = qty === 0;
 
                     return (
@@ -1131,15 +1175,15 @@ export default function OwnerDashboardClient({
                                   : "border-amber-200 bg-amber-50 text-amber-800"
                               }`}
                             >
-                              {qty} terjual
+                              {qty} terjual {menuPeriod === "monthly" ? "(30 hr)" : "(7 hr)"}
                             </span>
                           </div>
                         </div>
                         <div className="mt-1 flex items-center gap-1 text-[9.5px]">
                           <span className="inline-flex items-center rounded-md bg-amber-100/60 px-2 py-0.5 font-medium text-amber-900">
                             {isZero
-                              ? "💡 Belum dipesan: Coba bundling dengan menu best seller atau promo meja"
-                              : "📉 Gerak lambat: Pertimbangkan promo jam sepi atau cek margin harga"}
+                              ? "💡 Belum dipesan 7 hari terakhir: Coba bundling dengan menu best seller atau promo meja"
+                              : `📉 Gerak lambat mingguan (${qty} terjual): Pertimbangkan promo jam sepi atau cek margin harga`}
                           </span>
                         </div>
                       </div>
@@ -1152,7 +1196,7 @@ export default function OwnerDashboardClient({
                         isMochi ? "text-[#637970]" : "text-[#7b7b8e]"
                       }`}
                     >
-                      Semua menu aktif berjalan dengan baik.
+                      Semua menu aktif berjalan dengan baik dalam evaluasi ini.
                     </p>
                   </div>
                 )}

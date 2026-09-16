@@ -5375,6 +5375,18 @@ export const db = {
             AND (o.created_at AT TIME ZONE ${tz})::date = (NOW() AT TIME ZONE ${tz})::date
           GROUP BY oi.menu_item_id
         ),
+        week_sales AS (
+          SELECT 
+            oi.menu_item_id,
+            COALESCE(SUM(oi.qty), 0)::int AS qty,
+            COALESCE(SUM(oi.subtotal), 0)::bigint AS revenue
+          FROM order_items oi
+          JOIN orders o ON o.id = oi.order_id
+          WHERE o.business_id = ${businessId}
+            AND o.status = 'paid'
+            AND o.created_at >= (NOW() - interval '7 days')
+          GROUP BY oi.menu_item_id
+        ),
         month_sales AS (
           SELECT 
             oi.menu_item_id,
@@ -5395,14 +5407,17 @@ export const db = {
           c.name AS category_name,
           COALESCE(ts.qty, 0)::int AS today_qty,
           COALESCE(ts.revenue, 0)::bigint AS today_revenue,
+          COALESCE(ws.qty, 0)::int AS week_qty,
+          COALESCE(ws.revenue, 0)::bigint AS week_revenue,
           COALESCE(ms.qty, 0)::int AS month_qty,
           COALESCE(ms.revenue, 0)::bigint AS month_revenue
         FROM menu_items m
         LEFT JOIN categories c ON c.id = m.category_id
         LEFT JOIN today_sales ts ON ts.menu_item_id = m.id
+        LEFT JOIN week_sales ws ON ws.menu_item_id = m.id
         LEFT JOIN month_sales ms ON ms.menu_item_id = m.id
         WHERE m.business_id = ${businessId}
-        ORDER BY month_qty DESC, m.name ASC
+        ORDER BY week_qty DESC, month_qty DESC, m.name ASC
       `,
     ]);
 
@@ -5419,6 +5434,8 @@ export const db = {
       isAvailable: Boolean(row.is_available),
       todayQty: num(row.today_qty),
       todayRevenue: num(row.today_revenue),
+      weekQty: num(row.week_qty),
+      weekRevenue: num(row.week_revenue),
       monthQty: num(row.month_qty),
       monthRevenue: num(row.month_revenue),
     }));
@@ -5428,7 +5445,15 @@ export const db = {
     const todayBestSellers = todaySorted.filter((item) => item.todayQty > 0).slice(0, 8);
     const todaySlowMovers = [...mappedMenuItems]
       .filter((item) => item.isAvailable)
-      .sort((a, b) => a.todayQty - b.todayQty || a.monthQty - b.monthQty)
+      .sort((a, b) => a.todayQty - b.todayQty || a.weekQty - b.weekQty || a.price - b.price)
+      .slice(0, 8);
+
+    // Best sellers & slow movers for 7 DAYS (WEEKLY - EVALUASI MINGGUAN)
+    const weekSorted = [...mappedMenuItems].sort((a, b) => b.weekQty - a.weekQty || b.weekRevenue - a.weekRevenue);
+    const weekBestSellers = weekSorted.filter((item) => item.weekQty > 0).slice(0, 8);
+    const weekSlowMovers = [...mappedMenuItems]
+      .filter((item) => item.isAvailable)
+      .sort((a, b) => a.weekQty - b.weekQty || a.monthQty - b.monthQty || a.price - b.price)
       .slice(0, 8);
 
     // Best sellers & slow movers for 30 DAYS (MONTHLY)
@@ -5436,7 +5461,7 @@ export const db = {
     const monthBestSellers = monthSorted.filter((item) => item.monthQty > 0).slice(0, 8);
     const monthSlowMovers = [...mappedMenuItems]
       .filter((item) => item.isAvailable)
-      .sort((a, b) => a.monthQty - b.monthQty || a.price - b.price)
+      .sort((a, b) => a.monthQty - b.monthQty || a.weekQty - b.weekQty || a.price - b.price)
       .slice(0, 8);
 
     return {
@@ -5478,7 +5503,11 @@ export const db = {
         totalMenuItems: mappedMenuItems.length,
         today: {
           bestSellers: todayBestSellers,
-          slowMovers: todaySlowMovers,
+          slowMovers: weekSlowMovers, // Evaluasi mingguan untuk menu kurang laku
+        },
+        weekly: {
+          bestSellers: weekBestSellers,
+          slowMovers: weekSlowMovers,
         },
         monthly: {
           bestSellers: monthBestSellers,
