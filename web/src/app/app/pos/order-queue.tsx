@@ -1,12 +1,25 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { X, Check, Ban, Loader2, Clock, AlertTriangle, ChefHat, MessageSquare, Printer } from "lucide-react";
+import {
+  X,
+  Check,
+  Ban,
+  Loader2,
+  Clock,
+  AlertTriangle,
+  ChefHat,
+  MessageSquare,
+  Printer,
+  CheckCircle2,
+  Trash2,
+} from "lucide-react";
 
 import {
   confirmPaymentAction,
   markPaymentFailedAction,
+  cancelOrderAction,
   setFulfillmentAction,
 } from "@/lib/actions";
 import {
@@ -22,18 +35,13 @@ type Antrean = Order & { items: OrderItem[] };
 /**
  * Antrean pesanan swalayan di layar kasir.
  *
- * Sebelumnya bagian ini hanya berupa lencana berisi angka yang, ketika ditekan,
- * memunculkan alert(). Tidak ada satu pun layar untuk benar-benar melihat
- * pesanannya, apalagi memprosesnya — jadi pesanan dari meja praktis tidak
- * pernah sampai ke kasir.
- *
- * Kasir TIDAK memilih metode pembayaran di sini. Pelanggan sudah memilihnya
- * sendiri dari HP-nya, dan menanyakannya ulang berarti meminta orang yang sama
- * membayar dua kali. Yang dikerjakan kasir cuma satu hal yang memang tidak bisa
- * diketahui sistem: apakah uangnya sudah benar-benar masuk.
+ * Mengelola pesanan yang baru masuk dari meja (QRIS / Tunai).
+ * Pesanan yang sudah selesai (completed) atau dibatalkan (cancelled)
+ * otomatis bersih seketika dari antrean aktif.
  */
 export default function OrderQueue({
   orders,
+  onOrdersChange,
   onClose,
   isMochi,
   onPrintKitchenTicket,
@@ -42,6 +50,7 @@ export default function OrderQueue({
   onToggleAutoPrintThreePly,
 }: {
   orders: Antrean[];
+  onOrdersChange?: (orders: Antrean[]) => void;
   onClose: () => void;
   isMochi?: boolean;
   onPrintKitchenTicket?: (order: Antrean) => void;
@@ -59,8 +68,24 @@ export default function OrderQueue({
   onToggleAutoPrintThreePly?: (val: boolean) => void;
 }) {
   const router = useRouter();
+  const [localOrders, setLocalOrders] = useState<Antrean[]>(orders);
   const [sibuk, setSibuk] = useState<string | null>(null);
   const [galat, setGalat] = useState<string | null>(null);
+
+  useEffect(() => {
+    setLocalOrders(orders);
+  }, [orders]);
+
+  // Antrean aktif: belum berstatus selesai (completed) dan belum dibatalkan (cancelled/failed)
+  const activeOrders = useMemo(() => {
+    return localOrders.filter(
+      (o) =>
+        o.status !== "cancelled" &&
+        o.payment_status !== "failed" &&
+        o.fulfillment_status !== "completed" &&
+        o.fulfillment_status !== "cancelled",
+    );
+  }, [localOrders]);
 
   const jalankan = async (id: string, fn: () => Promise<{ ok: boolean; error?: string }>) => {
     setSibuk(id);
@@ -72,6 +97,54 @@ export default function OrderQueue({
       return;
     }
     router.refresh();
+  };
+
+  // Selesaikan pesanan & langsung bersihkan dari antrean (optimistic)
+  const selesaikanPesanan = async (orderId: string) => {
+    const sisa = localOrders.filter((o) => o.id !== orderId);
+    setLocalOrders(sisa);
+    if (onOrdersChange) onOrdersChange(sisa);
+
+    await jalankan(orderId, () => setFulfillmentAction(orderId, "completed"));
+  };
+
+  // Batalkan pesanan & hapus dari antrean (baik belum bayar maupun salah input)
+  const batalkanPesanan = async (orderId: string, orderNo: string, isPaid: boolean) => {
+    const konfirmasi = window.confirm(
+      `Yakin ingin membatalkan dan menghapus pesanan #${orderNo} dari antrean?`,
+    );
+    if (!konfirmasi) return;
+
+    const sisa = localOrders.filter((o) => o.id !== orderId);
+    setLocalOrders(sisa);
+    if (onOrdersChange) onOrdersChange(sisa);
+
+    if (isPaid) {
+      await jalankan(orderId, () =>
+        cancelOrderAction(orderId, "Dibatalkan kasir dari antrean pesanan masuk"),
+      );
+    } else {
+      await jalankan(orderId, () => markPaymentFailedAction(orderId));
+    }
+  };
+
+  // Update status dapur secara bertahap (Diterima -> Disiapkan -> Siap -> Selesai)
+  const updateFulfillment = async (
+    orderId: string,
+    status: "accepted" | "preparing" | "ready" | "completed",
+  ) => {
+    if (status === "completed") {
+      await selesaikanPesanan(orderId);
+      return;
+    }
+
+    const updated = localOrders.map((o) =>
+      o.id === orderId ? { ...o, fulfillment_status: status } : o,
+    );
+    setLocalOrders(updated);
+    if (onOrdersChange) onOrdersChange(updated);
+
+    await jalankan(orderId, () => setFulfillmentAction(orderId, status));
   };
 
   const forwardToWhatsapp = (order: Antrean) => {
@@ -95,8 +168,8 @@ export default function OrderQueue({
     window.open(url, "_blank");
   };
 
-  const menunggu = orders.filter((o) => o.payment_status === "pending");
-  const diproses = orders.filter((o) => o.payment_status === "paid");
+  const menunggu = activeOrders.filter((o) => o.payment_status === "pending");
+  const diproses = activeOrders.filter((o) => o.payment_status === "paid");
 
   return (
     <div className={`fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 backdrop-blur-xs ${
@@ -151,18 +224,32 @@ export default function OrderQueue({
             </div>
           )}
 
-          {orders.length === 0 && (
-            <div className={`rounded-2xl border-2 border-dashed p-10 text-center ${
+          {activeOrders.length === 0 && (
+            <div className={`rounded-2xl border-2 border-dashed p-8 text-center space-y-3 ${
               isMochi ? "border-[#ccd9d3] bg-[#f8faf9]" : "border-[#c9c9d4]"
             }`}>
-              <Clock size={26} className={`mx-auto ${isMochi ? "text-[#8fa399]" : "text-[#c9c9d4]"}`} />
-              <p className="font-mono text-xs text-[#7b8882] mt-2">
-                Belum ada pesanan masuk dari meja.
-              </p>
+              <CheckCircle2 size={32} className={`mx-auto ${isMochi ? "text-emerald-600" : "text-[#16a34a]"}`} />
+              <div>
+                <p className={`font-black text-sm ${isMochi ? "text-[#0b3d2e]" : "text-[#232331]"}`}>
+                  Semua Pesanan Selesai!
+                </p>
+                <p className="font-mono text-xs text-[#7b8882] mt-1">
+                  Tidak ada antrean pesanan aktif yang perlu diproses saat ini.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={onClose}
+                className={`inline-flex items-center gap-1.5 rounded-xl px-4 py-2 font-mono text-xs font-black transition-all ${
+                  isMochi ? "bg-[#c8f53a] hover:bg-[#d9ff57] text-[#073829]" : "bg-[#232331] text-white"
+                }`}
+              >
+                Tutup Antrean
+              </button>
             </div>
           )}
 
-          {orders.map((o) => {
+          {activeOrders.map((o) => {
             const isQris = o.payment_method === "qris";
             const menungguBayar = o.payment_status === "pending";
             const busy = sibuk === o.id;
@@ -263,7 +350,7 @@ export default function OrderQueue({
                           <button
                             type="button"
                             disabled={busy}
-                            onClick={() => jalankan(o.id, () => markPaymentFailedAction(o.id))}
+                            onClick={() => batalkanPesanan(o.id, o.order_no, false)}
                             className="font-bold text-rose-600 hover:underline flex items-center gap-1"
                           >
                             <Ban size={12} />
@@ -309,7 +396,7 @@ export default function OrderQueue({
                           <div className="space-y-1.5">
                             <div className="flex items-center gap-1.5 font-mono text-[11px] font-bold text-[#16a34a]">
                               <ChefHat size={13} className={isMochi ? "text-[#167052]" : "text-[#7958d8]"} />
-                              <span>Dapur / Barista: {o.fulfillment_status.toUpperCase()}</span>
+                              <span>Dapur / Barista: {o.fulfillment_status?.toUpperCase()}</span>
                             </div>
                             <div className="flex flex-wrap gap-1.5">
                               {FULFILLMENT_FLOW.map((f) => (
@@ -317,7 +404,7 @@ export default function OrderQueue({
                                   key={f.key}
                                   type="button"
                                   disabled={busy}
-                                  onClick={() => jalankan(o.id, () => setFulfillmentAction(o.id, f.key))}
+                                  onClick={() => updateFulfillment(o.id, f.key)}
                                   className={`rounded-lg border px-2 py-1 font-mono text-[10.5px] font-bold disabled:opacity-50 transition-colors ${
                                     o.fulfillment_status === f.key
                                       ? (isMochi ? "border-[#0b3d2e] bg-[#0b3d2e] text-[#c8f53a]" : "border-[#232331] bg-[#232331] text-[#d9ff57]")
@@ -355,7 +442,7 @@ export default function OrderQueue({
                           <button
                             type="button"
                             disabled={busy}
-                            onClick={() => jalankan(o.id, () => markPaymentFailedAction(o.id))}
+                            onClick={() => batalkanPesanan(o.id, o.order_no, false)}
                             className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-2 font-mono text-xs font-bold disabled:opacity-50 ${
                               isMochi
                                 ? "border border-rose-200 bg-white text-rose-700 hover:bg-rose-50"
@@ -370,21 +457,28 @@ export default function OrderQueue({
                     )}
                   </div>
                 ) : (
-                  <div className={`space-y-2 border-t pt-2.5 ${isMochi ? "border-[#e0ebe5]" : "border-[#dedee8]"}`}>
-                    <div className="flex items-center gap-1.5 font-mono text-[11px] font-bold text-[#16a34a]">
-                      <Check size={12} />
-                      {PAYMENT_STATUS_LABEL[o.payment_status]}
-                      {o.paid_confirmed_at ? " · dikonfirmasi kasir" : ""}
+                  <div className={`space-y-2.5 border-t pt-2.5 ${isMochi ? "border-[#e0ebe5]" : "border-[#dedee8]"}`}>
+                    <div className="flex items-center justify-between font-mono text-[11px]">
+                      <div className="flex items-center gap-1.5 font-bold text-[#16a34a]">
+                        <Check size={12} />
+                        <span>{PAYMENT_STATUS_LABEL[o.payment_status]}</span>
+                        {o.paid_confirmed_at ? <span>· dikonfirmasi kasir</span> : ""}
+                      </div>
+                      <span className="font-bold text-[#55695f]">{serviceTypeLabel(o.service_type, o.table_no)}</span>
                     </div>
-                    <div className="flex items-center gap-1.5">
-                      <ChefHat size={13} className={`shrink-0 ${isMochi ? "text-[#167052]" : "text-[#7958d8]"}`} />
+
+                    <div className="space-y-1.5">
+                      <div className="flex items-center gap-1.5 font-mono text-[11px] font-bold text-[#16a34a]">
+                        <ChefHat size={13} className={isMochi ? "text-[#167052]" : "text-[#7958d8]"} />
+                        <span>Dapur / Barista: {o.fulfillment_status?.toUpperCase()}</span>
+                      </div>
                       <div className="flex flex-wrap gap-1.5">
                         {FULFILLMENT_FLOW.map((f) => (
                           <button
                             key={f.key}
                             type="button"
                             disabled={busy}
-                            onClick={() => jalankan(o.id, () => setFulfillmentAction(o.id, f.key))}
+                            onClick={() => updateFulfillment(o.id, f.key)}
                             className={`rounded-lg border px-2 py-1 font-mono text-[10.5px] font-bold disabled:opacity-50 transition-colors ${
                               o.fulfillment_status === f.key
                                 ? (isMochi ? "border-[#0b3d2e] bg-[#0b3d2e] text-[#c8f53a]" : "border-[#232331] bg-[#232331] text-[#d9ff57]")
@@ -395,6 +489,35 @@ export default function OrderQueue({
                           </button>
                         ))}
                       </div>
+                    </div>
+
+                    {/* Tombol Aksi Kasir: Selesai & Bersihkan dari Antrean + Batal / Hapus */}
+                    <div className="flex items-center gap-2 pt-1 border-t border-[#e0ebe5]">
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => selesaikanPesanan(o.id)}
+                        className={`flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl py-2.5 px-3 font-mono text-xs font-black transition-all shadow-xs ${
+                          isMochi
+                            ? "bg-[#0b3d2e] hover:bg-[#124d3a] text-[#c8f53a]"
+                            : "bg-[#16a34a] hover:bg-[#15803d] text-white"
+                        }`}
+                        title="Tandai pesanan selesai disajikan dan bersihkan dari antrean"
+                      >
+                        {busy ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={14} />}
+                        <span>✓ Selesai & Hapus dari Antrean</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => batalkanPesanan(o.id, o.order_no, true)}
+                        className="inline-flex items-center justify-center gap-1 rounded-xl border border-rose-200 bg-rose-50/70 hover:bg-rose-100 text-rose-700 px-3 py-2 font-mono text-xs font-bold transition-colors"
+                        title="Batalkan / Hapus pesanan ini dari antrean"
+                      >
+                        <Trash2 size={13} />
+                        <span>Batal</span>
+                      </button>
                     </div>
                   </div>
                 )}

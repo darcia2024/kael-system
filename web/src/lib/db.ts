@@ -4889,6 +4889,38 @@ export const db = {
   },
 
   /**
+   * Pembatalan pesanan dari antrean kasir (baik belum bayar maupun salah input).
+   */
+  async cancelOrder(
+    orderId: string,
+    businessId: string,
+    reason?: string,
+    userId?: string,
+  ): Promise<Order | null> {
+    const updated = one<Order>(
+      await sql`
+      UPDATE orders SET
+        fulfillment_status = 'cancelled',
+        status = 'cancelled',
+        payment_status = CASE WHEN payment_status = 'pending' THEN 'failed' ELSE payment_status END
+      WHERE id = ${orderId} AND business_id = ${businessId}
+      RETURNING *
+    `,
+    );
+    if (updated && userId) {
+      await this.recordAuditEvent({
+        businessId,
+        actorUserId: userId,
+        action: "pos.order_cancelled",
+        entityType: "order",
+        entityId: orderId,
+        metadata: { reason: reason ?? "Dibatalkan kasir dari antrean" },
+      });
+    }
+    return updated;
+  },
+
+  /**
    * Kemajuan dapur. Hanya untuk pesanan yang SUDAH lunas: memasak sesuatu yang
    * belum dibayar adalah keputusan bisnis, bukan keadaan yang boleh terjadi
    * karena kasir salah tekan.

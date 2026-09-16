@@ -1896,6 +1896,23 @@ export async function markPaymentFailedAction(
   return done(null);
 }
 
+export async function cancelOrderAction(
+  orderId: string,
+  reason?: string,
+): Promise<ActionResult<null>> {
+  const { businessId, userId } = await requirePermission("pos");
+  const locked = await moduleLock(businessId, "pos", "write");
+  if (locked) return fail(locked);
+
+  const order = await db.cancelOrder(orderId, businessId, reason, userId);
+  if (!order) return fail("Pesanan tidak ditemukan.");
+
+  revalidatePath("/app/pos");
+  revalidatePath("/app/pos/station");
+  revalidatePath("/app/pos/kitchen");
+  return done(null);
+}
+
 /** Kemajuan dapur. Hanya untuk pesanan yang sudah lunas. */
 export async function setFulfillmentAction(
   orderId: string,

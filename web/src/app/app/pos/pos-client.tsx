@@ -2196,6 +2196,7 @@ export default function PosClient({
       {showQueue && (
         <OrderQueue
           orders={currentQrOrders}
+          onOrdersChange={setCurrentQrOrders}
           onClose={() => setShowQueue(false)}
           isMochi={isMochiPos}
           onPrintKitchenTicket={handlePrintKitchenTicketFromQueue}
