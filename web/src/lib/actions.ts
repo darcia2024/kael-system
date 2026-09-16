@@ -2220,6 +2220,7 @@ export async function saveMenuItemAction(input: {
   id?: string;
   name: string;
   price: number;
+  costPrice?: number;
   categoryId?: string | null;
   description?: string;
   photoUrl?: string;
@@ -2240,6 +2241,12 @@ export async function saveMenuItemAction(input: {
     return fail("Harga tidak valid.");
   if (input.price > 100_000_000) return fail("Harga terlalu besar.");
 
+  const costPrice =
+    input.costPrice !== undefined && input.costPrice !== null
+      ? Math.max(0, Math.round(Number(input.costPrice) || 0))
+      : 0;
+  if (costPrice > 100_000_000) return fail("Modal / HPP terlalu besar.");
+
   const description = input.description?.trim() || null;
   if (description && description.length > 300)
     return fail("Deskripsi maksimal 300 karakter.");
@@ -2253,6 +2260,7 @@ export async function saveMenuItemAction(input: {
     id: input.id,
     name,
     price: Math.round(input.price),
+    cost_price: costPrice,
     category_id: input.categoryId ?? null,
     description,
     photo_url: photoUrl,

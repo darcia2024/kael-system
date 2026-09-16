@@ -3884,9 +3884,15 @@ export const db = {
   },
 
   async getMenuItems(businessId: string): Promise<MenuItem[]> {
-    return (await sql`
+    const rows = await sql`
       SELECT * FROM menu_items WHERE business_id = ${businessId} ORDER BY sort_order, name
-    `) as unknown as MenuItem[];
+    `;
+    return rows.map((r: any) => ({
+      ...r,
+      price: Number(r.price) || 0,
+      cost_price: Number(r.cost_price) || 0,
+      sort_order: Number(r.sort_order) || 0,
+    })) as unknown as MenuItem[];
   },
 
   async updateMenuItemAvailability(
@@ -3916,6 +3922,7 @@ export const db = {
       category_id: data.category_id || null,
       name: data.name!,
       price: data.price ?? 0,
+      cost_price: data.cost_price ?? 0,
       description: data.description ?? null,
       photo_url: data.photo_url ?? null,
       is_available: data.is_available ?? true,
@@ -5203,6 +5210,7 @@ export const db = {
      * yang sudah dibuat owner. Jangan ditampilkan sebagai laba final.
      */
     const menuItems = await this.getMenuItems(businessId);
+    const menuItemMap = new Map(menuItems.map((m) => [m.id, m]));
     const recipeByMenu = new Map(
       menuItems
         .filter((m) => m.recipe_id)
@@ -5217,11 +5225,15 @@ export const db = {
       );
     }
 
-    /** HPP per item terjual. 0 kalau menunya belum dipetakan ke resep. */
+    /** HPP per item terjual. Diambil dari resep bahan KAEL Finance atau modal pokok (cost_price) menu. */
     const hppForMenuItem = (menuItemId: string): number => {
-      const recipeId = recipeByMenu.get(menuItemId);
-      if (!recipeId) return 0;
-      return hppByRecipe.get(recipeId) ?? 0;
+      const item = menuItemMap.get(menuItemId);
+      if (!item) return 0;
+      if (item.recipe_id && hppByRecipe.has(item.recipe_id)) {
+        const recipeHpp = hppByRecipe.get(item.recipe_id) ?? 0;
+        if (recipeHpp > 0) return recipeHpp;
+      }
+      return Number(item.cost_price) || 0;
     };
 
     let totalEstimatedHpp = 0;

@@ -528,6 +528,8 @@ export interface MenuItem {
   category_id: string | null;
   name: string;
   price: number;
+  /** Modal pokok atau HPP per unit/porsi menu (Rp). Digunakan untuk menghitung estimasi laba kotor. */
+  cost_price?: number;
   /** Penjelasan singkat di halaman pesan. NULL kalau menunya tidak butuh. */
   description?: string | null;
   photo_url?: string | null;

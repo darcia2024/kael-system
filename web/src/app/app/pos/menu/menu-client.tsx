@@ -20,6 +20,9 @@ import {
   Camera,
   CheckCircle2,
   AlertCircle,
+  TrendingUp,
+  Coins,
+  Calculator,
 } from "lucide-react";
 
 import {
@@ -62,6 +65,7 @@ type Draf = {
   id?: string;
   name: string;
   price: string;
+  costPrice: string;
   categoryId: string;
   description: string;
   photoUrl: string;
@@ -72,6 +76,7 @@ type Draf = {
 const DRAF_KOSONG: Draf = {
   name: "",
   price: "",
+  costPrice: "",
   categoryId: "",
   description: "",
   photoUrl: "",
@@ -89,11 +94,19 @@ export default function MenuClient({
   business?: Business | null;
   categories: Category[];
   menuItems: MenuItem[];
-  recipes: { id: string; name: string }[];
+  recipes: { id: string; name: string; hpp?: number }[];
   themeClassName?: string;
 }) {
   const isMochi = isMochiBusiness(business);
   const router = useRouter();
+
+  const recipeMap = useMemo(() => {
+    const map = new Map<string, { id: string; name: string; hpp?: number }>();
+    for (const r of recipes) {
+      map.set(r.id, r);
+    }
+    return map;
+  }, [recipes]);
 
   // State sinkron lokal untuk responsivitas instan
   const [daftarKategori, setDaftarKategori] = useState<Category[]>(categories);
@@ -183,6 +196,7 @@ export default function MenuClient({
 
     const namaBersih = draf.name.trim();
     const harga = Number(draf.price.replace(/[^\d]/g, ""));
+    const modal = Number(draf.costPrice.replace(/[^\d]/g, "")) || 0;
 
     if (!namaBersih) {
       setGalat("Nama menu belum diisi.");
@@ -199,6 +213,7 @@ export default function MenuClient({
       id: draf.id,
       name: namaBersih,
       price: harga,
+      costPrice: modal,
       categoryId: draf.categoryId || null,
       description: draf.description,
       photoUrl: draf.photoUrl,
@@ -742,9 +757,43 @@ export default function MenuClient({
                   <p className={`mt-0.5 truncate text-sm font-black ${isMochi ? "text-[#0b3d2e]" : "text-[#232331]"}`}>
                     {m.name}
                   </p>
-                  <p className={`font-mono text-xs font-black ${isMochi ? "text-[#167052]" : "text-[#15803d]"}`}>
-                    {rupiah(m.price)}
-                  </p>
+                  <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+                    <span className={`font-mono text-xs font-black ${isMochi ? "text-[#167052]" : "text-[#15803d]"}`}>
+                      {rupiah(m.price)}
+                    </span>
+                    {(() => {
+                      const modal =
+                        m.cost_price && m.cost_price > 0
+                          ? m.cost_price
+                          : m.recipe_id
+                          ? recipeMap.get(m.recipe_id)?.hpp ?? 0
+                          : 0;
+                      if (modal > 0 && m.price > 0) {
+                        const laba = m.price - modal;
+                        const margin = Math.round((laba / m.price) * 100);
+                        const isLaba = laba >= 0;
+                        return (
+                          <span
+                            className={`inline-flex items-center gap-1 font-mono text-[9.5px] font-bold px-1.5 py-0.5 rounded-md ${
+                              !isLaba
+                                ? "bg-rose-100 text-rose-700 border border-rose-200"
+                                : margin >= 50
+                                ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                                : margin >= 30
+                                ? "bg-teal-100 text-teal-800 border border-teal-200"
+                                : "bg-amber-100 text-amber-800 border border-amber-200"
+                            }`}
+                            title={`Modal / HPP Pokok: ${rupiah(modal)} | Estimasi Laba: ${isLaba ? "+" : ""}${rupiah(laba)} per porsi`}
+                          >
+                            <span>HPP {rupiah(modal)}</span>
+                            <span>•</span>
+                            <span>{isLaba ? `+${rupiah(laba)}` : `-${rupiah(Math.abs(laba))}`} ({margin}%)</span>
+                          </span>
+                        );
+                      }
+                      return null;
+                    })()}
+                  </div>
                   {m.description && (
                     <p className={`truncate text-[11px] ${isMochi ? "text-[#637970]" : "text-[#7b7b8e]"}`}>
                       {m.description}
@@ -763,6 +812,7 @@ export default function MenuClient({
                         id: m.id,
                         name: m.name,
                         price: formatRibuan(m.price),
+                        costPrice: m.cost_price ? formatRibuan(m.cost_price) : "",
                         categoryId: m.category_id ?? "",
                         description: m.description ?? "",
                         photoUrl: m.photo_url ?? "",
@@ -878,9 +928,9 @@ export default function MenuClient({
                 />
               </div>
 
-              {/* Harga Jual (Rp) & Kategori */}
+              {/* Row 1: Harga Jual (Rp) & Modal / HPP Pokok (Rp) */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {/* Input Harga */}
+                {/* Input Harga Jual */}
                 <div>
                   <div className="flex items-center justify-between">
                     <label className="block text-xs font-bold text-[#0b3d2e]">
@@ -906,84 +956,213 @@ export default function MenuClient({
                     }`}
                   />
 
-                  {/* Chip Rekomendasi Harga Cepat */}
-                  <div className="flex items-center gap-1 overflow-x-auto pt-1.5 scrollbar-none">
-                    <span className="text-[9px] font-bold text-[#637970] shrink-0">Cepat:</span>
-                    {CHIP_HARGA_CEPAT.map((chip) => (
-                      <button
-                        key={chip.nilai}
-                        type="button"
-                        onClick={() =>
-                          setDraf({ ...draf, price: formatRibuan(chip.nilai) })
-                        }
-                        className="shrink-0 rounded-md bg-[#edf5f1] hover:bg-emerald-200/80 px-1.5 py-0.5 text-[9.5px] font-mono font-bold text-[#0b3d2e] transition-colors"
-                      >
-                        {chip.label}
-                      </button>
-                    ))}
+                    {/* Chip Rekomendasi Harga Cepat */}
+                    <div className="flex items-center gap-1 overflow-x-auto pt-1.5 scrollbar-none">
+                      <span className="text-[9px] font-bold text-[#637970] shrink-0">Cepat:</span>
+                      {CHIP_HARGA_CEPAT.map((chip) => (
+                        <button
+                          key={chip.nilai}
+                          type="button"
+                          onClick={() =>
+                            setDraf({ ...draf, price: formatRibuan(chip.nilai) })
+                          }
+                          className="shrink-0 rounded-md bg-[#edf5f1] hover:bg-emerald-200/80 px-1.5 py-0.5 text-[9.5px] font-mono font-bold text-[#0b3d2e] transition-colors"
+                        >
+                          {chip.label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                </div>
 
-                {/* Dropdown Kategori + Tombol Inline Tambah Kategori */}
-                <div>
+                  {/* Input Modal / HPP Pokok */}
+                  <div>
                   <div className="flex items-center justify-between">
                     <label className="block text-xs font-bold text-[#0b3d2e]">
-                      Kategori <span className="text-rose-600">*</span>
+                      Modal / HPP per Porsi <span className="font-normal text-[#637970]">(opsional)</span>
                     </label>
-                    <button
-                      type="button"
-                      onClick={() => setBukaTambahKategoriModal(!bukaTambahKategoriModal)}
-                      className="text-[10.5px] font-bold text-[#167052] hover:text-[#0b3d2e] underline flex items-center gap-0.5"
-                    >
-                      <Plus size={12} />
-                      <span>{bukaTambahKategoriModal ? "Tutup" : "Kategori Baru"}</span>
-                    </button>
+                    {draf.costPrice && (
+                      <span className="font-mono text-[10.5px] font-extrabold text-[#0b3d2e]">
+                        {rupiah(Number(draf.costPrice.replace(/[^\d]/g, "")))}
+                      </span>
+                    )}
                   </div>
+                  <input
+                    value={draf.costPrice}
+                    onChange={(e) =>
+                      setDraf({ ...draf, costPrice: formatRibuan(e.target.value) })
+                    }
+                    inputMode="numeric"
+                    placeholder="Contoh: 9.500"
+                    className={`mt-1.5 w-full rounded-xl px-3.5 py-2.5 font-mono text-sm font-bold transition-all ${
+                      isMochi
+                        ? "border border-[#d8e3de] bg-[#f8faf9] text-[#0b3d2e] focus:border-[#0b3d2e] focus:bg-white focus:outline-none"
+                        : "border-2 border-[#232331]"
+                    }`}
+                  />
 
-                  {bukaTambahKategoriModal ? (
-                    <div className="mt-1.5 rounded-xl border border-emerald-300 bg-emerald-50/70 p-2 space-y-1.5 animate-in fade-in-50">
-                      <p className="text-[10px] font-bold text-[#0b3d2e]">Buat Kategori Baru Langsung:</p>
-                      <div className="flex gap-1.5">
-                        <input
-                          value={namaKategoriBaruModal}
-                          onChange={(e) => setNamaKategoriBaruModal(e.target.value)}
-                          onKeyDown={(e) => e.key === "Enter" && simpanKategoriInline()}
-                          placeholder="Nama kategori baru..."
-                          className="min-w-0 flex-1 rounded-lg border border-[#d8e3de] bg-white px-2.5 py-1.5 text-xs text-[#0b3d2e] focus:outline-none"
-                        />
-                        <button
-                          type="button"
-                          onClick={simpanKategoriInline}
-                          disabled={sedangSimpanKategoriInline || !namaKategoriBaruModal.trim()}
-                          className="rounded-lg bg-[#0b3d2e] px-2.5 py-1.5 text-xs font-black text-[#c8f53a] hover:bg-[#167052] disabled:opacity-50 transition-all"
+                  {/* Helper text / quick sync with linked recipe */}
+                  <div className="pt-1.5">
+                    {draf.recipeId && recipeMap.get(draf.recipeId)?.hpp ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const rHpp = recipeMap.get(draf.recipeId)?.hpp || 0;
+                          setDraf({ ...draf, costPrice: formatRibuan(rHpp) });
+                        }}
+                        className="inline-flex items-center gap-1 text-[9.5px] font-bold text-[#167052] hover:text-[#0b3d2e] underline"
+                      >
+                        <Sparkles size={11} />
+                        <span>Gunakan HPP Resep ({rupiah(recipeMap.get(draf.recipeId)?.hpp || 0)})</span>
+                      </button>
+                    ) : (
+                      <p className="text-[9.5px] text-[#637970] truncate">
+                        Biaya modal bahan per porsi
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Realtime Live Profit & Margin Preview Box */}
+              {(() => {
+                const hargaVal = Number(draf.price.replace(/[^\d]/g, "")) || 0;
+                const modalVal = Number(draf.costPrice.replace(/[^\d]/g, "")) || 0;
+                if (hargaVal <= 0 && modalVal <= 0) return null;
+
+                const labaKotor = hargaVal - modalVal;
+                const marginPct = hargaVal > 0 ? (labaKotor / hargaVal) * 100 : 0;
+                const marginRounded = Math.round(marginPct * 10) / 10;
+
+                return (
+                  <div className="rounded-2xl border border-emerald-200/90 bg-[#f3f8f5] p-3.5 space-y-2 animate-in fade-in-50">
+                    <div className="flex items-center justify-between flex-wrap gap-1">
+                      <span className="text-[11px] font-black text-[#0b3d2e] flex items-center gap-1.5">
+                        <TrendingUp size={14} className="text-[#167052]" />
+                        Kalkulasi Laba & Margin Produk
+                      </span>
+                      {modalVal > 0 ? (
+                        <span
+                          className={`text-[9.5px] font-extrabold px-2 py-0.5 rounded-full ${
+                            labaKotor < 0
+                              ? "bg-rose-100 text-rose-800 border border-rose-200"
+                              : marginPct >= 50
+                              ? "bg-emerald-200/90 text-emerald-900 border border-emerald-300"
+                              : marginPct >= 30
+                              ? "bg-teal-100 text-teal-900 border border-teal-200"
+                              : "bg-amber-100 text-amber-900 border border-amber-200"
+                          }`}
                         >
-                          {sedangSimpanKategoriInline ? (
-                            <Loader2 size={12} className="animate-spin" />
-                          ) : (
-                            "Simpan"
-                          )}
-                        </button>
+                          {labaKotor < 0
+                            ? "⚠️ Rugi Operasional"
+                            : marginPct >= 50
+                            ? "✓ Margin Sehat (Ideal)"
+                            : marginPct >= 30
+                            ? "✓ Margin Standar F&B"
+                            : "⚠️ Margin Tipis"}
+                        </span>
+                      ) : (
+                        <span className="text-[9.5px] text-[#637970]">
+                          (Modal belum diisi • 100% omzet bruto)
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 pt-1.5 border-t border-emerald-200/60">
+                      <div>
+                        <p className="text-[10px] text-[#637970]">Estimasi Laba Kotor:</p>
+                        <p
+                          className={`font-mono text-sm font-black ${
+                            labaKotor >= 0 ? "text-[#167052]" : "text-rose-600"
+                          }`}
+                        >
+                          {labaKotor >= 0
+                            ? `+${rupiah(labaKotor)}`
+                            : `-${rupiah(Math.abs(labaKotor))}`}
+                          <span className="text-[10px] font-normal text-[#637970] ml-1">
+                            / porsi
+                          </span>
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-[#637970]">Margin Keuntungan:</p>
+                        <p
+                          className={`font-mono text-sm font-black ${
+                            modalVal <= 0
+                              ? "text-[#637970]"
+                              : marginPct >= 30
+                              ? "text-[#0b3d2e]"
+                              : labaKotor < 0
+                              ? "text-rose-600"
+                              : "text-amber-700"
+                          }`}
+                        >
+                          {modalVal > 0 ? `${marginRounded}%` : "-"}
+                        </p>
                       </div>
                     </div>
-                  ) : (
-                    <select
-                      value={draf.categoryId}
-                      onChange={(e) => setDraf({ ...draf, categoryId: e.target.value })}
-                      className={`mt-1.5 w-full rounded-xl px-3.5 py-2.5 text-sm font-semibold transition-all ${
-                        isMochi
-                          ? "border border-[#d8e3de] bg-[#f8faf9] text-[#0b3d2e] focus:border-[#0b3d2e] focus:bg-white focus:outline-none"
-                          : "border-2 border-[#232331]"
-                      }`}
-                    >
-                      <option value="">-- Pilih Kategori --</option>
-                      {daftarKategori.map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.name}
-                        </option>
-                      ))}
-                    </select>
-                  )}
+                  </div>
+                );
+              })()}
+
+              {/* Dropdown Kategori + Tombol Inline Tambah Kategori */}
+              <div>
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-bold text-[#0b3d2e]">
+                    Kategori <span className="text-rose-600">*</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setBukaTambahKategoriModal(!bukaTambahKategoriModal)}
+                    className="text-[10.5px] font-bold text-[#167052] hover:text-[#0b3d2e] underline flex items-center gap-0.5"
+                  >
+                    <Plus size={12} />
+                    <span>{bukaTambahKategoriModal ? "Tutup" : "Kategori Baru"}</span>
+                  </button>
                 </div>
+
+                {bukaTambahKategoriModal ? (
+                  <div className="mt-1.5 rounded-xl border border-emerald-300 bg-emerald-50/70 p-2 space-y-1.5 animate-in fade-in-50">
+                    <p className="text-[10px] font-bold text-[#0b3d2e]">Buat Kategori Baru Langsung:</p>
+                    <div className="flex gap-1.5">
+                      <input
+                        value={namaKategoriBaruModal}
+                        onChange={(e) => setNamaKategoriBaruModal(e.target.value)}
+                        onKeyDown={(e) => e.key === "Enter" && simpanKategoriInline()}
+                        placeholder="Nama kategori baru..."
+                        className="min-w-0 flex-1 rounded-lg border border-[#d8e3de] bg-white px-2.5 py-1.5 text-xs text-[#0b3d2e] focus:outline-none"
+                      />
+                      <button
+                        type="button"
+                        onClick={simpanKategoriInline}
+                        disabled={sedangSimpanKategoriInline || !namaKategoriBaruModal.trim()}
+                        className="rounded-lg bg-[#0b3d2e] px-2.5 py-1.5 text-xs font-black text-[#c8f53a] hover:bg-[#167052] disabled:opacity-50 transition-all"
+                      >
+                        {sedangSimpanKategoriInline ? (
+                          <Loader2 size={12} className="animate-spin" />
+                        ) : (
+                          "Simpan"
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <select
+                    value={draf.categoryId}
+                    onChange={(e) => setDraf({ ...draf, categoryId: e.target.value })}
+                    className={`mt-1.5 w-full rounded-xl px-3.5 py-2.5 text-sm font-semibold transition-all ${
+                      isMochi
+                        ? "border border-[#d8e3de] bg-[#f8faf9] text-[#0b3d2e] focus:border-[#0b3d2e] focus:bg-white focus:outline-none"
+                        : "border-2 border-[#232331]"
+                    }`}
+                  >
+                    <option value="">-- Pilih Kategori --</option>
+                    {daftarKategori.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
 
               {/* Deskripsi Singkat */}
@@ -1112,15 +1291,34 @@ export default function MenuClient({
               {/* Tautkan Resep (Opsional) */}
               {recipes.length > 0 && (
                 <div>
-                  <label className="block text-xs font-bold text-[#0b3d2e]">
-                    Tautkan Resep Bahan{" "}
-                    <span className="font-normal text-[#637970]">
-                      (opsional — untuk HPP & stok otomatis)
-                    </span>
-                  </label>
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-bold text-[#0b3d2e]">
+                      Tautkan Resep Bahan{" "}
+                      <span className="font-normal text-[#637970]">
+                        (opsional — untuk HPP & stok otomatis)
+                      </span>
+                    </label>
+                    {draf.recipeId && recipeMap.get(draf.recipeId)?.hpp ? (
+                      <span className="font-mono text-[10.5px] font-bold text-[#167052]">
+                        HPP: {rupiah(recipeMap.get(draf.recipeId)?.hpp || 0)}
+                      </span>
+                    ) : null}
+                  </div>
                   <select
                     value={draf.recipeId}
-                    onChange={(e) => setDraf({ ...draf, recipeId: e.target.value })}
+                    onChange={(e) => {
+                      const newRecipeId = e.target.value;
+                      const selected = newRecipeId ? recipeMap.get(newRecipeId) : null;
+                      const autoCost =
+                        (!draf.costPrice || draf.costPrice === "0") && selected?.hpp
+                          ? formatRibuan(selected.hpp)
+                          : draf.costPrice;
+                      setDraf({
+                        ...draf,
+                        recipeId: newRecipeId,
+                        costPrice: autoCost,
+                      });
+                    }}
                     className={`mt-1.5 w-full rounded-xl px-3.5 py-2 text-xs font-normal transition-all ${
                       isMochi
                         ? "border border-[#d8e3de] bg-[#f8faf9] text-[#0b3d2e] focus:border-[#0b3d2e] focus:bg-white focus:outline-none"
@@ -1130,7 +1328,7 @@ export default function MenuClient({
                     <option value="">Tanpa resep bahan</option>
                     {recipes.map((r) => (
                       <option key={r.id} value={r.id}>
-                        {r.name}
+                        {r.name} {r.hpp ? `(HPP: ${rupiah(r.hpp)})` : ""}
                       </option>
                     ))}
                   </select>

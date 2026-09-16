@@ -23,13 +23,13 @@ export const metadata: Metadata = {
 export default async function MenuPage() {
   const session = await guardOwnerPage("/app/pos/menu");
 
-  const [business, categories, menuItems, recipes] = await Promise.all([
+  const [business, categories, menuItems, recipeCalcs] = await Promise.all([
     db.getBusiness(session.businessId),
     db.getCategories(session.businessId),
     db.getMenuItems(session.businessId),
     // Menautkan menu ke resep membuat HPP dan potongan stok ikut jalan. Boleh
-    // dilewati: menu tanpa resep tetap bisa dijual, cuma tidak punya angka HPP.
-    db.getRecipes(session.businessId),
+    // dilewati: menu tanpa resep tetap bisa dijual dengan input modal manual.
+    db.getAllRecipesWithCalculations(session.businessId),
   ]);
 
   return (
@@ -37,7 +37,11 @@ export default async function MenuPage() {
       business={business}
       categories={categories}
       menuItems={menuItems}
-      recipes={recipes.map((r) => ({ id: r.id, name: r.name }))}
+      recipes={recipeCalcs.map((c) => ({
+        id: c.recipe.id,
+        name: c.recipe.name,
+        hpp: c.calc.hpp_per_unit || 0,
+      }))}
       themeClassName={mochiThemeClass(business)}
     />
   );
