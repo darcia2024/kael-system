@@ -97,9 +97,18 @@ export default async function MemberPage({
       ])
     : [[], 0];
 
+  const safeCustomer = {
+    ...customer,
+    name: customer.name || "Member",
+    phone: String(customer.phone || ""),
+    token: String(customer.token || ""),
+    birthday: customer.birthday ? String(customer.birthday).slice(0, 10) : null,
+    created_at: customer.created_at ? String(customer.created_at) : new Date().toISOString(),
+  };
+
   return (
     <MemberClient
-      customer={customer}
+      customer={safeCustomer}
       business={business}
       program={program}
       rewards={Array.isArray(rewards) ? rewards.filter((r) => r?.is_active) : []}

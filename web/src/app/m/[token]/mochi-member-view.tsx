@@ -38,7 +38,7 @@ import {
 import type { MemberPageData } from "./member-client";
 import { PLACEHOLDER_MENU, type MenuItem } from "@/lib/types";
 import { maskPhoneNumber, resolveTier } from "@/lib/loyalty-engine";
-import { formatRupiah, formatBusinessDateTime } from "@/lib/formatters";
+import { formatRupiah, formatBusinessDate, formatBusinessDateTime } from "@/lib/formatters";
 import QrCodeComponent from "@/components/qr-code";
 import { updateMarketingPreferenceAction, updateCustomerBirthdayAction } from "@/lib/actions";
 import { siteHost } from "@/lib/site";
@@ -263,7 +263,8 @@ export default function MochiMemberView({
     }
   };
 
-  const firstName = customer.name?.trim().split(/\s+/)[0] || "Member";
+  const firstName = (customer?.name || "Member").trim().split(/\s+/)[0] || "Member";
+  const userInitials = (firstName.slice(0, 2) || "MB").toUpperCase();
 
   return (
     <div className="mx-auto min-h-screen max-w-md bg-[#0b3d2e] font-sans text-white antialiased selection:bg-[#c8f53a] selection:text-[#0b3d2e] relative overflow-x-hidden pb-28">
@@ -293,7 +294,7 @@ export default function MochiMemberView({
             title="Klik untuk membuka Profil Member"
           >
             <div className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-emerald-950 border-2 border-emerald-600/40 text-emerald-100 font-extrabold text-base shadow-sm overflow-hidden group-hover:border-[#c8f53a] group-hover:scale-105 transition-all">
-              <span className="font-mono text-sm">{firstName.slice(0, 2).toUpperCase()}</span>
+              <span className="font-mono text-sm">{userInitials}</span>
             </div>
 
             <div className="min-w-0">
@@ -561,7 +562,7 @@ export default function MochiMemberView({
                       {customer.name}
                     </h3>
                     <p className="font-mono text-xs text-emerald-300/75">
-                      {maskPhoneNumber(customer.phone)}
+                      {maskPhoneNumber(customer?.phone || "")}
                     </p>
                   </div>
 
@@ -604,7 +605,7 @@ export default function MochiMemberView({
                       {customer.name}
                     </h3>
                     <p className="font-mono text-xs text-slate-300/75">
-                      {maskPhoneNumber(customer.phone)}
+                      {maskPhoneNumber(customer?.phone || "")}
                     </p>
                   </div>
 
@@ -650,7 +651,7 @@ export default function MochiMemberView({
                       {customer.name}
                     </h3>
                     <p className="font-mono text-xs text-amber-200/75">
-                      {maskPhoneNumber(customer.phone)}
+                      {maskPhoneNumber(customer?.phone || "")}
                     </p>
                   </div>
 
@@ -1145,20 +1146,20 @@ export default function MochiMemberView({
                   <span>Member Resmi {business.name}</span>
                 </span>
                 <span className="text-[10px] font-mono text-[#718078]">
-                  ID: #{customer.token.slice(0, 8)}
+                  ID: #{(customer?.token || "00000000").slice(0, 8)}
                 </span>
               </div>
 
               <div className="flex items-center gap-3.5 pt-1">
                 <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-[#0b3d2e] text-[#c8f53a] font-black text-xl font-mono shadow-sm">
-                  {firstName.slice(0, 2).toUpperCase()}
+                  {userInitials}
                 </div>
                 <div className="min-w-0 flex-1">
                   <h2 className="text-lg font-black text-[#1c2d26] leading-tight truncate">
                     {customer.name}
                   </h2>
                   <p className="text-xs font-mono text-[#52665e] mt-0.5">
-                    {maskPhoneNumber(customer.phone)}
+                    {maskPhoneNumber(customer?.phone || "")}
                   </p>
                   <div className="flex items-center gap-2 mt-1.5">
                     <span className="inline-flex items-center gap-1 rounded-md bg-[#edf8f3] px-2 py-0.5 text-[10px] font-bold text-[#167052] uppercase font-mono">
@@ -1202,7 +1203,7 @@ export default function MochiMemberView({
               </div>
               {customer.birthday ? (
                 <p className="text-xs text-[#167052] font-bold bg-[#edf8f3] p-3 rounded-xl">
-                  ✓ Tanggal lahir tercatat ({customer.birthday}). Hadiah kejutan akan otomatis aktif saat hari ulang tahun Anda!
+                  ✓ Tanggal lahir tercatat ({formatBusinessDate(customer?.birthday)}). Hadiah kejutan akan otomatis aktif saat hari ulang tahun Anda!
                 </p>
               ) : birthdaySaved ? (
                 <p className="text-xs text-[#167052] font-bold bg-[#edf8f3] p-3 rounded-xl">
@@ -1434,7 +1435,7 @@ export default function MochiMemberView({
 
             <div className="space-y-0.5">
               <h3 className="text-base font-black text-[#1c2d26]">{customer.name}</h3>
-              <p className="text-xs font-mono text-[#718078]">{maskPhoneNumber(customer.phone)}</p>
+              <p className="text-xs font-mono text-[#718078]">{maskPhoneNumber(customer?.phone || "")}</p>
             </div>
 
             <p className="text-[11px] text-[#556b62] leading-relaxed">
@@ -1610,11 +1611,11 @@ export default function MochiMemberView({
             <div className="flex items-center justify-between pb-3 border-b border-[#e5ede9]">
               <div className="flex items-center gap-3">
                 <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#0b3d2e] text-[#c8f53a] font-extrabold text-base font-mono">
-                  {firstName.slice(0, 2).toUpperCase()}
+                  {userInitials}
                 </div>
                 <div>
                   <h3 className="text-base font-black text-[#1c2d26]">{customer.name}</h3>
-                  <p className="text-xs font-mono text-[#718078]">{maskPhoneNumber(customer.phone)} · {business.name}</p>
+                  <p className="text-xs font-mono text-[#718078]">{maskPhoneNumber(customer?.phone || "")} · {business.name}</p>
                 </div>
               </div>
               <button
@@ -1656,7 +1657,7 @@ export default function MochiMemberView({
               </div>
               {customer.birthday ? (
                 <p className="text-xs text-[#167052] font-bold">
-                  ✓ Tanggal lahir tercatat ({customer.birthday}). Hadiah kejutan akan otomatis aktif saat hari ulang tahun Anda!
+                  ✓ Tanggal lahir tercatat ({formatBusinessDate(customer?.birthday)}). Hadiah kejutan akan otomatis aktif saat hari ulang tahun Anda!
                 </p>
               ) : birthdaySaved ? (
                 <p className="text-xs text-[#167052] font-bold">

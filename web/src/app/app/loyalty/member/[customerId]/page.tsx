@@ -32,16 +32,28 @@ export default async function MemberProfilePage({
 
   const tiers = program.tiers_is_active ? await db.getLoyaltyTiers(session.businessId) : [];
 
+  const safeProfile = {
+    ...profile,
+    birthday: profile.birthday ? String(profile.birthday).slice(0, 10) : null,
+    created_at: profile.created_at ? String(profile.created_at) : new Date().toISOString(),
+    last_activity_at: profile.last_activity_at ? String(profile.last_activity_at) : null,
+    lifetime_spend: Number(profile.lifetime_spend || 0),
+    balance: Number(profile.balance || 0),
+    purchase_count: Number(profile.purchase_count || 0),
+    points_earned: Number(profile.points_earned || 0),
+    phone: String(profile.phone || ""),
+  };
+
   return (
     <MemberProfileClient
       business={business}
       themeClassName={mochiThemeClass(business)}
-      profile={profile}
+      profile={safeProfile}
       program={program}
-      rewards={rewards}
-      ledger={ledger}
-      redemptions={redemptions}
-      tiers={tiers}
+      rewards={Array.isArray(rewards) ? rewards : []}
+      ledger={Array.isArray(ledger) ? ledger : []}
+      redemptions={Array.isArray(redemptions) ? redemptions : []}
+      tiers={Array.isArray(tiers) ? tiers : []}
     />
   );
 }

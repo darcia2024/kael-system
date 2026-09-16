@@ -34,15 +34,21 @@ type Props = {
 };
 
 function getMemberStatus(profile: CustomerProfileSummary) {
-  if (!profile.purchase_count || !profile.last_activity_at) {
-    return { label: "Belum belanja", note: "Member sudah daftar, tapi belum ada transaksi yang tercatat.", tone: "amber" };
+  if (!profile?.purchase_count || !profile?.last_activity_at) {
+    return { label: "Belum belanja", note: "Member sudah daftar, tapi belum ada transaksi yang tercatat.", tone: "amber" as const };
   }
 
-  const daysSinceVisit = Math.floor((Date.now() - new Date(profile.last_activity_at).getTime()) / 86_400_000);
-  if (daysSinceVisit <= 30) {
-    return { label: "Aktif", note: "Masih berbelanja dalam 30 hari terakhir.", tone: "green" };
+  const actDate = new Date(profile.last_activity_at);
+  const time = actDate.getTime();
+  if (isNaN(time)) {
+    return { label: "Belum belanja", note: "Member sudah daftar, tapi belum ada transaksi yang tercatat.", tone: "amber" as const };
   }
-  return { label: "Perlu dihubungi", note: `Sudah ${daysSinceVisit} hari tidak ada transaksi yang tercatat.`, tone: "orange" };
+
+  const daysSinceVisit = Math.floor((Date.now() - time) / 86_400_000);
+  if (daysSinceVisit <= 30) {
+    return { label: "Aktif", note: "Masih berbelanja dalam 30 hari terakhir.", tone: "green" as const };
+  }
+  return { label: "Perlu dihubungi", note: `Sudah ${daysSinceVisit} hari tidak ada transaksi yang tercatat.`, tone: "orange" as const };
 }
 
 function eventLabel(item: PointLedger) {
@@ -59,25 +65,34 @@ function eventLabel(item: PointLedger) {
       return "Penyesuaian poin";
     case "expiry":
       return "Poin kedaluwarsa";
+    case "referral":
+      return "Bonus referral";
+    case "campaign":
+      return "Bonus kampanye";
+    default:
+      return "Aktivitas poin";
   }
 }
 
 export default function MemberProfileClient({ profile, program, rewards, ledger, redemptions, tiers, business, themeClassName }: Props) {
   const status = getMemberStatus(profile);
-  const currentTier = program.tiers_is_active ? resolveTier(Number(profile.lifetime_spend), tiers) : null;
+  const currentTier = program.tiers_is_active ? resolveTier(Number(profile?.lifetime_spend || 0), tiers) : null;
   const nextReward = rewards
-    .filter((reward) => reward.is_active && reward.point_cost > profile.balance)
+    .filter((reward) => reward.is_active && reward.point_cost > (profile?.balance || 0))
     .sort((a, b) => a.point_cost - b.point_cost)[0];
   const activeReward = rewards
-    .filter((reward) => reward.is_active && reward.point_cost <= profile.balance)
+    .filter((reward) => reward.is_active && reward.point_cost <= (profile?.balance || 0))
     .sort((a, b) => b.point_cost - a.point_cost)[0];
   const unit = program.mode === "stamp" ? "stempel" : "poin";
-  const initials = (profile.name || "M").trim().slice(0, 1).toUpperCase();
+  const initials = (profile?.name || "M").trim().slice(0, 1).toUpperCase();
   const statusClass = {
     green: "border-[#15803d] bg-[#dcfce7] text-[#166534]",
     amber: "border-[#b45309] bg-[#fef3c7] text-[#92400e]",
     orange: "border-[#c2410c] bg-[#ffedd5] text-[#9a3412]",
   }[status.tone];
+
+  const cleanPhone = String(profile?.phone || "").replace(/\D/g, "");
+  const firstName = (profile?.name || "Member").trim().split(/\s+/)[0] || "Member";
 
   return (
     <div className="min-h-screen bg-[#f7f6fc] text-[#1a382d]">
@@ -107,7 +122,7 @@ export default function MemberProfileClient({ profile, program, rewards, ledger,
               <div className="min-w-0">
                 <p className="font-mono text-[10px] font-bold text-[#c8f53a]">RINGKASAN MEMBER</p>
                 <div className="flex flex-wrap items-center gap-2">
-                  <h2 className="truncate text-xl font-black sm:text-2xl">{profile.name || "Member"}</h2>
+                  <h2 className="truncate text-xl font-black sm:text-2xl">{profile?.name || "Member"}</h2>
                   {currentTier && (
                     <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-[#d9ff57] bg-[#3a3950] px-2.5 py-0.5 text-[10.5px] font-bold text-[#c8f53a]">
                       <Crown size={11} />
@@ -115,21 +130,23 @@ export default function MemberProfileClient({ profile, program, rewards, ledger,
                     </span>
                   )}
                 </div>
-                <p className="mt-1 text-xs text-[#dedee8]">{maskPhoneNumber(profile.phone)} · Gabung {formatBusinessDate(profile.created_at)}</p>
+                <p className="mt-1 text-xs text-[#dedee8]">{maskPhoneNumber(profile?.phone || "")} · Gabung {formatBusinessDate(profile?.created_at)}</p>
               </div>
             </div>
             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2.5">
-              <a
-                href={`https://wa.me/${profile.phone.replace(/\D/g, "")}?text=${encodeURIComponent(
-                  `Halo Kak ${(profile.name || "Member").trim().split(/\s+/)[0]}! Terima kasih sudah jadi member ${business?.name || "Mochi"}. Saldo poinmu sekarang ${profile.balance} ${unit}. Cek kartu & kuponmu di: https://${siteHost}/m/${profile.token}`
-                )}`}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-emerald-400/40 bg-[#c8f53a] px-3.5 py-2 text-xs font-black text-[#073829] hover:bg-[#d9ff57] transition-all shadow-xs shrink-0"
-              >
-                <MessageCircle size={14} />
-                <span>Kirim WA ke Member</span>
-              </a>
+              {cleanPhone && (
+                <a
+                  href={`https://wa.me/${cleanPhone}?text=${encodeURIComponent(
+                    `Halo Kak ${firstName}! Terima kasih sudah jadi member ${business?.name || "Mochi"}. Saldo poinmu sekarang ${profile?.balance ?? 0} ${unit}. Cek kartu & kuponmu di: https://${siteHost}/m/${profile?.token || ""}`
+                  )}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-emerald-400/40 bg-[#c8f53a] px-3.5 py-2 text-xs font-black text-[#073829] hover:bg-[#d9ff57] transition-all shadow-xs shrink-0"
+                >
+                  <MessageCircle size={14} />
+                  <span>Kirim WA ke Member</span>
+                </a>
+              )}
               <div className={`w-fit rounded-lg border px-3 py-2 text-xs font-bold ${statusClass}`}>
                 <span className="block">{status.label}</span>
                 <span className="mt-0.5 block font-normal">{status.note}</span>
