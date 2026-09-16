@@ -268,7 +268,10 @@ export default function MochiMemberView({
         <div className="flex items-center justify-between gap-3">
           <button
             type="button"
-            onClick={() => setShowProfileModal(true)}
+            onClick={() => {
+              setActiveNavTab("profile");
+              setShowProfileModal(true);
+            }}
             className="flex items-center gap-3 min-w-0 text-left group cursor-pointer focus:outline-hidden"
             title="Klik untuk membuka Profil Member"
           >
@@ -349,35 +352,56 @@ export default function MochiMemberView({
       {/* =================================================================== */}
       <div className="rounded-t-[32px] bg-[#f8faf9] text-[#1c2d26] pt-5 pb-24 px-4 sm:px-5 shadow-[0_-8px_30px_rgba(0,0,0,0.15)] min-h-[520px]">
         
-        {/* Segmented Switcher */}
+        {/* Segmented Switcher (3 Tabs) */}
         <div className="flex rounded-2xl bg-[#e5ede9] p-1.5 mb-5 shadow-inner">
           <button
             type="button"
-            onClick={() => setActiveNavTab("home")}
-            className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-black transition-all ${
+            onClick={() => {
+              setActiveNavTab("home");
+              window.scrollTo({ top: 220, behavior: "smooth" });
+            }}
+            className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-black transition-all ${
               activeNavTab === "home"
                 ? "bg-[#0b3d2e] text-[#c8f53a] shadow-sm scale-[1.01]"
                 : "text-[#52665e] hover:text-[#1c2d26]"
             }`}
           >
-            <Home size={15} />
-            <span>Dompet Member</span>
+            <Home size={14} />
+            <span>Dompet</span>
           </button>
           <button
             type="button"
-            onClick={() => setActiveNavTab("menu")}
-            className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-black transition-all ${
+            onClick={() => {
+              setActiveNavTab("menu");
+              window.scrollTo({ top: 220, behavior: "smooth" });
+            }}
+            className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-black transition-all ${
               activeNavTab === "menu"
                 ? "bg-[#0b3d2e] text-[#c8f53a] shadow-sm scale-[1.01]"
                 : "text-[#52665e] hover:text-[#1c2d26]"
             }`}
           >
-            <UtensilsCrossed size={15} />
-            <span>Katalog Menu {menuItems.length > 0 && `(${menuItems.length})`}</span>
+            <UtensilsCrossed size={14} />
+            <span>Menu {menuItems.length > 0 && `(${menuItems.length})`}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setActiveNavTab("profile");
+              window.scrollTo({ top: 220, behavior: "smooth" });
+            }}
+            className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-black transition-all ${
+              activeNavTab === "profile"
+                ? "bg-[#0b3d2e] text-[#c8f53a] shadow-sm scale-[1.01]"
+                : "text-[#52665e] hover:text-[#1c2d26]"
+            }`}
+          >
+            <User size={14} />
+            <span>Profil &amp; Akun</span>
           </button>
         </div>
 
-        {activeNavTab === "home" ? (
+{activeNavTab === "home" && (
           <>
             {/* Quick Action Grid */}
             <section aria-label="Menu Cepat" className="grid grid-cols-4 gap-2 text-center pb-5">
@@ -430,7 +454,10 @@ export default function MochiMemberView({
 
               <button
                 type="button"
-                onClick={() => setShowProfileModal(true)}
+                onClick={() => {
+                  setActiveNavTab("profile");
+                  window.scrollTo({ top: 320, behavior: "smooth" });
+                }}
                 className="flex flex-col items-center gap-1.5 group active:scale-95 transition-transform"
               >
                 <div className="flex h-12 w-12 items-center justify-center rounded-full border-2 border-[#0b3d2e] bg-[#edf8f3] text-[#0b3d2e] shadow-xs group-hover:bg-[#0b3d2e] group-hover:text-[#c8f53a] transition-colors">
@@ -931,11 +958,13 @@ export default function MochiMemberView({
               )}
             </section>
           </>
-        ) : (
-          /* ================================================================= */
-          /* DEDICATED MENU VIEW (KATALOG MENU MOCHI - CLEAN)                  */
-          /* ================================================================= */
-          <section aria-label="Katalog Menu Mochi" className="space-y-4">
+        )}
+
+        {/* ================================================================= */}
+        {/* DEDICATED MENU VIEW (KATALOG MENU MOCHI - CLEAN)                  */}
+        {/* ================================================================= */}
+        {activeNavTab === "menu" && (
+          <section aria-label="Katalog Menu Mochi" className="space-y-4 animate-in fade-in">
             <div className="rounded-2xl border border-[#c5d8cf] bg-white p-4 text-[#1c2d26] shadow-xs space-y-1">
               <div className="flex items-center gap-1.5 text-[#167052] text-[10px] font-black uppercase tracking-wider font-mono">
                 <Coffee size={13} />
@@ -1086,6 +1115,204 @@ export default function MochiMemberView({
           </section>
         )}
 
+        {/* ================================================================= */}
+        {/* DEDICATED PROFIL VIEW (PROFIL, STATS, ULANG TAHUN, REFERRAL)      */}
+        {/* ================================================================= */}
+        {activeNavTab === "profile" && (
+          <section aria-label="Profil &amp; Akun Member" className="space-y-4 animate-in fade-in">
+            {/* Header Member Profile Card */}
+            <div className="rounded-2xl border border-[#c5d8cf] bg-white p-4 text-[#1c2d26] shadow-xs space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-[#edf8f3] px-3 py-1 text-[10.5px] font-bold font-mono text-[#167052]">
+                  <ShieldCheck size={13} />
+                  <span>Member Resmi {business.name}</span>
+                </span>
+                <span className="text-[10px] font-mono text-[#718078]">
+                  ID: #{customer.token.slice(0, 8)}
+                </span>
+              </div>
+
+              <div className="flex items-center gap-3.5 pt-1">
+                <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-[#0b3d2e] text-[#c8f53a] font-black text-xl font-mono shadow-sm">
+                  {firstName.slice(0, 2).toUpperCase()}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <h2 className="text-lg font-black text-[#1c2d26] leading-tight truncate">
+                    {customer.name}
+                  </h2>
+                  <p className="text-xs font-mono text-[#52665e] mt-0.5">
+                    {maskPhoneNumber(customer.phone)}
+                  </p>
+                  <div className="flex items-center gap-2 mt-1.5">
+                    <span className="inline-flex items-center gap-1 rounded-md bg-[#edf8f3] px-2 py-0.5 text-[10px] font-bold text-[#167052] uppercase font-mono">
+                      Level: {userCurrentTierKey}
+                    </span>
+                    <span className="text-[10px] text-[#718078] font-mono">
+                      · Multiplier {tierConfig[userCurrentTierKey].earn_multiplier}x
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Member Stats Grid */}
+            <div className="grid grid-cols-3 gap-2 text-center">
+              <div className="p-3.5 rounded-2xl bg-white border border-[#d8e3de] shadow-xs space-y-0.5">
+                <span className="text-[10px] text-[#718078] uppercase font-mono block">Status Kartu</span>
+                <span className="text-xs font-black text-[#167052] capitalize block">
+                  {userCurrentTierKey} VIP
+                </span>
+              </div>
+              <div className="p-3.5 rounded-2xl bg-white border border-[#d8e3de] shadow-xs space-y-0.5">
+                <span className="text-[10px] text-[#718078] uppercase font-mono block">Total Belanja</span>
+                <span className="text-xs font-black text-[#0b3d2e] font-mono block">
+                  {formatRupiah(lifetimeSpend)}
+                </span>
+              </div>
+              <div className="p-3.5 rounded-2xl bg-white border border-[#d8e3de] shadow-xs space-y-0.5">
+                <span className="text-[10px] text-[#718078] uppercase font-mono block">Kunjungan</span>
+                <span className="text-xs font-black text-[#0b3d2e] font-mono block">
+                  {visitCount} Kali
+                </span>
+              </div>
+            </div>
+
+            {/* Birthday Reward Form */}
+            <div className="rounded-2xl border border-[#d8e3de] bg-white p-4 shadow-xs space-y-2.5">
+              <div className="flex items-center gap-2 text-xs font-extrabold text-[#20372e]">
+                <Cake size={16} className="text-[#ea580c]" />
+                <span>Hadiah Ulang Tahun Member</span>
+              </div>
+              {customer.birthday ? (
+                <p className="text-xs text-[#167052] font-bold bg-[#edf8f3] p-3 rounded-xl">
+                  ✓ Tanggal lahir tercatat ({customer.birthday}). Hadiah kejutan akan otomatis aktif saat hari ulang tahun Anda!
+                </p>
+              ) : birthdaySaved ? (
+                <p className="text-xs text-[#167052] font-bold bg-[#edf8f3] p-3 rounded-xl">
+                  ✓ Tanggal lahir berhasil disimpan! Sampai jumpa di hari spesialmu!
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-[11px] text-[#718078] leading-relaxed">
+                    Daftarkan tanggal lahir Anda untuk mendapatkan voucher spesial traktiran Mochi di hari ulang tahun.
+                  </p>
+                  <div className="flex gap-2">
+                    <input
+                      type="date"
+                      value={birthdayInput}
+                      onChange={(e) => setBirthdayInput(e.target.value)}
+                      className="rounded-xl border border-[#ccd9d3] bg-[#f8faf9] px-3 py-2 text-xs text-[#1c2d26] flex-1 font-mono focus:outline-hidden focus:border-[#167052]"
+                    />
+                    <button
+                      type="button"
+                      disabled={savingBirthday || !birthdayInput}
+                      onClick={handleSaveBirthday}
+                      className="rounded-xl bg-[#167052] px-4 py-2 text-xs font-bold text-white disabled:opacity-50 hover:bg-[#0f4f39] transition-colors"
+                    >
+                      {savingBirthday ? "..." : "Simpan"}
+                    </button>
+                  </div>
+                  {birthdayError && <p className="text-[10px] text-red-500">{birthdayError}</p>}
+                </div>
+              )}
+            </div>
+
+            {/* Referral / Ajak Teman */}
+            {referralLink && (
+              <div className="rounded-2xl border border-[#d8e3de] bg-white p-4 shadow-xs space-y-2.5">
+                <div className="flex items-center gap-2 text-xs font-extrabold text-[#20372e]">
+                  <Share2 size={16} className="text-[#167052]" />
+                  <span>Program Ajak Teman (Referral)</span>
+                </div>
+                <p className="text-[11px] text-[#718078] leading-relaxed">
+                  Ajak teman gabung jadi member Mochi. Anda berdua akan mendapatkan bonus poin saat mereka berbelanja!
+                </p>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    readOnly
+                    value={referralLink}
+                    className="flex-1 rounded-xl border border-[#ccd9d3] bg-[#f8faf9] px-3 py-2 text-[10.5px] font-mono text-[#556b62]"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleCopy(referralLink, true)}
+                    className="rounded-xl bg-[#0b3d2e] px-3.5 py-2 text-xs font-bold text-[#c8f53a] shrink-0 active:scale-95"
+                  >
+                    {copiedReferral ? "Tersalin!" : "Salin"}
+                  </button>
+                </div>
+                <a
+                  href={`https://wa.me/?text=${encodeURIComponent(`Halo! Mau traktiran kopi/mochi? Yuk gabung member Mochi Cafe via link ini biar dapet bonus poin langsung: ${referralLink}`)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-center gap-2 rounded-xl bg-[#25d366] text-white py-2.5 px-4 text-xs font-bold shadow-xs hover:bg-[#20b858] transition-colors"
+                >
+                  <MessageCircle size={15} />
+                  <span>Bagikan ke WhatsApp</span>
+                </a>
+              </div>
+            )}
+
+            {/* PDP Privacy Consent */}
+            <div className="rounded-2xl border border-[#d8e3de] bg-white p-4 shadow-xs space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-xs font-extrabold text-[#20372e]">
+                  <ShieldCheck size={16} className="text-[#167052]" />
+                  <span>Privasi Data &amp; Info Promo (UU PDP)</span>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={marketingOptIn}
+                  disabled={savingMarketing}
+                  onChange={(e) => handleToggleMarketing(e.target.checked)}
+                  className="h-4 w-4 rounded accent-[#167052] cursor-pointer"
+                />
+              </div>
+              <p className="text-[10.5px] text-[#718078] leading-relaxed">
+                Izinkan {business.name} mengirimkan info promo eksklusif dan voucher poin ke nomor WhatsApp Anda sesuai UU No. 27/2022.
+              </p>
+            </div>
+
+            {/* Store Contact & Customer Care */}
+            <div className="rounded-2xl border border-[#d8e3de] bg-white p-4 shadow-xs space-y-2.5 text-xs">
+              <div className="flex items-center justify-between text-[#20372e] font-extrabold">
+                <span className="flex items-center gap-1.5">
+                  <MapPin size={14} className="text-[#167052]" />
+                  <span>Lokasi &amp; Kontak Outlet</span>
+                </span>
+                {cardSettings?.whatsapp && (
+                  <a
+                    href={`https://wa.me/${cardSettings.whatsapp.replace(/\D/g, "")}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[#167052] font-bold hover:underline flex items-center gap-1 bg-[#edf8f3] px-2.5 py-1 rounded-lg"
+                  >
+                    <MessageCircle size={13} />
+                    <span>Chat CS</span>
+                  </a>
+                )}
+              </div>
+              <p className="text-[11px] text-[#718078] leading-relaxed">
+                {business.address || "Mochi Cafe n Resto, Kawasan Kuliner."}
+              </p>
+            </div>
+
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveNavTab("home");
+                  window.scrollTo({ top: 0, behavior: "smooth" });
+                }}
+                className="w-full rounded-2xl bg-[#0b3d2e] text-[#c8f53a] py-3 text-xs font-black shadow-md hover:bg-[#124634] active:scale-95 transition-all"
+              >
+                Kembali ke Dompet Member
+              </button>
+            </div>
+          </section>
+        )}
+
       </div>
 
       {/* =================================================================== */}
@@ -1147,11 +1374,16 @@ export default function MochiMemberView({
 
         <button
           type="button"
-          onClick={() => setShowProfileModal(true)}
-          className="flex flex-col items-center gap-1 py-1 px-2.5 text-emerald-200/70 hover:text-white transition-colors"
+          onClick={() => {
+            setActiveNavTab("profile");
+            window.scrollTo({ top: 320, behavior: "smooth" });
+          }}
+          className={`flex flex-col items-center gap-1 py-1 px-2.5 transition-colors ${
+            activeNavTab === "profile" ? "text-[#c8f53a]" : "text-emerald-200/70 hover:text-white"
+          }`}
           title="Buka Profil Member"
         >
-          <User size={19} />
+          <User size={19} strokeWidth={activeNavTab === "profile" ? 2.6 : 2} />
           <span className="text-[9.5px] font-bold tracking-tight">Profil</span>
         </button>
       </nav>
@@ -1160,8 +1392,8 @@ export default function MochiMemberView({
       {/* MODAL 1: QR CODE FULLSCREEN                                         */}
       {/* =================================================================== */}
       {showQrModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-xs animate-in fade-in-50">
-          <div className="w-full max-w-xs rounded-3xl bg-white p-6 text-center text-[#1c2d26] shadow-2xl space-y-4 animate-in zoom-in-95">
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/75 p-4 backdrop-blur-xs animate-in fade-in-50" onClick={() => setShowQrModal(false)}>
+          <div className="w-full max-w-xs rounded-3xl bg-white p-6 text-center text-[#1c2d26] shadow-2xl space-y-4 animate-in zoom-in-95" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between">
               <span className="text-xs font-black text-[#167052] uppercase tracking-wider font-mono">
                 QR Member Kasir
@@ -1207,8 +1439,8 @@ export default function MochiMemberView({
       {/* MODAL 2: KATALOG REWARD                                             */}
       {/* =================================================================== */}
       {showRewardModal && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 p-0 sm:p-4 backdrop-blur-xs animate-in fade-in-50">
-          <div className="w-full max-w-md rounded-t-[32px] sm:rounded-3xl bg-white p-5 sm:p-6 text-[#1c2d26] max-h-[85vh] flex flex-col shadow-2xl animate-in slide-in-from-bottom-10">
+        <div className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center bg-black/70 p-0 sm:p-4 backdrop-blur-xs animate-in fade-in-50" onClick={() => setShowRewardModal(false)}>
+          <div className="w-full max-w-md rounded-t-[32px] sm:rounded-3xl bg-white p-5 sm:p-6 text-[#1c2d26] max-h-[85vh] flex flex-col shadow-2xl animate-in slide-in-from-bottom-10" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between pb-3 border-b border-[#e5ede9]">
               <div>
                 <h3 className="text-base font-black text-[#1c2d26]">Katalog Hadiah Mochi</h3>
@@ -1278,7 +1510,7 @@ export default function MochiMemberView({
       {/* MODAL 3: VOUCHER SAYA                                               */}
       {/* =================================================================== */}
       {showVoucherModal && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/70 p-0 sm:p-4 backdrop-blur-xs animate-in fade-in-50">
+        <div className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center bg-black/70 p-0 sm:p-4 backdrop-blur-xs animate-in fade-in-50" onClick={() => setShowVoucherModal(false)}>
           <div className="w-full max-w-md rounded-t-[32px] sm:rounded-3xl bg-white p-5 sm:p-6 text-[#1c2d26] max-h-[85vh] flex flex-col shadow-2xl animate-in slide-in-from-bottom-10">
             <div className="flex items-center justify-between pb-3 border-b border-[#e5ede9]">
               <div>
@@ -1355,8 +1587,8 @@ export default function MochiMemberView({
       {/* MODAL 4: PROFIL MEMBER & PENGATURAN                                 */}
       {/* =================================================================== */}
       {showProfileModal && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/75 p-0 sm:p-4 backdrop-blur-xs animate-in fade-in-50">
-          <div className="w-full max-w-md rounded-t-[32px] sm:rounded-3xl bg-white p-5 sm:p-6 text-[#1c2d26] max-h-[90vh] flex flex-col shadow-2xl animate-in slide-in-from-bottom-10 space-y-4 overflow-y-auto">
+        <div className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center bg-black/75 p-0 sm:p-4 backdrop-blur-xs animate-in fade-in-50" onClick={() => setShowProfileModal(false)}>
+          <div className="w-full max-w-md rounded-t-[32px] sm:rounded-3xl bg-white p-5 sm:p-6 text-[#1c2d26] max-h-[90vh] flex flex-col shadow-2xl animate-in slide-in-from-bottom-10 space-y-4 overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             {/* Modal Header */}
             <div className="flex items-center justify-between pb-3 border-b border-[#e5ede9]">
               <div className="flex items-center gap-3">
@@ -1526,8 +1758,8 @@ export default function MochiMemberView({
       {/* MODAL 5: DETAIL MENU & CARA PESAN                                   */}
       {/* =================================================================== */}
       {selectedMenuDetail && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/75 p-0 sm:p-4 backdrop-blur-xs animate-in fade-in-50">
-          <div className="w-full max-w-sm rounded-t-[32px] sm:rounded-3xl bg-white p-5 text-[#1c2d26] max-h-[88vh] overflow-y-auto shadow-2xl animate-in slide-in-from-bottom-10 space-y-4">
+        <div className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center bg-black/75 p-0 sm:p-4 backdrop-blur-xs animate-in fade-in-50" onClick={() => { setSelectedMenuDetail(null); setTableInput(""); }}>
+          <div className="w-full max-w-sm rounded-t-[32px] sm:rounded-3xl bg-white p-5 text-[#1c2d26] max-h-[88vh] overflow-y-auto shadow-2xl animate-in slide-in-from-bottom-10 space-y-4" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between">
               <span className="inline-flex items-center gap-1.5 rounded-full bg-[#edf8f3] px-3 py-1 text-[11px] font-bold text-[#167052]">
                 <Coffee size={13} />

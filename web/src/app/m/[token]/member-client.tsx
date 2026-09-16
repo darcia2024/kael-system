@@ -5,7 +5,7 @@ import Link from "next/link";
 import {
   Gift, QrCode, History, CheckCircle2, AlertCircle, ArrowRight, ShieldCheck,
   Copy, Check, Clock, Ticket, Users, Share2, Cake, Crown, MessageCircle,
-  AtSign, MapPin, UtensilsCrossed, Info, Megaphone, Stamp,
+  AtSign, MapPin, UtensilsCrossed, Info, Megaphone, Stamp, User,
 } from "lucide-react";
 
 import type {
@@ -54,7 +54,7 @@ export interface MemberPageData {
   visitCount: number;
 }
 
-type Tab = "hadiah" | "menu" | "info" | "riwayat";
+type Tab = "hadiah" | "menu" | "profil" | "info" | "riwayat";
 
 export default function CustomerMemberProgressPage({
   customer, business, program, rewards, balance, ledger, redemptions,
@@ -240,6 +240,7 @@ export default function CustomerMemberProgressPage({
   const TABS: { key: Tab; label: string; icon: typeof Gift; tampil: boolean }[] = [
     { key: "hadiah", label: "Hadiah", icon: Gift, tampil: true },
     { key: "menu", label: "Menu", icon: UtensilsCrossed, tampil: menuItems.length > 0 },
+    { key: "profil", label: "Profil", icon: User, tampil: true },
     { key: "info", label: "Info", icon: Info, tampil: true },
     { key: "riwayat", label: "Riwayat", icon: History, tampil: true },
   ];
@@ -563,6 +564,138 @@ export default function CustomerMemberProgressPage({
             <p className="px-1 text-[10.5px] text-[#5c5c70]">
               Harga bisa berubah. Yang berlaku harga di kasir.
             </p>
+          </div>
+        )}
+
+        {tab === "profil" && (
+          <div className="space-y-3">
+            {/* Profil Pelanggan */}
+            <div className="space-y-2 rounded-2xl border-2 border-[#232331] bg-white p-4 shadow-ink-xs">
+              <div className="flex items-center gap-3">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#232331] text-[#d9ff57] font-black font-mono text-lg">
+                  {(customer.name?.trim().slice(0, 2) || "MB").toUpperCase()}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <h3 className="truncate text-base font-black">{customer.name}</h3>
+                  <p className="font-mono text-xs text-[#5c5c70]">{maskPhoneNumber(customer.phone)}</p>
+                  <p className="mt-1 font-mono text-[10px] text-[#5c5c70]">
+                    Bergabung {formatBusinessDateTime(customer.created_at).split(",")[0]}
+                  </p>
+                </div>
+              </div>
+
+              {currentTier && (
+                <div className="mt-2 flex items-center justify-between rounded-xl bg-[#f7f6fc] p-2.5 text-xs font-bold">
+                  <span className="flex items-center gap-1.5 text-[#232331]">
+                    <Crown size={14} className="text-[#eab308]" />
+                    <span>Level: {currentTier.name}</span>
+                  </span>
+                  <span className="font-mono text-[11px] text-[#5c5c70]">
+                    Total belanja {formatRupiah(lifetimeSpend)}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Ajak Teman */}
+            {referralLink && (
+              <div className="space-y-2.5 rounded-2xl border-2 border-[#232331] bg-white p-4 shadow-ink-xs">
+                <div className="flex items-center gap-2">
+                  <Users size={15} className="text-[#7958d8]" />
+                  <p className="text-xs font-black">Ajak teman, dua-duanya dapat bonus</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <code className="min-w-0 flex-1 truncate rounded-xl border border-[#dedee8] bg-[#fcfcfe] px-3 py-2 font-mono text-xs font-bold">
+                    {referralCode}
+                  </code>
+                  <button
+                    type="button"
+                    onClick={handleCopyReferralLink}
+                    aria-label="Salin tautan ajakan"
+                    className="shrink-0 rounded-xl border-2 border-[#232331] bg-white p-2"
+                  >
+                    {copiedReferralLink ? <Check size={15} /> : <Copy size={15} />}
+                  </button>
+                </div>
+                <a
+                  href={`https://wa.me/?text=${encodeURIComponent(referralMessage)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn-tactile flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border-2 border-[#232331] bg-[#d9ff57] text-xs font-black"
+                >
+                  <Share2 size={14} /> Bagikan lewat WhatsApp
+                </a>
+              </div>
+            )}
+
+            {/* ULANG TAHUN */}
+            {program.birthday_is_active && !customer.birthday && (
+              <div className="space-y-2.5 rounded-2xl border-2 border-[#232331] bg-white p-4 shadow-ink-xs">
+                <div className="flex items-center gap-2">
+                  <Cake size={15} className="text-[#c2410c]" />
+                  <div className="min-w-0">
+                    <p className="text-xs font-black">Lengkapi tanggal lahir</p>
+                    <p className="text-[10.5px] text-[#5c5c70]">
+                      {program.birthday_bonus_points > 0
+                        ? `Dapat bonus ${program.birthday_bonus_points} ${unit} di hari ulang tahunmu.`
+                        : "Biar toko ini bisa kirim ucapan spesial."}
+                    </p>
+                  </div>
+                </div>
+                {birthdaySaved ? (
+                  <p className="flex items-center gap-1.5 text-[10.5px] font-bold text-[#16a34a]">
+                    <CheckCircle2 size={13} /> Tersimpan. Sampai jumpa di hari spesialmu!
+                  </p>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="date"
+                      value={birthdayInput}
+                      max={new Date().toISOString().slice(0, 10)}
+                      onChange={(e) => setBirthdayInput(e.target.value)}
+                      className="min-h-11 flex-1 rounded-xl border border-[#dedee8] bg-[#fcfcfe] p-2.5 text-xs font-bold"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => void handleSaveBirthday()}
+                      disabled={!birthdayInput || savingBirthday}
+                      className="btn-tactile min-h-11 shrink-0 rounded-xl border-2 border-[#232331] bg-[#232331] px-3 text-xs font-black text-[#d9ff57] disabled:opacity-50"
+                    >
+                      {savingBirthday ? "..." : "Simpan"}
+                    </button>
+                  </div>
+                )}
+                {birthdayError && (
+                  <p className="text-[10.5px] font-bold text-[#c2410c]">{birthdayError}</p>
+                )}
+              </div>
+            )}
+
+            {/* PERSETUJUAN PROMO */}
+            <div className="rounded-2xl border-2 border-[#232331] bg-white p-3.5">
+              <label className="flex min-h-11 cursor-pointer items-start gap-3">
+                <input
+                  type="checkbox"
+                  checked={marketingOptIn}
+                  disabled={savingMarketingOptIn}
+                  onChange={(e) => void handleMarketingPreference(e.target.checked)}
+                  className="mt-1 h-4 w-4 rounded accent-[#232331]"
+                />
+                <span className="min-w-0">
+                  <span className="block text-xs font-bold">Info promo lewat WhatsApp</span>
+                  <span className="mt-0.5 block text-[10.5px] leading-relaxed text-[#5c5c70]">
+                    {marketingOptIn
+                      ? "Kamu setuju menerima info promo dan pengingat dari toko ini."
+                      : "Centang kalau mau menerima info promo dan pengingat dari toko ini."}
+                  </span>
+                </span>
+              </label>
+              {marketingPreferenceError && (
+                <p className="mt-2 text-[10.5px] font-bold text-[#c2410c]">
+                  {marketingPreferenceError}
+                </p>
+              )}
+            </div>
           </div>
         )}
 
