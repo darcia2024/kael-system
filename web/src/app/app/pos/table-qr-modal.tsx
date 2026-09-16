@@ -50,6 +50,9 @@ export default function TableQrModal({
   const [customTableInput, setCustomTableInput] = useState<string>("");
   const [copied, setCopied] = useState<boolean>(false);
   const [isDownloading, setIsDownloading] = useState<boolean>(false);
+  const [previewTab, setPreviewTab] = useState<"pure_qr" | "standee">("pure_qr");
+  const [withCenterLogo, setWithCenterLogo] = useState<boolean>(true);
+  const [isTransparentBg, setIsTransparentBg] = useState<boolean>(false);
 
   const activeTable = useMemo(() => {
     return customTableInput.trim() || selectedTable;
@@ -75,6 +78,144 @@ export default function TableQrModal({
       setTimeout(() => setCopied(false), 2000);
     } catch {
       // Fallback
+    }
+  };
+
+  // Helper untuk membuat canvas QR murni resolusi tinggi 2048 x 2048 px
+  const generatePureQrCanvas = (
+    tableNum: string,
+    withLogo = true,
+    isTransparent = false,
+  ): Promise<HTMLCanvasElement> => {
+    return new Promise((resolve) => {
+      const canvas = document.createElement("canvas");
+      const ctx = canvas.getContext("2d", { willReadFrequently: false });
+      if (!ctx) {
+        resolve(canvas);
+        return;
+      }
+
+      const size = 2048;
+      canvas.width = size;
+      canvas.height = size;
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = "high";
+
+      if (!isTransparent) {
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, size, size);
+      } else {
+        ctx.clearRect(0, 0, size, size);
+      }
+
+      const origin = typeof window !== "undefined" ? window.location.origin : `https://${siteHost}`;
+      const url = `${origin}/order/${encodeURIComponent(storeCode || "MOCHIKAFE")}/${encodeURIComponent(tableNum.trim())}`;
+
+      const qr = qrcode(0, "H");
+      qr.addData(url, "Byte");
+      qr.make();
+      const n = qr.getModuleCount();
+
+      const padding = 160;
+      const qrMatrixSize = size - padding * 2;
+      const cellSize = qrMatrixSize / n;
+
+      ctx.fillStyle = "#072e22";
+      for (let r = 0; r < n; r++) {
+        for (let c = 0; c < n; c++) {
+          if (qr.isDark(r, c)) {
+            ctx.fillRect(
+              padding + c * cellSize,
+              padding + r * cellSize,
+              cellSize + 0.65,
+              cellSize + 0.65,
+            );
+          }
+        }
+      }
+
+      if (!withLogo) {
+        resolve(canvas);
+        return;
+      }
+
+      const logoImg = new Image();
+      logoImg.crossOrigin = "anonymous";
+      logoImg.src = "/logo-mochi.png";
+
+      const renderLogo = () => {
+        const centerBadgeSize = Math.round(qrMatrixSize * 0.22);
+        const cbX = (size - centerBadgeSize) / 2;
+        const cbY = (size - centerBadgeSize) / 2;
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(size / 2, size / 2, centerBadgeSize / 2 + 12, 0, Math.PI * 2);
+        ctx.fillStyle = "#ffffff";
+        ctx.fill();
+        ctx.strokeStyle = "#072e22";
+        ctx.lineWidth = 12;
+        ctx.stroke();
+        ctx.clip();
+        if (logoImg.naturalWidth > 0) {
+          ctx.drawImage(logoImg, cbX, cbY, centerBadgeSize, centerBadgeSize);
+        }
+        ctx.restore();
+        resolve(canvas);
+      };
+
+      let done = false;
+      const trigger = () => {
+        if (done) return;
+        done = true;
+        renderLogo();
+      };
+
+      logoImg.onload = trigger;
+      logoImg.onerror = trigger;
+      if (logoImg.complete && logoImg.naturalWidth > 0) {
+        trigger();
+      } else {
+        setTimeout(trigger, 250);
+      }
+    });
+  };
+
+  // Download Single Pure QR HD
+  const handleDownloadSinglePureQr = async () => {
+    setIsDownloading(true);
+    try {
+      const canvas = await generatePureQrCanvas(activeTable, withCenterLogo, isTransparentBg);
+      const link = document.createElement("a");
+      link.download = `QR-Meja-${formattedTableNumber}-MochiCafe-HD.png`;
+      link.href = canvas.toDataURL("image/png");
+      link.click();
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsDownloading(false);
+    }
+  };
+
+  // Download Batch Tables 1 to 10
+  const handleDownloadBatchTables = async () => {
+    setIsDownloading(true);
+    try {
+      const tables = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"];
+      for (let i = 0; i < tables.length; i++) {
+        const t = tables[i];
+        const canvas = await generatePureQrCanvas(t, withCenterLogo, isTransparentBg);
+        const numFormatted = t.length === 1 ? `0${t}` : t;
+        const link = document.createElement("a");
+        link.download = `QR-Meja-${numFormatted}-MochiCafe-HD.png`;
+        link.href = canvas.toDataURL("image/png");
+        link.click();
+        await new Promise((r) => setTimeout(r, 350));
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsDownloading(false);
     }
   };
 
@@ -949,161 +1090,258 @@ export default function TableQrModal({
             </div>
           </div>
 
-          {/* 2. Pratinjau Standee Meja Akrilik Eksklusif 1:1 SQUARE */}
-          <div className="space-y-2">
-            <span className="text-xs font-black text-[#0b3d2e] uppercase tracking-wider flex items-center gap-1.5">
-              <Sparkles size={13} />
-              <span>Pratinjau Standee Meja Presisi 1:1 Square (Anti-Gepeng)</span>
-            </span>
-
-            <div className="aspect-square w-full max-w-[380px] sm:max-w-[420px] mx-auto rounded-[34px] border-[5px] border-[#072e22] bg-gradient-to-b from-white via-[#fbfcfa] to-[#f2f7f4] p-4 sm:p-5 text-center shadow-2xl relative overflow-hidden flex flex-col justify-between">
-              {/* Inner accent lime line */}
-              <div className="pointer-events-none absolute inset-1.5 rounded-[28px] border-[1.5px] border-[#c8f53a]" />
-              {/* Inner dashed line */}
-              <div className="pointer-events-none absolute inset-3 rounded-[22px] border border-dashed border-[#072e22]/20" />
-
-              <div>
-                {/* Logo Header (1:1 Circle Logo, Borderless, Crisp) */}
-                <div className="relative z-10 flex justify-center mb-1">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src="/logo-mochi.png"
-                    alt="Mochi Cafe Logo"
-                    className="h-12 w-12 rounded-full object-contain mx-auto shadow-xs"
-                  />
-                </div>
-
-                {/* Nama Kafe */}
-                <h3 className="relative z-10 text-xs sm:text-sm font-black uppercase tracking-tight text-[#072e22]">
-                  {storeName || "Mochi Cafe n Resto"}
-                </h3>
-                <p className="relative z-10 text-[8px] sm:text-[8.5px] font-extrabold uppercase tracking-wider text-[#4a6b5e] mb-1.5">
-                  Buku Menu Digital · Self-Service Dining
-                </p>
-
-                {/* Nomor Meja Banner */}
-                <div className="relative z-10 mb-2 inline-flex items-center justify-center rounded-xl bg-[#072e22] px-4 py-1 text-[#c8f53a] border-[1.5px] border-[#c8f53a] shadow-xs">
-                  <span className="font-mono text-xs sm:text-sm font-black tracking-wider">
-                    MEJA {formattedTableNumber}
-                  </span>
-                </div>
-
-                {/* QR Container with Corner Finder Accents */}
-                <div className="relative z-10 mx-auto mb-1.5 inline-block rounded-2xl border border-[#d4e2dc] bg-white p-2.5 shadow-sm">
-                  {/* Corner accents */}
-                  <span className="absolute top-1 left-1 h-3 w-3 rounded-tl-xs border-t-[2.5px] border-l-[2.5px] border-[#072e22]" />
-                  <span className="absolute top-1 right-1 h-3 w-3 rounded-tr-xs border-t-[2.5px] border-r-[2.5px] border-[#072e22]" />
-                  <span className="absolute bottom-1 left-1 h-3 w-3 rounded-bl-xs border-b-[2.5px] border-l-[2.5px] border-[#072e22]" />
-                  <span className="absolute bottom-1 right-1 h-3 w-3 rounded-br-xs border-b-[2.5px] border-r-[2.5px] border-[#072e22]" />
-
-                  <QrCodeComponent
-                    value={targetUrl}
-                    size={140}
-                    colorDark="#072e22"
-                    centerLogoUrl="/logo-mochi.png"
-                    label={`QR Meja ${formattedTableNumber}`}
-                  />
-                </div>
-
-                {/* Scan Pill */}
-                <div>
-                  <div className="relative z-10 mb-1.5 inline-flex items-center gap-1 rounded-full border border-[#a3d4c0] bg-[#edf8f3] px-3 py-0.5 text-[8.5px] sm:text-[9px] font-black uppercase tracking-wider text-[#072e22]">
-                    <span>📷 Scan dengan Kamera HP / WA</span>
-                  </div>
-                </div>
-
-                {/* 3 Step Instruction Box */}
-                <div className="relative z-10 mb-1.5 grid grid-cols-3 gap-0.5 rounded-xl border border-[#d4e4dc] bg-[#f6faf8] p-1.5 text-[7.5px] sm:text-[8px]">
-                  <div className="flex flex-col items-center text-center">
-                    <span className="text-xs">📷</span>
-                    <span className="font-extrabold text-[#072e22] mt-0.5">1. Buka Kamera</span>
-                    <span className="text-[6.5px] text-[#557266]">iPhone / Android / WA</span>
-                  </div>
-                  <div className="flex flex-col items-center text-center border-x border-[#dce8e2] px-0.5">
-                    <span className="text-xs">📲</span>
-                    <span className="font-extrabold text-[#072e22] mt-0.5">2. Arahkan QR</span>
-                    <span className="text-[6.5px] text-[#557266]">Buka menu &amp; pesan</span>
-                  </div>
-                  <div className="flex flex-col items-center text-center">
-                    <span className="text-xs">🍽️</span>
-                    <span className="font-extrabold text-[#072e22] mt-0.5">3. Pesan &amp; Santap</span>
-                    <span className="text-[6.5px] text-[#557266]">Diantar ke meja</span>
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <div className="relative z-10 text-[8.5px] sm:text-[9px] font-extrabold text-[#125740]">
-                  ✨ Kumpulkan Poin Member di Setiap Pemesanan! ✨
-                </div>
-
-                <p className="relative z-10 mt-0.5 text-[7.5px] font-bold uppercase tracking-wider text-[#71897f]">
-                  Pesanan otomatis masuk ke Kasir &amp; Dapur · KAEL POS
-                </p>
-              </div>
+          {/* 2. Pilihan Tipe Tampilan: QR Saja vs Standee Komplit */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-black text-[#0b3d2e] uppercase tracking-wider flex items-center gap-1.5">
+                <Sparkles size={13} />
+                <span>Pilih Format Yang Ingin Didownload</span>
+              </span>
             </div>
+
+            {/* Mode Switcher Tabs */}
+            <div className="grid grid-cols-2 gap-1.5 rounded-2xl bg-[#edf8f3] p-1.5 border border-[#d4e2dc]">
+              <button
+                type="button"
+                onClick={() => setPreviewTab("pure_qr")}
+                className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl text-xs font-black transition-all ${
+                  previewTab === "pure_qr"
+                    ? "bg-[#0b3d2e] text-[#c8f53a] shadow-xs"
+                    : "text-[#2c4b3f] hover:bg-white/60"
+                }`}
+              >
+                <QrCodeIcon size={14} />
+                <span>QR Code Saja (HD)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setPreviewTab("standee")}
+                className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl text-xs font-black transition-all ${
+                  previewTab === "standee"
+                    ? "bg-[#0b3d2e] text-[#c8f53a] shadow-xs"
+                    : "text-[#2c4b3f] hover:bg-white/60"
+                }`}
+              >
+                <Download size={14} />
+                <span>Standee Meja 1x1</span>
+              </button>
+            </div>
+
+            {/* TAB 1: PREVIEW & KONTROL QR CODE SAJA */}
+            {previewTab === "pure_qr" && (
+              <div className="space-y-3 animate-in fade-in-50 duration-200">
+                {/* Pure QR Visual Card */}
+                <div className={`aspect-square w-full max-w-[320px] mx-auto rounded-3xl border-2 border-[#d4e2dc] p-6 text-center shadow-lg relative flex flex-col items-center justify-center ${
+                  isTransparentBg ? "bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] [background-size:12px_12px] bg-white" : "bg-white"
+                }`}>
+                  {/* Table Badge */}
+                  <div className="mb-3 inline-flex items-center gap-1.5 rounded-xl bg-[#072e22] px-4 py-1.5 text-[#c8f53a] border border-[#c8f53a] shadow-xs">
+                    <span className="font-mono text-xs font-black tracking-wider">
+                      MEJA {formattedTableNumber}
+                    </span>
+                  </div>
+
+                  {/* QR Code */}
+                  <div className="p-2 bg-white rounded-2xl shadow-xs border border-[#e5ece8]">
+                    <QrCodeComponent
+                      value={targetUrl}
+                      size={180}
+                      colorDark="#072e22"
+                      centerLogoUrl={withCenterLogo ? "/logo-mochi.png" : undefined}
+                      label={`QR Meja ${formattedTableNumber}`}
+                    />
+                  </div>
+
+                  <p className="mt-3 text-[10.5px] font-bold text-[#556b62]">
+                    Format PNG Ultra-HD (2048 x 2048 px)
+                  </p>
+                </div>
+
+                {/* Customization Options */}
+                <div className="flex flex-wrap items-center justify-center gap-3 p-2.5 rounded-2xl bg-[#f8faf9] border border-[#e2ebe6] text-xs font-bold text-[#1c2d26]">
+                  <label className="inline-flex items-center gap-1.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={withCenterLogo}
+                      onChange={(e) => setWithCenterLogo(e.target.checked)}
+                      className="rounded text-[#0b3d2e] focus:ring-[#0b3d2e] h-4 w-4"
+                    />
+                    <span>Pasang Logo Mochi di Tengah</span>
+                  </label>
+
+                  <span className="text-gray-300">|</span>
+
+                  <label className="inline-flex items-center gap-1.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={isTransparentBg}
+                      onChange={(e) => setIsTransparentBg(e.target.checked)}
+                      className="rounded text-[#0b3d2e] focus:ring-[#0b3d2e] h-4 w-4"
+                    />
+                    <span>Background Transparan</span>
+                  </label>
+                </div>
+
+                {/* Download Actions for Pure QR */}
+                <div className="space-y-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={handleDownloadSinglePureQr}
+                    disabled={isDownloading}
+                    className="w-full flex items-center justify-center gap-2 rounded-2xl bg-[#0b3d2e] px-4 py-3.5 text-xs font-black text-[#c8f53a] shadow-md hover:bg-[#124634] active:scale-95 transition-all disabled:opacity-50 cursor-pointer"
+                  >
+                    <QrCodeIcon size={16} />
+                    <span>{isDownloading ? "Menyiapkan File..." : `Download QR Meja ${formattedTableNumber} Saja (HD 2048px)`}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleDownloadBatchTables}
+                    disabled={isDownloading}
+                    className="w-full flex items-center justify-center gap-2 rounded-2xl border-2 border-[#0b3d2e] bg-white px-4 py-3 text-xs font-black text-[#0b3d2e] shadow-xs hover:bg-[#edf8f3] active:scale-95 transition-all disabled:opacity-50 cursor-pointer"
+                  >
+                    <Download size={14} />
+                    <span>⚡ Download Sekaligus Meja 01 s/d 10 (10 File HD)</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* TAB 2: PREVIEW & KONTROL STANDEE MEJA 1x1 */}
+            {previewTab === "standee" && (
+              <div className="space-y-3 animate-in fade-in-50 duration-200">
+                <div className="aspect-square w-full max-w-[360px] mx-auto rounded-[34px] border-[5px] border-[#072e22] bg-gradient-to-b from-white via-[#fbfcfa] to-[#f2f7f4] p-4 sm:p-5 text-center shadow-2xl relative overflow-hidden flex flex-col justify-between">
+                  {/* Inner accent lime line */}
+                  <div className="pointer-events-none absolute inset-1.5 rounded-[28px] border-[1.5px] border-[#c8f53a]" />
+                  {/* Inner dashed line */}
+                  <div className="pointer-events-none absolute inset-3 rounded-[22px] border border-dashed border-[#072e22]/20" />
+
+                  <div>
+                    {/* Logo Header */}
+                    <div className="relative z-10 flex justify-center mb-1">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src="/logo-mochi.png"
+                        alt="Mochi Cafe Logo"
+                        className="h-12 w-12 rounded-full object-contain mx-auto shadow-xs"
+                      />
+                    </div>
+
+                    {/* Nama Kafe */}
+                    <h3 className="relative z-10 text-xs sm:text-sm font-black uppercase tracking-tight text-[#072e22]">
+                      {storeName || "Mochi Cafe n Resto"}
+                    </h3>
+                    <p className="relative z-10 text-[8px] sm:text-[8.5px] font-extrabold uppercase tracking-wider text-[#4a6b5e] mb-1.5">
+                      Buku Menu Digital · Self-Service Dining
+                    </p>
+
+                    {/* Nomor Meja Banner */}
+                    <div className="relative z-10 mb-2 inline-flex items-center justify-center rounded-xl bg-[#072e22] px-4 py-1 text-[#c8f53a] border-[1.5px] border-[#c8f53a] shadow-xs">
+                      <span className="font-mono text-xs sm:text-sm font-black tracking-wider">
+                        MEJA {formattedTableNumber}
+                      </span>
+                    </div>
+
+                    {/* QR Container */}
+                    <div className="relative z-10 mx-auto mb-1.5 inline-block rounded-2xl border border-[#d4e2dc] bg-white p-2.5 shadow-sm">
+                      <span className="absolute top-1 left-1 h-3 w-3 rounded-tl-xs border-t-[2.5px] border-l-[2.5px] border-[#072e22]" />
+                      <span className="absolute top-1 right-1 h-3 w-3 rounded-tr-xs border-t-[2.5px] border-r-[2.5px] border-[#072e22]" />
+                      <span className="absolute bottom-1 left-1 h-3 w-3 rounded-bl-xs border-b-[2.5px] border-l-[2.5px] border-[#072e22]" />
+                      <span className="absolute bottom-1 right-1 h-3 w-3 rounded-br-xs border-b-[2.5px] border-r-[2.5px] border-[#072e22]" />
+
+                      <QrCodeComponent
+                        value={targetUrl}
+                        size={140}
+                        colorDark="#072e22"
+                        centerLogoUrl="/logo-mochi.png"
+                        label={`QR Meja ${formattedTableNumber}`}
+                      />
+                    </div>
+
+                    {/* Scan Pill */}
+                    <div>
+                      <div className="relative z-10 mb-1.5 inline-flex items-center gap-1 rounded-full border border-[#a3d4c0] bg-[#edf8f3] px-3 py-0.5 text-[8.5px] sm:text-[9px] font-black uppercase tracking-wider text-[#072e22]">
+                        <span>📷 Scan dengan Kamera HP / WA</span>
+                      </div>
+                    </div>
+
+                    {/* 3 Step Instruction Box */}
+                    <div className="relative z-10 mb-1.5 grid grid-cols-3 gap-0.5 rounded-xl border border-[#d4e4dc] bg-[#f6faf8] p-1.5 text-[7.5px] sm:text-[8px]">
+                      <div className="flex flex-col items-center text-center">
+                        <span className="text-xs">📷</span>
+                        <span className="font-extrabold text-[#072e22] mt-0.5">1. Buka Kamera</span>
+                        <span className="text-[6.5px] text-[#557266]">iPhone / Android</span>
+                      </div>
+                      <div className="flex flex-col items-center text-center border-x border-[#dce8e2] px-0.5">
+                        <span className="text-xs">📲</span>
+                        <span className="font-extrabold text-[#072e22] mt-0.5">2. Arahkan QR</span>
+                        <span className="text-[6.5px] text-[#557266]">Buka menu</span>
+                      </div>
+                      <div className="flex flex-col items-center text-center">
+                        <span className="text-xs">🍽️</span>
+                        <span className="font-extrabold text-[#072e22] mt-0.5">3. Pesan</span>
+                        <span className="text-[6.5px] text-[#557266]">Diantar ke meja</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="relative z-10 text-[8.5px] sm:text-[9px] font-extrabold text-[#125740]">
+                      ✨ Kumpulkan Poin Member di Setiap Pemesanan! ✨
+                    </div>
+
+                    <p className="relative z-10 mt-0.5 text-[7.5px] font-bold uppercase tracking-wider text-[#71897f]">
+                      Pesanan otomatis masuk ke Kasir &amp; Dapur · KAEL POS
+                    </p>
+                  </div>
+                </div>
+
+                {/* Standee Actions */}
+                <div className="grid grid-cols-2 gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={handleDownloadPng}
+                    disabled={isDownloading}
+                    className="flex items-center justify-center gap-2 rounded-2xl bg-[#0b3d2e] px-4 py-3.5 text-xs font-black text-[#c8f53a] shadow-md hover:bg-[#124634] active:scale-95 transition-all disabled:opacity-50 cursor-pointer"
+                  >
+                    <Download size={15} />
+                    <span>{isDownloading ? "Menyiapkan..." : "Download Standee (1x1 PNG)"}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handlePrintStandee}
+                    className="flex items-center justify-center gap-2 rounded-2xl border-2 border-[#0b3d2e] bg-white px-4 py-3.5 text-xs font-black text-[#0b3d2e] shadow-xs hover:bg-[#edf8f3] active:scale-95 transition-all cursor-pointer"
+                  >
+                    <Printer size={15} />
+                    <span>Cetak Standee Meja</span>
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
-          {/* 3. Tombol Aksi */}
-          <div className="space-y-2 pt-2 border-t border-[#e2ebe6]">
-            {/* Download Buttons Row (Main Actions) */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {/* Tombol Download QR Saja (RAW ULTRA-HD 2048px) */}
-              <button
-                type="button"
-                onClick={() => handleDownloadPureQr(false)}
-                disabled={isDownloading}
-                className="flex items-center justify-center gap-2 rounded-2xl bg-[#0b3d2e] px-4 py-3.5 text-xs font-black text-[#c8f53a] shadow-md hover:bg-[#124634] active:scale-95 transition-all disabled:opacity-50 cursor-pointer"
-              >
-                <QrCodeIcon size={16} />
-                <span>{isDownloading ? "Memproses..." : "Download QR Saja (HD 2048px)"}</span>
-              </button>
+          {/* 3. Baris Tombol Salin Link & Tes Menu */}
+          <div className="grid grid-cols-2 gap-2 pt-2 border-t border-[#e2ebe6]">
+            <button
+              type="button"
+              onClick={handleCopyLink}
+              className="flex items-center justify-center gap-1.5 rounded-xl border border-[#d8e3de] bg-[#f8faf9] px-3 py-2.5 text-xs font-bold text-[#1c2d26] hover:bg-[#edf8f3] active:scale-95 transition-all cursor-pointer"
+            >
+              {copied ? <Check size={14} className="text-[#167052]" /> : <Copy size={14} />}
+              <span>{copied ? "Link Tersalin!" : "Salin Link Meja"}</span>
+            </button>
 
-              {/* Tombol Download Standee Lengkap 1x1 */}
-              <button
-                type="button"
-                onClick={handleDownloadPng}
-                disabled={isDownloading}
-                className="flex items-center justify-center gap-2 rounded-2xl border-2 border-[#0b3d2e] bg-white px-4 py-3.5 text-xs font-black text-[#0b3d2e] shadow-xs hover:bg-[#edf8f3] active:scale-95 transition-all disabled:opacity-50 cursor-pointer"
-              >
-                <Download size={15} />
-                <span>Download Standee Lengkap (1x1)</span>
-              </button>
-            </div>
-
-            {/* Utility Row */}
-            <div className="grid grid-cols-3 gap-2">
-              {/* Tombol Cetak Standee */}
-              <button
-                type="button"
-                onClick={handlePrintStandee}
-                className="flex items-center justify-center gap-1.5 rounded-xl border border-[#d8e3de] bg-[#f8faf9] px-3 py-2.5 text-[11px] font-bold text-[#1c2d26] hover:bg-[#edf8f3] active:scale-95 transition-all"
-              >
-                <Printer size={13} />
-                <span>Cetak Print</span>
-              </button>
-
-              {/* Tombol Salin Link */}
-              <button
-                type="button"
-                onClick={handleCopyLink}
-                className="flex items-center justify-center gap-1.5 rounded-xl border border-[#d8e3de] bg-[#f8faf9] px-3 py-2.5 text-[11px] font-bold text-[#1c2d26] hover:bg-[#edf8f3] active:scale-95 transition-all"
-              >
-                {copied ? <Check size={13} className="text-[#167052]" /> : <Copy size={13} />}
-                <span>{copied ? "Tersalin!" : "Salin Link"}</span>
-              </button>
-
-              {/* Tombol Buka Menu */}
-              <a
-                href={targetUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center justify-center gap-1.5 rounded-xl border border-[#d8e3de] bg-white px-3 py-2.5 text-[11px] font-bold text-[#556b62] hover:text-[#0b3d2e] hover:bg-[#f8faf9] transition-colors"
-              >
-                <span>Tes Menu</span>
-                <ExternalLink size={12} />
-              </a>
-            </div>
+            <a
+              href={targetUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center justify-center gap-1.5 rounded-xl border border-[#d8e3de] bg-white px-3 py-2.5 text-xs font-bold text-[#556b62] hover:text-[#0b3d2e] hover:bg-[#f8faf9] transition-colors"
+            >
+              <span>Tes Buka Menu</span>
+              <ExternalLink size={13} />
+            </a>
           </div>
         </div>
       </div>
