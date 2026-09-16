@@ -96,8 +96,8 @@ export default async function QrOrderPage({
       business={business}
       categories={categories}
       fontClassName={plusJakartaSans.className}
-      // Menu yang sedang habis tidak perlu sampai ke pelanggan.
-      menuItems={menuItems.filter((m) => m.is_available)}
+      // Tampilkan seluruh menu; menu yang habis akan diberi penanda 'HABIS' & dinonaktifkan di tampilan klien.
+      menuItems={menuItems}
     />
   );
 }

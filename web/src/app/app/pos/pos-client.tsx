@@ -56,7 +56,8 @@ import type {
   Shift,
   Order,
   OrderItem,
-  LoyaltyProgram
+  LoyaltyProgram,
+  Reward
 } from "@/lib/types";
 import { 
   createOrderAction,
@@ -68,6 +69,7 @@ import {
   registerCustomerByStaffAction,
   recordReceiptPrintAction,
   getPendingQrOrdersAction,
+  redeemRewardAction,
 } from "@/lib/actions";
 import { 
   calculateCartTotals, 
@@ -84,6 +86,7 @@ import {
 import { formatRupiah, formatBusinessDateTime } from "@/lib/formatters";
 import QrisPayment from "./qris-payment";
 import OrderQueue from "./order-queue";
+import PosFloorPlan, { TableSummary } from "./pos-floor-plan";
 import { calculateEarnedPoints } from "@/lib/loyalty-engine";
 import { PLACEHOLDER_MENU } from "@/lib/types";
 import TableQrModal from "./table-qr-modal";
@@ -112,6 +115,7 @@ function getPosCategoryIcon(categoryName: string): LucideIcon {
 }
 
 interface PosClientProps {
+  rewards?: Reward[];
   business: Business | null;
   categories: Category[];
   menuItems: MenuItem[];
@@ -164,6 +168,15 @@ export default function PosClient({
   // Cart State
   const [cart, setCart] = useState<Record<string, { item: MenuItem; qty: number; note: string }>>({});
   const [discountNominal, setDiscountNominal] = useState<number>(0);
+  // View Mode: Catalog vs Floor Plan
+  const [posViewMode, setPosViewMode] = useState<"catalog" | "floor_plan">("catalog");
+
+  // Custom Discount Modal & Reason
+  const [showDiscountModal, setShowDiscountModal] = useState(false);
+  const [discountReasonKey, setDiscountReasonKey] = useState("keringanan_owner");
+  const [discountReasonCustom, setDiscountReasonCustom] = useState("");
+  const [targetFinalBillInput, setTargetFinalBillInput] = useState<number>(0);
+
 
   // Payment Modal State
   const [showPaymentModal, setShowPaymentModal] = useState(false);
@@ -428,6 +441,104 @@ export default function PosClient({
       return `${m.name} ${m.description ?? ""}`.toLowerCase().includes(normalizedSearch);
     });
   }, [menuItems, activeCategory, menuSearchQuery]);
+
+
+  // Hitung jumlah meja aktif
+  const activeTablesCount = useMemo(() => {
+    const tableKeys = new Set(
+      currentQrOrders
+        .filter((o) => o.status !== "cancelled" && o.payment_status !== "failed" && o.fulfillment_status !== "completed")
+        .map((o) => o.table_no?.trim().toLowerCase())
+        .filter(Boolean)
+    );
+    return tableKeys.size;
+  }, [currentQrOrders]);
+
+  // Handle Tambah Pesanan ke Meja
+  const handleAddItemsToTable = (tableNo: string) => {
+    setSelectedTableNo(tableNo);
+    setServiceType("dine_in");
+    setPosViewMode("catalog");
+  };
+
+  // Handle Cetak Bill Gabungan Meja
+  const handlePrintCombinedTableBill = (table: TableSummary) => {
+    const combinedItems: {
+      name_snapshot: string;
+      qty: number;
+      unit_price_snapshot?: number;
+      subtotal?: number;
+      note?: string | null;
+    }[] = [];
+
+    table.orders.forEach((ord) => {
+      ord.items.forEach((item) => {
+        combinedItems.push({
+          name_snapshot: item.name_snapshot,
+          qty: item.qty,
+          unit_price_snapshot: Number(item.price_snapshot),
+          subtotal: Number(item.subtotal),
+          note: item.note ? `[#${ord.order_no}] ${item.note}` : `[#${ord.order_no}]`,
+        });
+      });
+    });
+
+    const firstOrder = table.orders[0];
+    void handlePrintThreePlyBluetooth({
+      order_no: `MEJA-${table.tableNo}`,
+      table_no: table.tableNo,
+      service_type: "dine_in",
+      created_at: firstOrder?.created_at || new Date().toISOString(),
+      items: combinedItems,
+      total: table.totalBill,
+      payment_method: table.hasUnpaid ? "Belum Lunas" : "Lunas",
+      customer_name: firstOrder?.delivery_name || `Tamu Meja ${table.tableNo}`,
+    });
+  };
+
+  // Handle Klaim Reward Loyalty di POS
+  const handleClaimReward = async (reward: Reward, customer: CustomerDirectoryEntry) => {
+    if (customer.balance < reward.point_cost) {
+      alert("Saldo poin member tidak mencukupi untuk reward ini.");
+      return;
+    }
+
+    const res = await redeemRewardAction(customer.id, reward.id);
+
+    if (!res.ok) {
+      alert(res.error || "Gagal menukar reward.");
+      return;
+    }
+
+    // Cari menu item yang sesuai atau buat mock item
+    const matchedMenu = menuItems.find(
+      (m) => m.name.toLowerCase().includes(reward.name.toLowerCase().replace(/gratis|1x/gi, "").trim())
+    ) || {
+      id: `reward-${reward.id}`,
+      business_id: business?.id || "",
+      category_id: null,
+      name: `🎁 ${reward.name} (Hadiah Loyalty)`,
+      price: 0,
+      is_available: true,
+      sort_order: 999,
+    };
+
+    setCart((prev) => ({
+      ...prev,
+      [matchedMenu.id]: {
+        item: { ...matchedMenu, price: 0 },
+        qty: (prev[matchedMenu.id]?.qty || 0) + 1,
+        note: `[REWARD LOYALTY - KODE ${res.data.code}]`,
+      },
+    }));
+
+    alert(
+      `✓ Berhasil menukar hadiah "${reward.name}"!` +
+      `\n-${reward.point_cost} Poin terpotong dari akun ${customer.name}.` +
+      `\nMenu gratis telah dimasukkan ke keranjang kasir.`
+    );
+    refreshAll();
+  };
 
   // Search Loyalty Customers via Server Action
   useEffect(() => {
@@ -1154,7 +1265,23 @@ export default function PosClient({
       <div className="space-y-2.5 border-t border-[#dfe6e2] bg-[#f8faf9] p-3.5 sm:p-4">
         <dl className="space-y-1 text-xs tabular-nums font-mono">
           <div className="flex justify-between text-[#68766f]"><dt>Subtotal</dt><dd>{formatRupiah(cartTotals.subtotal)}</dd></div>
-          {cartTotals.discount > 0 && <div className="flex justify-between text-[#b34539] font-bold"><dt>Diskon</dt><dd>-{formatRupiah(cartTotals.discount)}</dd></div>}
+          <div className="flex items-center justify-between text-[11px]">
+            <button
+              type="button"
+              onClick={() => {
+                setTargetFinalBillInput(cartTotals.subtotal);
+                setShowDiscountModal(true);
+              }}
+              className="font-bold text-[#167052] hover:underline flex items-center gap-1"
+            >
+              <span>🏷️ {discountNominal > 0 ? `Diskon (${discountReasonKey.replace(/_/g, " ")})` : "+ Tambah Diskon / Keringanan"}</span>
+            </button>
+            {cartTotals.discount > 0 && (
+              <span className="text-[#b34539] font-bold font-mono">
+                -{formatRupiah(cartTotals.discount)}
+              </span>
+            )}
+          </div>
           {cartTotals.serviceCharge > 0 && <div className="flex justify-between text-[#68766f]"><dt>Service</dt><dd>{formatRupiah(cartTotals.serviceCharge)}</dd></div>}
           {cartTotals.tax > 0 && <div className="flex justify-between text-[#68766f]"><dt>Pajak</dt><dd>{formatRupiah(cartTotals.tax)}</dd></div>}
           {serviceType === "delivery" && kirimOngkir > 0 && <div className="flex justify-between text-[#68766f]"><dt>Ongkir</dt><dd>{formatRupiah(kirimOngkir)}</dd></div>}
@@ -1366,6 +1493,42 @@ export default function PosClient({
           </div>
 
           <div className="hidden lg:flex items-center gap-2">
+            {/* POS View Switcher: Katalog Menu vs Denah Meja */}
+            <div className="flex items-center gap-1 bg-black/20 p-1 rounded-xl font-mono text-xs mr-2">
+              <button
+                type="button"
+                onClick={() => setPosViewMode("catalog")}
+                className={`px-3 py-1.5 rounded-lg font-black transition-all flex items-center gap-1.5 ${
+                  posViewMode === "catalog"
+                    ? isMochiPos
+                      ? "bg-[#c8f53a] text-[#073829] shadow-xs"
+                      : "bg-white text-[#232331] shadow-xs"
+                    : "text-white/80 hover:text-white"
+                }`}
+              >
+                <LayoutGrid size={13} />
+                <span>Menu & Kasir</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setPosViewMode("floor_plan")}
+                className={`px-3 py-1.5 rounded-lg font-black transition-all flex items-center gap-1.5 ${
+                  posViewMode === "floor_plan"
+                    ? isMochiPos
+                      ? "bg-[#c8f53a] text-[#073829] shadow-xs"
+                      : "bg-white text-[#232331] shadow-xs"
+                    : "text-white/80 hover:text-white"
+                }`}
+              >
+                <Utensils size={13} />
+                <span>Denah Meja</span>
+                {activeTablesCount > 0 && (
+                  <span className="px-1.5 py-0.2 rounded-full bg-amber-400 text-amber-950 font-black text-[10px]">
+                    {activeTablesCount}
+                  </span>
+                )}
+              </button>
+            </div>
             <button
               type="button"
               onClick={() => setShowMemberQrModal(true)}
@@ -1567,6 +1730,17 @@ export default function PosClient({
         </nav>
 
         <section className="flex min-h-0 min-w-0 flex-col overflow-hidden border-r border-[#d8e1dc]">
+          {posViewMode === "floor_plan" ? (
+            <PosFloorPlan
+              orders={currentQrOrders}
+              menuItems={menuItems}
+              isMochi={isMochiPos}
+              onAddItemsToTable={handleAddItemsToTable}
+              onPrintCombinedTableBill={handlePrintCombinedTableBill}
+              onRefresh={refreshAll}
+            />
+          ) : (
+            <div className="flex flex-col h-full overflow-hidden">
           <div className={`shrink-0 border-b p-2.5 sm:p-4 ${isMochiPos ? "bg-white border-[#dbe4df]" : "bg-[#f7faf8] border-[#dbe4df]"}`}>
             <div className="relative">
               <Search size={16} aria-hidden="true" className="pointer-events-none absolute left-3 sm:left-3.5 top-1/2 -translate-y-1/2 text-[#718078] sm:h-[18px] sm:w-[18px]" />
@@ -1772,6 +1946,8 @@ export default function PosClient({
               </div>
             )}
           </div>
+            </div>
+          )}
         </section>
 
         <aside className="hidden min-h-0 overflow-hidden lg:block">{renderInvoice(false)}</aside>
@@ -2575,6 +2751,138 @@ export default function PosClient({
         staffWhatsapp={staffWhatsapp}
         onSaveStaffWhatsapp={handleSaveStaffWhatsapp}
       />
+      {/* MODAL: CUSTOM DISCOUNT WITH MANDATORY REASON */}
+      {showDiscountModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-xs bg-[#07281e]/65">
+          <div className="w-full max-w-md rounded-3xl bg-white p-5 sm:p-6 space-y-4 animate-in zoom-in-95 font-mono text-xs border border-[#d8e3de] shadow-2xl">
+            <div className="flex items-center justify-between border-b border-[#e0ebe5] pb-3">
+              <h3 className="font-black text-base font-sans text-[#0b3d2e]">
+                Diskon & Keringanan Khusus
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowDiscountModal(false)}
+                className="text-[#718078] hover:text-[#0b3d2e] font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3 font-sans">
+              <div className="p-3 rounded-2xl bg-[#edf8f3] border border-[#ccd9d3] space-y-1 font-mono text-xs">
+                <div className="flex justify-between">
+                  <span className="text-[#526159]">Subtotal Keranjang:</span>
+                  <span className="font-bold text-[#0b3d2e]">{formatRupiah(cartTotals.subtotal)}</span>
+                </div>
+              </div>
+
+              {/* Pilihan: Input Nominal Diskon atau Target Tagihan Akhir */}
+              <div className="space-y-1 font-mono">
+                <label className="block font-bold text-[#0b3d2e]">
+                  Nominal Diskon yang Diberikan (Rp):
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  max={cartTotals.subtotal}
+                  step={5000}
+                  value={discountNominal}
+                  onChange={(e) => setDiscountNominal(Math.max(0, Number(e.target.value)))}
+                  className="w-full rounded-xl border-2 border-[#0b3d2e] p-2.5 text-base font-black text-[#0b3d2e]"
+                  placeholder="Contoh: 35000"
+                />
+              </div>
+
+              {/* Kalkulator Cepat (Contoh: Total 135k jadi bayar 100k) */}
+              <div className="p-2.5 rounded-xl border border-dashed border-emerald-400 bg-emerald-50/60 font-mono text-[11px] space-y-1.5">
+                <span className="font-bold text-emerald-950 block">
+                  ⚡ Atau Mau Dibulatkan Jadi Berapa?
+                </span>
+                <div className="flex gap-2">
+                  <input
+                    type="number"
+                    min={0}
+                    max={cartTotals.subtotal}
+                    step={5000}
+                    value={targetFinalBillInput || ""}
+                    onChange={(e) => {
+                      const target = Number(e.target.value);
+                      setTargetFinalBillInput(target);
+                      if (target > 0 && target < cartTotals.subtotal) {
+                        setDiscountNominal(cartTotals.subtotal - target);
+                      }
+                    }}
+                    placeholder="Misal bayar: 100000"
+                    className="flex-1 rounded-lg border border-[#ccd9d3] px-2 py-1.5 text-xs font-black text-[#0b3d2e]"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (targetFinalBillInput > 0 && targetFinalBillInput < cartTotals.subtotal) {
+                        setDiscountNominal(cartTotals.subtotal - targetFinalBillInput);
+                      }
+                    }}
+                    className="px-3 py-1 rounded-lg bg-[#0b3d2e] text-[#c8f53a] font-bold text-xs"
+                  >
+                    Hitung Diskon
+                  </button>
+                </div>
+              </div>
+
+              {/* Alasan Wajib Dipilih */}
+              <div className="space-y-1 font-mono">
+                <label className="block font-bold text-[#0b3d2e]">
+                  Alasan Diskon (Wajib Dicatat untuk Audit Owner):
+                </label>
+                <select
+                  value={discountReasonKey}
+                  onChange={(e) => setDiscountReasonKey(e.target.value)}
+                  className="w-full rounded-xl border-2 border-[#ccd9d3] p-2 text-xs font-bold text-[#0b3d2e] bg-white"
+                >
+                  <option value="keringanan_owner">🤝 Keringanan Saudara / Relasi Owner</option>
+                  <option value="komplain_pelayanan">⏳ Komplain Pelayanan / Keterlambatan</option>
+                  <option value="promo_khusus">🎉 Promo Khusus / Voucher Event</option>
+                  <option value="pembulatan">🪙 Pembulatan Nominal Tagihan</option>
+                  <option value="lainnya">📝 Catatan Khusus Lainnya</option>
+                </select>
+              </div>
+
+              <div className="space-y-1 font-mono">
+                <label className="block font-bold text-[#526159] text-[11px]">
+                  Catatan Tambahan (Opsional):
+                </label>
+                <input
+                  type="text"
+                  value={discountReasonCustom}
+                  onChange={(e) => setDiscountReasonCustom(e.target.value)}
+                  placeholder="Misal: Saudara sepupu owner..."
+                  className="w-full rounded-xl border border-[#ccd9d3] p-2 text-xs font-bold text-[#0b3d2e]"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-[#e0ebe5] font-mono">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDiscountNominal(0);
+                    setShowDiscountModal(false);
+                  }}
+                  className="rounded-xl border border-rose-200 bg-rose-50 text-rose-700 px-3 py-2 font-bold"
+                >
+                  Hapus Diskon
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowDiscountModal(false)}
+                  className="rounded-xl bg-[#c8f53a] text-[#073829] px-5 py-2 font-black shadow-xs"
+                >
+                  Terapkan Diskon ✓
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

@@ -28,7 +28,8 @@ import {
   FULFILLMENT_FLOW,
 } from "@/lib/pos-engine";
 import { formatRupiah } from "@/lib/formatters";
-import type { Order, OrderItem } from "@/lib/types";
+import type { Order, OrderItem, MenuItem } from "@/lib/types";
+import PosReplaceRefundModal from "./pos-replace-refund-modal";
 
 type Antrean = Order & { items: OrderItem[] };
 
@@ -48,6 +49,7 @@ export default function OrderQueue({
   onPrintThreePly,
   autoPrintThreePly,
   onToggleAutoPrintThreePly,
+  menuItems = [],
 }: {
   orders: Antrean[];
   onOrdersChange?: (orders: Antrean[]) => void;
@@ -66,11 +68,16 @@ export default function OrderQueue({
   }) => void;
   autoPrintThreePly?: boolean;
   onToggleAutoPrintThreePly?: (val: boolean) => void;
+  menuItems?: MenuItem[];
 }) {
   const router = useRouter();
   const [localOrders, setLocalOrders] = useState<Antrean[]>(orders);
   const [sibuk, setSibuk] = useState<string | null>(null);
   const [galat, setGalat] = useState<string | null>(null);
+  const [modalOrder, setModalOrder] = useState<Antrean | null>(null);
+  const [modalItem, setModalItem] = useState<OrderItem | null>(null);
+  const [showAdjustModal, setShowAdjustModal] = useState(false);
+
 
   useEffect(() => {
     setLocalOrders(orders);
@@ -292,14 +299,30 @@ export default function OrderQueue({
                   </div>
                 </div>
 
-                <ul className="font-mono text-[11px] space-y-0.5">
+                <ul className="font-mono text-[11px] space-y-1">
                   {o.items.map((i) => (
-                    <li key={i.id} className="flex justify-between gap-2">
-                      <span className="truncate">
+                    <li key={i.id} className="flex items-center justify-between gap-2 py-0.5">
+                      <span className="truncate flex-1">
                         {i.qty}× {i.name_snapshot}
                         {i.note ? <span className="text-[#7b7b8e]"> · {i.note}</span> : null}
                       </span>
-                      <span className="shrink-0">{formatRupiah(Number(i.subtotal))}</span>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <span className="font-bold">{formatRupiah(Number(i.subtotal))}</span>
+                        {menuItems && menuItems.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setModalOrder(o);
+                              setModalItem(i);
+                              setShowAdjustModal(true);
+                            }}
+                            className="px-1.5 py-0.5 rounded text-[9.5px] font-bold border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-900 transition-colors"
+                            title="Ganti menu (stok habis) atau refund item ini"
+                          >
+                            ⚠️ Ganti/Refund
+                          </button>
+                        )}
+                      </div>
                     </li>
                   ))}
                 </ul>
@@ -581,9 +604,26 @@ export default function OrderQueue({
                 </div>
               </div>
             );
-          })}
-        </div>
+          })}        </div>
       </div>
+
+      {showAdjustModal && modalOrder && (
+        <PosReplaceRefundModal
+          isOpen={showAdjustModal}
+          onClose={() => {
+            setShowAdjustModal(false);
+            setModalOrder(null);
+            setModalItem(null);
+          }}
+          order={modalOrder}
+          selectedItem={modalItem}
+          menuItems={menuItems}
+          isMochi={isMochi}
+          onSuccess={() => {
+            router.refresh();
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -21,7 +21,7 @@ export const metadata: Metadata = {
 export default async function LoyaltyPage() {
   const { session } = await guardModulePage("loyalty", "/app/loyalty");
 
-  const [business, program, customers, memberInsights, rewards, users, staffAudit, campaigns, weeklySignups, referralReport, tiers] = await Promise.all([
+  const [business, program, customers, memberInsights, rewards, users, staffAudit, campaigns, weeklySignups, referralReport, tiers, menuItems] = await Promise.all([
     db.getBusiness(session.businessId),
     db.getLoyaltyProgram(session.businessId),
     db.getCustomersWithBalance(session.businessId),
@@ -34,6 +34,7 @@ export default async function LoyaltyPage() {
     db.getWeeklySignups(session.businessId),
     session.role === "owner" ? db.getReferralReport(session.businessId) : Promise.resolve([]),
     db.getLoyaltyTiers(session.businessId),
+    db.getMenuItems(session.businessId),
   ]);
   const [latestCampaignRecipients, expiryDue, expirySoon, birthdayCandidates, anniversaryCandidates] = await Promise.all([
     campaigns[0] ? db.getLoyaltyCampaignRecipients(campaigns[0].id, session.businessId) : Promise.resolve([]),
@@ -86,6 +87,7 @@ export default async function LoyaltyPage() {
         birthdayCandidates={birthdayCandidates}
         anniversaryCandidates={anniversaryCandidates}
         tiers={tiers}
+        menuItems={menuItems}
         sessionRole={session.role}
       />
     </div>

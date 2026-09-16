@@ -38,7 +38,7 @@ import {
   ShoppingBag,
   Crown
 } from "lucide-react";
-import type { Business, CustomerDirectoryEntry, LoyaltyCampaignRecipient, LoyaltyCampaignSummary, LoyaltyProgram, PointExpiryCandidate, Reward, User, PointLedger, Redemption, ReferralReportRow, AnnualDateCandidate, LoyaltyTier } from "@/lib/types";
+import type { Business, CustomerDirectoryEntry, MenuItem, LoyaltyCampaignRecipient, LoyaltyCampaignSummary, LoyaltyProgram, PointExpiryCandidate, Reward, User, PointLedger, Redemption, ReferralReportRow, AnnualDateCandidate, LoyaltyTier } from "@/lib/types";
 import {
   addPointsAction, redeemRewardAction, saveRewardAction, deleteRewardAction,
   anonymizeCustomerAction, updateLoyaltyProgramAction, searchCustomersAction,
@@ -79,6 +79,7 @@ export default function KaelLoyaltyDashboard({
   birthdayCandidates,
   anniversaryCandidates,
   tiers,
+  menuItems = [],
   sessionRole,
 }: {
   business: Business | null;
@@ -97,6 +98,7 @@ export default function KaelLoyaltyDashboard({
   birthdayCandidates: AnnualDateCandidate[];
   anniversaryCandidates: AnnualDateCandidate[];
   tiers: LoyaltyTier[];
+  menuItems?: MenuItem[];
   sessionRole: User["role"];
 }) {
   const router = useRouter();

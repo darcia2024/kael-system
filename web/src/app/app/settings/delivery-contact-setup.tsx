@@ -58,10 +58,13 @@ export default function DeliveryContactSetup({
         </div>
         <ul className="text-[11.5px] text-[#2c5243] space-y-1 list-disc list-inside font-medium leading-relaxed">
           <li>
+            <strong>Panggil Pelayan &amp; Bantuan QR Meja:</strong> Tombol <em>"Panggil Pelayan / Bantuan"</em> di QR meja pelanggan akan langsung membuka WhatsApp ke nomor ini dengan format nomor meja otomatis.
+          </li>
+          <li>
             <strong>Pesan Delivery Member:</strong> Menjadi tujuan chat 1-klik saat member menekan tombol <em>"Pesan Delivery via WhatsApp"</em> di katalog menu.
           </li>
           <li>
-            <strong>Konfirmasi QR Meja:</strong> Pelanggan meja dapat langsung mengirim bukti transfer QRIS ke nomor ini.
+            <strong>Konfirmasi QRIS Meja:</strong> Pelanggan meja dapat langsung mengirim bukti transfer QRIS ke nomor ini.
           </li>
           <li>
             <strong>Struk Digital &amp; CS:</strong> Tampil sebagai kontak bantuan resmi toko di struk digital.

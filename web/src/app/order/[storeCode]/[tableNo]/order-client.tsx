@@ -1212,6 +1212,26 @@ export default function CustomerQrOrderPage({
           </div>
 
           <div className="flex items-center gap-2">
+            {/* WhatsApp Bantuan / Panggil Pelayan */}
+            {business?.phone && (
+              <a
+                href={`https://wa.me/${business.phone.replace(/[^0-9]/g, "").replace(/^0/, "62")}?text=${encodeURIComponent(
+                  `Halo ${business?.name || "Admin"}, saya tamu di Meja ${tableNo} butuh bantuan / pelayan.`
+                )}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={`flex items-center gap-1.5 rounded-xl px-2.5 sm:px-3 py-2 text-xs font-black transition-all shadow-xs border ${
+                  isMochi
+                    ? "bg-emerald-500/20 hover:bg-emerald-500/30 text-[#c8f53a] border-emerald-400/30"
+                    : "bg-[#eef7f2] hover:bg-[#dcf0e5] text-[#166534] border-[#c0decb]"
+                }`}
+                title="Panggil Pelayan / Hubungi Kasir via WhatsApp"
+              >
+                <MessageSquare size={14} className={isMochi ? "text-[#c8f53a]" : "text-[#25d366]"} />
+                <span className="hidden sm:inline">Panggil Pelayan</span>
+              </a>
+            )}
+
             {pesananSelesai && (
               <button
                 type="button"
@@ -1341,17 +1361,25 @@ export default function CustomerQrOrderPage({
                   const categoryName = categories.find((category) => category.id === item.category_id)?.name ?? "Menu";
                   const CategoryIcon = getCategoryIcon(categoryName);
                   const hasPhoto = item.photo_url && item.photo_url !== PLACEHOLDER_MENU;
+                  const isAvailable = item.is_available !== false;
 
                   return (
                     <article
                       key={item.id}
-                      className="group flex min-h-[250px] min-w-0 flex-col overflow-hidden rounded-xl border border-[#d7e0db] bg-white shadow-[0_5px_18px_rgba(25,67,52,0.06)] hover:border-[#176c4f]/40 hover:shadow-[0_8px_24px_rgba(25,67,52,0.1)] transition-all"
+                      className={`group flex min-h-[250px] min-w-0 flex-col overflow-hidden rounded-xl border transition-all ${
+                        isAvailable
+                          ? "border-[#d7e0db] bg-white shadow-[0_5px_18px_rgba(25,67,52,0.06)] hover:border-[#176c4f]/40 hover:shadow-[0_8px_24px_rgba(25,67,52,0.1)]"
+                          : "border-gray-200 bg-gray-50/80 opacity-75"
+                      }`}
                     >
                       <button
                         type="button"
-                        onClick={() => handleOpenDetailModal(item)}
+                        onClick={() => isAvailable && handleOpenDetailModal(item)}
+                        disabled={!isAvailable}
                         aria-label={`Lihat foto dan detail ${item.name}`}
-                        className="relative aspect-[4/3] w-full cursor-pointer overflow-hidden border-b border-[#e0e7e3] bg-[#e8f2ed] p-0 text-left block focus:outline-none"
+                        className={`relative aspect-[4/3] w-full overflow-hidden border-b border-[#e0e7e3] bg-[#e8f2ed] p-0 text-left block focus:outline-none ${
+                          isAvailable ? "cursor-pointer" : "cursor-not-allowed"
+                        }`}
                       >
                         {hasPhoto ? (
                           // eslint-disable-next-line @next/next/no-img-element
@@ -1359,43 +1387,68 @@ export default function CustomerQrOrderPage({
                             src={item.photo_url ?? undefined}
                             alt={item.name}
                             loading="lazy"
-                            className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                            className={`h-full w-full object-cover transition-transform duration-300 ${
+                              isAvailable ? "group-hover:scale-105" : "grayscale opacity-60"
+                            }`}
                           />
                         ) : (
-                          <div className="flex h-full flex-col items-center justify-center gap-2 text-[#34745c]">
+                          <div className={`flex h-full flex-col items-center justify-center gap-2 ${isAvailable ? "text-[#34745c]" : "text-gray-400"}`}>
                             <CategoryIcon size={36} strokeWidth={1.5} aria-hidden="true" />
                             <span className="max-w-[85%] text-center text-[9px] font-bold uppercase leading-tight text-[#698278]">
                               {categoryName}
                             </span>
                           </div>
                         )}
-                        <span className="absolute bottom-2 right-2 flex items-center gap-1 rounded-full bg-black/60 px-2 py-0.5 text-[9px] font-semibold text-white backdrop-blur-xs shadow-xs">
-                          <Eye size={11} aria-hidden="true" />
-                          <span>Detail</span>
-                        </span>
+
+                        {isAvailable ? (
+                          <span className="absolute bottom-2 right-2 flex items-center gap-1 rounded-full bg-black/60 px-2 py-0.5 text-[9px] font-semibold text-white backdrop-blur-xs shadow-xs">
+                            <Eye size={11} aria-hidden="true" />
+                            <span>Detail</span>
+                          </span>
+                        ) : (
+                          <span className="absolute inset-0 bg-black/45 flex items-center justify-center">
+                            <span className="rounded-full bg-rose-600 px-3 py-1 text-[11px] font-black text-white shadow-md uppercase tracking-wider">
+                              HABIS
+                            </span>
+                          </span>
+                        )}
                       </button>
 
                       <div className="flex flex-1 flex-col p-2.5">
                         <button
                           type="button"
-                          onClick={() => handleOpenDetailModal(item)}
-                          className="text-left w-full group/title"
+                          onClick={() => isAvailable && handleOpenDetailModal(item)}
+                          disabled={!isAvailable}
+                          className="text-left w-full group/title disabled:cursor-not-allowed"
                         >
-                          <h3 className="break-words text-[14px] font-extrabold leading-tight text-[#18392f] group-hover/title:text-[#0b3d2e] transition-colors">
+                          <h3 className={`break-words text-[14px] font-extrabold leading-tight transition-colors ${
+                            isAvailable ? "text-[#18392f] group-hover/title:text-[#0b3d2e]" : "text-gray-500"
+                          }`}>
                             {item.name}
                           </h3>
                         </button>
                         {item.description && (
                           <p
-                            onClick={() => handleOpenDetailModal(item)}
-                            className="mt-1 cursor-pointer line-clamp-2 text-[10px] leading-relaxed text-[#78857e] hover:text-[#495e54] transition-colors"
+                            onClick={() => isAvailable && handleOpenDetailModal(item)}
+                            className={`mt-1 line-clamp-2 text-[10px] leading-relaxed transition-colors ${
+                              isAvailable ? "cursor-pointer text-[#78857e] hover:text-[#495e54]" : "text-gray-400"
+                            }`}
                           >
                             {item.description}
                           </p>
                         )}
 
                         <div className="mt-auto pt-3">
-                          {inCart ? (
+                          {!isAvailable ? (
+                            <div className="flex items-center justify-between gap-2 pt-1">
+                              <span className="text-xs font-mono font-bold text-gray-400 line-through">
+                                {formatRupiah(item.price)}
+                              </span>
+                              <span className="rounded-lg bg-rose-100 border border-rose-200 px-2 py-1 text-[10px] font-black text-rose-700 uppercase">
+                                Sold Out
+                              </span>
+                            </div>
+                          ) : inCart ? (
                             <>
                               <span className="block text-[13px] font-extrabold text-[#8f5032]">
                                 {formatRupiah(item.price)}

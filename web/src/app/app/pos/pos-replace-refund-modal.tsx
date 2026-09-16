@@ -1,0 +1,437 @@
+"use client";
+
+import { useState } from "react";
+import {
+  X,
+  RefreshCw,
+  RotateCcw,
+  AlertTriangle,
+  CheckCircle2,
+  UtensilsCrossed,
+  DollarSign,
+  Ban,
+  Check,
+  Loader2,
+} from "lucide-react";
+import type { MenuItem, Order, OrderItem } from "@/lib/types";
+import { formatRupiah } from "@/lib/formatters";
+import { replaceOrderItemAction, refundOrderAction } from "@/lib/actions";
+
+export interface PosReplaceRefundModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  order: Order & { items: OrderItem[] };
+  selectedItem?: OrderItem | null;
+  menuItems: MenuItem[];
+  isMochi?: boolean;
+  onSuccess?: () => void;
+}
+
+const REFUND_REASONS = [
+  { key: "bahan_habis", label: "⚠️ Bahan Habis / Stok Habis Tengah Hari" },
+  { key: "lama_datang", label: "⏳ Pelanggan Batal Karena Makanan Lama Datang" },
+  { key: "keringanan_owner", label: "🤝 Keringanan / Diskon Khusus Owner (Saudara/Relasi)" },
+  { key: "salah_input", label: "✍️ Salah Input Kasir / Meja" },
+  { key: "komplain_rasa", label: "👎 Komplain Rasa / Kualitas Makanan" },
+  { key: "lainnya", label: "📝 Lainnya (Catatan Manual)" },
+];
+
+export default function PosReplaceRefundModal({
+  isOpen,
+  onClose,
+  order,
+  selectedItem,
+  menuItems,
+  isMochi = true,
+  onSuccess,
+}: PosReplaceRefundModalProps) {
+  const [mode, setMode] = useState<"replace" | "refund_item" | "refund_order">(
+    selectedItem ? "replace" : "refund_order"
+  );
+
+  // Replace state
+  const [replacementMenuItemId, setReplacementMenuItemId] = useState<string>("");
+  const [replaceNote, setReplaceNote] = useState<string>("");
+
+  // Refund state
+  const [refundReasonKey, setRefundReasonKey] = useState<string>("bahan_habis");
+  const [refundReasonCustom, setRefundReasonCustom] = useState<string>("");
+  const [refundPaymentMethod, setRefundPaymentMethod] = useState<"cash" | "qris">("cash");
+  const [refundAmount, setRefundAmount] = useState<number>(
+    selectedItem ? Number(selectedItem.subtotal) : Number(order.total)
+  );
+
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (!isOpen) return null;
+
+  const availableMenuItems = menuItems.filter(
+    (m) => m.is_available && (!selectedItem || m.id !== selectedItem.menu_item_id)
+  );
+
+  const selectedReplacement = availableMenuItems.find((m) => m.id === replacementMenuItemId);
+
+  const currentItemPrice = selectedItem ? Number(selectedItem.price_snapshot) : 0;
+  const currentItemSubtotal = selectedItem ? Number(selectedItem.subtotal) : 0;
+  const replacementSubtotal = selectedReplacement
+    ? Number(selectedReplacement.price) * (selectedItem?.qty || 1)
+    : 0;
+  const priceDifference = replacementSubtotal - currentItemSubtotal;
+
+  const handleExecuteReplace = async () => {
+    if (!selectedItem || !selectedReplacement) {
+      setError("Pilih menu pengganti terlebih dahulu.");
+      return;
+    }
+
+    setBusy(true);
+    setError(null);
+
+    const res = await replaceOrderItemAction(
+      order.id,
+      selectedItem.id,
+      selectedReplacement.id,
+      replaceNote.trim() || undefined
+    );
+
+    setBusy(false);
+
+    if (!res.ok) {
+      setError(res.error || "Gagal mengganti menu.");
+      return;
+    }
+
+    alert(
+      `✓ Menu ${selectedItem.name_snapshot} berhasil diganti dengan ${res.data.newName}!\n` +
+      (res.data.priceDiff !== 0 ? `Selisih harga: ${formatRupiah(res.data.priceDiff)}` : `Harga sama pas.`)
+    );
+
+    if (onSuccess) onSuccess();
+    onClose();
+  };
+
+  const handleExecuteRefund = async () => {
+    if (refundAmount <= 0) {
+      setError("Nominal refund harus lebih besar dari Rp 0.");
+      return;
+    }
+
+    const selectedReasonLabel =
+      REFUND_REASONS.find((r) => r.key === refundReasonKey)?.label || refundReasonKey;
+    const finalReason = refundReasonCustom.trim()
+      ? `${selectedReasonLabel} — ${refundReasonCustom.trim()}`
+      : selectedReasonLabel;
+
+    setBusy(true);
+    setError(null);
+
+    const catKey = (refundReasonKey === "lama_datang" || refundReasonKey === "stok_habis" || refundReasonKey === "salah_input" || refundReasonKey === "keringanan_owner" || refundReasonKey === "komplain_rasa") ? refundReasonKey : "lainnya";
+    const res = await refundOrderAction(
+      order.id,
+      refundAmount,
+      finalReason,
+      catKey,
+      refundPaymentMethod
+    );
+
+    setBusy(false);
+
+    if (!res.ok) {
+      setError(res.error || "Gagal memproses refund.");
+      return;
+    }
+
+    alert(
+      `✓ Refund sebesar ${formatRupiah(refundAmount)} berhasil dicatat!\n` +
+      `Alasan: ${finalReason}\n` +
+      `Metode Pengembalian: ${refundPaymentMethod.toUpperCase()}\n` +
+      `Laporan shift & laba telah otomatis dipotong.`
+    );
+
+    if (onSuccess) onSuccess();
+    onClose();
+  };
+
+  return (
+    <div
+      className={`fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 backdrop-blur-xs ${
+        isMochi ? "bg-[#07281e]/65" : "bg-[#232331]/65"
+      }`}
+    >
+      <div
+        className={`w-full max-w-lg rounded-3xl bg-white p-5 sm:p-6 space-y-4 animate-in zoom-in-95 font-mono text-xs max-h-[95vh] overflow-y-auto ${
+          isMochi ? "border border-[#d8e3de] shadow-2xl" : "border-2 border-[#232331] shadow-ink-lg"
+        }`}
+      >
+        {/* Header */}
+        <div className={`flex items-center justify-between border-b pb-3 ${isMochi ? "border-[#e0ebe5]" : "border-[#dedee8]"}`}>
+          <div>
+            <h3 className={`font-black text-base font-sans ${isMochi ? "text-[#0b3d2e]" : "text-[#232331]"}`}>
+              Penyesuaian Pesanan #{order.order_no}
+            </h3>
+            <p className="text-[11px] text-[#718078]">
+              {order.table_no ? `Meja ${order.table_no}` : "Bungkus / Kasir"} · Tagihan Total: {formatRupiah(Number(order.total))}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className={`flex h-8 w-8 items-center justify-center rounded-full transition-colors ${
+              isMochi ? "bg-[#edf8f3] text-[#0b3d2e] hover:bg-[#e0f1e8]" : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+            }`}
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        {error && (
+          <div className="flex items-start gap-2 rounded-xl border border-rose-300 bg-rose-50 p-2.5 text-rose-800">
+            <AlertTriangle size={15} className="shrink-0 mt-0.5 text-rose-600" />
+            <p className="font-bold text-[11px]">{error}</p>
+          </div>
+        )}
+
+        {/* Selected Item Banner if passed */}
+        {selectedItem && (
+          <div className={`p-3 rounded-2xl border flex items-center justify-between gap-3 ${
+            isMochi ? "bg-[#f8faf9] border-[#ccd9d3]" : "bg-[#faf9ff] border-[#dedee8]"
+          }`}>
+            <div>
+              <span className="text-[10px] font-bold text-[#718078] uppercase block">Item Terpilih (Stok Habis / Kendala)</span>
+              <p className="font-black text-sm font-sans text-[#0b3d2e]">
+                {selectedItem.qty}× {selectedItem.name_snapshot}
+              </p>
+              {selectedItem.note && (
+                <span className="text-[10.5px] text-[#526159]">Catatan: {selectedItem.note}</span>
+              )}
+            </div>
+            <span className="font-black text-sm text-[#0b3d2e]">
+              {formatRupiah(currentItemSubtotal)}
+            </span>
+          </div>
+        )}
+
+        {/* Action Mode Tabs */}
+        <div className="grid grid-cols-3 gap-1.5 p-1 rounded-2xl bg-[#f0f4f2] text-[11px] font-bold">
+          {selectedItem && (
+            <button
+              type="button"
+              onClick={() => setMode("replace")}
+              className={`py-2 px-2.5 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
+                mode === "replace"
+                  ? isMochi
+                    ? "bg-[#0b3d2e] text-[#c8f53a] shadow-xs"
+                    : "bg-[#232331] text-white shadow-xs"
+                  : "text-[#526159] hover:text-[#0b3d2e]"
+              }`}
+            >
+              <RefreshCw size={12} />
+              <span>Ganti Menu</span>
+            </button>
+          )}
+
+          {selectedItem && (
+            <button
+              type="button"
+              onClick={() => {
+                setMode("refund_item");
+                setRefundAmount(currentItemSubtotal);
+              }}
+              className={`py-2 px-2.5 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
+                mode === "refund_item"
+                  ? "bg-rose-700 text-white shadow-xs"
+                  : "text-[#526159] hover:text-rose-700"
+              }`}
+            >
+              <RotateCcw size={12} />
+              <span>Refund Item</span>
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={() => {
+              setMode("refund_order");
+              setRefundAmount(Number(order.total));
+            }}
+            className={`py-2 px-2.5 rounded-xl transition-all flex items-center justify-center gap-1.5 ${
+              !selectedItem ? "col-span-3" : ""
+            } ${
+              mode === "refund_order"
+                ? "bg-rose-800 text-white shadow-xs"
+                : "text-[#526159] hover:text-rose-800"
+            }`}
+          >
+            <Ban size={12} />
+            <span>Refund / Void Order #{order.order_no}</span>
+          </button>
+        </div>
+
+        {/* MODE 1: GANTI MENU (SUBSTITUTION) */}
+        {mode === "replace" && selectedItem && (
+          <div className="space-y-3 font-sans text-xs">
+            <div className="space-y-1 font-mono">
+              <label className="block font-bold text-[#0b3d2e]">
+                Pilih Menu Pengganti Yang Masih Ada Stok:
+              </label>
+              <select
+                value={replacementMenuItemId}
+                onChange={(e) => setReplacementMenuItemId(e.target.value)}
+                className="w-full rounded-xl border-2 border-[#0b3d2e] p-2.5 font-bold text-xs bg-white text-[#0b3d2e]"
+              >
+                <option value="">-- Pilih Menu Tersedia --</option>
+                {availableMenuItems.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name} — {formatRupiah(Number(m.price))}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {selectedReplacement && (
+              <div className="rounded-2xl border border-emerald-300 bg-emerald-50/80 p-3 space-y-2 font-mono text-xs">
+                <div className="flex justify-between items-center text-[11px]">
+                  <span className="text-emerald-950">Harga Item Pengganti:</span>
+                  <span className="font-bold text-emerald-950">
+                    {selectedItem.qty}× @{formatRupiah(Number(selectedReplacement.price))} = {formatRupiah(replacementSubtotal)}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-[11px] pt-1 border-t border-emerald-200">
+                  <span className="font-bold text-emerald-950">Selisih Tagihan:</span>
+                  <span className={`font-black ${priceDifference > 0 ? "text-amber-800" : priceDifference < 0 ? "text-rose-700" : "text-emerald-800"}`}>
+                    {priceDifference > 0
+                      ? `+${formatRupiah(priceDifference)} (Tamu Tambah Bayar)`
+                      : priceDifference < 0
+                      ? `-${formatRupiah(Math.abs(priceDifference))} (Kembalikan ke Tamu)`
+                      : "Rp 0 (Harga Sama Pas)"}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-1 font-mono">
+              <label className="block font-bold text-[#0b3d2e]">Catatan Tambahan untuk Dapur (Opsional):</label>
+              <input
+                type="text"
+                value={replaceNote}
+                onChange={(e) => setReplaceNote(e.target.value)}
+                placeholder="Contoh: Pengganti Mochi Cokelat yang habis"
+                className="w-full rounded-xl border border-[#ccd9d3] p-2 text-xs font-bold text-[#0b3d2e]"
+              />
+            </div>
+
+            <button
+              type="button"
+              disabled={busy || !replacementMenuItemId}
+              onClick={handleExecuteReplace}
+              className={`w-full flex items-center justify-center gap-2 rounded-2xl py-3 font-mono text-xs font-black transition-all shadow-sm ${
+                isMochi
+                  ? "bg-[#c8f53a] hover:bg-[#d9ff57] text-[#073829]"
+                  : "bg-[#16a34a] hover:bg-[#15803d] text-white"
+              } disabled:opacity-50`}
+            >
+              {busy ? <Loader2 size={14} className="animate-spin" /> : <Check size={15} strokeWidth={2.8} />}
+              <span>Konfirmasi Ganti Menu & Perbarui Tagihan ✓</span>
+            </button>
+          </div>
+        )}
+
+        {/* MODE 2 & 3: REFUND ITEM ATAU FULL ORDER */}
+        {(mode === "refund_item" || mode === "refund_order") && (
+          <div className="space-y-3 font-sans text-xs">
+            <div className="space-y-1 font-mono">
+              <label className="block font-bold text-rose-900">
+                Alasan Pengembalian Dana / Void (Wajib Dipilih):
+              </label>
+              <select
+                value={refundReasonKey}
+                onChange={(e) => setRefundReasonKey(e.target.value)}
+                className="w-full rounded-xl border-2 border-rose-300 p-2.5 font-bold text-xs bg-white text-rose-950"
+              >
+                {REFUND_REASONS.map((r) => (
+                  <option key={r.key} value={r.key}>
+                    {r.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="space-y-1 font-mono">
+              <label className="block font-bold text-gray-700">
+                Penjelasan / Catatan Khusus (Opsional):
+              </label>
+              <input
+                type="text"
+                value={refundReasonCustom}
+                onChange={(e) => setRefundReasonCustom(e.target.value)}
+                placeholder="Misal: Pelanggan buru-buru, saudara owner, pesanan batal..."
+                className="w-full rounded-xl border border-[#ccd9d3] p-2 text-xs font-bold text-[#0b3d2e]"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 font-mono">
+              <div className="space-y-1">
+                <label className="block font-bold text-gray-700">Nominal Refund (Rp):</label>
+                <input
+                  type="number"
+                  min={1000}
+                  max={Number(order.total)}
+                  step={1000}
+                  value={refundAmount}
+                  onChange={(e) => setRefundAmount(Number(e.target.value))}
+                  className="w-full rounded-xl border-2 border-rose-400 p-2 text-xs font-black text-rose-900"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="block font-bold text-gray-700">Metode Pengembalian:</label>
+                <div className="flex gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setRefundPaymentMethod("cash")}
+                    className={`flex-1 py-2 rounded-xl border text-[11px] font-bold ${
+                      refundPaymentMethod === "cash"
+                        ? "bg-[#0b3d2e] text-white border-[#0b3d2e]"
+                        : "bg-white text-gray-600 border-gray-300"
+                    }`}
+                  >
+                    💵 Tunai
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRefundPaymentMethod("qris")}
+                    className={`flex-1 py-2 rounded-xl border text-[11px] font-bold ${
+                      refundPaymentMethod === "qris"
+                        ? "bg-[#0b3d2e] text-white border-[#0b3d2e]"
+                        : "bg-white text-gray-600 border-gray-300"
+                    }`}
+                  >
+                    📱 QRIS / Trf
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-rose-200 bg-rose-50 p-3 font-mono text-[11px] text-rose-900 space-y-1">
+              <p className="font-bold">⚠️ Efek Akuntansi & Laporan:</p>
+              <p>
+                Nominal <strong>{formatRupiah(refundAmount)}</strong> akan otomatis dipotong dari Total Penjualan Bersih (Net Sales) shift kasir hari ini.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              disabled={busy || refundAmount <= 0}
+              onClick={handleExecuteRefund}
+              className="w-full flex items-center justify-center gap-2 rounded-2xl py-3 font-mono text-xs font-black bg-rose-700 hover:bg-rose-800 text-white transition-all shadow-sm disabled:opacity-50"
+            >
+              {busy ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={15} strokeWidth={2.8} />}
+              <span>Eksekusi Refund {formatRupiah(refundAmount)} & Catat di Laporan ✓</span>
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

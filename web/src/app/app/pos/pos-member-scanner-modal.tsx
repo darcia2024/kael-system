@@ -14,7 +14,7 @@ import {
   Image as ImageIcon,
   CheckCircle2,
 } from "lucide-react";
-import type { CustomerDirectoryEntry } from "@/lib/types";
+import type { CustomerDirectoryEntry, Reward } from "@/lib/types";
 import { lookupMemberAction, registerCustomerByStaffAction } from "@/lib/actions";
 
 // Web Audio API Beep helper for scan feedback
@@ -45,6 +45,8 @@ interface PosMemberScannerModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSelectCustomer: (customer: CustomerDirectoryEntry) => void;
+  onClaimReward?: (reward: Reward, customer: CustomerDirectoryEntry) => void;
+  rewards?: Reward[];
   isMochiPos?: boolean;
 }
 
@@ -52,6 +54,8 @@ export default function PosMemberScannerModal({
   isOpen,
   onClose,
   onSelectCustomer,
+  onClaimReward,
+  rewards = [],
   isMochiPos = true,
 }: PosMemberScannerModalProps) {
   // Tabs: "camera" or "manual"
@@ -731,37 +735,89 @@ export default function PosMemberScannerModal({
 
           {/* SUCCESS DETECTED CARD */}
           {detectedCustomer && (
-            <div className="rounded-2xl border-2 border-[#16a34a] bg-[#ecfdf5] p-3.5 flex items-center justify-between gap-3 animate-in zoom-in-95">
-              <div className="flex items-center gap-3 min-w-0">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#16a34a] text-white font-extrabold text-sm shadow-xs">
-                  <CheckCircle2 size={20} />
-                </div>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    <h3 className="truncate text-sm font-black text-[#14532d]">
-                      {detectedCustomer.name}
-                    </h3>
-                    <span className="rounded-md bg-[#bbf7d0] px-1.5 py-0.5 text-[9px] font-black text-[#166534]">
-                      MEMBER RESMI
-                    </span>
+            <div className="rounded-2xl border-2 border-[#16a34a] bg-[#ecfdf5] p-3.5 space-y-3 animate-in zoom-in-95">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#16a34a] text-white font-extrabold text-sm shadow-xs">
+                    <CheckCircle2 size={20} />
                   </div>
-                  <p className="text-xs font-mono text-[#166534] mt-0.5">
-                    {detectedCustomer.phone_masked} · Saldo:{" "}
-                    <strong>{detectedCustomer.balance} Pts</strong>
-                  </p>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <h3 className="truncate text-sm font-black text-[#14532d]">
+                        {detectedCustomer.name}
+                      </h3>
+                      <span className="rounded-md bg-[#bbf7d0] px-1.5 py-0.5 text-[9px] font-black text-[#166534]">
+                        MEMBER RESMI
+                      </span>
+                    </div>
+                    <p className="text-xs font-mono text-[#166534] mt-0.5">
+                      {detectedCustomer.phone_masked} · Saldo:{" "}
+                      <strong>{detectedCustomer.balance} Pts</strong>
+                    </p>
+                  </div>
                 </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    onSelectCustomer(detectedCustomer);
+                    onClose();
+                  }}
+                  className="shrink-0 rounded-xl bg-[#16a34a] text-white px-4 py-2 text-xs font-black hover:bg-[#15803d] active:scale-95 shadow-xs"
+                >
+                  ✓ Pasang Member
+                </button>
               </div>
 
-              <button
-                type="button"
-                onClick={() => {
-                  onSelectCustomer(detectedCustomer);
-                  onClose();
-                }}
-                className="shrink-0 rounded-xl bg-[#16a34a] text-white px-3.5 py-2 text-xs font-black hover:bg-[#15803d] active:scale-95 shadow-xs"
-              >
-                Pasang
-              </button>
+              {/* Redeemable Rewards Section */}
+              {rewards.length > 0 && (
+                <div className="pt-2 border-t border-[#bbf7d0] space-y-1.5 font-mono text-xs">
+                  <span className="text-[10.5px] font-bold text-[#14532d] uppercase block">
+                    🎁 Hadiah & Traktiran yang Bisa Ditukar Poin:
+                  </span>
+                  <div className="grid grid-cols-1 gap-1.5 max-h-36 overflow-y-auto">
+                    {rewards.map((rw) => {
+                      const canRedeem = detectedCustomer.balance >= rw.point_cost;
+                      return (
+                        <div
+                          key={rw.id}
+                          className={`p-2 rounded-xl border flex items-center justify-between gap-2 ${
+                            canRedeem
+                              ? "bg-white border-[#86efac]"
+                              : "bg-gray-50 border-gray-200 opacity-60"
+                          }`}
+                        >
+                          <div className="min-w-0">
+                            <span className="font-black text-[11px] text-[#14532d] block truncate">
+                              {rw.name}
+                            </span>
+                            <span className="text-[10px] text-gray-500">
+                              Biaya: <strong>{rw.point_cost} Pts</strong>
+                            </span>
+                          </div>
+
+                          <button
+                            type="button"
+                            disabled={!canRedeem}
+                            onClick={() => {
+                              onSelectCustomer(detectedCustomer);
+                              if (onClaimReward) onClaimReward(rw, detectedCustomer);
+                              onClose();
+                            }}
+                            className={`px-3 py-1 rounded-lg text-[10.5px] font-black transition-all ${
+                              canRedeem
+                                ? "bg-[#0b3d2e] hover:bg-[#124d3a] text-[#c8f53a] shadow-xs active:scale-95"
+                                : "bg-gray-200 text-gray-400 cursor-not-allowed"
+                            }`}
+                          >
+                            {canRedeem ? "Tukar Hadiah 🎁" : "Poin Kurang"}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

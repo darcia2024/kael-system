@@ -14,7 +14,7 @@ export const metadata: Metadata = {
 export default async function PosPage() {
   const { session } = await guardModulePage("pos", "/app/pos");
 
-  const [business, categories, menuItems, activeShift, pendingQrOrders, users, loyaltyProgram] = await Promise.all([
+  const [business, categories, menuItems, activeShift, pendingQrOrders, users, loyaltyProgram, rewards] = await Promise.all([
     db.getBusiness(session.businessId),
     db.getCategories(session.businessId),
     db.getMenuItems(session.businessId),
@@ -25,6 +25,7 @@ export default async function PosPage() {
     // sebenarnya, bukan angka tetap. NULL kalau toko ini belum menyiapkan
     // program loyalty — layarnya lalu tidak menjanjikan poin apa pun.
     db.getLoyaltyProgram(session.businessId),
+    db.getRewards(session.businessId),
   ]);
 
   const isMochi = isMochiBusiness(business);
@@ -42,6 +43,7 @@ export default async function PosPage() {
       currentUserId={session.userId}
       userRole={session.role === "owner" ? "owner" : "staff"}
       loyaltyProgram={loyaltyProgram}
+      rewards={rewards}
       taxRatePct={Number(business?.pos_tax_rate ?? 0)}
       serviceChargePct={Number(business?.pos_service_charge_rate ?? 0)}
       themeClassName={mochiThemeClass(business)}

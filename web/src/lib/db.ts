@@ -4658,6 +4658,100 @@ export const db = {
     `) as unknown as import("./types").FeedbackRow[];
   },
 
+  /** Simpan baris feedback langsung (1-5 bintang) untuk sinkronisasi ulasan. */
+  async saveFeedbackRow(data: {
+    rating: number;
+    reason_code?: import("./types").FeedbackReasonCode;
+    comment?: string;
+    customer_id?: string;
+    order_id?: string;
+    card_id?: string;
+    business_id?: string;
+  }): Promise<{ id: string }> {
+    let bizId = data.business_id;
+    if (!bizId && data.order_id) {
+      const ord = one<{ business_id: string }>(await sql`SELECT business_id FROM orders WHERE id = ${data.order_id}`);
+      bizId = ord?.business_id;
+    }
+    if (!bizId && data.card_id) {
+      const crd = one<{ business_id: string }>(await sql`SELECT business_id FROM cards WHERE id = ${data.card_id}`);
+      bizId = crd?.business_id;
+    }
+    if (!bizId) {
+      const defBiz = one<{ id: string }>(await sql`SELECT id FROM businesses ORDER BY created_at ASC LIMIT 1`);
+      bizId = defBiz?.id;
+    }
+
+    const row = one<{ id: string }>(await sql`
+      INSERT INTO member_feedback ${sql({
+        business_id: bizId,
+        customer_id: data.customer_id || null,
+        order_id: data.order_id || null,
+        card_id: data.card_id || null,
+        rating: data.rating,
+        reason_code: data.reason_code || null,
+        comment: data.comment || null,
+      })} RETURNING id
+    `);
+    return { id: row!.id };
+  },
+
+  /** Mengganti item pesanan yang habis di tengah hari dengan menu lain. */
+  async replaceOrderItem(
+    orderId: string,
+    orderItemId: string,
+    newMenuItemId: string,
+    businessId: string,
+    reason?: string,
+  ): Promise<{ ok: boolean; error?: string; newName: string; priceDiff: number }> {
+    return sql.begin(async (tx) => {
+      const order = one<Order>(await tx`
+        SELECT * FROM orders WHERE id = ${orderId} AND business_id = ${businessId} FOR UPDATE
+      `);
+      if (!order) return { ok: false, error: "Pesanan tidak ditemukan.", newName: "", priceDiff: 0 };
+
+      const oldItem = one<OrderItem>(await tx`
+        SELECT * FROM order_items WHERE id = ${orderItemId} AND order_id = ${orderId} FOR UPDATE
+      `);
+      if (!oldItem) return { ok: false, error: "Item pesanan tidak ditemukan.", newName: "", priceDiff: 0 };
+
+      const newMenu = one<MenuItem>(await tx`
+        SELECT * FROM menu_items WHERE id = ${newMenuItemId} AND business_id = ${businessId}
+      `);
+      if (!newMenu) return { ok: false, error: "Menu pengganti tidak ditemukan.", newName: "", priceDiff: 0 };
+
+      const newUnitPrice = Number(newMenu.price);
+      const newSubtotal = newUnitPrice * oldItem.qty;
+      const priceDiff = newSubtotal - oldItem.subtotal;
+
+      const noteText = reason
+        ? `${oldItem.note ? oldItem.note + " · " : ""}[Ganti: ${reason}]`
+        : (oldItem.note || null);
+
+      await tx`
+        UPDATE order_items SET
+          menu_item_id = ${newMenu.id},
+          name_snapshot = ${newMenu.name},
+          price_snapshot = ${newUnitPrice},
+          subtotal = ${newSubtotal},
+          note = ${noteText}
+        WHERE id = ${orderItemId}
+      `;
+
+      const newOrderSubtotal = Math.max(0, Number(order.subtotal) + priceDiff);
+      const newOrderTotal = Math.max(0, Number(order.total) + priceDiff);
+
+      await tx`
+        UPDATE orders SET
+          subtotal = ${newOrderSubtotal},
+          total = ${newOrderTotal}
+        WHERE id = ${orderId}
+      `;
+
+      return { ok: true, newName: newMenu.name, priceDiff };
+    });
+  },
+
   /** Berapa lama pesanan swalayan boleh menunggu konfirmasi sebelum hangus. */
   PENDING_ORDER_MINUTES: 30,
 

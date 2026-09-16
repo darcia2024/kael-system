@@ -1914,6 +1914,96 @@ export async function cancelOrderAction(
   return done(null);
 }
 
+/**
+ * Refund atau Void pesanan yang sudah lunas dengan alasan terstruktur.
+ */
+export async function refundOrderAction(
+  orderId: string,
+  amount: number,
+  reason: string,
+  category: "lama_datang" | "stok_habis" | "salah_input" | "keringanan_owner" | "komplain_rasa" | "lainnya" = "lainnya",
+  refundMethod: "cash" | "qris" = "cash",
+): Promise<ActionResult<{ refundId: string; refundAmount: number; orderNo: string }>> {
+  const { businessId, userId } = await requirePermission("pos");
+  const locked = await moduleLock(businessId, "pos", "write");
+  if (locked) return fail(locked);
+
+  if (!amount || amount <= 0) return fail("Nominal pengembalian dana (refund) tidak valid.");
+  if (!reason.trim()) return fail("Keterangan alasan refund wajib diisi.");
+
+  const categoryLabel: Record<string, string> = {
+    lama_datang: "Keterlambatan Penyajian / Lama Datang",
+    stok_habis: "Bahan / Menu Habis di Dapur",
+    salah_input: "Salah Input Kasir",
+    keringanan_owner: "Keringanan Diskon / Saudara Owner",
+    komplain_rasa: "Komplain Rasa / Kualitas Makanan",
+    lainnya: "Alasan Lainnya",
+  };
+
+  const fullReason = `[${categoryLabel[category] || category.toUpperCase()}] ${reason.trim()} (Metode: ${refundMethod.toUpperCase()})`;
+  const res = await db.refundOrder(orderId, businessId, amount, fullReason, userId);
+  if (!res.success) {
+    return fail(res.error || "Gagal memproses pengembalian dana.");
+  }
+
+  const orderData = await db.getOrderById(orderId);
+
+  revalidatePath("/app/pos");
+  revalidatePath("/app/pos/reports");
+  revalidatePath("/app/finance/reports");
+  revalidatePath("/app/pos/station");
+  revalidatePath("/app/pos/kitchen");
+
+  return done({
+    refundId: res.refund.id,
+    refundAmount: Number(res.refund.amount),
+    orderNo: orderData?.order?.order_no || "-",
+  });
+}
+
+/**
+ * Mengganti item yang habis di tengah hari saat pesanan sedang diproses dapur.
+ */
+export async function replaceOrderItemAction(
+  orderId: string,
+  orderItemId: string,
+  newMenuItemId: string,
+  reason?: string,
+): Promise<ActionResult<{ ok: boolean; newName: string; priceDiff: number }>> {
+  const { businessId } = await requirePermission("pos");
+  const locked = await moduleLock(businessId, "pos", "write");
+  if (locked) return fail(locked);
+
+  const res = await db.replaceOrderItem(orderId, orderItemId, newMenuItemId, businessId, reason);
+  if (!res.ok) return fail(res.error || "Gagal mengganti item menu.");
+
+  revalidatePath("/app/pos");
+  revalidatePath("/app/pos/station");
+  revalidatePath("/app/pos/kitchen");
+  return done({ ok: true, newName: res.newName, priceDiff: res.priceDiff });
+}
+
+/**
+ * Simpan ulasan / masukan pelanggan langsung ke tabel member_feedback (Rating 1-5).
+ */
+export async function saveDirectReviewAction(data: {
+  rating: number;
+  reason_code?: import("./types").FeedbackReasonCode;
+  comment?: string;
+  customer_id?: string;
+  order_id?: string;
+  card_id?: string;
+  business_id?: string;
+}): Promise<ActionResult<{ id: string }>> {
+  if (!data.rating || data.rating < 1 || data.rating > 5) {
+    return fail("Rating bintang 1 s/d 5 wajib dipilih.");
+  }
+  const res = await db.saveFeedbackRow(data);
+  revalidatePath("/app/review/reports");
+  revalidatePath("/app/pos/reports/reviews");
+  return done({ id: res.id });
+}
+
 /** Kemajuan dapur. Hanya untuk pesanan yang sudah lunas. */
 export async function setFulfillmentAction(
   orderId: string,
@@ -2003,28 +2093,6 @@ export async function updateOrderStatusAction(
   return done(null);
 }
 
-/** Refund hanya boleh disetujui owner, tidak pernah oleh kasir. */
-export async function refundOrderAction(
-  orderId: string,
-  amount: number,
-  reason: string,
-): Promise<ActionResult<null>> {
-  const { businessId, userId } = await requireOwner();
-  const locked = await moduleLock(businessId, "pos", "write");
-  if (locked) return fail(locked);
-  if (!reason.trim()) return fail("Alasan refund wajib diisi.");
-  const result = await db.refundOrder(
-    orderId,
-    businessId,
-    amount,
-    reason.trim(),
-    userId,
-  );
-  if (!result.success) return fail(result.error);
-  revalidatePath("/app/pos/reports");
-  revalidatePath("/app/pos/owner");
-  return done(null);
-}
 
 /** Mengambil daftar data testing (transaksi, feedback, shift) yang dapat dipilih dan dihapus oleh owner. */
 export async function getDeletableTestDataAction(): Promise<ActionResult<DeletableTestData>> {
