@@ -1847,7 +1847,7 @@ export default function MochiMemberView({
                 Mau pesan menu ini diantar langsung ke rumah atau kantor? Hubungi WhatsApp resmi <strong className="text-[#0b3d2e]">{business.name || "Mochi Cafe & Resto"}</strong>:
               </p>
               {(() => {
-                const rawPhone = cardSettings?.whatsapp || business.phone || "081234567890";
+                const rawPhone = business.phone || cardSettings?.whatsapp || "081234567890";
                 const cleanWaPhone = String(rawPhone).replace(/\D/g, "").replace(/^0/, "62");
                 const waDeliveryMsg = `Halo ${business.name || "Mochi Cafe & Resto"}, saya member (${customer.name} - ${customer.phone}). Saya ingin pesan delivery menu *${selectedMenuDetail.name}* (${formatRupiah(selectedMenuDetail.price)}). Mohon info ongkir dan ketersediaannya ya. Terima kasih!`;
                 const waDeliveryLink = `https://wa.me/${cleanWaPhone}?text=${encodeURIComponent(waDeliveryMsg)}`;

@@ -30,3 +30,42 @@ export async function savePosChargeSettingsAction(
   revalidatePath("/app/pos");
   return { ok: true, data: { taxRate: Number(updated.pos_tax_rate), serviceChargeRate: Number(updated.pos_service_charge_rate) } };
 }
+
+export async function saveBusinessContactSettingsAction(
+  phone: string,
+  address?: string,
+): Promise<ActionResult<{ phone: string; address: string }>> {
+  const { businessId } = await requireOwner();
+
+  const cleanPhone = (phone || "").trim();
+  const cleanAddress = (address || "").trim();
+
+  // Validasi nomor telepon jika diisi
+  if (cleanPhone) {
+    const digitsOnly = cleanPhone.replace(/\D/g, "");
+    if (digitsOnly.length < 9 || digitsOnly.length > 15) {
+      return { ok: false, error: "Nomor WhatsApp tidak valid. Masukkan 9-15 digit angka (contoh: 081234567890)." };
+    }
+  }
+
+  const updated = await db.updateBusiness(businessId, {
+    phone: cleanPhone,
+    address: cleanAddress,
+  });
+
+  if (!updated) return { ok: false, error: "Data usaha tidak ditemukan." };
+
+  revalidatePath("/app/settings");
+  revalidatePath("/app/pos");
+  revalidatePath("/m", "layout");
+  revalidatePath("/order", "layout");
+
+  return {
+    ok: true,
+    data: {
+      phone: updated.phone || "",
+      address: updated.address || "",
+    },
+  };
+}
+

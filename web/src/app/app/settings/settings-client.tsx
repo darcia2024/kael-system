@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowLeft, QrCode, CheckCircle2, AlertTriangle, Wrench, ArrowRight } from "lucide-react";
+import { ArrowLeft, QrCode, CheckCircle2, AlertTriangle, Wrench, ArrowRight, MessageSquare, PhoneCall } from "lucide-react";
 
 import QrisSetup from "./qris-setup";
 import PosChargeSetup from "./pos-charge-setup";
+import DeliveryContactSetup from "./delivery-contact-setup";
 import { BusinessMark } from "@/components/business-mark";
 import type { Business } from "@/lib/types";
 import type { ModuleStatus } from "@/lib/licensing";
@@ -100,6 +101,25 @@ export default function SettingsClient({
             </div>
           </div>
         )}
+
+        {/* --- NOMOR WHATSAPP DELIVERY & KONTAK TOKO --- */}
+        <section className="rounded-3xl border border-[#d8e3de] bg-white p-6 shadow-[0_4px_20px_rgba(11,61,46,0.04)] space-y-4">
+          <div className="flex items-center gap-2 border-b border-[#d8e3de] pb-4">
+            <PhoneCall size={20} className="text-[#167052]" />
+            <div>
+              <h2 className="font-extrabold text-base text-[#0b3d2e]">Nomor WhatsApp Delivery &amp; Kontak Toko</h2>
+              <p className="font-mono text-[11px] text-[#527867]">
+                Digunakan untuk pesanan delivery member &amp; konfirmasi pembayaran pelanggan
+              </p>
+            </div>
+          </div>
+
+          <DeliveryContactSetup
+            initialPhone={business?.phone}
+            initialAddress={business?.address}
+            businessName={business?.name || businessName}
+          />
+        </section>
 
         {/* --- QRIS --- */}
         <section className="rounded-3xl border border-[#d8e3de] bg-white p-6 shadow-[0_4px_20px_rgba(11,61,46,0.04)] space-y-4">
