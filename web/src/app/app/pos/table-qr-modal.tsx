@@ -84,237 +84,299 @@ export default function TableQrModal({
   const handleDownloadPng = () => {
     setIsDownloading(true);
     const canvas = document.createElement("canvas");
-    const ctx = canvas.getContext("2d");
+    const ctx = canvas.getContext("2d", { willReadFrequently: false });
     if (!ctx) {
       setIsDownloading(false);
       return;
     }
 
-    // High resolution A5/A6 portrait format
-    const w = 800;
-    const h = 1180;
+    // Ultra-Crisp Print Resolution (A5/A6 300-DPI Proportion)
+    const w = 1400;
+    const h = 2050;
     canvas.width = w;
     canvas.height = h;
 
-    // Background Pure White
-    ctx.fillStyle = "#ffffff";
+    // Smooth rendering
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+
+    // 1. Background Fill with subtle luxury ivory-gradient
+    const bgGrad = ctx.createLinearGradient(0, 0, 0, h);
+    bgGrad.addColorStop(0, "#ffffff");
+    bgGrad.addColorStop(0.4, "#fbfcfa");
+    bgGrad.addColorStop(1, "#f2f7f4");
+    ctx.fillStyle = bgGrad;
     ctx.fillRect(0, 0, w, h);
 
-    // Outer Forest Emerald Border
-    ctx.strokeStyle = "#0b3d2e";
-    ctx.lineWidth = 12;
+    // 2. Luxury Borders
+    // Outer Deep Forest Emerald Border
+    ctx.strokeStyle = "#072e22";
+    ctx.lineWidth = 20;
     ctx.beginPath();
-    ctx.roundRect(24, 24, w - 48, h - 48, 36);
+    ctx.roundRect(36, 36, w - 72, h - 72, 54);
     ctx.stroke();
 
-    // Inner Dashed Pinstripe
-    ctx.strokeStyle = "rgba(11, 61, 46, 0.22)";
-    ctx.lineWidth = 2;
-    ctx.setLineDash([8, 6]);
+    // Inner Lime Accent Trim
+    ctx.strokeStyle = "#c8f53a";
+    ctx.lineWidth = 4;
     ctx.beginPath();
-    ctx.roundRect(38, 38, w - 76, h - 76, 26);
+    ctx.roundRect(52, 52, w - 104, h - 104, 42);
+    ctx.stroke();
+
+    // Fine Dashed Registration Line
+    ctx.strokeStyle = "rgba(7, 46, 34, 0.22)";
+    ctx.lineWidth = 2;
+    ctx.setLineDash([14, 10]);
+    ctx.beginPath();
+    ctx.roundRect(66, 66, w - 132, h - 132, 32);
     ctx.stroke();
     ctx.setLineDash([]);
+
+    // Micro corner dots
+    ctx.fillStyle = "#072e22";
+    const dotR = 4.5;
+    const corners = [
+      [86, 86],
+      [w - 86, 86],
+      [86, h - 86],
+      [w - 86, h - 86],
+    ];
+    for (const [cx, cy] of corners) {
+      ctx.beginPath();
+      ctx.arc(cx, cy, dotR, 0, Math.PI * 2);
+      ctx.fill();
+    }
 
     const logoImg = new Image();
     logoImg.crossOrigin = "anonymous";
     logoImg.src = "/logo-mochi.png";
 
     const renderCanvasContent = () => {
-      // 1. Top Logo (Clean, borderless)
-      const logoW = 160;
-      const logoH = 70;
+      // 1. Top Logo (Crisp & Prominent)
+      const logoW = 280;
+      const logoH = 120;
       const logoX = (w - logoW) / 2;
-      const logoY = 62;
-      ctx.drawImage(logoImg, logoX, logoY, logoW, logoH);
+      const logoY = 105;
+      if (logoImg.naturalWidth > 0) {
+        ctx.drawImage(logoImg, logoX, logoY, logoW, logoH);
+      }
 
-      // 2. Store Title & Subtitle
-      ctx.fillStyle = "#0b3d2e";
-      ctx.font = "900 32px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+      // 2. Store Title & Tagline
+      ctx.fillStyle = "#072e22";
+      ctx.font = "900 44px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
       ctx.textAlign = "center";
-      ctx.fillText((storeName || "MOCHI CAFE N RESTO").toUpperCase(), w / 2, 175);
+      ctx.fillText((storeName || "MOCHI CAFE N RESTO").toUpperCase(), w / 2, 270);
 
       ctx.fillStyle = "#4a6b5e";
-      ctx.font = "bold 15px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
-      ctx.fillText("BUKU MENU DIGITAL · PESAN LANGSUNG DARI MEJA", w / 2, 205);
+      ctx.font = "bold 20px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+      ctx.fillText("BUKU MENU DIGITAL · SELF-SERVICE DINING", w / 2, 310);
 
-      // 3. Central Table Badge (Balanced & Prominent)
-      const tableBadgeW = 340;
-      const tableBadgeH = 62;
+      // 3. Central Table Badge (Striking Dark Emerald & Lime Accent)
+      const tableBadgeW = 560;
+      const tableBadgeH = 96;
       const tableBadgeX = (w - tableBadgeW) / 2;
-      const tableBadgeY = 238;
+      const tableBadgeY = 350;
 
-      ctx.fillStyle = "#0b3d2e";
+      ctx.fillStyle = "#072e22";
       ctx.beginPath();
-      ctx.roundRect(tableBadgeX, tableBadgeY, tableBadgeW, tableBadgeH, 20);
+      ctx.roundRect(tableBadgeX, tableBadgeY, tableBadgeW, tableBadgeH, 28);
       ctx.fill();
 
       // Gold/Lime Inner Border on Badge
       ctx.strokeStyle = "#c8f53a";
-      ctx.lineWidth = 2;
+      ctx.lineWidth = 3.5;
       ctx.stroke();
 
       ctx.fillStyle = "#c8f53a";
-      ctx.font = "900 30px monospace";
-      ctx.fillText(`MEJA ${formattedTableNumber}`, w / 2, tableBadgeY + 43);
+      ctx.font = "900 48px monospace";
+      ctx.fillText(`MEJA ${formattedTableNumber}`, w / 2, tableBadgeY + 65);
 
-      // 4. QR Code Container & Crisp QR
+      // 4. QR Code Container & Crisp QR Matrix
       const qr = qrcode(0, "H");
       qr.addData(targetUrl, "Byte");
       qr.make();
       const n = qr.getModuleCount();
-      const qrBoxSize = 360;
+      const qrBoxSize = 580;
       const qrX = (w - qrBoxSize) / 2;
-      const qrY = 328;
-      const cellSize = qrBoxSize / n;
+      const qrY = 485;
 
-      // QR White Card Background
+      // QR White Card Background with Soft Shadow & Border
       ctx.fillStyle = "#ffffff";
       ctx.beginPath();
-      ctx.roundRect(qrX - 20, qrY - 20, qrBoxSize + 40, qrBoxSize + 40, 24);
+      ctx.roundRect(qrX - 30, qrY - 30, qrBoxSize + 60, qrBoxSize + 60, 36);
       ctx.fill();
-      ctx.strokeStyle = "#d1ded7";
-      ctx.lineWidth = 2;
+      ctx.strokeStyle = "#d4e2dc";
+      ctx.lineWidth = 2.5;
       ctx.stroke();
 
-      // Corner Precision Crop Accents
-      const cornerLen = 22;
-      ctx.strokeStyle = "#0b3d2e";
-      ctx.lineWidth = 4;
+      // Corner Viewfinder Precision Brackets
+      const cornerLen = 36;
+      ctx.strokeStyle = "#072e22";
+      ctx.lineWidth = 6;
+      ctx.lineCap = "round";
 
       // Top Left
       ctx.beginPath();
-      ctx.moveTo(qrX - 12, qrY - 12 + cornerLen);
-      ctx.lineTo(qrX - 12, qrY - 12);
-      ctx.lineTo(qrX - 12 + cornerLen, qrY - 12);
+      ctx.moveTo(qrX - 16, qrY - 16 + cornerLen);
+      ctx.lineTo(qrX - 16, qrY - 16);
+      ctx.lineTo(qrX - 16 + cornerLen, qrY - 16);
       ctx.stroke();
 
       // Top Right
       ctx.beginPath();
-      ctx.moveTo(qrX + qrBoxSize + 12 - cornerLen, qrY - 12);
-      ctx.lineTo(qrX + qrBoxSize + 12, qrY - 12);
-      ctx.lineTo(qrX + qrBoxSize + 12, qrY - 12 + cornerLen);
+      ctx.moveTo(qrX + qrBoxSize + 16 - cornerLen, qrY - 16);
+      ctx.lineTo(qrX + qrBoxSize + 16, qrY - 16);
+      ctx.lineTo(qrX + qrBoxSize + 16, qrY - 16 + cornerLen);
       ctx.stroke();
 
       // Bottom Left
       ctx.beginPath();
-      ctx.moveTo(qrX - 12, qrY + qrBoxSize + 12 - cornerLen);
-      ctx.lineTo(qrX - 12, qrY + qrBoxSize + 12);
-      ctx.lineTo(qrX - 12 + cornerLen, qrY + qrBoxSize + 12);
+      ctx.moveTo(qrX - 16, qrY + qrBoxSize + 16 - cornerLen);
+      ctx.lineTo(qrX - 16, qrY + qrBoxSize + 16);
+      ctx.lineTo(qrX - 16 + cornerLen, qrY + qrBoxSize + 16);
       ctx.stroke();
 
       // Bottom Right
       ctx.beginPath();
-      ctx.moveTo(qrX + qrBoxSize + 12 - cornerLen, qrY + qrBoxSize + 12);
-      ctx.lineTo(qrX + qrBoxSize + 12, qrY + qrBoxSize + 12);
-      ctx.lineTo(qrX + qrBoxSize + 12, qrY + qrBoxSize + 12 - cornerLen);
+      ctx.moveTo(qrX + qrBoxSize + 16 - cornerLen, qrY + qrBoxSize + 16);
+      ctx.lineTo(qrX + qrBoxSize + 16, qrY + qrBoxSize + 16);
+      ctx.lineTo(qrX + qrBoxSize + 16, qrY + qrBoxSize + 16 - cornerLen);
       ctx.stroke();
+      ctx.lineCap = "butt";
 
-      // Draw QR Code Matrix
-      ctx.fillStyle = "#0b3d2e";
+      // Draw Crisp QR Code Matrix
+      const cellSize = qrBoxSize / n;
+      ctx.fillStyle = "#072e22";
       for (let r = 0; r < n; r++) {
         for (let c = 0; c < n; c++) {
           if (qr.isDark(r, c)) {
-            ctx.fillRect(qrX + c * cellSize, qrY + r * cellSize, cellSize + 0.5, cellSize + 0.5);
+            ctx.fillRect(
+              qrX + c * cellSize,
+              qrY + r * cellSize,
+              cellSize + 0.6,
+              cellSize + 0.6,
+            );
           }
         }
       }
 
       // Center Logo Badge on QR
-      const centerBadgeSize = 80;
+      const centerBadgeSize = 130;
       const cbX = (w - centerBadgeSize) / 2;
       const cbY = qrY + (qrBoxSize - centerBadgeSize) / 2;
 
       ctx.save();
       ctx.beginPath();
-      ctx.arc(w / 2, cbY + centerBadgeSize / 2, centerBadgeSize / 2 + 2, 0, Math.PI * 2);
+      ctx.arc(
+        w / 2,
+        cbY + centerBadgeSize / 2,
+        centerBadgeSize / 2 + 4,
+        0,
+        Math.PI * 2,
+      );
       ctx.fillStyle = "#ffffff";
       ctx.fill();
-      ctx.strokeStyle = "#0b3d2e";
-      ctx.lineWidth = 3;
+      ctx.strokeStyle = "#072e22";
+      ctx.lineWidth = 4;
       ctx.stroke();
       ctx.clip();
-      ctx.drawImage(logoImg, cbX, cbY, centerBadgeSize, centerBadgeSize);
+      if (logoImg.naturalWidth > 0) {
+        ctx.drawImage(logoImg, cbX, cbY, centerBadgeSize, centerBadgeSize);
+      }
       ctx.restore();
 
       // 5. Instruction Scan Pill
-      const pillW = 380;
-      const pillH = 44;
+      const pillW = 600;
+      const pillH = 68;
       const pillX = (w - pillW) / 2;
-      const pillY = 746;
+      const pillY = 1170;
 
       ctx.fillStyle = "#edf8f3";
       ctx.beginPath();
-      ctx.roundRect(pillX, pillY, pillW, pillH, 22);
+      ctx.roundRect(pillX, pillY, pillW, pillH, 34);
       ctx.fill();
-      ctx.strokeStyle = "#b8ded0";
-      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = "#a3d4c0";
+      ctx.lineWidth = 2.5;
       ctx.stroke();
 
-      ctx.fillStyle = "#0b3d2e";
-      ctx.font = "900 16px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
-      ctx.fillText("📷 SCAN DENGAN KAMERA HP", w / 2, pillY + 28);
+      ctx.fillStyle = "#072e22";
+      ctx.font = "900 24px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+      ctx.fillText("📷 SCAN DENGAN KAMERA HP / WA", w / 2, pillY + 43);
 
       // 6. 3 Steps Instruction Cards Box
-      const stepsW = w - 100;
-      const stepsH = 135;
-      const stepsX = 50;
-      const stepsY = 812;
+      const stepsW = 1200;
+      const stepsH = 210;
+      const stepsX = 100;
+      const stepsY = 1270;
 
       ctx.fillStyle = "#f6faf8";
       ctx.beginPath();
-      ctx.roundRect(stepsX, stepsY, stepsW, stepsH, 20);
+      ctx.roundRect(stepsX, stepsY, stepsW, stepsH, 32);
       ctx.fill();
-      ctx.strokeStyle = "#d8e6e0";
-      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = "#d4e4dc";
+      ctx.lineWidth = 2.5;
       ctx.stroke();
 
       // Step 1
-      ctx.fillStyle = "#0b3d2e";
-      ctx.font = "900 17px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
-      ctx.fillText("1. Buka Kamera", stepsX + stepsW * 0.18, stepsY + 54);
+      ctx.font = "38px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+      ctx.fillText("📷", stepsX + stepsW * 0.17, stepsY + 68);
+      ctx.fillStyle = "#072e22";
+      ctx.font = "900 25px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+      ctx.fillText("1. Buka Kamera", stepsX + stepsW * 0.17, stepsY + 115);
       ctx.fillStyle = "#557266";
-      ctx.font = "13px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
-      ctx.fillText("iPhone / Android", stepsX + stepsW * 0.18, stepsY + 84);
+      ctx.font = "18px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+      ctx.fillText("iPhone / Android / WA", stepsX + stepsW * 0.17, stepsY + 155);
 
       // Separator 1
       ctx.strokeStyle = "#dce8e2";
-      ctx.lineWidth = 1.5;
+      ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.moveTo(stepsX + stepsW * 0.35, stepsY + 25);
-      ctx.lineTo(stepsX + stepsW * 0.35, stepsY + stepsH - 25);
+      ctx.moveTo(stepsX + stepsW * 0.34, stepsY + 35);
+      ctx.lineTo(stepsX + stepsW * 0.34, stepsY + stepsH - 35);
       ctx.stroke();
 
       // Step 2
-      ctx.fillStyle = "#0b3d2e";
-      ctx.font = "900 17px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
-      ctx.fillText("2. Arahkan QR", stepsX + stepsW * 0.51, stepsY + 54);
+      ctx.font = "38px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+      ctx.fillText("📲", stepsX + stepsW * 0.5, stepsY + 68);
+      ctx.fillStyle = "#072e22";
+      ctx.font = "900 25px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+      ctx.fillText("2. Arahkan QR", stepsX + stepsW * 0.5, stepsY + 115);
       ctx.fillStyle = "#557266";
-      ctx.font = "13px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
-      ctx.fillText("Pilih menu lezat", stepsX + stepsW * 0.51, stepsY + 84);
+      ctx.font = "18px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+      ctx.fillText("Buka menu & pilih sajian", stepsX + stepsW * 0.5, stepsY + 155);
 
       // Separator 2
       ctx.beginPath();
-      ctx.moveTo(stepsX + stepsW * 0.67, stepsY + 25);
-      ctx.lineTo(stepsX + stepsW * 0.67, stepsY + stepsH - 25);
+      ctx.moveTo(stepsX + stepsW * 0.66, stepsY + 35);
+      ctx.lineTo(stepsX + stepsW * 0.66, stepsY + stepsH - 35);
       ctx.stroke();
 
       // Step 3
-      ctx.fillStyle = "#0b3d2e";
-      ctx.font = "900 17px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
-      ctx.fillText("3. Pesan & Santap", stepsX + stepsW * 0.83, stepsY + 54);
+      ctx.font = "38px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+      ctx.fillText("🍽️", stepsX + stepsW * 0.83, stepsY + 68);
+      ctx.fillStyle = "#072e22";
+      ctx.font = "900 25px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+      ctx.fillText("3. Pesan & Santap", stepsX + stepsW * 0.83, stepsY + 115);
       ctx.fillStyle = "#557266";
-      ctx.font = "13px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
-      ctx.fillText("Diantar ke meja", stepsX + stepsW * 0.83, stepsY + 84);
+      ctx.font = "18px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+      ctx.fillText("Diantar langsung ke meja", stepsX + stepsW * 0.83, stepsY + 155);
 
       // 7. Footer Member & Assurance
       ctx.fillStyle = "#125740";
-      ctx.font = "bold 15px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
-      ctx.fillText("✨ Kumpulkan Poin Member di Setiap Pemesanan! ✨", w / 2, 985);
+      ctx.font = "bold 23px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+      ctx.fillText("✨ Kumpulkan Poin Member di Setiap Pemesanan! ✨", w / 2, 1545);
 
       ctx.fillStyle = "#71897f";
-      ctx.font = "bold 12px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
-      ctx.fillText("PESANAN OTOMATIS MASUK KE KASIR & DAPUR · KAEL POS", w / 2, 1025);
+      ctx.font = "bold 18px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+      ctx.fillText(
+        "PESANAN OTOMATIS TERHUBUNG KE KASIR & DAPUR · KAEL POS",
+        w / 2,
+        1605,
+      );
+
+      ctx.fillStyle = "#9db2a8";
+      ctx.font = "14px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+      ctx.fillText("Buku Menu Digital Meja · Self-Service Dining", w / 2, 1640);
 
       const link = document.createElement("a");
       link.download = `Standee-Meja-${formattedTableNumber}-MochiCafe.png`;
@@ -350,7 +412,7 @@ export default function TableQrModal({
     }
     const m = 3;
     const total = n + m * 2;
-    const qrSvg = `<svg viewBox="${-m} ${-m} ${total} ${total}" width="220" height="220" shape-rendering="crispEdges"><rect x="${-m}" y="${-m}" width="${total}" height="${total}" fill="#ffffff"/><path d="${pathD}" fill="#0b3d2e"/></svg>`;
+    const qrSvg = `<svg viewBox="${-m} ${-m} ${total} ${total}" width="240" height="240" shape-rendering="crispEdges"><rect x="${-m}" y="${-m}" width="${total}" height="${total}" fill="#ffffff"/><path d="${pathD}" fill="#072e22"/></svg>`;
 
     const htmlContent = `
       <!DOCTYPE html>
@@ -361,7 +423,7 @@ export default function TableQrModal({
         <style>
           @page {
             size: A5 portrait;
-            margin: 8mm;
+            margin: 6mm;
           }
           * {
             box-sizing: border-box;
@@ -371,9 +433,9 @@ export default function TableQrModal({
             print-color-adjust: exact !important;
           }
           body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Plus Jakarta Sans", sans-serif;
             background-color: #ffffff;
-            color: #0b3d2e;
+            color: #072e22;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -382,21 +444,28 @@ export default function TableQrModal({
           }
           .standee-card {
             width: 100%;
-            max-width: 420px;
-            border: 4px solid #0b3d2e;
-            border-radius: 30px;
-            padding: 26px 20px;
+            max-width: 440px;
+            border: 5px solid #072e22;
+            border-radius: 36px;
+            padding: 28px 22px;
             text-align: center;
-            background: #ffffff;
+            background: linear-gradient(180deg, #ffffff 0%, #fbfcfa 40%, #f2f7f4 100%);
             position: relative;
-            box-shadow: 0 6px 24px rgba(11, 61, 46, 0.08);
+            box-shadow: 0 8px 32px rgba(7, 46, 34, 0.1);
             overflow: hidden;
+          }
+          .inner-accent {
+            position: absolute;
+            inset: 6px;
+            border: 2px solid #c8f53a;
+            border-radius: 30px;
+            pointer-events: none;
           }
           .inner-border {
             position: absolute;
-            inset: 8px;
-            border: 1.5px dashed rgba(11, 61, 46, 0.25);
-            border-radius: 22px;
+            inset: 12px;
+            border: 1.5px dashed rgba(7, 46, 34, 0.22);
+            border-radius: 24px;
             pointer-events: none;
           }
           .brand-logo-wrap {
@@ -407,15 +476,15 @@ export default function TableQrModal({
             z-index: 2;
           }
           .brand-logo-wrap img {
-            height: 52px;
+            height: 56px;
             width: auto;
-            max-width: 180px;
+            max-width: 200px;
             object-fit: contain;
           }
           .store-title {
-            font-size: 20px;
+            font-size: 22px;
             font-weight: 900;
-            color: #0b3d2e;
+            color: #072e22;
             letter-spacing: 0.5px;
             text-transform: uppercase;
             margin-bottom: 2px;
@@ -425,7 +494,9 @@ export default function TableQrModal({
           .store-subtitle {
             font-size: 11px;
             color: #4a6b5e;
-            font-weight: 700;
+            font-weight: 800;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
             margin-bottom: 14px;
             position: relative;
             z-index: 2;
@@ -434,45 +505,45 @@ export default function TableQrModal({
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            background: #0b3d2e;
+            background: #072e22;
             color: #c8f53a;
-            border: 1.5px solid #c8f53a;
-            padding: 8px 28px;
-            border-radius: 16px;
-            margin-bottom: 14px;
-            box-shadow: 0 4px 12px rgba(11, 61, 46, 0.2);
+            border: 2px solid #c8f53a;
+            padding: 9px 36px;
+            border-radius: 18px;
+            margin-bottom: 15px;
+            box-shadow: 0 4px 16px rgba(7, 46, 34, 0.25);
             position: relative;
             z-index: 2;
           }
           .table-banner-no {
-            font-size: 22px;
+            font-size: 24px;
             font-weight: 900;
             font-family: ui-monospace, SFMono-Regular, monospace;
-            letter-spacing: 1px;
+            letter-spacing: 1.5px;
             color: #c8f53a;
           }
           .qr-frame {
             position: relative;
             display: inline-block;
             background: #ffffff;
-            padding: 14px;
-            border-radius: 22px;
-            border: 2px solid #d5ded9;
-            box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
-            margin-bottom: 12px;
+            padding: 16px;
+            border-radius: 26px;
+            border: 2px solid #d4e2dc;
+            box-shadow: 0 4px 20px rgba(7, 46, 34, 0.08);
+            margin-bottom: 14px;
             z-index: 2;
           }
           .qr-frame .corner {
             position: absolute;
-            width: 14px;
-            height: 14px;
-            border-color: #0b3d2e;
+            width: 16px;
+            height: 16px;
+            border-color: #072e22;
             border-style: solid;
           }
-          .qr-frame .tl { top: 5px; left: 5px; border-width: 3px 0 0 3px; border-top-left-radius: 6px; }
-          .qr-frame .tr { top: 5px; right: 5px; border-width: 3px 3px 0 0; border-top-right-radius: 6px; }
-          .qr-frame .bl { bottom: 5px; left: 5px; border-width: 0 0 3px 3px; border-bottom-left-radius: 6px; }
-          .qr-frame .br { bottom: 5px; right: 5px; border-width: 0 3px 3px 0; border-bottom-right-radius: 6px; }
+          .qr-frame .tl { top: 6px; left: 6px; border-width: 3.5px 0 0 3.5px; border-top-left-radius: 8px; }
+          .qr-frame .tr { top: 6px; right: 6px; border-width: 3.5px 3.5px 0 0; border-top-right-radius: 8px; }
+          .qr-frame .bl { bottom: 6px; left: 6px; border-width: 0 0 3.5px 3.5px; border-bottom-left-radius: 8px; }
+          .qr-frame .br { bottom: 6px; right: 6px; border-width: 0 3.5px 3.5px 0; border-bottom-right-radius: 8px; }
 
           .qr-box {
             position: relative;
@@ -487,13 +558,13 @@ export default function TableQrModal({
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            width: 48px;
-            height: 48px;
+            width: 54px;
+            height: 54px;
             background: #ffffff;
             border-radius: 50%;
             padding: 4px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
-            border: 2px solid #0b3d2e;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.25);
+            border: 2.5px solid #072e22;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -509,15 +580,15 @@ export default function TableQrModal({
             align-items: center;
             gap: 6px;
             background: #edf8f3;
-            color: #0b3d2e;
-            border: 1px solid #bce0d2;
+            color: #072e22;
+            border: 1.5px solid #a3d4c0;
             border-radius: 999px;
-            padding: 5px 18px;
-            font-size: 10.5px;
-            font-weight: 800;
+            padding: 6px 22px;
+            font-size: 11px;
+            font-weight: 900;
             letter-spacing: 0.8px;
             text-transform: uppercase;
-            margin-bottom: 12px;
+            margin-bottom: 14px;
             position: relative;
             z-index: 2;
           }
@@ -526,9 +597,9 @@ export default function TableQrModal({
             grid-template-columns: 1fr 1fr 1fr;
             gap: 4px;
             background: #f6faf8;
-            border: 1.5px solid #d8e5df;
-            border-radius: 16px;
-            padding: 10px 8px;
+            border: 1.5px solid #d4e4dc;
+            border-radius: 18px;
+            padding: 12px 10px;
             margin-bottom: 12px;
             position: relative;
             z-index: 2;
@@ -543,13 +614,13 @@ export default function TableQrModal({
             border-right: 1.5px solid #dce8e2;
           }
           .step-icon {
-            font-size: 16px;
-            margin-bottom: 3px;
+            font-size: 18px;
+            margin-bottom: 4px;
           }
           .step-title {
-            font-size: 10px;
+            font-size: 10.5px;
             font-weight: 900;
-            color: #0b3d2e;
+            color: #072e22;
             line-height: 1.1;
           }
           .step-desc {
@@ -562,7 +633,7 @@ export default function TableQrModal({
             align-items: center;
             justify-content: center;
             gap: 4px;
-            font-size: 10px;
+            font-size: 10.5px;
             font-weight: 800;
             color: #125740;
             margin-bottom: 6px;
@@ -570,11 +641,11 @@ export default function TableQrModal({
             z-index: 2;
           }
           .footer-note {
-            font-size: 8.5px;
+            font-size: 9px;
             color: #71897f;
-            font-weight: 600;
+            font-weight: 700;
             text-transform: uppercase;
-            letter-spacing: 0.4px;
+            letter-spacing: 0.5px;
             position: relative;
             z-index: 2;
           }
@@ -582,6 +653,7 @@ export default function TableQrModal({
       </head>
       <body>
         <div class="standee-card">
+          <div class="inner-accent"></div>
           <div class="inner-border"></div>
 
           <!-- Top Brand Logo -->
@@ -590,7 +662,7 @@ export default function TableQrModal({
           </div>
 
           <h1 class="store-title">${storeName}</h1>
-          <p class="store-subtitle">Buku Menu Digital · Pesan Langsung Tanpa Antre</p>
+          <p class="store-subtitle">Buku Menu Digital · Self-Service Dining</p>
           
           <!-- Balanced Table Banner -->
           <div>
@@ -617,7 +689,7 @@ export default function TableQrModal({
           </div>
 
           <div class="scan-pill">
-            📷 SCAN DENGAN KAMERA HP
+            📷 SCAN DENGAN KAMERA HP / WA
           </div>
 
           <!-- 3 Easy Steps -->
@@ -625,12 +697,12 @@ export default function TableQrModal({
             <div class="step-item">
               <span class="step-icon">📷</span>
               <span class="step-title">1. Buka Kamera</span>
-              <span class="step-desc">iPhone / Android</span>
+              <span class="step-desc">iPhone / Android / WA</span>
             </div>
             <div class="step-item">
               <span class="step-icon">📲</span>
               <span class="step-title">2. Arahkan QR</span>
-              <span class="step-desc">Pilih menu favorit</span>
+              <span class="step-desc">Buka menu &amp; pilih sajian</span>
             </div>
             <div class="step-item">
               <span class="step-icon">🍽️</span>
@@ -759,81 +831,83 @@ export default function TableQrModal({
               <span>Pratinjau Standee Meja Siap Cetak (A5/A6 Akrilik)</span>
             </span>
 
-            <div className="rounded-[28px] border-[3.5px] border-[#0b3d2e] bg-[#ffffff] p-5 sm:p-6 text-center shadow-xl relative overflow-hidden max-w-[340px] mx-auto">
+            <div className="rounded-[32px] border-[4px] border-[#072e22] bg-gradient-to-b from-white via-[#fbfcfa] to-[#f2f7f4] p-5 sm:p-6 text-center shadow-xl relative overflow-hidden max-w-[340px] mx-auto">
+              {/* Inner accent lime line */}
+              <div className="pointer-events-none absolute inset-1.5 rounded-[26px] border-[1.5px] border-[#c8f53a]" />
               {/* Inner dashed line */}
-              <div className="pointer-events-none absolute inset-2 rounded-[20px] border border-dashed border-[#0b3d2e]/20" />
+              <div className="pointer-events-none absolute inset-3 rounded-[20px] border border-dashed border-[#072e22]/20" />
 
               {/* Logo Header (Borderless, Prominent) */}
-              <div className="relative z-10 flex justify-center mb-2">
+              <div className="relative z-10 flex justify-center mb-1.5">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src="/logo-mochi.png"
                   alt="Mochi Cafe Logo"
-                  className="h-12 w-auto max-w-[160px] object-contain mx-auto"
+                  className="h-14 w-auto max-w-[170px] object-contain mx-auto"
                 />
               </div>
 
               {/* Nama Kafe */}
-              <h3 className="relative z-10 text-base font-black uppercase tracking-tight text-[#0b3d2e]">
+              <h3 className="relative z-10 text-base font-black uppercase tracking-tight text-[#072e22]">
                 {storeName || "Mochi Cafe n Resto"}
               </h3>
-              <p className="relative z-10 text-[9.5px] font-bold text-[#4a6b5e] mb-3">
-                Buku Menu Digital · Pesan Langsung dari Meja
+              <p className="relative z-10 text-[9px] font-extrabold uppercase tracking-wider text-[#4a6b5e] mb-3">
+                Buku Menu Digital · Self-Service Dining
               </p>
 
               {/* Nomor Meja Banner (Prominently Centered Above QR) */}
-              <div className="relative z-10 mb-3.5 inline-flex items-center justify-center rounded-2xl bg-[#0b3d2e] px-5 py-2 text-[#c8f53a] border border-[#c8f53a] shadow-md">
+              <div className="relative z-10 mb-3.5 inline-flex items-center justify-center rounded-2xl bg-[#072e22] px-6 py-2 text-[#c8f53a] border-2 border-[#c8f53a] shadow-md">
                 <span className="font-mono text-base font-black tracking-wider">
                   MEJA {formattedTableNumber}
                 </span>
               </div>
 
               {/* QR Container with Corner Finder Accents */}
-              <div className="relative z-10 mx-auto mb-3 inline-block rounded-2xl border-2 border-[#d5ded9] bg-white p-3 shadow-md">
+              <div className="relative z-10 mx-auto mb-3 inline-block rounded-2xl border-2 border-[#d4e2dc] bg-white p-3 shadow-md">
                 {/* Corner accents */}
-                <span className="absolute top-1.5 left-1.5 h-3.5 w-3.5 rounded-tl-xs border-t-[2.5px] border-l-[2.5px] border-[#0b3d2e]" />
-                <span className="absolute top-1.5 right-1.5 h-3.5 w-3.5 rounded-tr-xs border-t-[2.5px] border-r-[2.5px] border-[#0b3d2e]" />
-                <span className="absolute bottom-1.5 left-1.5 h-3.5 w-3.5 rounded-bl-xs border-b-[2.5px] border-l-[2.5px] border-[#0b3d2e]" />
-                <span className="absolute bottom-1.5 right-1.5 h-3.5 w-3.5 rounded-br-xs border-b-[2.5px] border-r-[2.5px] border-[#0b3d2e]" />
+                <span className="absolute top-1.5 left-1.5 h-3.5 w-3.5 rounded-tl-xs border-t-[3px] border-l-[3px] border-[#072e22]" />
+                <span className="absolute top-1.5 right-1.5 h-3.5 w-3.5 rounded-tr-xs border-t-[3px] border-r-[3px] border-[#072e22]" />
+                <span className="absolute bottom-1.5 left-1.5 h-3.5 w-3.5 rounded-bl-xs border-b-[3px] border-l-[3px] border-[#072e22]" />
+                <span className="absolute bottom-1.5 right-1.5 h-3.5 w-3.5 rounded-br-xs border-b-[3px] border-r-[3px] border-[#072e22]" />
 
                 <QrCodeComponent
                   value={targetUrl}
                   size={180}
-                  colorDark="#0b3d2e"
+                  colorDark="#072e22"
                   centerLogoUrl="/logo-mochi.png"
                   label={`QR Meja ${formattedTableNumber}`}
                 />
               </div>
 
               {/* Scan Pill */}
-              <div className="relative z-10 mb-3 inline-flex items-center gap-1.5 rounded-full border border-[#bce0d2] bg-[#edf8f3] px-3.5 py-1 text-[9.5px] font-black uppercase tracking-wider text-[#0b3d2e]">
-                <span>📷 Scan dengan Kamera HP</span>
+              <div className="relative z-10 mb-3 inline-flex items-center gap-1.5 rounded-full border border-[#a3d4c0] bg-[#edf8f3] px-4 py-1 text-[9.5px] font-black uppercase tracking-wider text-[#072e22]">
+                <span>📷 Scan dengan Kamera HP / WA</span>
               </div>
 
               {/* 3 Step Instruction Box */}
-              <div className="relative z-10 mb-3 grid grid-cols-3 gap-1 rounded-xl border border-[#d8e5df] bg-[#f6faf8] p-2 text-[8.5px]">
+              <div className="relative z-10 mb-3 grid grid-cols-3 gap-1 rounded-xl border border-[#d4e4dc] bg-[#f6faf8] p-2 text-[8.5px]">
                 <div className="flex flex-col items-center text-center">
                   <span className="text-sm">📷</span>
-                  <span className="font-extrabold text-[#0b3d2e] mt-0.5">1. Buka Kamera</span>
-                  <span className="text-[7.5px] text-[#5b7569]">iPhone / Android</span>
+                  <span className="font-extrabold text-[#072e22] mt-0.5">1. Buka Kamera</span>
+                  <span className="text-[7.5px] text-[#557266]">iPhone / Android / WA</span>
                 </div>
                 <div className="flex flex-col items-center text-center border-x border-[#dce8e2] px-0.5">
                   <span className="text-sm">📲</span>
-                  <span className="font-extrabold text-[#0b3d2e] mt-0.5">2. Arahkan QR</span>
-                  <span className="text-[7.5px] text-[#5b7569]">Pilih menu lezat</span>
+                  <span className="font-extrabold text-[#072e22] mt-0.5">2. Arahkan QR</span>
+                  <span className="text-[7.5px] text-[#557266]">Buka menu &amp; pilih sajian</span>
                 </div>
                 <div className="flex flex-col items-center text-center">
                   <span className="text-sm">🍽️</span>
-                  <span className="font-extrabold text-[#0b3d2e] mt-0.5">3. Pesan &amp; Santap</span>
-                  <span className="text-[7.5px] text-[#5b7569]">Diantar ke meja</span>
+                  <span className="font-extrabold text-[#072e22] mt-0.5">3. Pesan &amp; Santap</span>
+                  <span className="text-[7.5px] text-[#557266]">Diantar ke meja</span>
                 </div>
               </div>
 
-              <div className="relative z-10 text-[9px] font-bold text-[#125740]">
+              <div className="relative z-10 text-[9.5px] font-extrabold text-[#125740]">
                 ✨ Kumpulkan Poin Member di Setiap Pemesanan! ✨
               </div>
 
-              <p className="relative z-10 mt-1 text-[8px] font-semibold uppercase tracking-wider text-[#799086]">
+              <p className="relative z-10 mt-1 text-[8px] font-bold uppercase tracking-wider text-[#71897f]">
                 Pesanan otomatis masuk ke Kasir &amp; Dapur · KAEL POS
               </p>
             </div>
