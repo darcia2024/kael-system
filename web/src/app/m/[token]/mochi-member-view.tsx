@@ -87,7 +87,6 @@ export default function MochiMemberView({
   const [menuSearchQuery, setMenuSearchQuery] = useState("");
   const [selectedMenuCategory, setSelectedMenuCategory] = useState<string>("all");
   const [selectedMenuDetail, setSelectedMenuDetail] = useState<MenuItem | null>(null);
-  const [tableInput, setTableInput] = useState("");
 
   // Balance visibility toggle
   const [hideBalance, setHideBalance] = useState(false);
@@ -1773,10 +1772,10 @@ export default function MochiMemberView({
       )}
 
       {/* =================================================================== */}
-      {/* MODAL 5: DETAIL MENU & CARA PESAN                                   */}
+      {/* MODAL 5: DETAIL MENU & PESAN DELIVERY / DI KASIR                   */}
       {/* =================================================================== */}
       {selectedMenuDetail && (
-        <div className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center bg-black/75 p-0 sm:p-4 backdrop-blur-xs animate-in fade-in-50" onClick={() => { setSelectedMenuDetail(null); setTableInput(""); }}>
+        <div className="fixed inset-0 z-[9999] flex items-end sm:items-center justify-center bg-black/75 p-0 sm:p-4 backdrop-blur-xs animate-in fade-in-50" onClick={() => setSelectedMenuDetail(null)}>
           <div className="w-full max-w-sm rounded-t-[32px] sm:rounded-3xl bg-white p-5 text-[#1c2d26] max-h-[88vh] overflow-y-auto shadow-2xl animate-in slide-in-from-bottom-10 space-y-4" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between">
               <span className="inline-flex items-center gap-1.5 rounded-full bg-[#edf8f3] px-3 py-1 text-[11px] font-bold text-[#167052]">
@@ -1785,10 +1784,7 @@ export default function MochiMemberView({
               </span>
               <button
                 type="button"
-                onClick={() => {
-                  setSelectedMenuDetail(null);
-                  setTableInput("");
-                }}
+                onClick={() => setSelectedMenuDetail(null)}
                 className="flex h-7 w-7 items-center justify-center rounded-full bg-[#edf1ef] text-[#718078] hover:text-[#1c2d26]"
               >
                 <X size={15} />
@@ -1823,48 +1819,51 @@ export default function MochiMemberView({
               )}
             </div>
 
+            {/* Poin Info */}
             <div className="rounded-xl border border-[#d8e3de] bg-[#f9fbf9] p-3 text-xs space-y-1">
               <div className="flex items-center gap-1.5 text-[#167052] font-black">
                 <Sparkles size={14} />
                 <span>Kumpulkan Poin Member</span>
               </div>
               <p className="text-[11px] text-[#556b62] leading-relaxed">
-                Pesan menu ini di kasir dan tunjukkan QR Member Anda untuk mendapatkan +{Math.max(1, Math.floor(selectedMenuDetail.price / (program.earn_rate || 1000)))} poin loyalty.
+                Pesan menu ini langsung di kasir atau pesan delivery dan nikmati bonus +{Math.max(1, Math.floor(selectedMenuDetail.price / (program.earn_rate || 1000)))} poin loyalty.
               </p>
             </div>
 
-            {/* Meja QR Ordering Option */}
-            <div className="rounded-xl border border-[#ccd9d3] p-3 bg-white space-y-2">
-              <div className="flex items-center gap-1.5 text-[11px] font-black text-[#1c2d26]">
-                <UtensilsCrossed size={13} className="text-[#167052]" />
-                <span>Sedang Duduk di Meja Kafe?</span>
+            {/* Hubungi Nomor Mochi untuk Pesan Delivery */}
+            <div className="rounded-2xl border border-emerald-200/90 p-3.5 bg-gradient-to-br from-[#f2f8f5] to-white space-y-2.5 shadow-2xs">
+              <div className="flex items-center justify-between text-[#1c2d26]">
+                <div className="flex items-center gap-1.5 text-xs font-black">
+                  <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-[#0b3d2e] text-[#c8f53a]">
+                    <MessageCircle size={13} />
+                  </div>
+                  <span>Pesan Delivery via WhatsApp</span>
+                </div>
+                <span className="rounded-full bg-emerald-100 text-emerald-800 px-2 py-0.5 text-[9.5px] font-bold">
+                  Antar Langsung
+                </span>
               </div>
-              <p className="text-[10px] text-[#718078]">
-                Masukkan nomor meja Anda untuk langsung memesan dari tempat duduk:
+              <p className="text-[11px] text-[#556b62] leading-relaxed">
+                Mau pesan menu ini diantar langsung ke rumah atau kantor? Hubungi WhatsApp resmi <strong className="text-[#0b3d2e]">{business.name || "Mochi Cafe & Resto"}</strong>:
               </p>
-              <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  min="1"
-                  max="99"
-                  placeholder="No. Meja"
-                  value={tableInput}
-                  onChange={(e) => setTableInput(e.target.value)}
-                  className="w-24 rounded-xl border border-[#ccd9d3] px-3 py-2 text-xs font-mono font-bold text-center focus:border-[#167052] focus:outline-hidden"
-                />
-                <button
-                  type="button"
-                  disabled={!tableInput || parseInt(tableInput, 10) < 1}
-                  onClick={() => {
-                    if (tableInput && parseInt(tableInput, 10) > 0) {
-                      window.location.href = `/order/${encodeURIComponent(business.store_code || "MOCHIKAFE")}/${encodeURIComponent(tableInput.trim())}`;
-                    }
-                  }}
-                  className="flex-1 rounded-xl bg-[#0b3d2e] py-2 text-xs font-bold text-[#c8f53a] disabled:opacity-40 disabled:cursor-not-allowed hover:bg-[#124634] transition-colors"
-                >
-                  Pesan di Meja {tableInput ? `#${tableInput}` : ""}
-                </button>
-              </div>
+              {(() => {
+                const rawPhone = cardSettings?.whatsapp || business.phone || "081234567890";
+                const cleanWaPhone = String(rawPhone).replace(/\D/g, "").replace(/^0/, "62");
+                const waDeliveryMsg = `Halo ${business.name || "Mochi Cafe & Resto"}, saya member (${customer.name} - ${customer.phone}). Saya ingin pesan delivery menu *${selectedMenuDetail.name}* (${formatRupiah(selectedMenuDetail.price)}). Mohon info ongkir dan ketersediaannya ya. Terima kasih!`;
+                const waDeliveryLink = `https://wa.me/${cleanWaPhone}?text=${encodeURIComponent(waDeliveryMsg)}`;
+
+                return (
+                  <a
+                    href={waDeliveryLink}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#0b3d2e] py-2.5 px-3 text-xs font-black text-[#c8f53a] hover:bg-[#124634] shadow-xs active:scale-95 transition-all"
+                  >
+                    <MessageCircle size={15} />
+                    <span>Hubungi WhatsApp Mochi ({rawPhone})</span>
+                  </a>
+                );
+              })()}
             </div>
 
             <div className="flex items-center gap-2 pt-1">
@@ -1881,10 +1880,7 @@ export default function MochiMemberView({
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  setSelectedMenuDetail(null);
-                  setTableInput("");
-                }}
+                onClick={() => setSelectedMenuDetail(null)}
                 className="rounded-2xl border border-[#d8e3de] bg-white px-4 py-3 text-xs font-bold text-[#718078] hover:bg-[#f5f7f6]"
               >
                 Tutup
