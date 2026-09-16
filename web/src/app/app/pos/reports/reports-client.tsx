@@ -24,7 +24,9 @@ import {
 } from "lucide-react";
 import type { Business, Order, ShiftReport, FeedbackSummary, FeedbackRow } from "@/lib/types";
 import { FEEDBACK_REASONS } from "@/lib/types";
-import { refundOrderAction } from "@/lib/actions";
+import { refundOrderAction, deleteOrderAction, deleteFeedbackAction, deleteShiftAction } from "@/lib/actions";
+import ClearTestDataModal from "../clear-test-data-modal";
+import { Trash2 } from "lucide-react";
 import { serviceTypeLabel } from "@/lib/pos-engine";
 import { formatRupiah, formatBusinessDateTime } from "@/lib/formatters";
 import { isMochiBusiness } from "@/lib/mochi-brand";
@@ -89,6 +91,41 @@ export default function PosOwnerReportsPage({
     setRefundReason("Pembatalan Pesanan Pelanggan");
   };
 
+  const [showClearModal, setShowClearModal] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const handleDeleteOrder = async (orderId: string, orderNo: string) => {
+    if (!window.confirm(`Hapus transaksi #${orderNo} (data testing)? Transaksi akan dihapus permanen dari laporan.`)) return;
+    setDeletingId(orderId);
+    const res = await deleteOrderAction(orderId);
+    setDeletingId(null);
+    if (!res.ok) {
+      alert(res.error);
+      return;
+    }
+    refreshAll();
+  };
+
+  const handleDeleteFeedback = async (feedbackId: string, name: string) => {
+    if (!window.confirm(`Hapus ulasan/feedback dari ${name || "Pelanggan"} (data testing)?`)) return;
+    const res = await deleteFeedbackAction(feedbackId);
+    if (!res.ok) {
+      alert(res.error);
+      return;
+    }
+    refreshAll();
+  };
+
+  const handleDeleteShift = async (shiftId: string, staffName: string) => {
+    if (!window.confirm(`Hapus rekap shift kasir dari ${staffName} (data testing)?`)) return;
+    const res = await deleteShiftAction(shiftId);
+    if (!res.ok) {
+      alert(res.error);
+      return;
+    }
+    refreshAll();
+  };
+
   const handleProcessRefund = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!refundingOrderId) return;
@@ -116,6 +153,7 @@ export default function PosOwnerReportsPage({
         }`}
       >
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-2">
+
           <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
             <Link
               href="/app/pos/owner"
@@ -435,7 +473,17 @@ export default function PosOwnerReportsPage({
                           </span>
                         )}
                       </div>
-                      <span className="shrink-0 font-mono text-[10px] text-[#7b7b8e]">{formatBusinessDateTime(f.created_at)}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="shrink-0 font-mono text-[10px] text-[#7b7b8e]">{formatBusinessDateTime(f.created_at)}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteFeedback(f.id, f.customer_name || "Pelanggan")}
+                          className="text-rose-500 hover:text-rose-700 p-0.5 rounded hover:bg-rose-50 transition-colors"
+                          title="Hapus feedback testing ini"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
                     </div>
                     <p className="mt-1 text-xs text-[#5c5c70]">
                       <span className="font-bold text-[#232331]">{f.customer_name || "Pelanggan"}</span> · #{f.order_no}
@@ -520,6 +568,16 @@ export default function PosOwnerReportsPage({
                           Refund
                         </button>
                       )}
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteOrder(ord.id, ord.order_no)}
+                        disabled={deletingId === ord.id}
+                        className="rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 px-2 py-1 text-[11px] font-mono font-bold text-rose-700 transition-colors inline-flex items-center gap-0.5 disabled:opacity-50"
+                        title="Hapus transaksi (data testing)"
+                      >
+                        <Trash2 size={11} />
+                        <span>Hapus</span>
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -552,6 +610,7 @@ export default function PosOwnerReportsPage({
                   <th className="py-2.5 px-3">Uang Sistem</th>
                   <th className="py-2.5 px-3">Uang Fisik Laci</th>
                   <th className="py-2.5 px-3 text-right">Selisih (Variance)</th>
+                  <th className="py-2.5 px-3 text-right">Aksi</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#dedee8]">

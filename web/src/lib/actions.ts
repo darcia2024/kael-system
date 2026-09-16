@@ -2025,6 +2025,60 @@ export async function refundOrderAction(
   return done(null);
 }
 
+/** Hapus transaksi/order testing untuk owner. */
+export async function deleteOrderAction(
+  orderId: string,
+): Promise<ActionResult<null>> {
+  const { businessId } = await requireOwner();
+  const ok = await db.deleteOrder(orderId, businessId);
+  if (!ok) return fail("Transaksi tidak ditemukan.");
+  revalidatePath("/app/pos");
+  revalidatePath("/app/pos/reports");
+  revalidatePath("/app/pos/owner");
+  revalidatePath("/app/loyalty/analytics");
+  return done(null);
+}
+
+/** Hapus feedback/review testing untuk owner. */
+export async function deleteFeedbackAction(
+  feedbackId: string,
+): Promise<ActionResult<null>> {
+  const { businessId } = await requireOwner();
+  const ok = await db.deleteFeedback(feedbackId, businessId);
+  if (!ok) return fail("Feedback tidak ditemukan.");
+  revalidatePath("/app/pos/reports");
+  revalidatePath("/app/pos/owner");
+  revalidatePath("/app/review/reports");
+  return done(null);
+}
+
+/** Hapus shift testing untuk owner. */
+export async function deleteShiftAction(
+  shiftId: string,
+): Promise<ActionResult<null>> {
+  const { businessId } = await requireOwner();
+  const ok = await db.deleteShift(shiftId, businessId);
+  if (!ok) return fail("Shift tidak ditemukan.");
+  revalidatePath("/app/pos/reports");
+  revalidatePath("/app/pos/owner");
+  return done(null);
+}
+
+/** Pembersihan massal data testing (reset pesanan / feedback / shift) khusus owner. */
+export async function clearTestDataAction(
+  scope: "all_orders" | "all_feedback" | "all_shifts" | "everything",
+): Promise<ActionResult<{ deletedCount: number }>> {
+  const { businessId } = await requireOwner();
+  const res = await db.clearTestData(businessId, scope);
+  revalidatePath("/app/pos");
+  revalidatePath("/app/pos/reports");
+  revalidatePath("/app/pos/owner");
+  revalidatePath("/app/loyalty/analytics");
+  revalidatePath("/app/review/reports");
+  return done({ deletedCount: res.deletedCount });
+}
+
+
 /**
  * Batas alamat gambar menu.
  *

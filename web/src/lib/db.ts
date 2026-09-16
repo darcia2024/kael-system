@@ -5483,6 +5483,79 @@ export const db = {
       },
     };
   },
+
+  /**
+   * Hapus satu transaksi/order testing beserta relasi item, refund, feedback, dan poin.
+   */
+  async deleteOrder(orderId: string, businessId: string): Promise<boolean> {
+    return sql.begin(async (tx) => {
+      // 1. Delete associated feedback
+      await tx`DELETE FROM member_feedback WHERE order_id = ${orderId} AND business_id = ${businessId}`;
+      // 2. Delete point ledger entries tied to this order
+      await tx`DELETE FROM point_ledger WHERE order_id = ${orderId} AND business_id = ${businessId}`;
+      // 3. Delete refunds
+      await tx`DELETE FROM refunds WHERE order_id = ${orderId}`;
+      // 4. Delete order items
+      await tx`DELETE FROM order_items WHERE order_id = ${orderId}`;
+      // 5. Delete order
+      const res = await tx`DELETE FROM orders WHERE id = ${orderId} AND business_id = ${businessId} RETURNING id`;
+      return res.length > 0;
+    });
+  },
+
+  /**
+   * Hapus feedback/review testing tertentu.
+   */
+  async deleteFeedback(feedbackId: string, businessId: string): Promise<boolean> {
+    const res = await sql`
+      DELETE FROM member_feedback WHERE id = ${feedbackId} AND business_id = ${businessId} RETURNING id
+    `;
+    return res.length > 0;
+  },
+
+  /**
+   * Hapus shift kasir testing.
+   */
+  async deleteShift(shiftId: string, businessId: string): Promise<boolean> {
+    return sql.begin(async (tx) => {
+      await tx`UPDATE orders SET shift_id = NULL WHERE shift_id = ${shiftId} AND business_id = ${businessId}`;
+      const res = await tx`DELETE FROM shifts WHERE id = ${shiftId} AND business_id = ${businessId} RETURNING id`;
+      return res.length > 0;
+    });
+  },
+
+  /**
+   * Pembersihan massal data testing untuk Owner.
+   */
+  async clearTestData(
+    businessId: string,
+    scope: "all_orders" | "all_feedback" | "all_shifts" | "everything",
+  ): Promise<{ success: boolean; deletedCount: number }> {
+    return sql.begin(async (tx) => {
+      let count = 0;
+      if (scope === "all_orders" || scope === "everything") {
+        await tx`DELETE FROM member_feedback WHERE business_id = ${businessId}`;
+        await tx`DELETE FROM point_ledger WHERE business_id = ${businessId} AND (order_id IS NOT NULL OR reason = 'purchase')`;
+        await tx`DELETE FROM refunds WHERE order_id IN (SELECT id FROM orders WHERE business_id = ${businessId})`;
+        await tx`DELETE FROM order_items WHERE order_id IN (SELECT id FROM orders WHERE business_id = ${businessId})`;
+        const delOrders = await tx`DELETE FROM orders WHERE business_id = ${businessId} RETURNING id`;
+        count += delOrders.length;
+      }
+
+      if (scope === "all_feedback" || scope === "everything") {
+        const delFeedback = await tx`DELETE FROM member_feedback WHERE business_id = ${businessId} RETURNING id`;
+        count += delFeedback.length;
+      }
+
+      if (scope === "all_shifts" || scope === "everything") {
+        await tx`UPDATE orders SET shift_id = NULL WHERE business_id = ${businessId}`;
+        const delShifts = await tx`DELETE FROM shifts WHERE business_id = ${businessId} RETURNING id`;
+        count += delShifts.length;
+      }
+
+      return { success: true, deletedCount: count };
+    });
+  },
   // =========================================================================
   // Finance operations, Ordering, Booking, and HR
   // =========================================================================

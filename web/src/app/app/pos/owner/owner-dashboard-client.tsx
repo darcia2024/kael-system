@@ -43,7 +43,9 @@ import type { Business, Order, FeedbackSummary, FeedbackRow, MemberGrowthSummary
 import { FEEDBACK_REASONS } from "@/lib/types";
 import { formatBusinessDateTime, formatRupiah } from "@/lib/formatters";
 import { PAYMENT_STATUS_LABEL, serviceTypeLabel } from "@/lib/pos-engine";
-import { retryOrderSyncAction } from "@/lib/actions";
+import { retryOrderSyncAction, deleteFeedbackAction } from "@/lib/actions";
+import ClearTestDataModal from "../clear-test-data-modal";
+import { Trash2 } from "lucide-react";
 import TableQrModal from "../table-qr-modal";
 import { isMochiBusiness } from "@/lib/mochi-brand";
 import { BusinessMark } from "@/components/business-mark";
@@ -133,6 +135,7 @@ export default function OwnerDashboardClient({
   const [menuPeriod, setMenuPeriod] = useState<"today" | "monthly">("today");
   const [feedbackFilter, setFeedbackFilter] = useState<"all" | "complaints" | "positive">("all");
   const [showReportsModal, setShowReportsModal] = useState(false);
+  const [showClearModal, setShowClearModal] = useState(false);
 
   const reasonMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -355,6 +358,20 @@ export default function OwnerDashboardClient({
             >
               <QrCode size={14} />
               <span className="hidden sm:inline">Cetak QR Meja</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowClearModal(true)}
+              className={
+                isMochi
+                  ? "inline-flex items-center gap-1.5 rounded-xl border border-rose-500/40 bg-rose-600/90 px-3 py-2 font-mono text-xs font-bold text-white hover:bg-rose-700 shadow-sm transition-all active:scale-95"
+                  : "btn-tactile inline-flex items-center gap-1.5 rounded-xl border-2 border-rose-600 bg-rose-50 text-rose-700 px-3 py-2 font-mono text-xs font-bold shadow-ink-xs hover:bg-rose-100"
+              }
+              title="Pembersihan data transaksi & ulasan testing"
+            >
+              <Trash2 size={13} />
+              <span className="hidden sm:inline">Hapus Data Testing</span>
+              <span className="sm:hidden">Hapus Test</span>
             </button>
             <Link
               href="/app/pos/menu"
@@ -1404,6 +1421,21 @@ export default function OwnerDashboardClient({
                     >
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                         <div className="flex items-center gap-2 flex-wrap">
+                                                  <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              if (!window.confirm(`Hapus feedback dari ${item.customer_name || "Pelanggan"} (data testing)?`)) return;
+                              const res = await deleteFeedbackAction(item.id);
+                              if (!res.ok) alert(res.error);
+                              else refresh();
+                            }}
+                            className="text-rose-500 hover:text-rose-700 p-1 rounded-lg hover:bg-rose-50 transition-colors"
+                            title="Hapus feedback testing ini"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
                           {/* Stars */}
                           <div className="flex items-center gap-0.5">
                             {[1, 2, 3, 4, 5].map((s) => (
