@@ -23,11 +23,46 @@ export default async function LoyaltyAnalyticsPage() {
   const { session } = await guardModulePage("loyalty", "/app/loyalty/analytics");
   if (session.role !== "owner") redirect("/app/loyalty");
 
-  const [business, trend, summary] = await Promise.all([
+  const [
+    business,
+    program,
+    trend,
+    summary,
+    overall,
+    memberInsights,
+    tiers,
+    rewards,
+    recentLedger,
+    campaigns,
+    referralReport,
+  ] = await Promise.all([
     db.getBusiness(session.businessId),
+    db.getLoyaltyProgram(session.businessId),
     db.getMemberGrowthTrend(session.businessId, 12),
     db.getMemberGrowthSummary(session.businessId),
+    db.getLoyaltyOverallStats(session.businessId),
+    db.getCustomerMemberInsights(session.businessId),
+    db.getLoyaltyTiers(session.businessId),
+    db.getRewards(session.businessId),
+    db.getRecentBusinessPointLedger(session.businessId, 30),
+    db.getLoyaltyCampaignSummaries(session.businessId),
+    db.getReferralReport(session.businessId),
   ]);
 
-  return <AnalyticsClient business={business} trend={trend} summary={summary} />;
+  return (
+    <AnalyticsClient
+      business={business}
+      program={program}
+      trend={trend}
+      summary={summary}
+      overall={overall}
+      memberInsights={memberInsights}
+      tiers={tiers}
+      rewards={rewards}
+      recentLedger={recentLedger}
+      campaigns={campaigns}
+      referralReport={referralReport}
+    />
+  );
 }
+

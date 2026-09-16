@@ -58,6 +58,8 @@ import type {
   LoyaltyCampaignRecipient,
   LoyaltyCampaignStatus,
   PointExpiryCandidate,
+  LoyaltyOverallStats,
+  BusinessPointLedgerRow,
   Category,
   MenuItem,
   Shift,
@@ -2090,6 +2092,92 @@ export const db = {
       revenue: num(row?.revenue),
       revenuePrior: num(row?.revenue_prior),
     };
+  },
+
+  /**
+   * Ringkasan menyeluruh kesehatan loyalty & seluruh basis member untuk Owner.
+   */
+  async getLoyaltyOverallStats(businessId: string): Promise<LoyaltyOverallStats> {
+    const row = one<{
+      total_members: number;
+      new_members_30d: number;
+      new_members_7d: number;
+      total_points_earned: number;
+      total_points_redeemed: number;
+      total_points_balance: number;
+      total_member_revenue: number;
+      total_member_transactions: number;
+      active_members_30d: number;
+      repeat_members_count: number;
+      at_risk_members_count: number;
+    }>(
+      await sql`
+      WITH member_stats AS (
+        SELECT
+          c.id,
+          c.created_at,
+          COALESCE(SUM(l.delta), 0)::int AS balance,
+          COALESCE(SUM(l.delta) FILTER (WHERE l.delta > 0), 0)::int AS earned,
+          COALESCE(ABS(SUM(l.delta) FILTER (WHERE l.delta < 0 AND l.reason = 'redeem')), 0)::int AS redeemed,
+          COALESCE(SUM(l.amount_spent) FILTER (WHERE l.reason = 'purchase'), 0)::bigint AS spend,
+          COUNT(l.id) FILTER (WHERE l.reason = 'purchase')::int AS tx_count,
+          MAX(l.created_at) AS last_activity
+        FROM customers c
+        LEFT JOIN point_ledger l ON l.customer_id = c.id AND l.business_id = c.business_id
+        WHERE c.business_id = ${businessId}
+        GROUP BY c.id
+      )
+      SELECT
+        COUNT(*)::int AS total_members,
+        COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '30 days')::int AS new_members_30d,
+        COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '7 days')::int AS new_members_7d,
+        COALESCE(SUM(earned), 0)::bigint AS total_points_earned,
+        COALESCE(SUM(redeemed), 0)::bigint AS total_points_redeemed,
+        COALESCE(SUM(balance), 0)::bigint AS total_points_balance,
+        COALESCE(SUM(spend), 0)::bigint AS total_member_revenue,
+        COALESCE(SUM(tx_count), 0)::bigint AS total_member_transactions,
+        COUNT(*) FILTER (WHERE last_activity >= NOW() - INTERVAL '30 days')::int AS active_members_30d,
+        COUNT(*) FILTER (WHERE tx_count >= 2)::int AS repeat_members_count,
+        COUNT(*) FILTER (WHERE last_activity IS NOT NULL AND last_activity < NOW() - INTERVAL '30 days')::int AS at_risk_members_count
+      FROM member_stats
+    `,
+    );
+    return {
+      totalMembers: num(row?.total_members),
+      newMembers30d: num(row?.new_members_30d),
+      newMembers7d: num(row?.new_members_7d),
+      totalPointsEarned: num(row?.total_points_earned),
+      totalPointsRedeemed: num(row?.total_points_redeemed),
+      totalPointsBalance: num(row?.total_points_balance),
+      totalMemberRevenue: num(row?.total_member_revenue),
+      totalMemberTransactions: num(row?.total_member_transactions),
+      activeMembers30d: num(row?.active_members_30d),
+      repeatMembersCount: num(row?.repeat_members_count),
+      atRiskMembersCount: num(row?.at_risk_members_count),
+    };
+  },
+
+  /**
+   * Riwayat transaksi member terkini lintas pelanggan untuk owner.
+   */
+  async getRecentBusinessPointLedger(
+    businessId: string,
+    limit = 30,
+  ): Promise<BusinessPointLedgerRow[]> {
+    return (await sql`
+      SELECT
+        l.*,
+        c.name AS customer_name,
+        c.phone AS customer_phone,
+        c.token AS customer_token,
+        u.name AS staff_name
+      FROM point_ledger l
+      JOIN customers c ON c.id = l.customer_id AND c.business_id = ${businessId}
+      LEFT JOIN users u ON u.id = l.created_by
+      WHERE l.business_id = ${businessId}
+      ORDER BY l.created_at DESC
+      LIMIT ${limit}
+    `) as unknown as BusinessPointLedgerRow[];
   },
 
   /** "Kembali" berarti ada transaksi sesudah campaign dibuat, bukan bukti penyebabnya. */

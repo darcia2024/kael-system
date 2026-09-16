@@ -727,6 +727,28 @@ export interface MemberGrowthSummary {
   revenuePrior: number;
 }
 
+export interface LoyaltyOverallStats {
+  totalMembers: number;
+  newMembers30d: number;
+  newMembers7d: number;
+  totalPointsEarned: number;
+  totalPointsRedeemed: number;
+  totalPointsBalance: number;
+  totalMemberRevenue: number;
+  totalMemberTransactions: number;
+  activeMembers30d: number;
+  repeatMembersCount: number;
+  atRiskMembersCount: number;
+}
+
+export interface BusinessPointLedgerRow extends PointLedger {
+  customer_name: string | null;
+  customer_phone: string;
+  customer_token: string;
+  staff_name: string | null;
+}
+
+
 // -----------------------------------------------------------------------------
 // INITIAL SEED DATA
 // -----------------------------------------------------------------------------
