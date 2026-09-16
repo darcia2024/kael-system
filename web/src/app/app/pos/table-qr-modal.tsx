@@ -412,7 +412,105 @@ export default function TableQrModal({
   };
 
   // ===========================================================================
-  // 2. CETAK STANDEE MEJA 1:1 SQUARE
+  // 2. GENERATOR QR CODE MURNI (RAW HIGH-RES 2048 x 2048 PX UNTUK CUSTOM DESAIN)
+  // ===========================================================================
+  const handleDownloadPureQr = (isTransparent = false) => {
+    setIsDownloading(true);
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d", { willReadFrequently: false });
+    if (!ctx) {
+      setIsDownloading(false);
+      return;
+    }
+
+    // Ultra High-Resolution 2048 x 2048 px for Canva / Photoshop / Illustrator
+    const size = 2048;
+    canvas.width = size;
+    canvas.height = size;
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+
+    if (!isTransparent) {
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, size, size);
+    } else {
+      ctx.clearRect(0, 0, size, size);
+    }
+
+    const qr = qrcode(0, "H");
+    qr.addData(targetUrl, "Byte");
+    qr.make();
+    const n = qr.getModuleCount();
+
+    // Standard Clean Quiet-Zone Padding
+    const padding = 160;
+    const qrMatrixSize = size - padding * 2;
+    const cellSize = qrMatrixSize / n;
+
+    // Draw Pure Vector-Crisp QR Matrix
+    ctx.fillStyle = "#072e22";
+    for (let r = 0; r < n; r++) {
+      for (let c = 0; c < n; c++) {
+        if (qr.isDark(r, c)) {
+          ctx.fillRect(
+            padding + c * cellSize,
+            padding + r * cellSize,
+            cellSize + 0.65,
+            cellSize + 0.65,
+          );
+        }
+      }
+    }
+
+    // Center Logo Badge inside QR
+    const logoImg = new Image();
+    logoImg.crossOrigin = "anonymous";
+    logoImg.src = "/logo-mochi.png";
+
+    const renderLogoAndSave = () => {
+      const centerBadgeSize = Math.round(qrMatrixSize * 0.22); // ~380px
+      const cbX = (size - centerBadgeSize) / 2;
+      const cbY = (size - centerBadgeSize) / 2;
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(size / 2, size / 2, centerBadgeSize / 2 + 12, 0, Math.PI * 2);
+      ctx.fillStyle = "#ffffff";
+      ctx.fill();
+      ctx.strokeStyle = "#072e22";
+      ctx.lineWidth = 12;
+      ctx.stroke();
+      ctx.clip();
+      if (logoImg.naturalWidth > 0) {
+        ctx.drawImage(logoImg, cbX, cbY, centerBadgeSize, centerBadgeSize);
+      }
+      ctx.restore();
+
+      const link = document.createElement("a");
+      link.download = `QR-Meja-${formattedTableNumber}-MochiCafe-HD.png`;
+      link.href = canvas.toDataURL("image/png");
+      link.click();
+      setIsDownloading(false);
+    };
+
+    let done = false;
+    const trigger = () => {
+      if (done) return;
+      done = true;
+      renderLogoAndSave();
+    };
+
+    logoImg.onload = trigger;
+    logoImg.onerror = trigger;
+    if (logoImg.complete && logoImg.naturalWidth > 0) {
+      trigger();
+    } else {
+      setTimeout(trigger, 300);
+    }
+  };
+
+  // ===========================================================================
+  // 3. CETAK STANDEE MEJA 1:1 SQUARE
   // ===========================================================================
   const handlePrintStandee = () => {
     const printWindow = window.open("", "_blank", "width=800,height=800");
@@ -947,48 +1045,65 @@ export default function TableQrModal({
           </div>
 
           {/* 3. Tombol Aksi */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2 border-t border-[#e2ebe6]">
-            {/* Tombol Print Standee */}
-            <button
-              type="button"
-              onClick={handlePrintStandee}
-              className="flex items-center justify-center gap-2 rounded-2xl bg-[#0b3d2e] px-4 py-3 text-xs font-black text-[#c8f53a] shadow-md hover:bg-[#124634] active:scale-95 transition-all"
-            >
-              <Printer size={15} />
-              <span>Cetak Standee Meja (1x1)</span>
-            </button>
+          <div className="space-y-2 pt-2 border-t border-[#e2ebe6]">
+            {/* Download Buttons Row (Main Actions) */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {/* Tombol Download QR Saja (RAW ULTRA-HD 2048px) */}
+              <button
+                type="button"
+                onClick={() => handleDownloadPureQr(false)}
+                disabled={isDownloading}
+                className="flex items-center justify-center gap-2 rounded-2xl bg-[#0b3d2e] px-4 py-3.5 text-xs font-black text-[#c8f53a] shadow-md hover:bg-[#124634] active:scale-95 transition-all disabled:opacity-50 cursor-pointer"
+              >
+                <QrCodeIcon size={16} />
+                <span>{isDownloading ? "Memproses..." : "Download QR Saja (HD 2048px)"}</span>
+              </button>
 
-            {/* Tombol Download PNG 1:1 */}
-            <button
-              type="button"
-              onClick={handleDownloadPng}
-              disabled={isDownloading}
-              className="flex items-center justify-center gap-2 rounded-2xl border-2 border-[#0b3d2e] bg-white px-4 py-3 text-xs font-black text-[#0b3d2e] shadow-xs hover:bg-[#edf8f3] active:scale-95 transition-all disabled:opacity-50"
-            >
-              <Download size={15} />
-              <span>{isDownloading ? "Menyiapkan PNG..." : "Download PNG Presisi 1x1"}</span>
-            </button>
+              {/* Tombol Download Standee Lengkap 1x1 */}
+              <button
+                type="button"
+                onClick={handleDownloadPng}
+                disabled={isDownloading}
+                className="flex items-center justify-center gap-2 rounded-2xl border-2 border-[#0b3d2e] bg-white px-4 py-3.5 text-xs font-black text-[#0b3d2e] shadow-xs hover:bg-[#edf8f3] active:scale-95 transition-all disabled:opacity-50 cursor-pointer"
+              >
+                <Download size={15} />
+                <span>Download Standee Lengkap (1x1)</span>
+              </button>
+            </div>
 
-            {/* Tombol Salin Link */}
-            <button
-              type="button"
-              onClick={handleCopyLink}
-              className="flex items-center justify-center gap-1.5 rounded-2xl border border-[#d8e3de] bg-[#f8faf9] px-3 py-2.5 text-xs font-bold text-[#1c2d26] hover:bg-[#edf8f3] active:scale-95 transition-all"
-            >
-              {copied ? <Check size={14} className="text-[#167052]" /> : <Copy size={14} />}
-              <span>{copied ? "Link Tersalin!" : "Salin Link Meja"}</span>
-            </button>
+            {/* Utility Row */}
+            <div className="grid grid-cols-3 gap-2">
+              {/* Tombol Cetak Standee */}
+              <button
+                type="button"
+                onClick={handlePrintStandee}
+                className="flex items-center justify-center gap-1.5 rounded-xl border border-[#d8e3de] bg-[#f8faf9] px-3 py-2.5 text-[11px] font-bold text-[#1c2d26] hover:bg-[#edf8f3] active:scale-95 transition-all"
+              >
+                <Printer size={13} />
+                <span>Cetak Print</span>
+              </button>
 
-            {/* Tombol Buka Menu */}
-            <a
-              href={targetUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center justify-center gap-1.5 rounded-2xl border border-[#d8e3de] bg-white px-3 py-2.5 text-xs font-bold text-[#556b62] hover:text-[#0b3d2e] hover:bg-[#f8faf9] transition-colors"
-            >
-              <span>Tes Buka Menu</span>
-              <ExternalLink size={13} />
-            </a>
+              {/* Tombol Salin Link */}
+              <button
+                type="button"
+                onClick={handleCopyLink}
+                className="flex items-center justify-center gap-1.5 rounded-xl border border-[#d8e3de] bg-[#f8faf9] px-3 py-2.5 text-[11px] font-bold text-[#1c2d26] hover:bg-[#edf8f3] active:scale-95 transition-all"
+              >
+                {copied ? <Check size={13} className="text-[#167052]" /> : <Copy size={13} />}
+                <span>{copied ? "Tersalin!" : "Salin Link"}</span>
+              </button>
+
+              {/* Tombol Buka Menu */}
+              <a
+                href={targetUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-center gap-1.5 rounded-xl border border-[#d8e3de] bg-white px-3 py-2.5 text-[11px] font-bold text-[#556b62] hover:text-[#0b3d2e] hover:bg-[#f8faf9] transition-colors"
+              >
+                <span>Tes Menu</span>
+                <ExternalLink size={12} />
+              </a>
+            </div>
           </div>
         </div>
       </div>
