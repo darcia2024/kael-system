@@ -391,9 +391,21 @@ export default function TableQrModal({
       setIsDownloading(false);
     };
 
-    logoImg.onload = renderCanvasContent;
-    logoImg.onerror = renderCanvasContent;
-    if (logoImg.complete) renderCanvasContent();
+    let hasRendered = false;
+    const doRender = () => {
+      if (hasRendered) return;
+      hasRendered = true;
+      renderCanvasContent();
+    };
+
+    logoImg.onload = doRender;
+    logoImg.onerror = doRender;
+    if (logoImg.complete) {
+      doRender();
+    } else {
+      // Fallback timeout in case image loading is blocked or stalls
+      setTimeout(doRender, 300);
+    }
   };
 
   // ===========================================================================
