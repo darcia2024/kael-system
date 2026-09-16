@@ -1802,6 +1802,35 @@ export async function createQrOrderAction(
   });
 }
 
+/**
+ * Polling status pesanan QR dari meja tamu.
+ * Terbuka tanpa sesi staf, membaca status pembayaran dan dapur agar layar HP
+ * tamu otomatis berganti menjadi "Lunas & Sedang Dimasak" begitu kasir memverifikasi.
+ */
+export async function getQrOrderStatusAction(
+  orderId: string,
+): Promise<
+  ActionResult<{
+    paymentStatus: string;
+    fulfillmentStatus: string;
+    orderNo: string;
+    total: number;
+  }>
+> {
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(orderId);
+  if (!isUuid) return fail("ID pesanan tidak valid.");
+
+  const orderData = await db.getOrderById(orderId);
+  if (!orderData) return fail("Pesanan tidak ditemukan.");
+
+  return done({
+    paymentStatus: orderData.order.payment_status,
+    fulfillmentStatus: orderData.order.fulfillment_status,
+    orderNo: orderData.order.order_no,
+    total: Number(orderData.order.total),
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Konfirmasi pembayaran oleh kasir
 // ---------------------------------------------------------------------------

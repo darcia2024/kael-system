@@ -255,25 +255,11 @@ export default function OrderQueue({
                           </button>
                         </div>
 
-                        {/* Opsi opsional: Mulai masak duluan atau batalkan */}
+                        {/* Dapur terkunci sampai kasir konfirmasi bayar */}
                         <div className="flex items-center justify-between text-[11px] font-mono px-1">
-                          {o.fulfillment_status === "pending" ? (
-                            <button
-                              type="button"
-                              disabled={busy}
-                              onClick={async () => {
-                                await jalankan(o.id, () => setFulfillmentAction(o.id, "accepted"));
-                                if (autoPrintThreePly && onPrintThreePly) {
-                                  onPrintThreePly(o);
-                                }
-                              }}
-                              className="font-bold text-[#0b3d2e] hover:underline"
-                            >
-                              🍳 Mulai masak dulu (sebelum cek QRIS)
-                            </button>
-                          ) : (
-                            <span className="text-emerald-700 font-bold">Dapur: {o.fulfillment_status.toUpperCase()}</span>
-                          )}
+                          <span className="text-amber-800 font-bold flex items-center gap-1">
+                            <span>🔒 Dapur Menunggu Lunas (Belum Masak)</span>
+                          </span>
                           <button
                             type="button"
                             disabled={busy}

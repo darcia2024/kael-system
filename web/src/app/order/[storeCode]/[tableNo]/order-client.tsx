@@ -6,10 +6,12 @@ import {
   Coffee,
   CupSoda,
   Eye,
+  Loader2,
   MessageSquare,
   Minus,
   Package,
   Plus,
+  Receipt,
   Search,
   ShoppingBag,
   Soup,
@@ -20,7 +22,7 @@ import {
 } from "lucide-react";
 import type { Business, Category, MenuItem } from "@/lib/types";
 import { PLACEHOLDER_MENU } from "@/lib/types";
-import { createQrOrderAction } from "@/lib/actions";
+import { createQrOrderAction, getQrOrderStatusAction } from "@/lib/actions";
 import QrCode from "@/components/qr-code";
 import { buildDynamicQris } from "@/lib/qris-engine";
 import { formatRupiah } from "@/lib/formatters";
@@ -78,7 +80,37 @@ export default function CustomerQrOrderPage({
    * jadi yang memastikannya tetap kasir.
    */
   const [caraBayar, setCaraBayar] = useState<"qris" | "cash">("cash");
-  const [pesananSelesai, setPesananSelesai] = useState<{ no: string; total: number } | null>(null);
+  const [pesananSelesai, setPesananSelesai] = useState<{ id: string; no: string; total: number } | null>(null);
+  const [sudahKirimBukti, setSudahKirimBukti] = useState(false);
+  const [paymentStatus, setPaymentStatus] = useState<string>("pending");
+  const [fulfillmentStatus, setFulfillmentStatus] = useState<string>("pending");
+
+  // Polling status pesanan secara berkala (tiap 3 detik) jika QRIS belum lunas
+  useEffect(() => {
+    if (!pesananSelesai?.id || paymentStatus === "paid") return;
+
+    let isMounted = true;
+    const interval = setInterval(async () => {
+      try {
+        const res = await getQrOrderStatusAction(pesananSelesai.id);
+        if (res.ok && isMounted) {
+          if (res.data.paymentStatus) {
+            setPaymentStatus(res.data.paymentStatus);
+          }
+          if (res.data.fulfillmentStatus) {
+            setFulfillmentStatus(res.data.fulfillmentStatus);
+          }
+        }
+      } catch (err) {
+        console.warn("Polling status error:", err);
+      }
+    }, 3000);
+
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [pesananSelesai?.id, paymentStatus]);
 
   // Kunci halaman agar tidak bisa di-zoom out atau zoom in di HP (terkunci di skala optimal 1.0)
   useEffect(() => {
@@ -269,14 +301,19 @@ export default function CustomerQrOrderPage({
       alert(res.error);
       return;
     }
-    setPesananSelesai({ no: res.data.orderNo, total: res.data.total });
+    setPesananSelesai({ id: res.data.orderId, no: res.data.orderNo, total: res.data.total });
+    setPaymentStatus("pending");
+    setFulfillmentStatus("pending");
+    setSudahKirimBukti(false);
     setIsCartOpen(false);
     setCart({});
   };
 
   if (pesananSelesai) {
+    const isQris = caraBayar === "qris";
+    const isPaid = paymentStatus === "paid";
     const qris =
-      caraBayar === "qris" && business?.qris_payload
+      isQris && business?.qris_payload
         ? buildDynamicQris(business.qris_payload, Math.round(pesananSelesai.total))
         : null;
 
@@ -299,7 +336,9 @@ export default function CustomerQrOrderPage({
                   alt={brandName}
                   className="h-full w-full rounded-full object-contain"
                 />
-                <div className="absolute -bottom-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full bg-[#0b3d2e] text-[#c8f53a] ring-2 ring-white shadow-xs">
+                <div className={`absolute -bottom-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full ring-2 ring-white shadow-xs ${
+                  isPaid ? "bg-emerald-600 text-white" : "bg-[#0b3d2e] text-[#c8f53a]"
+                }`}>
                   <CheckCircle2 size={16} />
                 </div>
               </div>
@@ -313,7 +352,11 @@ export default function CustomerQrOrderPage({
               {brandName}
             </h2>
             <p className="text-[10.5px] font-medium text-[#557064] mb-2.5">
-              {isMochi ? "Padang Panjang · Pesanan Berhasil Diterima" : "Pesanan Berhasil Diterima"}
+              {isPaid
+                ? "Pembayaran Diterima · Pesanan Sedang Disiapkan"
+                : isQris
+                  ? "Padang Panjang · Menunggu Pembayaran QRIS"
+                  : "Padang Panjang · Pesanan Meja Berhasil Dibuat"}
             </p>
 
             {/* Table Badge */}
@@ -338,99 +381,170 @@ export default function CustomerQrOrderPage({
             </div>
           </div>
 
-          {/* QRIS or Cash Section */}
-          {qris?.ok ? (
-            <div className="relative z-10 rounded-2xl border-2 border-[#0b3d2e]/25 bg-white p-4 shadow-sm space-y-3 text-center">
-              {/* QRIS Header */}
-              <div className="flex items-center justify-between border-b border-[#e9efe9] pb-2 text-left">
-                <div className="flex items-center gap-1.5">
-                  <span className="rounded bg-[#d32f2f] px-1.5 py-0.5 text-[10px] font-black text-white tracking-wider">
-                    QRIS
-                  </span>
-                  <div>
-                    <p className="text-[11px] font-extrabold text-[#0b3d2e] leading-tight">
-                      {business?.qris_merchant_name || brandName}
-                    </p>
-                    <p className="text-[9px] text-[#6b8277]">
-                      {business?.qris_nmid ? `NMID: ${business.qris_nmid}` : "Pembayaran Digital Nasional"}
-                      {business?.qris_merchant_city ? ` · ${business.qris_merchant_city}` : ""}
-                    </p>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <span className="inline-flex items-center gap-1 rounded-full bg-[#edf8f3] px-2 py-0.5 text-[9.5px] font-extrabold text-[#0b3d2e]">
-                    <span>🔒 Nominal Pas</span>
-                  </span>
-                </div>
+          {/* KONDISI 1: JIKA SUDAH LUNAS (PAID) */}
+          {isPaid ? (
+            <div className="relative z-10 rounded-2xl border-2 border-emerald-500 bg-emerald-50/90 p-4 text-center space-y-2.5 shadow-sm animate-in zoom-in-95">
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-emerald-600 text-white shadow-xs">
+                <CheckCircle2 size={26} />
               </div>
-
-              {/* QR Container with Corner Accents */}
-              <div className="relative mx-auto inline-block rounded-xl border border-[#d8e5df] bg-white p-2.5 shadow-2xs">
-                {/* Corner Accents */}
-                <span className="absolute top-1 left-1 h-3 w-3 border-t-2 border-l-2 border-[#0b3d2e]" />
-                <span className="absolute top-1 right-1 h-3 w-3 border-t-2 border-r-2 border-[#0b3d2e]" />
-                <span className="absolute bottom-1 left-1 h-3 w-3 border-b-2 border-l-2 border-[#0b3d2e]" />
-                <span className="absolute bottom-1 right-1 h-3 w-3 border-b-2 border-r-2 border-[#0b3d2e]" />
-
-                <QrCode
-                  value={qris.payload}
-                  size={210}
-                  colorDark="#0b3d2e"
-                  centerLogoUrl={logoSrc}
-                  label={`QRIS pembayaran ${formatRupiah(pesananSelesai.total)}`}
-                />
-              </div>
-
-              {/* Amount reminder */}
-              <div className="rounded-xl bg-[#f0f6f3] py-1.5 px-3 text-center text-xs font-black text-[#0b3d2e] border border-[#d8e5df]">
-                Nominal Pas: {formatRupiah(pesananSelesai.total)}
-              </div>
-
-              {/* How to Pay Guide */}
-              <div className="rounded-xl border border-[#e5dcb8] bg-[#fffcf2] p-3 text-left space-y-1.5">
-                <div className="flex items-center gap-1 text-[11px] font-bold text-[#7a6018]">
-                  <Sparkles size={13} className="text-[#a17c1a]" />
-                  <span>Cara bayar langsung dari HP ini:</span>
-                </div>
-                <ol className="list-decimal list-inside space-y-1 text-[11px] text-[#6d5615] leading-relaxed">
-                  <li><strong>Screenshot</strong> QR di atas ke galeri foto HP Anda.</li>
-                  <li>Buka aplikasi <strong>m-Banking</strong> (Bank Nagari, BCA, Mandiri, BRI, dll) atau <strong>E-Wallet</strong> (GoPay, DANA, OVO, ShopeePay).</li>
-                  <li>Pilih menu <strong>Scan QR</strong>, lalu klik ikon <strong>Galeri</strong> dan pilih gambar QR tadi.</li>
-                </ol>
-                <div className="border-t border-[#ebd89e] pt-1.5 text-[10px] font-semibold text-[#80641b]">
-                  ✨ Nominal sudah otomatis terisi pas. Setelah transaksi sukses, tunjukkan bukti bayar ke kasir/waiter.
-                </div>
+              <div>
+                <span className="inline-block rounded-full bg-[#c8f53a] px-3 py-0.5 text-[11px] font-black text-[#073829] uppercase tracking-wider">
+                  ✓ Pembayaran Lunas
+                </span>
+                <h3 className="mt-1 text-base font-black text-emerald-950">
+                  Pesanan Resmi Masuk ke Dapur!
+                </h3>
+                <p className="mt-1 text-xs text-emerald-800 leading-relaxed font-medium">
+                  Terima kasih! Pembayaran Anda sudah terverifikasi lunas. Tim Dapur & Barista {brandName} saat ini sedang menyiapkan hidangan Anda.
+                </p>
               </div>
             </div>
+          ) : isQris && qris?.ok ? (
+            /* KONDISI 2: QRIS BELUM LUNAS (PAY FIRST) */
+            <div className="relative z-10 space-y-3">
+              {/* Card QRIS */}
+              <div className="rounded-2xl border-2 border-[#0b3d2e]/25 bg-white p-4 shadow-sm space-y-3 text-center">
+                {/* QRIS Header */}
+                <div className="flex items-center justify-between border-b border-[#e9efe9] pb-2 text-left">
+                  <div className="flex items-center gap-1.5">
+                    <span className="rounded bg-[#d32f2f] px-1.5 py-0.5 text-[10px] font-black text-white tracking-wider">
+                      QRIS
+                    </span>
+                    <div>
+                      <p className="text-[11px] font-extrabold text-[#0b3d2e] leading-tight">
+                        {business?.qris_merchant_name || brandName}
+                      </p>
+                      <p className="text-[9px] text-[#6b8277]">
+                        {business?.qris_nmid ? `NMID: ${business.qris_nmid}` : "Pembayaran Digital Nasional"}
+                        {business?.qris_merchant_city ? ` · ${business.qris_merchant_city}` : ""}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-[#edf8f3] px-2 py-0.5 text-[9.5px] font-extrabold text-[#0b3d2e]">
+                      <span>🔒 Nominal Pas</span>
+                    </span>
+                  </div>
+                </div>
+
+                {/* QR Container with Corner Accents */}
+                <div className="relative mx-auto inline-block rounded-xl border border-[#d8e5df] bg-white p-2.5 shadow-2xs">
+                  <span className="absolute top-1 left-1 h-3 w-3 border-t-2 border-l-2 border-[#0b3d2e]" />
+                  <span className="absolute top-1 right-1 h-3 w-3 border-t-2 border-r-2 border-[#0b3d2e]" />
+                  <span className="absolute bottom-1 left-1 h-3 w-3 border-b-2 border-l-2 border-[#0b3d2e]" />
+                  <span className="absolute bottom-1 right-1 h-3 w-3 border-b-2 border-r-2 border-[#0b3d2e]" />
+
+                  <QrCode
+                    value={qris.payload}
+                    size={210}
+                    colorDark="#0b3d2e"
+                    centerLogoUrl={logoSrc}
+                    label={`QRIS pembayaran ${formatRupiah(pesananSelesai.total)}`}
+                  />
+                </div>
+
+                {/* Amount reminder */}
+                <div className="rounded-xl bg-[#f0f6f3] py-1.5 px-3 text-center text-xs font-black text-[#0b3d2e] border border-[#d8e5df]">
+                  Nominal Pas: {formatRupiah(pesananSelesai.total)}
+                </div>
+
+                {/* How to Pay Guide */}
+                <div className="rounded-xl border border-[#e5dcb8] bg-[#fffcf2] p-3 text-left space-y-1.5">
+                  <div className="flex items-center gap-1 text-[11px] font-bold text-[#7a6018]">
+                    <Sparkles size={13} className="text-[#a17c1a]" />
+                    <span>Cara bayar langsung dari HP ini:</span>
+                  </div>
+                  <ol className="list-decimal list-inside space-y-1 text-[11px] text-[#6d5615] leading-relaxed">
+                    <li><strong>Screenshot</strong> QR di atas ke galeri foto HP Anda.</li>
+                    <li>Buka aplikasi <strong>m-Banking</strong> atau <strong>E-Wallet</strong> (GoPay, DANA, OVO, ShopeePay, BCA, dll).</li>
+                    <li>Pilih menu <strong>Scan QR</strong>, lalu klik ikon <strong>Galeri</strong> dan pilih gambar QR tadi.</li>
+                  </ol>
+                </div>
+              </div>
+
+              {/* Status Box & Konfirmasi Tamu */}
+              {!sudahKirimBukti ? (
+                <div className="rounded-2xl border-2 border-amber-300 bg-amber-50/90 p-3.5 text-left space-y-2.5 shadow-xs">
+                  <div className="flex items-start gap-2">
+                    <span className="text-base shrink-0 mt-0.5">⚠️</span>
+                    <div>
+                      <p className="text-xs font-black text-amber-950 uppercase tracking-tight">
+                        Pesanan Masuk Dapur Setelah Dibayar
+                      </p>
+                      <p className="text-[11px] text-amber-900 font-medium leading-relaxed mt-0.5">
+                        Selesaikan pembayaran QRIS di atas. Setelah transfer sukses, klik tombol di bawah agar kasir mengonfirmasi dan pesanan langsung dimasak di dapur:
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setSudahKirimBukti(true)}
+                    className="w-full flex items-center justify-center gap-2 rounded-xl bg-[#0b3d2e] hover:bg-[#124e3c] text-[#c8f53a] py-3 px-4 text-xs font-black transition-all shadow-sm active:scale-[0.98]"
+                  >
+                    <CheckCircle2 size={16} />
+                    <span>✅ SAYA SUDAH TRANSFER / BAYAR VIA QRIS</span>
+                  </button>
+                </div>
+              ) : (
+                <div className="rounded-2xl border-2 border-emerald-500 bg-emerald-50/90 p-4 text-left space-y-2 shadow-xs animate-in fade-in-50">
+                  <div className="flex items-center gap-2">
+                    <span className="flex h-2.5 w-2.5 relative">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-600"></span>
+                    </span>
+                    <h4 className="text-xs font-black text-emerald-950 uppercase tracking-wide">
+                      Sedang Diverifikasi Kasir...
+                    </h4>
+                  </div>
+                  <p className="text-[11px] text-emerald-900 font-medium leading-relaxed">
+                    Terima kasih! Kasir kami sedang memeriksa mutasi Bank Nagari. Layar HP ini akan <strong>otomatis berubah menjadi LUNAS</strong> begitu kasir menekan tombol konfirmasi.
+                  </p>
+                </div>
+              )}
+            </div>
           ) : (
-            <div className="relative z-10 space-y-1.5 rounded-2xl border border-[#d8e5df] bg-[#f7faf8] p-4 text-center">
-              <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-[#edf8f3] text-[#0b3d2e] font-bold text-lg mb-0.5">
-                💵
-              </span>
-              <p className="font-extrabold text-sm text-[#0b3d2e]">
-                {caraBayar === "qris"
-                  ? "Bayar via QRIS di Kasir"
-                  : "Bayar di Kasir Saat Selesai Makan"}
-              </p>
-              <p className="text-[11.5px] text-[#557064] leading-relaxed">
-                Sebutkan <strong>Meja {tableNo}</strong> atau <strong>No. Pesanan #{pesananSelesai.no}</strong> saat melakukan pembayaran di kasir.
-              </p>
+            /* KONDISI 3: TUNAI / MAKAN DULU */
+            <div className="relative z-10 space-y-3">
+              <div className="space-y-1.5 rounded-2xl border border-[#d8e5df] bg-[#f7faf8] p-4 text-center">
+                <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-[#edf8f3] text-[#0b3d2e] font-bold text-lg mb-0.5">
+                  💵
+                </span>
+                <p className="font-extrabold text-sm text-[#0b3d2e]">
+                  Makan Dulu · Bayar di Kasir Saat Selesai
+                </p>
+                <p className="text-[11.5px] text-[#557064] leading-relaxed">
+                  Sebutkan <strong>Meja {tableNo}</strong> atau <strong>No. Pesanan #{pesananSelesai.no}</strong> saat melakukan pembayaran di kasir.
+                </p>
+              </div>
+
+              <div className="flex items-start gap-2.5 rounded-xl border border-[#bde2d1] bg-[#eef8f3] p-3 text-left">
+                <span className="text-base shrink-0 mt-0.5">🍳</span>
+                <p className="text-[11.5px] font-semibold text-[#0b3d2e] leading-snug">
+                  Pesanan Anda sudah masuk ke antrean kasir. Kasir akan memverifikasi pesanan meja Anda sebelum diteruskan ke Dapur & Barista {brandName}.
+                </p>
+              </div>
             </div>
           )}
 
-          {/* Kitchen / Barista Notification */}
-          <div className="relative z-10 flex items-start gap-2.5 rounded-xl border border-[#bde2d1] bg-[#eef8f3] p-3 text-left">
-            <span className="text-base shrink-0 mt-0.5">🍳</span>
-            <p className="text-[11.5px] font-semibold text-[#0b3d2e] leading-snug">
-              Pesanan Anda sudah masuk ke Dapur & Barista {brandName} untuk disiapkan. Selamat bersantai dan menikmati suasana kafe!
-            </p>
-          </div>
+          {/* Struk Digital Link */}
+          {pesananSelesai?.id && (
+            <a
+              href={`/receipt/${pesananSelesai.id}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="relative z-10 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-[#0b3d2e]/20 bg-white px-4 font-mono text-xs font-bold text-[#0b3d2e] hover:bg-[#f0f6f3] transition-all shadow-xs"
+            >
+              <Receipt size={16} />
+              <span>Buka Struk Digital Resmi</span>
+            </a>
+          )}
 
           {/* WhatsApp Confirmation Button (if configured) */}
           {business?.phone ? (
             <a
               href={`https://wa.me/${business.phone.replace(/[^0-9]/g, "").replace(/^0/, "62")}?text=${encodeURIComponent(
-                `Halo ${business.name}, saya memesan dari Meja ${tableNo} (Pesanan #${pesananSelesai.no}) dengan total ${formatRupiah(pesananSelesai.total)}. Mohon diproses ya!`
+                `Halo ${business.name}, saya memesan dari Meja ${tableNo} (Pesanan #${pesananSelesai.no}) dengan total ${formatRupiah(pesananSelesai.total)}. Saya sudah bayar via QRIS, mohon dicek ya!`
               )}`}
               target="_blank"
               rel="noopener noreferrer"
