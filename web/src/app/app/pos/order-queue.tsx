@@ -163,6 +163,7 @@ export default function OrderQueue({
           )}
 
           {orders.map((o) => {
+            const isQris = o.payment_method === "qris";
             const menungguBayar = o.payment_status === "pending";
             const busy = sibuk === o.id;
 
@@ -172,10 +173,14 @@ export default function OrderQueue({
                 className={`rounded-2xl p-4 space-y-3 ${
                   isMochi
                     ? menungguBayar
-                      ? "border border-amber-300/80 bg-amber-50/70"
+                      ? isQris
+                        ? "border-2 border-emerald-500/70 bg-emerald-50/60 shadow-sm"
+                        : "border border-amber-300/80 bg-amber-50/70"
                       : "border border-[#d8e3de] bg-white shadow-xs"
                     : menungguBayar
-                      ? "border-2 border-[#b45309] bg-[#fffbeb]"
+                      ? isQris
+                        ? "border-2 border-emerald-600 bg-emerald-50/60"
+                        : "border-2 border-[#b45309] bg-[#fffbeb]"
                       : "border-2 border-[#232331] bg-white"
                 }`}
               >
@@ -190,8 +195,12 @@ export default function OrderQueue({
                   </div>
                   <div className="text-right">
                     <span className={`font-black text-base ${isMochi ? "text-[#0b3d2e] font-mono" : ""}`}>{formatRupiah(Number(o.total))}</span>
-                    <p className={`font-mono text-[11px] font-bold uppercase ${isMochi ? "text-[#167052]" : "text-[#7958d8]"}`}>
-                      {o.payment_method}
+                    <p className={`font-mono text-[11px] font-bold uppercase ${
+                      isQris 
+                        ? (isMochi ? "text-emerald-800 bg-emerald-100/90 px-2 py-0.5 rounded-md inline-block" : "text-emerald-700 font-bold")
+                        : (isMochi ? "text-[#167052]" : "text-[#7958d8]")
+                    }`}>
+                      {isQris ? "QRIS (Tamu Scan di Meja)" : o.payment_method}
                     </p>
                   </div>
                 </div>
@@ -210,93 +219,169 @@ export default function OrderQueue({
 
                 {menungguBayar ? (
                   <div className={`space-y-2 border-t pt-2.5 ${isMochi ? "border-[#e0ebe5]" : "border-[#dedee8]"}`}>
-                    <div className="flex items-center justify-between font-mono text-[11px]">
-                      <span className="font-bold text-amber-800 flex items-center gap-1">
-                        <span>Makan Dulu (Belum Bayar)</span>
-                      </span>
-                      <span className="font-bold text-[#718078]">Tagihan: {formatRupiah(Number(o.total))}</span>
-                    </div>
-
-                    {o.fulfillment_status === "pending" ? (
-                      <div className="rounded-xl border border-amber-300 bg-amber-50 p-2.5 space-y-1.5 font-mono text-xs">
-                        <p className="text-[11px] font-bold text-amber-900">
-                          👉 Samperin ke meja untuk pastikan pesanan benar, lalu klik tombol di bawah:
-                        </p>
-                        <button
-                          type="button"
-                          disabled={busy}
-                          onClick={async () => {
-                            await jalankan(o.id, () => setFulfillmentAction(o.id, "accepted"));
-                            if (autoPrintThreePly && onPrintThreePly) {
-                              onPrintThreePly(o);
-                            }
-                          }}
-                          className={`w-full flex items-center justify-center gap-1.5 rounded-xl py-2 px-3 text-xs font-black transition-all ${
-                            isMochi
-                              ? "bg-[#0b3d2e] hover:bg-[#124d3a] text-[#c8f53a] shadow-xs"
-                              : "btn-tactile border-2 border-[#232331] bg-[#232331] text-[#d9ff57]"
-                          }`}
-                        >
-                          <Check size={14} />
-                          <span>Pesanan Meja Benar · Teruskan ke Dapur 🍳</span>
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="space-y-1.5">
-                        <div className="flex items-center gap-1.5 font-mono text-[11px] font-bold text-[#16a34a]">
-                          <ChefHat size={13} className={isMochi ? "text-[#167052]" : "text-[#7958d8]"} />
-                          <span>Dapur / Barista: {o.fulfillment_status.toUpperCase()}</span>
+                    {isQris ? (
+                      /* Alur Khusus QRIS */
+                      <div className="space-y-2.5">
+                        <div className="flex items-center justify-between font-mono text-[11px]">
+                          <span className="font-extrabold text-emerald-900 bg-emerald-100/90 px-2 py-0.5 rounded-md flex items-center gap-1.5">
+                            <span>💳 Menunggu Cek QRIS</span>
+                          </span>
+                          <span className="font-bold text-[#55695f]">Tagihan: {formatRupiah(Number(o.total))}</span>
                         </div>
-                        <div className="flex flex-wrap gap-1.5">
-                          {FULFILLMENT_FLOW.map((f) => (
+
+                        <div className="rounded-xl border border-emerald-300 bg-emerald-50/90 p-3 space-y-2 font-mono text-xs">
+                          <p className="text-[11px] font-bold text-emerald-950 leading-relaxed">
+                            📲 Tamu sudah bayar via QRIS di meja. Cek bukti transfer / mutasi Bank Nagari, lalu konfirmasi di bawah:
+                          </p>
+
+                          {/* Tombol Utama: Konfirmasi QRIS Lunas & Teruskan ke Dapur */}
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={async () => {
+                              await jalankan(o.id, () => confirmPaymentAction(o.id));
+                              if (autoPrintThreePly && onPrintThreePly) {
+                                onPrintThreePly(o);
+                              }
+                            }}
+                            className={`w-full flex items-center justify-center gap-2 rounded-xl py-2.5 px-3 text-xs font-black transition-all shadow-sm ${
+                              isMochi
+                                ? "bg-[#c8f53a] hover:bg-[#d9ff57] text-[#073829]"
+                                : "bg-[#16a34a] hover:bg-[#15803d] text-white"
+                            }`}
+                          >
+                            {busy ? <Loader2 size={14} className="animate-spin" /> : <Check size={15} strokeWidth={2.8} />}
+                            <span>✓ Konfirmasi QRIS Masuk · Lunas & Kirim ke Dapur 🍳</span>
+                          </button>
+                        </div>
+
+                        {/* Opsi opsional: Mulai masak duluan atau batalkan */}
+                        <div className="flex items-center justify-between text-[11px] font-mono px-1">
+                          {o.fulfillment_status === "pending" ? (
                             <button
-                              key={f.key}
                               type="button"
                               disabled={busy}
-                              onClick={() => jalankan(o.id, () => setFulfillmentAction(o.id, f.key))}
-                              className={`rounded-lg border px-2 py-1 font-mono text-[10.5px] font-bold disabled:opacity-50 transition-colors ${
-                                o.fulfillment_status === f.key
-                                  ? (isMochi ? "border-[#0b3d2e] bg-[#0b3d2e] text-[#c8f53a]" : "border-[#232331] bg-[#232331] text-[#d9ff57]")
-                                  : (isMochi ? "border-[#d8e3de] bg-white text-[#526159] hover:bg-[#edf8f3]" : "border-[#dedee8] bg-white text-[#7b7b8e]")
+                              onClick={async () => {
+                                await jalankan(o.id, () => setFulfillmentAction(o.id, "accepted"));
+                                if (autoPrintThreePly && onPrintThreePly) {
+                                  onPrintThreePly(o);
+                                }
+                              }}
+                              className="font-bold text-[#0b3d2e] hover:underline"
+                            >
+                              🍳 Mulai masak dulu (sebelum cek QRIS)
+                            </button>
+                          ) : (
+                            <span className="text-emerald-700 font-bold">Dapur: {o.fulfillment_status.toUpperCase()}</span>
+                          )}
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => jalankan(o.id, () => markPaymentFailedAction(o.id))}
+                            className="font-bold text-rose-600 hover:underline flex items-center gap-1"
+                          >
+                            <Ban size={12} />
+                            <span>Batal</span>
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      /* Alur Tunai / Makan Dulu */
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between font-mono text-[11px]">
+                          <span className="font-bold text-amber-800 flex items-center gap-1">
+                            <span>💵 Makan Dulu (Bayar Tunai di Kasir)</span>
+                          </span>
+                          <span className="font-bold text-[#718078]">Tagihan: {formatRupiah(Number(o.total))}</span>
+                        </div>
+
+                        {o.fulfillment_status === "pending" ? (
+                          <div className="rounded-xl border border-amber-300 bg-amber-50 p-2.5 space-y-1.5 font-mono text-xs">
+                            <p className="text-[11px] font-bold text-amber-900">
+                              👉 Samperin ke meja untuk pastikan pesanan benar, lalu klik tombol di bawah:
+                            </p>
+                            <button
+                              type="button"
+                              disabled={busy}
+                              onClick={async () => {
+                                await jalankan(o.id, () => setFulfillmentAction(o.id, "accepted"));
+                                if (autoPrintThreePly && onPrintThreePly) {
+                                  onPrintThreePly(o);
+                                }
+                              }}
+                              className={`w-full flex items-center justify-center gap-1.5 rounded-xl py-2 px-3 text-xs font-black transition-all ${
+                                isMochi
+                                  ? "bg-[#0b3d2e] hover:bg-[#124d3a] text-[#c8f53a] shadow-xs"
+                                  : "btn-tactile border-2 border-[#232331] bg-[#232331] text-[#d9ff57]"
                               }`}
                             >
-                              {f.label}
+                              <Check size={14} />
+                              <span>Pesanan Meja Benar · Teruskan ke Dapur 🍳</span>
                             </button>
-                          ))}
+                          </div>
+                        ) : (
+                          <div className="space-y-1.5">
+                            <div className="flex items-center gap-1.5 font-mono text-[11px] font-bold text-[#16a34a]">
+                              <ChefHat size={13} className={isMochi ? "text-[#167052]" : "text-[#7958d8]"} />
+                              <span>Dapur / Barista: {o.fulfillment_status.toUpperCase()}</span>
+                            </div>
+                            <div className="flex flex-wrap gap-1.5">
+                              {FULFILLMENT_FLOW.map((f) => (
+                                <button
+                                  key={f.key}
+                                  type="button"
+                                  disabled={busy}
+                                  onClick={() => jalankan(o.id, () => setFulfillmentAction(o.id, f.key))}
+                                  className={`rounded-lg border px-2 py-1 font-mono text-[10.5px] font-bold disabled:opacity-50 transition-colors ${
+                                    o.fulfillment_status === f.key
+                                      ? (isMochi ? "border-[#0b3d2e] bg-[#0b3d2e] text-[#c8f53a]" : "border-[#232331] bg-[#232331] text-[#d9ff57]")
+                                      : (isMochi ? "border-[#d8e3de] bg-white text-[#526159] hover:bg-[#edf8f3]" : "border-[#dedee8] bg-white text-[#7b7b8e]")
+                                  }`}
+                                >
+                                  {f.label}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Tombol Pembayaran Selesai Makan */}
+                        <div className="flex gap-2 pt-1 border-t border-[#e0ebe5]">
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={async () => {
+                              await jalankan(o.id, () => confirmPaymentAction(o.id));
+                              if (autoPrintThreePly && onPrintThreePly) {
+                                onPrintThreePly(o);
+                              }
+                            }}
+                            className={`flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl px-3 py-2 font-mono text-xs font-black disabled:opacity-50 transition-all ${
+                              isMochi
+                                ? "bg-[#c8f53a] hover:bg-[#d9ff57] text-[#073829] shadow-xs"
+                                : "btn-tactile border-2 border-[#232331] bg-[#16a34a] text-white shadow-ink-xs"
+                            }`}
+                            title="Tamu selesai makan dan membayar tagihan"
+                          >
+                            {busy ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
+                            Selesai Makan · Terima Bayar
+                          </button>
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => jalankan(o.id, () => markPaymentFailedAction(o.id))}
+                            className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-2 font-mono text-xs font-bold disabled:opacity-50 ${
+                              isMochi
+                                ? "border border-rose-200 bg-white text-rose-700 hover:bg-rose-50"
+                                : "border border-[#c0392b] bg-white text-[#c0392b]"
+                            }`}
+                          >
+                            <Ban size={13} />
+                            Batal
+                          </button>
                         </div>
                       </div>
                     )}
-
-                    {/* Tombol Pembayaran Selesai Makan */}
-                    <div className="flex gap-2 pt-1 border-t border-[#e0ebe5]">
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() => jalankan(o.id, () => confirmPaymentAction(o.id))}
-                        className={`flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl px-3 py-2 font-mono text-xs font-black disabled:opacity-50 transition-all ${
-                          isMochi
-                            ? "bg-[#c8f53a] hover:bg-[#d9ff57] text-[#073829] shadow-xs"
-                            : "btn-tactile border-2 border-[#232331] bg-[#16a34a] text-white shadow-ink-xs"
-                        }`}
-                        title="Tamu selesai makan dan membayar tagihan"
-                      >
-                        {busy ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
-                        Selesai Makan · Terima Bayar
-                      </button>
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() => jalankan(o.id, () => markPaymentFailedAction(o.id))}
-                        className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-2 font-mono text-xs font-bold disabled:opacity-50 ${
-                          isMochi
-                            ? "border border-rose-200 bg-white text-rose-700 hover:bg-rose-50"
-                            : "border border-[#c0392b] bg-white text-[#c0392b]"
-                        }`}
-                      >
-                        <Ban size={13} />
-                        Batal
-                      </button>
-                    </div>
                   </div>
                 ) : (
                   <div className={`space-y-2 border-t pt-2.5 ${isMochi ? "border-[#e0ebe5]" : "border-[#dedee8]"}`}>

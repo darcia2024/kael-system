@@ -13,6 +13,7 @@ import {
   Search,
   ShoppingBag,
   Soup,
+  Sparkles,
   UtensilsCrossed,
   X,
   type LucideIcon,
@@ -279,93 +280,177 @@ export default function CustomerQrOrderPage({
         ? buildDynamicQris(business.qris_payload, Math.round(pesananSelesai.total))
         : null;
 
+    const brandName = isMochi ? "Mochi Cafe n Resto" : (business?.name || "Resto");
+    const logoSrc = isMochi ? "/logo-mochi.png" : (business?.logo_url || null);
+
     return (
-      <div className={`${fontClassName} flex min-h-screen items-center justify-center bg-[#f3f0e8] p-4 text-[#1d2823]`}>
-        <div className="w-full max-w-md space-y-4 rounded-2xl border border-[#d5d0c5] bg-[#fffefb] p-6 text-center shadow-[0_16px_45px_rgba(32,42,36,0.12)] animate-in zoom-in-95">
-          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-[#2f6b55] bg-[#e7f0eb] text-[#2f6b55]">
-            <CheckCircle2 size={30} />
-          </div>
+      <div className={`${fontClassName} flex min-h-screen items-center justify-center bg-[#f4efe6] p-4 text-[#1d2823]`}>
+        <div className="w-full max-w-md space-y-4 rounded-[32px] border-2 border-[#0b3d2e]/20 bg-white p-6 sm:p-7 text-center shadow-[0_20px_60px_rgba(11,61,46,0.12)] animate-in zoom-in-95 relative overflow-hidden">
+          {/* Subtle inner dashed border */}
+          <div className="pointer-events-none absolute inset-2 rounded-[26px] border border-dashed border-[#0b3d2e]/15" />
 
-          <div className="space-y-1">
-            <span className="block text-[11px] font-bold uppercase text-[#587064]">
-              PESANAN MEJA {tableNo} MASUK
-            </span>
-            <h1 className="text-3xl font-semibold">#{pesananSelesai.no}</h1>
-            <p className="text-2xl font-bold text-[#1d2823]">
-              {formatRupiah(pesananSelesai.total)}
+          {/* Logo / Brand Header */}
+          <div className="relative z-10">
+            {logoSrc ? (
+              <div className="relative mx-auto mb-2.5 flex h-20 w-20 items-center justify-center rounded-full border-2 border-[#0b3d2e] bg-white p-1.5 shadow-md">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={logoSrc}
+                  alt={brandName}
+                  className="h-full w-full rounded-full object-contain"
+                />
+                <div className="absolute -bottom-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full bg-[#0b3d2e] text-[#c8f53a] ring-2 ring-white shadow-xs">
+                  <CheckCircle2 size={16} />
+                </div>
+              </div>
+            ) : (
+              <div className="mx-auto mb-2.5 flex h-14 w-14 items-center justify-center rounded-full border border-[#2f6b55] bg-[#e7f0eb] text-[#2f6b55]">
+                <CheckCircle2 size={30} />
+              </div>
+            )}
+
+            <h2 className="text-base font-extrabold uppercase tracking-tight text-[#0b3d2e]">
+              {brandName}
+            </h2>
+            <p className="text-[10.5px] font-medium text-[#557064] mb-2.5">
+              {isMochi ? "Padang Panjang · Pesanan Berhasil Diterima" : "Pesanan Berhasil Diterima"}
             </p>
+
+            {/* Table Badge */}
+            <div className="inline-flex items-center gap-1.5 rounded-full bg-[#0b3d2e] px-4 py-1 text-xs font-black text-[#c8f53a] shadow-xs">
+              <span>MEJA {tableNo.toUpperCase()}</span>
+            </div>
           </div>
 
+          {/* Ticket Info Card */}
+          <div className="relative z-10 rounded-2xl border border-[#d8e5df] bg-[#f7faf8] p-3.5 space-y-1 text-center shadow-2xs">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-[#557064]">
+              Nomor Antrean Pesanan
+            </span>
+            <h1 className="text-3xl sm:text-4xl font-black text-[#0b3d2e] tracking-tight font-mono">
+              #{pesananSelesai.no}
+            </h1>
+            <div className="pt-1.5 border-t border-[#e2ece7] flex items-center justify-between px-2">
+              <span className="text-xs font-semibold text-[#557064]">Total Pembayaran:</span>
+              <span className="text-xl font-black text-[#0b3d2e]">
+                {formatRupiah(pesananSelesai.total)}
+              </span>
+            </div>
+          </div>
+
+          {/* QRIS or Cash Section */}
           {qris?.ok ? (
-            <div className="space-y-3">
-              <div className="mx-auto inline-block rounded-xl border border-[#d5d0c5] bg-white p-3">
+            <div className="relative z-10 rounded-2xl border-2 border-[#0b3d2e]/25 bg-white p-4 shadow-sm space-y-3 text-center">
+              {/* QRIS Header */}
+              <div className="flex items-center justify-between border-b border-[#e9efe9] pb-2 text-left">
+                <div className="flex items-center gap-1.5">
+                  <span className="rounded bg-[#d32f2f] px-1.5 py-0.5 text-[10px] font-black text-white tracking-wider">
+                    QRIS
+                  </span>
+                  <div>
+                    <p className="text-[11px] font-extrabold text-[#0b3d2e] leading-tight">
+                      {business?.qris_merchant_name || brandName}
+                    </p>
+                    <p className="text-[9px] text-[#6b8277]">
+                      {business?.qris_nmid ? `NMID: ${business.qris_nmid}` : "Pembayaran Digital Nasional"}
+                      {business?.qris_merchant_city ? ` · ${business.qris_merchant_city}` : ""}
+                    </p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-[#edf8f3] px-2 py-0.5 text-[9.5px] font-extrabold text-[#0b3d2e]">
+                    <span>🔒 Nominal Pas</span>
+                  </span>
+                </div>
+              </div>
+
+              {/* QR Container with Corner Accents */}
+              <div className="relative mx-auto inline-block rounded-xl border border-[#d8e5df] bg-white p-2.5 shadow-2xs">
+                {/* Corner Accents */}
+                <span className="absolute top-1 left-1 h-3 w-3 border-t-2 border-l-2 border-[#0b3d2e]" />
+                <span className="absolute top-1 right-1 h-3 w-3 border-t-2 border-r-2 border-[#0b3d2e]" />
+                <span className="absolute bottom-1 left-1 h-3 w-3 border-b-2 border-l-2 border-[#0b3d2e]" />
+                <span className="absolute bottom-1 right-1 h-3 w-3 border-b-2 border-r-2 border-[#0b3d2e]" />
+
                 <QrCode
                   value={qris.payload}
-                  size={220}
+                  size={210}
+                  colorDark="#0b3d2e"
+                  centerLogoUrl={logoSrc}
                   label={`QRIS pembayaran ${formatRupiah(pesananSelesai.total)}`}
                 />
               </div>
 
-              {/*
-                QR-nya muncul di HP yang sama dengan yang dipakai memesan, jadi
-                pelanggan tidak bisa memindainya langsung. Semua dompet digital
-                di Indonesia bisa membaca QR dari galeri, dan itulah jalannya.
-                tapi hanya kalau diberitahukan. Tanpa kalimat ini, pelanggan
-                pertama akan berhenti di sini.
-              */}
-              <div className="space-y-1.5 rounded-xl border border-[#dfc982] bg-[#fff9e8] p-3 text-left">
-                <p className="text-[11px] font-bold text-[#725b1d]">
-                  Cara bayar dari HP ini:
-                </p>
-                <ol className="list-inside list-decimal space-y-0.5 text-[11px] text-[#725b1d]">
-                  <li>Screenshot QR di atas</li>
-                  <li>Buka GoPay / DANA / OVO / m-banking</li>
-                  <li>Pilih Scan, lalu ambil dari Galeri</li>
+              {/* Amount reminder */}
+              <div className="rounded-xl bg-[#f0f6f3] py-1.5 px-3 text-center text-xs font-black text-[#0b3d2e] border border-[#d8e5df]">
+                Nominal Pas: {formatRupiah(pesananSelesai.total)}
+              </div>
+
+              {/* How to Pay Guide */}
+              <div className="rounded-xl border border-[#e5dcb8] bg-[#fffcf2] p-3 text-left space-y-1.5">
+                <div className="flex items-center gap-1 text-[11px] font-bold text-[#7a6018]">
+                  <Sparkles size={13} className="text-[#a17c1a]" />
+                  <span>Cara bayar langsung dari HP ini:</span>
+                </div>
+                <ol className="list-decimal list-inside space-y-1 text-[11px] text-[#6d5615] leading-relaxed">
+                  <li><strong>Screenshot</strong> QR di atas ke galeri foto HP Anda.</li>
+                  <li>Buka aplikasi <strong>m-Banking</strong> (Bank Nagari, BCA, Mandiri, BRI, dll) atau <strong>E-Wallet</strong> (GoPay, DANA, OVO, ShopeePay).</li>
+                  <li>Pilih menu <strong>Scan QR</strong>, lalu klik ikon <strong>Galeri</strong> dan pilih gambar QR tadi.</li>
                 </ol>
-                <p className="border-t border-[#dfc982] pt-1 text-[10px] text-[#725b1d]">
-                  Nominalnya sudah terisi otomatis. Tunjukkan bukti bayar ke kasir.
-                </p>
+                <div className="border-t border-[#ebd89e] pt-1.5 text-[10px] font-semibold text-[#80641b]">
+                  ✨ Nominal sudah otomatis terisi pas. Setelah transaksi sukses, tunjukkan bukti bayar ke kasir/waiter.
+                </div>
               </div>
             </div>
           ) : (
-            <div className="space-y-1 rounded-xl border border-[#d5d0c5] bg-[#f8f6f0] p-3 text-xs">
-              <p className="font-bold text-[#1d2823]">
+            <div className="relative z-10 space-y-1.5 rounded-2xl border border-[#d8e5df] bg-[#f7faf8] p-4 text-center">
+              <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-[#edf8f3] text-[#0b3d2e] font-bold text-lg mb-0.5">
+                💵
+              </span>
+              <p className="font-extrabold text-sm text-[#0b3d2e]">
                 {caraBayar === "qris"
-                  ? "Bayar lewat QRIS (Bisa sekarang atau selesai makan)."
-                  : "Bayar di kasir saat selesai makan."}
+                  ? "Bayar via QRIS di Kasir"
+                  : "Bayar di Kasir Saat Selesai Makan"}
               </p>
-              <p className="text-[11px] text-[#68736d]">
-                Sebutkan nomor pesanan #{pesananSelesai.no} atau Meja {tableNo} saat pembayaran di kasir.
+              <p className="text-[11.5px] text-[#557064] leading-relaxed">
+                Sebutkan <strong>Meja {tableNo}</strong> atau <strong>No. Pesanan #{pesananSelesai.no}</strong> saat melakukan pembayaran di kasir.
               </p>
             </div>
           )}
 
-          <p className="text-[11px] text-[#167052] font-bold">
-            🍳 Pesanan Anda sudah diteruskan ke dapur/barista untuk disiapkan. Selamat menikmati!
-          </p>
+          {/* Kitchen / Barista Notification */}
+          <div className="relative z-10 flex items-start gap-2.5 rounded-xl border border-[#bde2d1] bg-[#eef8f3] p-3 text-left">
+            <span className="text-base shrink-0 mt-0.5">🍳</span>
+            <p className="text-[11.5px] font-semibold text-[#0b3d2e] leading-snug">
+              Pesanan Anda sudah masuk ke Dapur & Barista {brandName} untuk disiapkan. Selamat bersantai dan menikmati suasana kafe!
+            </p>
+          </div>
 
+          {/* WhatsApp Confirmation Button (if configured) */}
           {business?.phone ? (
             <a
               href={`https://wa.me/${business.phone.replace(/[^0-9]/g, "").replace(/^0/, "62")}?text=${encodeURIComponent(
-                `Halo ${business.name}, saya baru saja memesan dari Meja ${tableNo} (Pesanan #${pesananSelesai.no}) dengan total ${formatRupiah(pesananSelesai.total)}. Mohon diproses ya!`
+                `Halo ${business.name}, saya memesan dari Meja ${tableNo} (Pesanan #${pesananSelesai.no}) dengan total ${formatRupiah(pesananSelesai.total)}. Mohon diproses ya!`
               )}`}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-[#22c55e] bg-[#f0fdf4] px-4 font-mono text-xs font-bold text-[#15803d] hover:bg-[#dcfce7] transition-colors"
+              className="relative z-10 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-[#25d366]/40 bg-[#f0fdf4] px-4 font-mono text-xs font-bold text-[#166534] hover:bg-[#dcfce7] transition-all shadow-xs"
             >
-              <MessageSquare size={16} />
-              Konfirmasi / Bukti ke WhatsApp Toko
+              <MessageSquare size={16} className="text-[#25d366]" />
+              <span>Kirim Bukti Bayar ke WhatsApp Toko</span>
             </a>
           ) : null}
 
+          {/* Action: Pesan Menu Tambahan */}
           <button
             type="button"
             onClick={() => {
               setPesananSelesai(null);
             }}
-            className="min-h-11 w-full rounded-lg bg-[#173d32] px-4 text-xs font-bold text-white transition-colors hover:bg-[#214f41]"
+            className="relative z-10 min-h-12 w-full rounded-xl bg-[#0b3d2e] px-4 text-xs font-extrabold text-[#c8f53a] transition-all hover:bg-[#124e3c] active:scale-[0.98] shadow-sm flex items-center justify-center gap-2"
           >
-            Pesan Menu Tambahan
+            <Plus size={16} />
+            <span>Pesan Menu Tambahan</span>
           </button>
         </div>
       </div>
