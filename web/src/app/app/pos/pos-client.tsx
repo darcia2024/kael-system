@@ -1086,7 +1086,17 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
     total: number | string;
     payment_method: string;
     customer_name?: string | null;
-  }) => {
+  },
+  /**
+   * Rangkap mana yang dicetak.
+   *
+   * Dulu ketiganya selalu keluar sebagai SATU gulungan panjang, dan itu
+   * bermasalah di dua hal yang cuma kelihatan di meja kasir: logo tokonya
+   * cuma tercetak sekali di paling atas, dan kasir harus menggunting sendiri
+   * di garis sobek sambil dilihat pembeli.
+   */
+  bagian: "dapur" | "kasir" | "pelanggan" | "semua" = "semua",
+  ) => {
     const orderData = customOrder || (completedOrder ? {
       order_no: completedOrder.orderNo,
       table_no: completedOrder.tableNo,
@@ -1134,15 +1144,42 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
       cashGiven: completedOrder?.cashGiven,
       cashChange: completedOrder?.change,
       customerName: orderData.customer_name,
+      bagian,
     });
 
+    const namaRangkap = {
+      dapur: "Tiket Dapur",
+      kasir: "Copy Kasir",
+      pelanggan: "Struk Pelanggan",
+      semua: "Struk 3 Rangkap",
+    } as const;
+
     await sendRawEscPosToBluetooth(receiptText, {
-      jobName: "Struk 3 Rangkap (Dapur + Kasir + Pelanggan)",
+      jobName: namaRangkap[bagian],
       orderNo: orderData.order_no,
-      openCashDrawer: orderData.payment_method === "cash",
-      isCustomerReceipt: true,
+      // Laci cukup membuka sekali, saat rangkap kasir tercetak.
+      openCashDrawer:
+        orderData.payment_method === "cash" && (bagian === "kasir" || bagian === "semua"),
+      // Kode QR member cuma di lembar yang dibawa pulang pelanggan.
+      isCustomerReceipt: bagian === "pelanggan" || bagian === "semua",
       orderId: completedOrder?.orderId,
     });
+  };
+
+  /** Mencetak satu rangkap sebagai struk sendiri: logo sendiri, potongan sendiri. */
+  const cetakRangkap = (bagian: "dapur" | "kasir" | "pelanggan") =>
+    handlePrintThreePlyBluetooth(undefined, bagian);
+
+  /**
+   * Mencetak ketiganya berurutan sebagai TIGA struk terpisah.
+   *
+   * Antrean di lapisan printer yang menjaga urutannya; di sini ditunggu satu
+   * per satu supaya kegagalan di tengah tidak menenggelamkan sisanya.
+   */
+  const cetakSemuaRangkap = async () => {
+    for (const bagian of ["dapur", "kasir", "pelanggan"] as const) {
+      await handlePrintThreePlyBluetooth(undefined, bagian);
+    }
   };
 
   const renderInvoice = (showCloseButton: boolean) => (
@@ -2626,7 +2663,7 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
             <div className="space-y-2 pt-2">
               <button
                 type="button"
-                onClick={() => handlePrintThreePlyBluetooth()}
+                onClick={() => void cetakSemuaRangkap()}
                 disabled={printerState === "printing"}
                 className={`w-full flex items-center justify-center gap-2 rounded-xl py-3 text-xs font-black disabled:opacity-60 transition-all ${
                   isMochiPos
@@ -2635,8 +2672,37 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
                 }`}
               >
                 <Printer size={15} />
-                <span>Cetak 3 Rangkap (Dapur + Kasir + Meja) 🖨️</span>
+                <span>Cetak Semua · 3 Struk Terpisah 🖨️</span>
               </button>
+
+              {/*
+                Tiap rangkap bisa dicetak sendiri. Keluar sebagai struk terpisah
+                dengan logonya masing-masing, dan dipotong sendiri oleh printer
+                — jadi kasir tidak perlu menggunting di garis sobek.
+              */}
+              <div className="grid grid-cols-3 gap-1.5">
+                {([
+                  { kunci: "dapur", label: "Dapur" },
+                  { kunci: "kasir", label: "Kasir" },
+                  { kunci: "pelanggan", label: "Pelanggan" },
+                ] as const).map((r) => (
+                  <button
+                    key={r.kunci}
+                    type="button"
+                    onClick={() => void cetakRangkap(r.kunci)}
+                    disabled={printerState === "printing"}
+                    className={`flex flex-col items-center justify-center gap-1 rounded-xl py-2.5 text-[11px] font-bold disabled:opacity-60 transition-all ${
+                      isMochiPos
+                        ? "border border-emerald-800/30 bg-white text-[#0b3d2e] hover:bg-[#edf8f3]"
+                        : "border border-[#232331] bg-white text-[#232331]"
+                    }`}
+                    title={`Cetak rangkap ${r.label} saja`}
+                  >
+                    {r.kunci === "dapur" ? <ChefHat size={13} /> : <Printer size={13} />}
+                    <span>{r.label}</span>
+                  </button>
+                ))}
+              </div>
 
               <label className={`flex items-center justify-between gap-2 p-2.5 rounded-xl border cursor-pointer text-[11px] font-bold transition-colors ${
                 isMochiPos
@@ -2652,37 +2718,12 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
                 />
               </label>
 
-              <div className="flex gap-1.5 pt-1">
-                <button
-                  type="button"
-                  onClick={handlePrintBluetoothThermal}
-                  disabled={printerState === "printing"}
-                  className={`flex-1 flex items-center justify-center gap-1.5 rounded-xl py-2 text-[11px] font-bold disabled:opacity-60 transition-all ${
-                    isMochiPos
-                      ? "bg-[#0b3d2e] hover:bg-[#124d3b] text-white border border-[#0b3d2e] shadow-xs"
-                      : "btn-tactile border-2 border-[#232331] bg-[#232331] text-white shadow-ink-xs"
-                  }`}
-                  title="Cetak struk belanja pelanggan saja"
-                >
-                  <Printer size={13} />
-                  <span>Struk Pelanggan</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handlePrintKitchenTicketBluetooth}
-                  disabled={printerState === "printing"}
-                  className={`flex-1 flex items-center justify-center gap-1.5 rounded-xl py-2 text-[11px] font-bold disabled:opacity-60 transition-all ${
-                    isMochiPos
-                      ? "border border-emerald-800/30 bg-white text-[#0b3d2e] hover:bg-[#edf8f3]"
-                      : "border border-[#232331] bg-white text-[#232331]"
-                  }`}
-                  title="Cetak tiket dapur barista saja"
-                >
-                  <ChefHat size={13} />
-                  <span>Tiket Dapur</span>
-                </button>
-              </div>
+              {/*
+                Dua tombol lama "Struk Pelanggan" dan "Tiket Dapur" dihapus dari
+                sini: isinya sama dengan rangkap Pelanggan dan Dapur di atas,
+                cuma lewat generator berbeda — jadi struk yang sama bisa keluar
+                dengan bentuk berbeda tergantung tombol mana yang ditekan.
+              */}
               {completedOrder.paymentMethod === "cash" && (
                 <p className={`rounded-lg border px-3 py-2 text-left text-[10px] font-bold ${
                   isMochiPos

@@ -278,7 +278,19 @@ export function generateThreePlyReceiptText(params: {
   cashGiven?: number;
   cashChange?: number;
   customerName?: string | null;
+  /**
+   * Rangkap mana yang dicetak.
+   *
+   * Dulu ketiganya selalu keluar sebagai SATU gulungan panjang, dan itu
+   * bermasalah di dua hal: logo tokonya cuma tercetak sekali di paling atas,
+   * dan kasir harus menggunting sendiri di garis sobek. Sekarang tiap rangkap
+   * bisa dicetak sebagai pekerjaan sendiri — logonya sendiri, potongannya
+   * sendiri, keluar terpisah dari printer.
+   */
+  bagian?: "dapur" | "kasir" | "pelanggan" | "semua";
 }): string {
+  const bagian = params.bagian ?? "semua";
+  const semua = bagian === "semua";
   const W = 32;
   const center = (str: string) => {
     const space = Math.max(0, Math.floor((W - str.length) / 2));
@@ -308,6 +320,7 @@ export function generateThreePlyReceiptText(params: {
 
   const lines: string[] = [];
 
+  if (semua || bagian === "dapur") {
   // ========================================================
   // RANGKAP 1: TIKET DAPUR / BARISTA
   // ========================================================
@@ -329,8 +342,11 @@ export function generateThreePlyReceiptText(params: {
 
   lines.push(doubleDivider);
   lines.push(center("MOHON SEGERA DISIAPKAN"));
-  lines.push(...tearGap);
+  if (semua) lines.push(...tearGap);
 
+  }
+
+  if (semua || bagian === "kasir") {
   // ========================================================
   // RANGKAP 2: COPY KASIR / ARSIP TOKO
   // ========================================================
@@ -356,8 +372,11 @@ export function generateThreePlyReceiptText(params: {
   lines.push(row("BAYAR", params.paymentMethod.toUpperCase()));
   lines.push(doubleDivider);
   lines.push(center("ARSIP KASIR & REKONSILIASI"));
-  lines.push(...tearGap);
+  if (semua) lines.push(...tearGap);
 
+  }
+
+  if (semua || bagian === "pelanggan") {
   // ========================================================
   // RANGKAP 3: STRUK PELANGGAN (CUSTOMER BILL)
   // ========================================================
@@ -400,6 +419,8 @@ export function generateThreePlyReceiptText(params: {
   lines.push(center("Terima Kasih Atas Kunjungan Anda!"));
   lines.push(center("Selamat Menikmati Hidangan Kami"));
   lines.push("\n\n\n");
+
+  }
 
   return lines.join("\n");
 }
