@@ -1697,6 +1697,28 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
               <QrCode size={15} />
               <span>QR Member</span>
             </button>
+
+            {/*
+              Riwayat penjualan untuk kasir.
+
+              Kasir sekarang boleh memproses pengembalian dana, tapi satu-satunya
+              layar yang menampilkan transaksi lama adalah laporan owner — dan
+              layar itu menolak staf. Tanpa pintu ini, kasir cuma bisa merefund
+              pesanan yang masih di antrean, dan transaksi kemarin yang dibatalkan
+              pelanggan tidak bisa disentuh sama sekali.
+            */}
+            <Link
+              href="/app/pos/riwayat"
+              className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-bold transition-all shadow-xs ${
+                isMochiPos
+                  ? "bg-white/10 text-emerald-100 hover:bg-white/15"
+                  : "bg-white border border-[#ccd7d1] text-[#1d5d47] hover:bg-[#eef5f1]"
+              }`}
+              title="Riwayat penjualan & pengembalian dana"
+            >
+              <Receipt size={15} />
+              <span>Riwayat</span>
+            </Link>
             {isInstallable && !isInstalled && (
               <button
                 type="button"

@@ -4631,6 +4631,55 @@ export const db = {
     `) as unknown as Order[];
   },
 
+  /**
+   * Riwayat penjualan untuk layar kasir.
+   *
+   * Sengaja TIDAK memuat satu pun angka laba: tidak ada HPP, tidak ada margin,
+   * tidak ada omzet kumulatif. Kasir butuh menemukan transaksinya untuk
+   * mencetak ulang struk atau memproses pengembalian dana — dan itu saja.
+   * Berapa untung tokonya bukan urusan yang mencatatnya.
+   *
+   * Itu juga alasan fungsi ini ada terpisah dari laporan owner: kalau keduanya
+   * memakai satu kueri, cepat atau lambat satu kolom laba ikut menyeberang ke
+   * layar yang tidak seharusnya melihatnya.
+   */
+  async getCashierSalesHistory(
+    businessId: string,
+    opsi: { hari?: number; limit?: number } = {},
+  ) {
+    const hari = Math.min(Math.max(opsi.hari ?? 7, 1), 31);
+    const limit = Math.min(Math.max(opsi.limit ?? 100, 1), 300);
+    const biz = await this.getBusiness(businessId);
+    const tz = biz?.timezone || "Asia/Jakarta";
+
+    const orders = (await sql`
+      SELECT o.id, o.order_no, o.created_at, o.table_no, o.service_type,
+             o.status, o.payment_status, o.payment_method, o.total,
+             o.discount, o.discount_reason, o.customer_name,
+             COALESCE(r.refund_total, 0) AS refund_total,
+             u.name AS cashier_name,
+             c.name AS member_name
+      FROM orders o
+      LEFT JOIN (SELECT order_id, SUM(amount) AS refund_total FROM refunds GROUP BY order_id) r
+        ON r.order_id = o.id
+      LEFT JOIN users u ON u.id = o.created_by
+      LEFT JOIN customers c ON c.id = o.customer_id
+      WHERE o.business_id = ${businessId}
+        AND (o.created_at AT TIME ZONE ${tz})::date
+            > ((NOW() AT TIME ZONE ${tz})::date - ${hari}::int)
+      ORDER BY o.created_at DESC
+      LIMIT ${limit}
+    `) as unknown as (Order & {
+      refund_total: number;
+      cashier_name: string | null;
+      member_name: string | null;
+    })[];
+
+    return Promise.all(
+      orders.map(async (o) => ({ ...o, items: await this.getOrderItems(o.id) })),
+    );
+  },
+
   async getOrderItems(orderId: string): Promise<OrderItem[]> {
     return (await sql`
       SELECT * FROM order_items WHERE order_id = ${orderId} ORDER BY id
