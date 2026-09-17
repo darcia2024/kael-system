@@ -55,6 +55,7 @@ import {
 } from "@/lib/google-places";
 import { siteHost } from "@/lib/site";
 import { BusinessMark } from "@/components/business-mark";
+import ReviewQrModal from "@/components/review-qr-modal";
 
 const REASON_LABELS: Record<string, string> = {
   rasa: "Rasa Makanan/Minuman",
@@ -95,6 +96,20 @@ export default function KaelReviewOwnerDashboard({
   const [selectedCardForEdit, setSelectedCardForEdit] = useState<Card | null>(
     null
   );
+
+  // QR Modal States
+  const [isQrModalOpen, setIsQrModalOpen] = useState(false);
+  const [qrModalCardId, setQrModalCardId] = useState<string | null>(null);
+
+  const handleOpenQrModal = (cardId?: string) => {
+    if (cardId) {
+      setQrModalCardId(cardId);
+    } else {
+      const revCard = cards.find((c) => c.type === "review") || cards[0];
+      setQrModalCardId(revCard?.id || null);
+    }
+    setIsQrModalOpen(true);
+  };
 
   // Tab & Feedback Filter States
   const [activeTab, setActiveTab] = useState<"feedback" | "cards" | "overview">("overview");
@@ -319,6 +334,14 @@ export default function KaelReviewOwnerDashboard({
           </div>
 
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => handleOpenQrModal()}
+              className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-400/50 bg-[#c8f53a] px-3 py-1.5 text-xs font-mono font-black text-[#073829] hover:brightness-105 transition-all shadow-xs"
+            >
+              <QrCode size={13} />
+              <span>Download QR</span>
+            </button>
             {sessionRole === "owner" && (
               <Link
                 href="/app/review/reports"
@@ -335,6 +358,35 @@ export default function KaelReviewOwnerDashboard({
 
       {/* Main Container */}
       <main className="flex-1 mx-auto w-full max-w-6xl p-4 sm:p-8 space-y-6">
+        {/* Quick QR Review Banner */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-emerald-800/40 bg-gradient-to-r from-[#072e22] via-[#0b3d2e] to-[#12533e] p-4 text-white shadow-sm">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#c8f53a] text-[#0b3d2e] font-black">
+              <QrCode size={20} />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h4 className="text-sm font-black text-white">
+                  Download QR Code Ulasan Google Mochi Cafe
+                </h4>
+                <span className="rounded-full bg-[#c8f53a] px-2 py-0.5 font-mono text-[9px] font-black text-[#073829]">
+                  HD PNG &amp; SVG
+                </span>
+              </div>
+              <p className="text-xs text-emerald-200/90 font-mono mt-0.5">
+                Download QR murni (2048x2048px) dengan logo untuk materi cetak / Canva, atau standee meja 1:1 siap pakai.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => handleOpenQrModal()}
+            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-[#c8f53a] hover:bg-[#d9ff57] px-4 py-2 font-mono text-xs font-black text-[#073829] shadow-xs hover:brightness-105 transition-all"
+          >
+            <QrCode size={14} />
+            <span>Buka Generator QR</span>
+          </button>
+        </div>
         {/* VIEW NAVIGATION TABS */}
         <div className="flex items-center gap-2 border-b border-[#d8e3de] pb-3 overflow-x-auto">
           <button
@@ -1046,6 +1098,17 @@ export default function KaelReviewOwnerDashboard({
                           <span>302</span>
                         </Link>
 
+                        {/* Open QR Modal Button */}
+                        <button
+                          type="button"
+                          onClick={() => handleOpenQrModal(card.id)}
+                          className="inline-flex items-center gap-1 rounded-lg border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 px-2 py-1 text-[10.5px] font-bold text-[#0b3d2e] transition-colors"
+                          title="Download QR Code murni / standee meja"
+                        >
+                          <QrCode size={11} />
+                          <span>QR</span>
+                        </button>
+
                         {card.type === "review" && sessionRole === "owner" && (
                           <Link
                             href={"/app/review/standee/" + card.id}
@@ -1383,6 +1446,16 @@ export default function KaelReviewOwnerDashboard({
       <footer className="border-t border-[#d8e3de] bg-white/80 py-4 text-center text-xs font-mono text-[#527867]">
         KAEL Review Engine · 302 Temporary Direct Redirect &amp; Bot-Safe Tap Analytics
       </footer>
+
+      {/* Review QR Modal */}
+      <ReviewQrModal
+        isOpen={isQrModalOpen}
+        onClose={() => setIsQrModalOpen(false)}
+        cards={cards}
+        business={business}
+        initialCardId={qrModalCardId}
+        themeClassName={themeClassName}
+      />
     </div>
   );
 }

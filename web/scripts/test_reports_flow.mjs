@@ -9,10 +9,9 @@ const sql = postgres(process.env.POSTGRES_URL || process.env.DATABASE_URL, {
 });
 
 async function main() {
-  const bizId = 'e1d8f3fb-40ea-4072-be0e-0119f80b1075';
-  
-  // 1. Check getBusiness
-  const business = (await sql`SELECT * FROM businesses WHERE id = ${bizId}`)[0];
+  const bizId = 'ab25ae3d-5df7-4143-a429-79d1982ef87f';
+  const cards = await sql`SELECT id, card_code, type, label, status, destination_url FROM cards WHERE business_id = ${bizId}`;
+  console.log('Cards for Mochi:', cards);
   console.log('Business:', business ? business.name : 'NULL');
 
   // 2. Check getAllFeedback

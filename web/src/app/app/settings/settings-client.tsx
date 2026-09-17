@@ -7,6 +7,7 @@ import QrisSetup from "./qris-setup";
 import PosChargeSetup from "./pos-charge-setup";
 import RefundLimitSetup from "./refund-limit-setup";
 import DeliveryContactSetup from "./delivery-contact-setup";
+import NotifikasiSetup from "./notifikasi-setup";
 import { BusinessMark } from "@/components/business-mark";
 import type { Business } from "@/lib/types";
 import type { ModuleStatus } from "@/lib/licensing";
@@ -167,6 +168,11 @@ export default function SettingsClient({
               maxPerTransaction={refundLimits.maxPerTransaction}
               dailyLimitPerCashier={refundLimits.dailyLimitPerCashier}
             />
+          </div>
+
+          <div className="mt-6 border-t border-[#e3ece8] pt-5">
+            <h3 className="mb-3 font-mono text-xs font-black text-[#0b3d2e]">Kabar Refund ke HP Owner</h3>
+            <NotifikasiSetup />
           </div>
         </section>
 

@@ -2,13 +2,14 @@
 
 import { useState, type CSSProperties } from "react";
 import Link from "next/link";
-import { ArrowLeft, Printer, Save, ScanLine } from "lucide-react";
+import { ArrowLeft, Printer, Save, ScanLine, Download, QrCode as QrIcon } from "lucide-react";
 
 import QrCode from "@/components/qr-code";
 import { saveReviewStandeeAction } from "@/lib/actions";
 import type { Business, Card } from "@/lib/types";
 import { siteHost } from "@/lib/site";
 import { BusinessMark } from "@/components/business-mark";
+import ReviewQrModal from "@/components/review-qr-modal";
 
 type PrintSize = "A6" | "A5" | "A4";
 
@@ -42,6 +43,7 @@ export default function StandeeClient({
   const [size, setSize] = useState<PrintSize>(saved?.print_size ?? "A6");
   const [saving, setSaving] = useState(false);
   const [savedNotice, setSavedNotice] = useState("");
+  const [isQrModalOpen, setIsQrModalOpen] = useState(false);
   const publicUrl = siteHost + "/r/" + card.card_code + "?source=standee";
   const brandName = business.public_name || business.name;
   const headlineLead =
@@ -107,6 +109,15 @@ export default function StandeeClient({
             </div>
           </div>
           <div className="flex shrink-0 gap-2">
+            <button
+              type="button"
+              onClick={() => setIsQrModalOpen(true)}
+              className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-emerald-400/60 bg-white/10 hover:bg-white/20 px-3.5 text-xs font-bold text-white transition-colors"
+            >
+              <Download size={14} />
+              <span className="hidden sm:inline">Download QR Saja</span>
+              <span className="sm:hidden">QR</span>
+            </button>
             <button
               type="button"
               onClick={save}
@@ -184,6 +195,24 @@ export default function StandeeClient({
                 className="mt-1 min-h-24 w-full resize-y rounded-xl border border-[#d8e3de] bg-[#fbfdfc] p-3 text-xs font-bold text-[#0b3d2e] outline-none focus:border-emerald-600 focus:bg-white focus:ring-2 focus:ring-emerald-600/20"
               />
             </label>
+            <div className="rounded-2xl border border-emerald-300 bg-[#edf8f3] p-3 text-xs text-[#0b3d2e] space-y-2">
+              <div className="flex items-center gap-1.5">
+                <QrIcon size={15} className="text-[#0b3d2e]" />
+                <p className="font-extrabold">Butuh File QR-nya Saja?</p>
+              </div>
+              <p className="text-[11px] leading-relaxed text-[#527867]">
+                Download QR Code resolusi ultra-tinggi (2048px PNG / SVG) untuk Canva, stiker meja akrilik, atau materi desain Anda.
+              </p>
+              <button
+                type="button"
+                onClick={() => setIsQrModalOpen(true)}
+                className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl bg-[#0b3d2e] hover:bg-[#0e4837] px-3 py-2 text-xs font-mono font-black text-[#c8f53a] shadow-xs transition-colors"
+              >
+                <Download size={13} />
+                <span>Download QR Murni (HD)</span>
+              </button>
+            </div>
+
             <div className="rounded-2xl border border-emerald-200 bg-[#eaf6ef] p-3 text-xs text-[#0b3d2e]">
               <p className="font-bold">Info Cetak</p>
               <p className="mt-1 text-[11px] leading-relaxed text-[#527867]">
@@ -243,6 +272,15 @@ export default function StandeeClient({
           </div>
         </div>
       </div>
+
+      {/* Review QR Modal */}
+      <ReviewQrModal
+        isOpen={isQrModalOpen}
+        onClose={() => setIsQrModalOpen(false)}
+        cards={[card]}
+        business={business}
+        initialCardId={card.id}
+      />
     </main>
   );
 }

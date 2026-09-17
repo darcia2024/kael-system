@@ -46,6 +46,7 @@ import { hashClientIp } from "./auth-security";
 import { normalizeCardCode } from "./card-code";
 import { site } from "./site";
 import { kirimPesanWhatsApp } from "./whatsapp";
+import { kirimNotifikasiOwner } from "./push";
 import { CAMPAIGN_GOALS, type CampaignGoalKey } from "./campaign-templates";
 import {
   requireStaff,
@@ -2309,7 +2310,39 @@ export async function refundOrderAction(
    * Pengirimannya tidak boleh menggagalkan refund yang sudah terjadi: uangnya
    * sudah berpindah, dan membatalkan pencatatannya karena pesan gagal terkirim
    * justru menghapus jejak yang ingin dijaga.
+   *
+   * Dua jalur dicoba, dan sengaja dipisah blok try-nya supaya yang satu gagal
+   * tidak ikut membatalkan yang lain.
    */
+
+  /**
+   * Jalur 1 — notifikasi push ke HP owner. Ini jalur utamanya.
+   *
+   * Dipilih di atas WhatsApp karena mendaftarkan nomor ke WhatsApp Cloud API
+   * MENGUNCI nomor itu: sesudahnya tidak bisa lagi dibuka di aplikasi WhatsApp
+   * biasa. Nomor toko dipakai melayani pelanggan tiap hari, jadi menukarnya
+   * dengan satu notifikasi tidak masuk akal. Push tidak menyentuhnya sama
+   * sekali, gratis, dan sampai walaupun aplikasinya sedang tertutup.
+   */
+  if (!adalahOwner) {
+    try {
+      const biz = await db.getBusiness(businessId);
+      await kirimNotifikasiOwner(businessId, {
+        judul: `Refund ${rupiahRingkasWeb(amount)} di ${biz?.name ?? "KAEL"}`,
+        pesan:
+          `Nota #${orderData?.order?.order_no ?? "-"} · ${refundMethod.toUpperCase()} · ` +
+          `oleh ${sesi?.name ?? "kasir"}. Alasan: ${reason.trim()}`,
+        tautan: "/app/pos/reports",
+        // Tag berbeda tiap refund: kabar uang keluar tidak boleh saling menimpa
+        // dan membuat satu di antaranya hilang tanpa pernah terbaca.
+        tag: `refund-${res.refund.id}`,
+      });
+    } catch (error) {
+      console.error("[KAEL] notifikasi refund ke owner gagal", error);
+    }
+  }
+
+  /** Jalur 2 — WhatsApp, kalau tokonya memang sudah menyiapkan channel-nya. */
   try {
     const channel = await db.getMessagingChannel(businessId);
     const tujuanOwner = channel?.owner_notify_phone;

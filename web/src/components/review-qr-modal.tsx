@@ -1,6 +1,4 @@
-import fs from 'fs';
-
-const code = `"use client";
+"use client";
 
 import { useState, useRef, useMemo } from "react";
 import {
@@ -68,12 +66,12 @@ export default function ReviewQrModal({
 
   const cardCode = activeCard?.card_code || "";
   const reviewUrl = typeof window !== "undefined"
-    ? \`\${window.location.origin}/nilai/\${cardCode}\`
-    : \`https://kaels.site/nilai/\${cardCode}\`;
+    ? `${window.location.origin}/nilai/${cardCode}`
+    : `https://kaels.site/nilai/${cardCode}`;
 
   const raw302Url = typeof window !== "undefined"
-    ? \`\${window.location.origin}/r/\${cardCode}?src=qr\`
-    : \`https://kaels.site/r/\${cardCode}?src=qr\`;
+    ? `${window.location.origin}/r/${cardCode}?src=qr`
+    : `https://kaels.site/r/${cardCode}?src=qr`;
 
   if (!isOpen || !activeCard) return null;
 
@@ -191,7 +189,7 @@ export default function ReviewQrModal({
       const canvas = await generatePureQrCanvas(withCenterLogo, isTransparentBg, qrColor);
       const link = document.createElement("a");
       const labelSlug = (activeCard.label || "review").replace(/[^a-zA-Z0-9]/g, "-").toLowerCase();
-      link.download = \`QR-Review-Google-\${labelSlug}-\${cardCode}-HD.png\`;
+      link.download = `QR-Review-Google-${labelSlug}-${cardCode}-HD.png`;
       link.href = canvas.toDataURL("image/png");
       link.click();
     } catch (e) {
@@ -213,16 +211,16 @@ export default function ReviewQrModal({
       let pathD = "";
       for (let r = 0; r < n; r++) {
         for (let c = 0; c < n; c++) {
-          if (qr.isDark(r, c)) pathD += \`M\${c},\${r}h1v1h-1z\`;
+          if (qr.isDark(r, c)) pathD += `M${c},${r}h1v1h-1z`;
         }
       }
 
       const color = qrColor === "emerald" ? "#072e22" : "#000000";
-      const svgString = \`<svg xmlns="http://www.w3.org/2000/svg" viewBox="\${-m} \${-m} \${total} \${total}" width="2048" height="2048"><rect x="\${-m}" y="\${-m}" width="\${total}" height="\${total}" fill="\${isTransparentBg ? "none" : "#ffffff"}"/><path d="\${pathD}" fill="\${color}"/></svg>\`;
+      const svgString = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${-m} ${-m} ${total} ${total}" width="2048" height="2048"><rect x="${-m}" y="${-m}" width="${total}" height="${total}" fill="${isTransparentBg ? "none" : "#ffffff"}"/><path d="${pathD}" fill="${color}"/></svg>`;
       const blob = new Blob([svgString], { type: "image/svg+xml;charset=utf-8" });
       const link = document.createElement("a");
       const labelSlug = (activeCard.label || "review").replace(/[^a-zA-Z0-9]/g, "-").toLowerCase();
-      link.download = \`QR-Review-Google-\${labelSlug}-\${cardCode}.svg\`;
+      link.download = `QR-Review-Google-${labelSlug}-${cardCode}.svg`;
       link.href = URL.createObjectURL(blob);
       link.click();
     } catch (e) {
@@ -289,7 +287,7 @@ export default function ReviewQrModal({
       ctx.fillStyle = "#072e22";
       ctx.font = "bold 40px monospace";
       ctx.fillText(
-        \`TITIK: \${(activeCard.label || "MEJA KASIR").toUpperCase()} · KODE: \${formatCardCodeDisplay(cardCode)}\`,
+        `TITIK: ${(activeCard.label || "MEJA KASIR").toUpperCase()} · KODE: ${formatCardCodeDisplay(cardCode)}`,
         size / 2,
         cardBoxY + cardBoxSize - 30
       );
@@ -305,7 +303,7 @@ export default function ReviewQrModal({
 
       const link = document.createElement("a");
       const labelSlug = (activeCard.label || "review").replace(/[^a-zA-Z0-9]/g, "-").toLowerCase();
-      link.download = \`Standee-Review-Google-\${labelSlug}-\${cardCode}-1x1.png\`;
+      link.download = `Standee-Review-Google-${labelSlug}-${cardCode}-1x1.png`;
       link.href = canvas.toDataURL("image/png");
       link.click();
     } catch (e) {
@@ -316,7 +314,7 @@ export default function ReviewQrModal({
   };
 
   return (
-    <div className={\`fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-3 backdrop-blur-sm animate-in fade-in-50 \${themeClassName}\`}>
+    <div className={`fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-3 backdrop-blur-sm animate-in fade-in-50 ${themeClassName}`}>
       <div className="relative flex max-h-[94vh] w-full max-w-2xl flex-col rounded-3xl border border-[#d8e3de] bg-white shadow-2xl overflow-hidden animate-in zoom-in-95">
         
         {/* Header Modal */}
@@ -363,11 +361,11 @@ export default function ReviewQrModal({
                     key={c.id}
                     type="button"
                     onClick={() => setSelectedCardId(c.id)}
-                    className={\`rounded-xl px-3 py-1.5 font-mono text-xs font-bold transition-all \${
+                    className={`rounded-xl px-3 py-1.5 font-mono text-xs font-bold transition-all ${
                       c.id === activeCard.id
                         ? "bg-[#0b3d2e] text-[#c8f53a] shadow-xs"
                         : "border border-[#d8e3de] bg-white text-[#527867] hover:border-[#0b3d2e] hover:text-[#0b3d2e]"
-                    }\`}
+                    }`}
                   >
                     {c.label || "Tanpa Label"} ({formatCardCodeDisplay(c.card_code)})
                   </button>
@@ -381,11 +379,11 @@ export default function ReviewQrModal({
             <button
               type="button"
               onClick={() => setActiveTab("pure_qr")}
-              className={\`flex-1 rounded-xl py-2 font-mono text-xs font-extrabold transition-all flex items-center justify-center gap-1.5 \${
+              className={`flex-1 rounded-xl py-2 font-mono text-xs font-extrabold transition-all flex items-center justify-center gap-1.5 ${
                 activeTab === "pure_qr"
                   ? "bg-[#0b3d2e] text-[#c8f53a] shadow-xs"
                   : "text-[#167052] hover:text-[#0b3d2e]"
-              }\`}
+              }`}
             >
               <QrIcon size={14} />
               <span>1. QR Code Murni (HD PNG/SVG)</span>
@@ -393,11 +391,11 @@ export default function ReviewQrModal({
             <button
               type="button"
               onClick={() => setActiveTab("standee_square")}
-              className={\`flex-1 rounded-xl py-2 font-mono text-xs font-extrabold transition-all flex items-center justify-center gap-1.5 \${
+              className={`flex-1 rounded-xl py-2 font-mono text-xs font-extrabold transition-all flex items-center justify-center gap-1.5 ${
                 activeTab === "standee_square"
                   ? "bg-[#0b3d2e] text-[#c8f53a] shadow-xs"
                   : "text-[#167052] hover:text-[#0b3d2e]"
-              }\`}
+              }`}
             >
               <FileImage size={14} />
               <span>2. Standee 1:1 Siap Cetak</span>
@@ -607,8 +605,3 @@ export default function ReviewQrModal({
     </div>
   );
 }
-`;
-
-fs.writeFileSync('src/components/review-qr-modal.tsx', code, 'utf8');
-console.log('Successfully generated src/components/review-qr-modal.tsx');
-
