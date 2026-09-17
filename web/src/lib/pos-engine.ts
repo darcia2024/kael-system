@@ -97,6 +97,71 @@ export function calculateShiftReconciliation(
 }
 
 /**
+ * Waktu pada struk, menurut zona waktu TOKO.
+ *
+ * Sebelum ini kelima tempat yang mencetak jam melakukan hal yang sama: memotong
+ * huruf ke-11 sampai ke-16 dari string ISO-nya, lalu menempelkan "WIB".
+ *
+ * `createdAt` adalah string ISO dalam UTC. Memotong huruf ke-11 sampai ke-16
+ * mengambil jam UTC apa adanya, lalu menempelkan label "WIB" di belakangnya —
+ * padahal WIB itu UTC+7. Hasilnya SETIAP struk mencetak jam yang meleset tujuh
+ * jam: transaksi pukul 12:43 siang tercetak 05:43.
+ *
+ * Bukan cuma salah baca. Struk adalah catatan yang dipakai mencocokkan laci
+ * saat tutup shift, dan jam yang meleset tujuh jam memindahkan transaksi sore
+ * ke pagi — bahkan ke tanggal sebelumnya untuk transaksi di atas pukul 7 pagi.
+ *
+ * Zona waktunya diambil dari businesses.timezone, bukan ditulis mati: KAEL
+ * melayani toko di WIB, WITA, dan WIT.
+ */
+const LABEL_ZONA: Record<string, string> = {
+  "Asia/Jakarta": "WIB",
+  "Asia/Pontianak": "WIB",
+  "Asia/Makassar": "WITA",
+  "Asia/Jayapura": "WIT",
+};
+
+function labelZona(timezone: string): string {
+  return LABEL_ZONA[timezone] ?? timezone.split("/").pop() ?? "";
+}
+
+/** Jam dan menit, misalnya "12:43 WIB". */
+export function jamStruk(iso: string | null | undefined, timezone = "Asia/Jakarta"): string {
+  if (!iso) return "";
+  const waktu = new Date(iso);
+  if (Number.isNaN(waktu.getTime())) return "";
+  try {
+    const jam = new Intl.DateTimeFormat("id-ID", {
+      timeZone: timezone,
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).format(waktu);
+    return `${jam} ${labelZona(timezone)}`;
+  } catch {
+    return "";
+  }
+}
+
+/** Hari dan tanggal, misalnya "Kam, 17 Sep 2026". */
+export function tanggalStruk(iso: string | null | undefined, timezone = "Asia/Jakarta"): string {
+  if (!iso) return "";
+  const waktu = new Date(iso);
+  if (Number.isNaN(waktu.getTime())) return "";
+  try {
+    return new Intl.DateTimeFormat("id-ID", {
+      timeZone: timezone,
+      weekday: "short",
+      day: "numeric",
+      month: "short",
+      year: "numeric",
+    }).format(waktu);
+  } catch {
+    return "";
+  }
+}
+
+/**
  * Format string struk cetak 58mm monospace (lebar 32 karakter standar printer thermal)
  */
 export function generateEscPosReceiptText(params: {
@@ -109,6 +174,8 @@ export function generateEscPosReceiptText(params: {
   serviceType: "dine_in" | "takeaway" | "delivery";
   cashierName: string;
   createdAt: string;
+  /** Zona waktu toko, dari businesses.timezone. Menentukan jam yang tercetak. */
+  timezone?: string;
   items: { name: string; qty: number; price: number; note?: string }[];
   subtotal: number;
   discount: number;
@@ -144,6 +211,9 @@ export function generateEscPosReceiptText(params: {
   // Metadata Transaksi
   lines.push(row(`No: ${params.orderNo}`, serviceTypeLabel(params.serviceType, params.tableNo)));
   lines.push(row(`Kasir: ${params.cashierName.slice(0, 12)}`, params.paymentMethod.toUpperCase()));
+  // Hari, tanggal, dan jam. Sebelum ini struk cuma memuat jam — dan jamnya pun
+  // salah tujuh jam — jadi tidak ada satu pun cara tahu struk ini hari kapan.
+  lines.push(row(tanggalStruk(params.createdAt, params.timezone), jamStruk(params.createdAt, params.timezone)));
   if (params.customerName) {
     lines.push(row(`Member: ${params.customerName.slice(0, 14)}`, "LOYALTY ✓"));
   }
@@ -185,7 +255,7 @@ export function generateEscPosReceiptText(params: {
   }
 
   lines.push(doubleDivider);
-  lines.push(center("Terima Kasih Atas Kunjungan Anda!"));
+  lines.push(center("Terima Kasih Atas Kunjungan Anda"));
   lines.push(center("Struk Digital Resmi KAEL POS"));
   lines.push("\n\n"); // Feed for paper tear
 
@@ -203,6 +273,8 @@ export function generateKitchenTicketText(params: {
   tableNo?: string | null;
   serviceType: "dine_in" | "takeaway" | "delivery";
   createdAt: string;
+  /** Zona waktu toko, dari businesses.timezone. Menentukan jam yang tercetak. */
+  timezone?: string;
   items: { name: string; qty: number; note?: string }[];
   cashierName?: string | null;
 }): string {
@@ -231,7 +303,7 @@ export function generateKitchenTicketText(params: {
       : "DELIVERY";
 
   lines.push(center(`>> ${service} <<`));
-  lines.push(row(`Pesanan #${params.orderNo}`, params.createdAt.slice(11, 16) + " WIB"));
+  lines.push(row(`Pesanan #${params.orderNo}`, jamStruk(params.createdAt, params.timezone)));
   if (params.cashierName) {
     lines.push(row(`Kasir: ${params.cashierName.slice(0, 14)}`, ""));
   }
@@ -267,6 +339,8 @@ export function generateThreePlyReceiptText(params: {
   serviceType: "dine_in" | "takeaway" | "delivery";
   cashierName: string;
   createdAt: string;
+  /** Zona waktu toko, dari businesses.timezone. Menentukan jam yang tercetak. */
+  timezone?: string;
   items: { name: string; qty: number; price: number; note?: string }[];
   subtotal: number;
   discount: number;
@@ -329,7 +403,8 @@ export function generateThreePlyReceiptText(params: {
   lines.push(center(params.businessName.toUpperCase()));
   lines.push(doubleDivider);
   lines.push(center(`>> ${service} <<`));
-  lines.push(row(`No: #${params.orderNo}`, (params.createdAt || "").slice(11, 16) + " WIB"));
+  lines.push(row(`No: #${params.orderNo}`, jamStruk(params.createdAt, params.timezone)));
+  lines.push(tanggalStruk(params.createdAt, params.timezone));
   lines.push(row(`Kasir: ${params.cashierName.slice(0, 12)}`, "DAPUR"));
   lines.push(divider);
 
@@ -355,7 +430,10 @@ export function generateThreePlyReceiptText(params: {
   lines.push(center(params.businessName.toUpperCase()));
   lines.push(doubleDivider);
   lines.push(row(`No: #${params.orderNo}`, service));
-  lines.push(row(`Kasir: ${params.cashierName.slice(0, 12)}`, (params.createdAt || "").slice(11, 16) + " WIB"));
+  lines.push(row(`Kasir: ${params.cashierName.slice(0, 12)}`, jamStruk(params.createdAt, params.timezone)));
+  // Arsip kasir justru yang paling butuh tanggal: lembar inilah yang dicocokkan
+  // dengan laci saat tutup shift, dan sering baru dibuka lagi berhari-hari kemudian.
+  lines.push(tanggalStruk(params.createdAt, params.timezone));
   if (params.customerName) {
     lines.push(row(`Member: ${params.customerName.slice(0, 14)}`, "TERCATAT"));
   }
@@ -386,7 +464,10 @@ export function generateThreePlyReceiptText(params: {
   if (params.businessPhone) lines.push(center(params.businessPhone));
   lines.push(doubleDivider);
   lines.push(row(`No: #${params.orderNo}`, service));
-  lines.push(row(`Kasir: ${params.cashierName.slice(0, 12)}`, (params.createdAt || "").slice(11, 16) + " WIB"));
+  lines.push(row(`Kasir: ${params.cashierName.slice(0, 12)}`, jamStruk(params.createdAt, params.timezone)));
+  // Hari dan tanggal. Struk yang cuma memuat jam tidak bisa dipakai pelanggan
+  // maupun owner untuk menelusuri transaksinya belakangan.
+  lines.push(tanggalStruk(params.createdAt, params.timezone));
   if (params.customerName) {
     lines.push(row(`Member: ${params.customerName.slice(0, 14)}`, "LOYALTY ✓"));
   }
@@ -416,7 +497,7 @@ export function generateThreePlyReceiptText(params: {
   }
 
   lines.push(doubleDivider);
-  lines.push(center("Terima Kasih Atas Kunjungan Anda!"));
+  lines.push(center("Terima Kasih Atas Kunjungan Anda"));
   lines.push(center("Selamat Menikmati Hidangan Kami"));
   lines.push("\n\n\n");
 

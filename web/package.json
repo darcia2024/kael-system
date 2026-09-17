@@ -9,11 +9,12 @@
     "start": "next start",
     "lint": "biome lint src/lib --diagnostic-level=error",
     "lint:full": "biome lint src --diagnostic-level=error",
-    "test:engines": "node test-finance.js && node test-loyalty.js && node test-pos.js && tsx test-session-policy.ts",
+    "test:engines": "node test-finance.js && node test-loyalty.js && node test-pos.js && tsx test-session-policy.ts && tsx test-struk.ts && tsx test-escpos.ts",
     "check": "npm run lint && npm run typecheck && npm run test:engines && npm run build",
     "typecheck": "tsc --noEmit",
     "migrate": "node scripts/migrate.mjs",
-    "test:integritas": "tsx --conditions react-server test-pos-integritas.ts"
+    "test:integritas": "tsx --conditions react-server test-pos-integritas.ts",
+    "test:struk": "tsx test-struk.ts && tsx test-escpos.ts"
   },
   "dependencies": {
     "lucide-react": "^1.34.0",

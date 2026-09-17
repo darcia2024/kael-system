@@ -18,6 +18,7 @@ export default async function OrderStationPage() {
   return (
     <OrderStationClient
       businessName={business?.name ?? "Usaha Anda"}
+      timezone={business?.timezone ?? "Asia/Jakarta"}
       initialOrders={orders}
       currentUserId={session.userId}
       mode="cashier"

@@ -42,6 +42,7 @@ function playIncomingOrderTone() {
 
 export default function OrderStationClient({
   businessName,
+  timezone = "Asia/Jakarta",
   initialOrders,
   currentUserId,
   mode,
@@ -49,6 +50,8 @@ export default function OrderStationClient({
   isMochi = false,
 }: {
   businessName: string;
+  /** Zona waktu toko. Menentukan jam yang tercetak di tiket dapur. */
+  timezone?: string;
   initialOrders: StationOrder[];
   currentUserId: string;
   mode: Stage;
@@ -88,6 +91,7 @@ export default function OrderStationClient({
       tableNo: order.table_no,
       serviceType: (order.service_type || "dine_in") as "dine_in" | "takeaway" | "delivery",
       createdAt: order.created_at,
+      timezone,
       items: order.items.map((i) => ({
         name: i.name_snapshot,
         qty: i.qty,
