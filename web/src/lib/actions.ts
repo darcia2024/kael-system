@@ -44,6 +44,7 @@ import {
 } from "./loyalty-engine";
 import { hashClientIp } from "./auth-security";
 import { normalizeCardCode } from "./card-code";
+import { site } from "./site";
 import { CAMPAIGN_GOALS, type CampaignGoalKey } from "./campaign-templates";
 import {
   requireStaff,
@@ -461,6 +462,51 @@ export async function archiveSmartTouchAndSetCardServiceAction(
   revalidatePath("/app/review");
   if (res.card) revalidatePath(`/r/${res.card.card_code}`);
   return done(null);
+}
+
+/**
+ * Alamat yang dicetak sebagai kode QR di struk pelanggan.
+ *
+ * Dua kemungkinan, dan keduanya berguna:
+ *
+ *   sudah member  -> halaman kartu miliknya, tempat poinnya terlihat
+ *   belum member  -> halaman pendaftaran toko ini
+ *
+ * Token member TIDAK ikut pada hasil pencarian kasir, dan itu disengaja:
+ * token adalah kunci masuk ke halaman member, jadi mencantumkannya di tiap
+ * hasil pencarian berarti membagikan kunci seluruh pelanggan ke layar kasir.
+ * Di sini pengungkapannya terikat pada satu transaksi yang benar-benar terjadi,
+ * dan strukya memang diserahkan ke orang itu juga.
+ */
+export async function getReceiptQrTargetAction(
+  orderId: string,
+): Promise<ActionResult<{ url: string; jenis: "member" | "daftar"; label: string }>> {
+  const akses = await denganAkses(() => requirePermission("pos"));
+  if (!akses.ok) return fail(akses.error);
+  const { businessId } = akses.sesi;
+
+  const business = await db.getBusiness(businessId);
+  const asal = site.url.replace(/\/$/, "");
+
+  const daftar = {
+    url: `${asal}/loyalty/register?toko=${encodeURIComponent(business?.store_code ?? "")}`,
+    jenis: "daftar" as const,
+    label: "Scan untuk jadi member & kumpulkan poin",
+  };
+
+  const hasil = await db.getOrderById(orderId);
+  const order = hasil?.order;
+  if (!order || order.business_id !== businessId) return done(daftar);
+  if (!order.customer_id) return done(daftar);
+
+  const customer = await db.getCustomerById(order.customer_id, businessId);
+  if (!customer?.token) return done(daftar);
+
+  return done({
+    url: `${asal}/m/${customer.token}`,
+    jenis: "member",
+    label: "Scan untuk buka kartu member & cek poin",
+  });
 }
 
 /** Penerbitan batch hanya untuk tim KAEL. */

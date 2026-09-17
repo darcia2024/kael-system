@@ -68,6 +68,7 @@ import {
   searchCustomersAction,
   lookupMemberAction,
   registerCustomerByStaffAction,
+  getReceiptQrTargetAction,
   recordReceiptPrintAction,
   getPendingQrOrdersAction,
   redeemRewardAction,
@@ -96,6 +97,17 @@ import {
   diagnosaPrinter,
   alasanGagalCetak,
 } from "@/lib/thermal-printer";
+import {
+  INIT,
+  POTONG,
+  gabung,
+  teks,
+  barisKosong,
+  rataKiri,
+  rataTengah,
+  logoKeRaster,
+  qrKeRaster,
+} from "@/lib/escpos";
 import TableQrModal from "./table-qr-modal";
 import PosMemberScannerModal from "./pos-member-scanner-modal";
 import PosBellSettingsModal from "./pos-bell-settings-modal";
@@ -837,15 +849,56 @@ export default function PosClient({
     try {
       const device = await ambilPrinter(bluetooth);
 
-      const encoded = new TextEncoder().encode(rawText);
       const openCashDrawer = Boolean(options.openCashDrawer);
       const drawerPulse = openCashDrawer ? [0x1b, 0x70, 0x00, 0x19, 0xfa] : [];
       const buzzerPulse = printerBuzzerEnabled ? [0x1b, 0x42, 0x03, 0x02, 0x1b, 0x70, 0x01, 0x19, 0xfa] : [];
-      const finish = [0x0a, 0x0a, 0x0a, ...drawerPulse, ...buzzerPulse, 0x1d, 0x56, 0x00];
-      const payload = new Uint8Array(encoded.length + 2 + finish.length);
-      payload.set([0x1b, 0x40], 0);
-      payload.set(encoded, 2);
-      payload.set(finish, encoded.length + 2);
+
+      /**
+       * LOGO TOKO, di kepala struk.
+       *
+       * Diambil setiap kali cetak, tapi peramban menyimpan gambarnya sendiri
+       * setelah unduhan pertama, jadi ini tidak menambah tunggu yang terasa.
+       * Gagal memuat berarti logonya dilewati — hiasan tidak boleh menggagalkan
+       * struk yang sedang ditunggu pembeli.
+       */
+      const logo = business?.logo_url ? await logoKeRaster(business.logo_url, 192) : null;
+
+      /**
+       * KODE QR, di kaki struk.
+       *
+       * Isinya ditentukan server: pelanggan yang sudah jadi member mendapat
+       * tautan kartunya sendiri, yang belum mendapat tautan pendaftaran toko
+       * ini. Token member tidak pernah lewat pencarian kasir, jadi pengungkapan
+       * kuncinya terikat pada transaksi yang benar-benar terjadi.
+       */
+      let qr: Uint8Array | null = null;
+      let qrLabel = "";
+      if (options.isCustomerReceipt && options.orderId) {
+        const sasaran = await getReceiptQrTargetAction(options.orderId);
+        if (sasaran.ok) {
+          qr = qrKeRaster(sasaran.data.url, 6);
+          qrLabel = sasaran.data.label;
+        }
+      }
+
+      const payload = gabung(
+        INIT,
+        ...(logo ? [rataTengah(), logo, barisKosong(1)] : []),
+        rataKiri(),
+        teks(rawText),
+        ...(qr
+          ? [
+              barisKosong(1),
+              rataTengah(),
+              qr,
+              barisKosong(1),
+              teks(`${qrLabel}\n`),
+              rataKiri(),
+            ]
+          : []),
+        new Uint8Array([0x0a, 0x0a, 0x0a, ...drawerPulse, ...buzzerPulse]),
+        POTONG,
+      );
 
       // Menyambung, menulis, dan mengulang sekali kalau printernya sempat
       // memutus di tengah jalan — semuanya di satu tempat.
