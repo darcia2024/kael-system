@@ -2645,7 +2645,19 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
             <div className="space-y-1">
               <span className={`text-[10.5px] font-bold block uppercase ${
                 isMochiPos ? "text-[#167052]" : "text-[#7958d8]"
-              }`}>TRANSAKSI SUKSES</span>
+              }`}>
+                {/*
+                  Tunai lunas seketika; QRIS dan transfer TIDAK.
+                  Menulis "TRANSAKSI SUKSES" untuk pembayaran yang belum
+                  dikonfirmasi bikin kasir menutup layar dan pindah ke pembeli
+                  berikutnya — padahal notanya masih menggantung, dan poin
+                  membernya menunggu di situ sampai ada yang menekan
+                  "Pembayaran sudah masuk" di antrean.
+                */}
+                {completedOrder.paymentMethod === "cash"
+                  ? "TRANSAKSI SUKSES"
+                  : "PESANAN TERCATAT · MENUNGGU PEMBAYARAN"}
+              </span>
               <h3 className={`text-2xl font-black ${
                 isMochiPos ? "text-[#0b3d2e]" : "text-[#232331]"
               }`}>
@@ -2660,6 +2672,26 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
                 <p className="text-xs text-[#7b7b8e]">
                   Kembalian: {formatRupiah(completedOrder.change)}
                 </p>
+              )}
+
+              {/*
+                Poin member menunggu pembayaran dikonfirmasi, bukan hilang.
+                Tanpa keterangan ini kasir tidak punya cara tahu ada langkah
+                yang belum selesai — dan membernya yang menagih belakangan.
+              */}
+              {completedOrder.paymentMethod !== "cash" && (
+                <div className="mt-2 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-left">
+                  <p className="text-[11px] font-black text-amber-900">
+                    Belum lunas sampai kamu konfirmasi.
+                  </p>
+                  <p className="mt-0.5 text-[10.5px] leading-relaxed text-amber-800">
+                    Begitu uangnya masuk, buka <b>Antrean Pesanan</b> lalu tekan
+                    &quot;Pembayaran sudah masuk&quot;.
+                    {completedOrder.customerName
+                      ? ` Poin untuk ${completedOrder.customerName} masuk saat itu juga.`
+                      : ""}
+                  </p>
+                </div>
               )}
             </div>
 
