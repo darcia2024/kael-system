@@ -2156,7 +2156,7 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
                   <div>
                     <label className="block text-[11px] font-bold mb-1">Ongkir (Rp)</label>
                     <input
-                      type="number" min={0} step={1000} value={kirimOngkir}
+                      type="number" min={0} step={1} value={kirimOngkir}
                       onChange={(e) => setKirimOngkir(Number(e.target.value))}
                       className={`w-full rounded-xl border p-2 text-xs font-bold ${isMochiPos ? "border-[#ccd9d3] text-[#0b3d2e]" : "border-[#c9c9d4]"}`}
                     />
@@ -2418,10 +2418,21 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
                   isMochiPos ? "border-[#d8e3de] bg-[#f8faf9]" : "border-[#dedee8] bg-[#fcfcfe]"
                 }`}>
                   <label className={`block font-bold ${isMochiPos ? "text-[#0b3d2e]" : "text-[#232331]"}`}>Uang Tunai Diterima (Rp):</label>
+                    {/*
+                      step=1, bukan kelipatan.
+
+                      `step` pada input angka bukan sekadar besar loncatan panah
+                      atas-bawah — browser memakainya juga sebagai aturan sah.
+                      Dengan step 5000 dan min sebesar total tagihan, membayar
+                      Rp 50.000 untuk tagihan Rp 42.000 DITOLAK, karena yang
+                      dianggap sah cuma 47.000 dan 52.000. Padahal itu cara
+                      orang membayar sehari-hari, dan tombol cepat di bawahnya
+                      malah menawarkan angka 50.000 yang sama.
+                    */}
                   <input
                     type="number"
                     min={checkoutTotal}
-                    step={5000}
+                    step={1}
                     value={cashGivenInput}
                     onChange={(e) => setCashGivenInput(Number(e.target.value))}
                     className={`w-full rounded-xl border-2 p-2.5 text-base font-black ${
@@ -2700,7 +2711,7 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
                     type="number"
                     required
                     min={0}
-                    step={5000}
+                    step={1}
                     value={shiftClosingCashInput}
                     onChange={(e) => setShiftClosingCashInput(Number(e.target.value))}
                     className={`w-full rounded-xl border-2 p-2.5 text-base font-black ${
@@ -2744,7 +2755,7 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
                     type="number"
                     required
                     min={0}
-                    step={10000}
+                    step={1}
                     value={shiftOpeningCashInput}
                     onChange={(e) => setShiftOpeningCashInput(Number(e.target.value))}
                     className={`w-full rounded-xl border-2 p-2.5 text-base font-black ${
@@ -2853,7 +2864,7 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
                   type="number"
                   min={0}
                   max={cartTotals.subtotal}
-                  step={5000}
+                  step={1}
                   value={discountNominal}
                   onChange={(e) => setDiscountNominal(Math.max(0, Number(e.target.value)))}
                   className="w-full rounded-xl border-2 border-[#0b3d2e] p-2.5 text-base font-black text-[#0b3d2e]"
@@ -2871,7 +2882,7 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
                     type="number"
                     min={0}
                     max={cartTotals.subtotal}
-                    step={5000}
+                    step={1}
                     value={targetFinalBillInput || ""}
                     onChange={(e) => {
                       const target = Number(e.target.value);

@@ -111,7 +111,7 @@ export default function LoyaltySetup({ businessName }: { businessName: string })
               <input
                 type="number"
                 min={1}
-                step={1000}
+                step={1}
                 value={kurs}
                 onChange={(e) => setKurs(Number(e.target.value))}
                 className="w-full rounded-2xl border border-[#d8e3de] px-4 py-3 text-lg font-black"

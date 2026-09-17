@@ -1043,7 +1043,7 @@ export default function KaelLoyaltyDashboard({
                         <span className="absolute left-3 top-2.5 text-xs text-[#527867] font-bold">Rp</span>
                         <input
                           type="number"
-                          step={5000}
+                          step={1}
                           min={5000}
                           value={amountSpentInput}
                           onChange={(e) => setAmountSpentInput(Number(e.target.value))}
@@ -1825,7 +1825,7 @@ export default function KaelLoyaltyDashboard({
                   <input
                     type="number"
                     min={1000}
-                    step={1000}
+                    step={1}
                     value={program.earn_rate}
                     onChange={(e) => setProgram({ ...program, earn_rate: Number(e.target.value) })}
                     className="w-full rounded-xl border border-[#d8e3de] p-2.5 font-black text-sm text-[#1a382d]"
@@ -2207,7 +2207,7 @@ export default function KaelLoyaltyDashboard({
                   <input
                     type="number"
                     min={0}
-                    step={1000}
+                    step={1}
                     value={rewardMarketValue}
                     onChange={(e) => setRewardMarketValue(Number(e.target.value))}
                     className="w-full rounded-xl border border-[#d8e3de] p-2 text-xs font-bold text-[#1a382d]"
@@ -2286,7 +2286,7 @@ export default function KaelLoyaltyDashboard({
                   <input
                     type="number"
                     min={0}
-                    step={50000}
+                    step={1}
                     value={tierMinSpend}
                     onChange={(e) => setTierMinSpend(Number(e.target.value))}
                     className="w-full rounded-xl border border-[#d8e3de] p-2 text-xs font-bold text-[#1a382d]"

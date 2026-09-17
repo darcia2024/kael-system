@@ -1147,7 +1147,7 @@ export default function FinanceClient({
                           <input
                             type="number"
                             min={0}
-                            step={100}
+                            step={1}
                             value={pack.cost}
                             onChange={(e) => {
                               const copy = [...recipePackaging];
@@ -1179,7 +1179,7 @@ export default function FinanceClient({
                     <input
                       type="number"
                       min={0}
-                      step={100}
+                      step={1}
                       value={operationalCost}
                       onChange={(e) => setOperationalCost(Math.max(0, Number(e.target.value) || 0))}
                       className="w-32 rounded-lg border border-[#d8e3de] p-1.5 text-right text-xs font-bold text-[#1a382d]"
@@ -1198,7 +1198,7 @@ export default function FinanceClient({
                       <input
                         type="number"
                         min={0}
-                        step={500}
+                        step={1}
                         value={sellingPrice}
                         onChange={(e) => setSellingPrice(Math.max(0, Number(e.target.value) || 0))}
                         className="w-full rounded-xl border border-[#d8e3de] p-2 text-xs font-bold text-[#1a382d]"
@@ -1423,7 +1423,7 @@ export default function FinanceClient({
                   <label className="block font-bold text-[#1a382d]">Laba yang diinginkan per produk (Rp)</label>
                   <input
                     type="number"
-                    step={1000}
+                    step={1}
                     value={simTargetProfitNominal}
                     onChange={(e) => setSimTargetProfitNominal(Math.max(0, Number(e.target.value) || 0))}
                     className="w-full rounded-xl border border-[#d8e3de] p-2.5 text-sm font-bold text-[#1a382d]"
@@ -1475,7 +1475,7 @@ export default function FinanceClient({
                     <input
                       type="number"
                       min={0}
-                      step={10000}
+                      step={1}
                       value={simMonthlyFixedCost}
                       onChange={(e) => setSimMonthlyFixedCost(Math.max(0, Number(e.target.value) || 0))}
                       className="w-full rounded-xl border border-[#d8e3de] p-2.5 text-sm font-bold text-[#1a382d]"
@@ -1765,7 +1765,7 @@ export default function FinanceClient({
                   type="number"
                     required
                     min={0}
-                    step={100}
+                    step={1}
                     value={newPackPriceInput}
                   onChange={(e) => setNewPackPriceInput(Math.max(0, Number(e.target.value) || 0))}
                   className="w-full rounded-xl border border-[#d8e3de] p-2.5 text-base font-black text-[#c2410c]"
@@ -1848,7 +1848,7 @@ export default function FinanceClient({
                     type="number"
                     required
                     min={0}
-                    step={100}
+                    step={1}
                     value={newIngPrice}
                     onChange={(e) => setNewIngPrice(Math.max(0, Number(e.target.value) || 0))}
                     className="w-full rounded-xl border border-[#d8e3de] p-2 text-xs font-bold text-[#1a382d]"

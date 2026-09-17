@@ -470,9 +470,9 @@ export default function PosReplaceRefundModal({
                 <label className="block font-bold text-gray-700">Nominal Refund (Rp):</label>
                 <input
                   type="number"
-                  min={1000}
+                  min={1}
                   max={Number(order.total)}
-                  step={1000}
+                  step={1}
                   value={refundAmount}
                   onChange={(e) => setRefundAmount(Number(e.target.value))}
                   className="w-full rounded-xl border-2 border-rose-400 p-2 text-xs font-black text-rose-900"
