@@ -8,7 +8,7 @@ import { claimOrderAction, confirmPaymentAction, getOrderStationSnapshotAction, 
 import { formatRupiah } from "@/lib/formatters";
 import { serviceTypeLabel, generateKitchenTicketText } from "@/lib/pos-engine";
 import type { Order, OrderItem } from "@/lib/types";
-import { ambilPrinter, kirimKePrinter } from "@/lib/thermal-printer";
+import { ambilPrinter, kirimKePrinter, alasanGagalCetak } from "@/lib/thermal-printer";
 
 type StationOrder = Order & { items: OrderItem[] };
 type Stage = "cashier" | "kitchen";
@@ -138,6 +138,7 @@ export default function OrderStationClient({
       // Printer TIDAK dilupakan di sini; kegagalan menulis biasanya cuma
       // sambungan basi. Yang berhak melupakannya cuma kegagalan menyambung.
       console.warn("Print tiket dapur gagal", err);
+      setMessage(alasanGagalCetak(err));
       const printWindow = window.open("", "_blank", "width=380,height=600");
       if (printWindow) {
         printWindow.document.write(`

@@ -48,6 +48,27 @@ export function lupakanPrinter() {
   printerTersimpan = null;
 }
 
+/**
+ * Antrean cetak. Satu pekerjaan selesai dulu, baru yang berikutnya jalan.
+ *
+ * Web Bluetooth TIDAK mengizinkan dua operasi GATT berjalan bersamaan pada satu
+ * perangkat. Layar kasir melanggarnya tanpa sadar: "cetak otomatis 3 rangkap"
+ * berjalan begitu transaksi selesai, lalu kasir menekan "Tiket Dapur" beberapa
+ * detik kemudian — dan yang kedua langsung gagal dengan alasan yang terdengar
+ * seperti printernya bermasalah, padahal printernya baik-baik saja.
+ *
+ * Rantai promise ini yang memaksa mereka mengantre.
+ */
+let antrean: Promise<unknown> = Promise.resolve();
+
+function antre<T>(pekerjaan: () => Promise<T>): Promise<T> {
+  // Kegagalan satu pekerjaan tidak boleh memutus antrean untuk yang berikutnya,
+  // jadi rantainya selalu disambung dari versi yang sudah "dijinakkan".
+  const hasil = antrean.then(pekerjaan, pekerjaan);
+  antrean = hasil.catch(() => undefined);
+  return hasil;
+}
+
 /** Sudah ada printer yang dikenal? Dipakai layar untuk menyesuaikan tombolnya. */
 export function printerSudahDikenal() {
   return printerTersimpan !== null;
@@ -115,18 +136,41 @@ export async function ambilPrinter(bluetooth: any): Promise<any> {
     }
   }
 
-  const device = await bluetooth.requestDevice({
-    // Disaring ke printer saja. Dengan acceptAllDevices, daftarnya penuh
-    // perangkat orang lain dan kasir harus mencari printernya sendiri.
-    filters: [
-      ...LAYANAN_PRINTER.map((service) => ({ services: [service] })),
-      { namePrefix: "RPP" },
-      { namePrefix: "MTP" },
-      { namePrefix: "POS" },
-      { namePrefix: "Printer" },
-    ],
-    optionalServices: LAYANAN_PRINTER,
-  });
+  /**
+   * Disaring ke printer saja. Dengan acceptAllDevices, daftarnya penuh HP
+   * tetangga dan earbud, dan kasir harus mencari printernya sendiri di antara
+   * belasan baris "Unknown or Unsupported Device".
+   *
+   * Tapi penyaring layanan cuma cocok kalau printernya benar-benar MENYIARKAN
+   * UUID itu di paket iklannya, dan banyak printer thermal murah tidak. Jadi
+   * kalau daftarnya berakhir kosong, pemilihan diulang tanpa penyaring —
+   * daftar berisik jauh lebih baik daripada printer yang tidak bisa dipilih
+   * sama sekali.
+   */
+  let device: any;
+  try {
+    device = await bluetooth.requestDevice({
+      filters: [
+        ...LAYANAN_PRINTER.map((service) => ({ services: [service] })),
+        { namePrefix: "RPP" },
+        { namePrefix: "MTP" },
+        { namePrefix: "POS" },
+        { namePrefix: "Printer" },
+        { namePrefix: "BlueTooth Printer" },
+        { namePrefix: "Thermal" },
+      ],
+      optionalServices: LAYANAN_PRINTER,
+    });
+  } catch (error) {
+    const dibatalkanOrang = (error as Error)?.message?.toLowerCase().includes("cancel");
+    if (dibatalkanOrang) throw error;
+
+    console.warn("[KAEL] tidak ada printer yang cocok dengan penyaring; menampilkan semua perangkat", error);
+    device = await bluetooth.requestDevice({
+      acceptAllDevices: true,
+      optionalServices: LAYANAN_PRINTER,
+    });
+  }
 
   pasangPelepas(device);
   printerTersimpan = device;
@@ -151,6 +195,36 @@ function pasangPelepas(device: any) {
   device.addEventListener?.("gattserverdisconnected", () => {
     console.info("[KAEL] printer menganggur lalu memutus sendiri; akan disambung ulang saat cetak berikutnya");
   });
+}
+
+/**
+ * Menerjemahkan galat Web Bluetooth jadi kalimat yang berguna buat kasir.
+ *
+ * Pesan lamanya cuma "Printer Bluetooth belum bisa menerima tiket dapur" —
+ * terdengar seperti printernya rusak, padahal penyebab paling sering justru
+ * dialognya ditutup, atau printernya sedang mengerjakan cetakan sebelumnya.
+ * Kasir yang membaca pesan yang salah akan memperbaiki hal yang salah.
+ */
+export function alasanGagalCetak(error: unknown): string {
+  const pesan = (error as Error)?.message ?? "";
+  const nama = (error as Error)?.name ?? "";
+
+  if (/cancel/i.test(pesan)) {
+    return "Pemilihan printer dibatalkan. Tekan cetak lagi, lalu pilih printernya dari daftar.";
+  }
+  if (nama === "NotFoundError") {
+    return "Printer tidak ditemukan. Pastikan printernya menyala dan Bluetooth-nya aktif.";
+  }
+  if (nama === "NetworkError" || /gatt|connect/i.test(pesan)) {
+    return "Printer terputus. Biasanya karena kejauhan atau baterainya habis — dekatkan, lalu coba lagi.";
+  }
+  if (nama === "InvalidStateError" || /already in progress|busy/i.test(pesan)) {
+    return "Printer masih mengerjakan cetakan sebelumnya. Tunggu sebentar, lalu coba lagi.";
+  }
+  if (nama === "SecurityError") {
+    return "Peramban memblokir akses Bluetooth di halaman ini.";
+  }
+  return pesan || "Printer tidak merespons.";
 }
 
 /**
@@ -200,12 +274,15 @@ export async function kirimKePrinter(device: any, payload: Uint8Array) {
     }
   };
 
-  try {
-    await tulis();
-  } catch (error) {
-    console.warn("[KAEL] kiriman pertama gagal, menyambung ulang sekali", error);
-    await tulis();
-  }
+  // Seluruh pengiriman lewat satu antrean, tidak pernah dua sekaligus.
+  return antre(async () => {
+    try {
+      await tulis();
+    } catch (error) {
+      console.warn("[KAEL] kiriman pertama gagal, menyambung ulang sekali", error);
+      await tulis();
+    }
+  });
 }
 
 /** Mencari jalur tulis ESC/POS pada printer yang sudah tersambung. */

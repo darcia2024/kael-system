@@ -94,6 +94,7 @@ import {
   ambilPrinter,
   kirimKePrinter,
   diagnosaPrinter,
+  alasanGagalCetak,
 } from "@/lib/thermal-printer";
 import TableQrModal from "./table-qr-modal";
 import PosMemberScannerModal from "./pos-member-scanner-modal";
@@ -889,7 +890,14 @@ export default function PosClient({
        * ditangani di dalam sambungPrinter().
        */
       console.warn("[KAEL] cetak Bluetooth gagal", error);
-      const useBrowserPrint = window.confirm(`Printer Bluetooth belum bisa menerima ${options.jobName.toLowerCase()}. Buka versi cetak di dialog browser?`);
+      // Kasir diberi tahu APA yang salah, bukan cuma bahwa ada yang salah.
+      // Pesan lamanya terdengar seperti printernya rusak, padahal penyebab
+      // tersering justru dialognya ditutup atau cetakan sebelumnya belum kelar.
+      const useBrowserPrint = window.confirm(
+        `${alasanGagalCetak(error)}
+
+Buka versi cetak di dialog browser sebagai gantinya?`,
+      );
       if (useBrowserPrint) {
         if (options.isCustomerReceipt && options.orderId) {
           window.open(`/receipt/${options.orderId}`, "_blank", "noopener,noreferrer");
