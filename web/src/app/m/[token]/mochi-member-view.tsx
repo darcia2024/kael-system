@@ -150,6 +150,33 @@ export default function MochiMemberView({
   // Selected card preview tab (default to current tier)
   const [selectedCardTier, setSelectedCardTier] = useState<"reguler" | "perak" | "emas">(userCurrentTierKey);
 
+  /**
+   * Tautan pesan delivery ke WhatsApp toko.
+   *
+   * Pesannya sudah memuat nama dan nomor member beserta tautan kartunya, supaya
+   * kasir tidak perlu menanyakan ulang siapa yang memesan — dan poin belanjanya
+   * bisa langsung ditempelkan ke member yang benar.
+   */
+  const pesanDelivery = useMemo(() => {
+    const nomorToko = cardSettings?.whatsapp?.trim();
+    if (!nomorToko || !customer || !business) return null;
+    const isi =
+      `Halo ${business.name}! Saya mau pesan delivery.
+
+` +
+      `Nama: ${customer.name ?? "-"}
+` +
+      `Member: https://${siteHost}/m/${customer.token}
+
+` +
+      `Pesanan saya:
+- 
+
+Alamat pengantaran:
+`;
+    return `https://wa.me/${nomorToko}?text=${encodeURIComponent(isi)}`;
+  }, [cardSettings, customer, business]);
+
   if (!customer || !business || !program) return null;
 
   const activeVoucher = useMemo(
@@ -421,6 +448,30 @@ export default function MochiMemberView({
 {activeNavTab === "home" && (
           <>
             {/* Quick Action Grid */}
+            {/*
+              PESAN DELIVERY
+
+              Yang MENGIRIM pesannya pelanggan, ke nomor toko — arahnya sengaja
+              begitu. Nama dan nomor member sudah ikut di dalam pesannya, jadi
+              tokonya langsung tahu siapa yang memesan dan bisa menempelkan
+              transaksinya ke member itu tanpa bertanya dua kali.
+
+              Tanpa nomor toko tombolnya tidak digambar sama sekali. wa.me tanpa
+              nomor membuka pemilih kontak, dan pelanggan yang mengirim pesanan
+              ke orang acak lebih buruk daripada tidak ada tombolnya.
+            */}
+            {pesanDelivery && (
+              <a
+                href={pesanDelivery}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mb-4 flex items-center justify-center gap-2 rounded-2xl bg-[#0b3d2e] py-3.5 text-sm font-black text-white shadow-md active:scale-[0.98] transition-transform"
+              >
+                <MessageCircle size={17} strokeWidth={2.4} />
+                <span>Pesan Delivery via WhatsApp</span>
+              </a>
+            )}
+
             <section aria-label="Menu Cepat" className="grid grid-cols-4 gap-2 text-center pb-5">
               <button
                 type="button"
