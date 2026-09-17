@@ -233,6 +233,12 @@ export default function KaelLoyaltyDashboard({
   const [rewardPointCost, setRewardPointCost] = useState<number>(10);
   const [rewardMarketValue, setRewardMarketValue] = useState<number>(25000);
   const [rewardStock, setRewardStock] = useState<string>(""); // empty = unlimited
+  /**
+   * Foto hadiah. Daftar hadiah yang cuma berisi nama dan angka poin tidak
+   * membuat siapa pun ingin mengumpulkan poin — hadiahnya harus bisa
+   * dibayangkan bentuknya oleh yang mengejarnya.
+   */
+  const [rewardImageUrl, setRewardImageUrl] = useState<string>("");
 
   // Live discount rate calculation for reward editor
   const rewardDiscountAnalysis = useMemo(() => {
@@ -548,6 +554,7 @@ export default function KaelLoyaltyDashboard({
       market_value: rewardMarketValue,
       stock: rewardStock ? Number(rewardStock) : null,
       is_active: true,
+      image_url: rewardImageUrl.trim() || null,
     });
     if (!res.ok) {
       alert(res.error);
@@ -559,6 +566,7 @@ export default function KaelLoyaltyDashboard({
     setRewardName("");
     setRewardPointCost(10);
     setRewardMarketValue(25000);
+    setRewardImageUrl("");
   };
 
   const handleDeleteReward = async (id: string, name: string) => {
@@ -1701,6 +1709,7 @@ export default function KaelLoyaltyDashboard({
                   setRewardPointCost(10);
                   setRewardMarketValue(25000);
                   setRewardStock("");
+                  setRewardImageUrl("");
                   setShowRewardModal(true);
                 }}
                 className="inline-flex items-center gap-1.5 rounded-xl border border-[#d8e3de] bg-[#c8f53a] px-3 py-1.5 font-mono text-xs font-bold text-[#073829] shadow-xs"
@@ -2155,6 +2164,30 @@ export default function KaelLoyaltyDashboard({
                   onChange={(e) => setRewardName(e.target.value)}
                   className="w-full rounded-xl border border-[#d8e3de] p-2.5 text-xs font-bold text-[#1a382d]"
                 />
+              </div>
+
+              {/* Foto hadiah: yang dikejar pelanggan harus bisa dibayangkan bentuknya. */}
+              <div className="space-y-1">
+                <label className="block font-mono font-bold text-[#1a382d]">Foto Hadiah (Opsional):</label>
+                <input
+                  type="url"
+                  placeholder="https://..."
+                  value={rewardImageUrl}
+                  onChange={(e) => setRewardImageUrl(e.target.value)}
+                  className="w-full rounded-xl border border-[#d8e3de] p-2.5 text-xs font-bold text-[#1a382d]"
+                />
+                <p className="font-sans text-[11px] leading-relaxed text-[#5b7a6e]">
+                  Harus https. Kalau dikosongkan, kartu hadiah memakai inisial namanya.
+                </p>
+                {rewardImageUrl.trim() && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={rewardImageUrl.trim()}
+                    alt="Pratinjau foto hadiah"
+                    className="mt-1 h-24 w-24 rounded-xl border border-[#d8e3de] object-cover"
+                    onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+                  />
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-2 font-mono text-xs">

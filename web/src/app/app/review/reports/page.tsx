@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { redirect } from "next/navigation";
+import { feedbackDateIso } from "@/lib/feedback-date";
 import { db } from "@/lib/db";
 import { guardModulePage } from "@/lib/licensing";
 import { mochiThemeClass } from "@/lib/mochi-theme";
@@ -25,11 +25,7 @@ export default async function ReviewReportsPage() {
   const feedbacks = (rawFeedbacks || []).map((f) => ({
     ...f,
     rating: Number(f.rating) || 0,
-    created_at: f.created_at
-      ? typeof f.created_at === "string"
-        ? f.created_at
-        : new Date(f.created_at).toISOString()
-      : new Date().toISOString(),
+    created_at: feedbackDateIso(f.created_at),
   }));
 
   return (

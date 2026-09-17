@@ -348,6 +348,10 @@ export default function CustomerQrOrderPage({
       "dine_in",
       caraBayar,
       cartList.map((c) => ({ menu_item_id: c.item.id, qty: c.qty, note: c.note })),
+      // Nama yang barusan diwajibkan di atas ikut terkirim. Sebelum ini
+      // divalidasi lalu dibuang, jadi kasir dan dapur cuma menerima nomor meja
+      // dan tidak punya cara memanggil orangnya saat pesanannya siap.
+      customerName.trim(),
     );
 
     setIsSubmitting(false);

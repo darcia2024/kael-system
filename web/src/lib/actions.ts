@@ -12,6 +12,8 @@ import type {
   FeedbackReasonCode,
   FinanceCalculatorPreset,
   CardService,
+  ItemChangeSettlement,
+  RefundReasonCode,
   CustomerDirectoryEntry,
   MenuItem,
   Category,
@@ -48,6 +50,7 @@ import {
   requireOwner,
   requireKaelAdmin,
   requirePermission,
+  AuthError,
   createSession,
   destroySession,
   getSession,
@@ -72,6 +75,33 @@ export type ActionResult<T = void> =
 
 const fail = (error: string): ActionResult<never> => ({ ok: false, error });
 const done = <T>(data: T): ActionResult<T> => ({ ok: true, data });
+
+/**
+ * Menjalankan penjaga akses dan mengubah PENOLAKANNYA jadi hasil, bukan lemparan.
+ *
+ * `requirePermission` dan `requireOwner` melempar AuthError, dan sebelum ini
+ * tidak ada satu pun aksi yang menangkapnya. Lemparan itu menyeberang ke browser
+ * sebagai promise yang ditolak — jadi layar yang menunggu hasilnya tidak pernah
+ * menerima apa-apa: tombolnya berhenti di "...", tidak ada pesan, dan kasir
+ * mengira sistemnya menggantung.
+ *
+ * Kasir Mochi memicunya setiap kali: izin `loyalty`-nya belum diberikan, jadi
+ * tombol "Daftar & pakai" selalu berakhir menggantung tanpa pernah menjelaskan
+ * apa yang kurang.
+ *
+ * Sekarang penolakan akses berbentuk sama dengan kegagalan lain — layar bisa
+ * menampilkannya seperti biasa, dan tombolnya kembali normal.
+ */
+async function denganAkses<T>(
+  penjaga: () => Promise<T>,
+): Promise<{ ok: true; sesi: T } | { ok: false; error: string }> {
+  try {
+    return { ok: true, sesi: await penjaga() };
+  } catch (error) {
+    if (error instanceof AuthError) return { ok: false, error: error.message };
+    throw error;
+  }
+}
 
 // ===========================================================================
 // Sesi
@@ -1163,7 +1193,16 @@ export async function registerCustomerByStaffAction(input: {
     alreadyMember: boolean;
   }>
 > {
-  const { businessId } = await requirePermission("loyalty");
+  /**
+   * Penolakan izin dikembalikan sebagai kegagalan biasa, bukan dilempar.
+   * Kalau dilempar, tombol "Daftar & pakai" di layar kasir berhenti di "..."
+   * selamanya tanpa satu pun keterangan — dan kasir yang izin loyalty-nya
+   * belum diberikan memicunya setiap kali.
+   */
+  const akses = await denganAkses(() => requirePermission("loyalty"));
+  if (!akses.ok) return fail(akses.error);
+  const { businessId } = akses.sesi;
+
   const locked = await moduleLock(businessId, "loyalty", "write");
   if (locked) return fail(locked);
 
@@ -1290,7 +1329,11 @@ export async function redeemRewardAction(
   customerId: string,
   rewardId: string,
 ): Promise<ActionResult<{ code: string; rewardName: string }>> {
-  const { businessId, userId } = await requirePermission("loyalty");
+  // Sama seperti pendaftaran member: penolakan izin harus sampai ke layar
+  // sebagai kalimat, bukan sebagai tombol yang diam.
+  const aksesTukar = await denganAkses(() => requirePermission("loyalty"));
+  if (!aksesTukar.ok) return fail(aksesTukar.error);
+  const { businessId, userId } = aksesTukar.sesi;
   const locked = await moduleLock(businessId, "loyalty", "write");
   if (locked) return fail(locked);
   const customer = await db.getCustomerById(customerId, businessId);
@@ -1355,6 +1398,12 @@ export async function saveRewardAction(data: {
   market_value: number;
   stock: number | null;
   is_active: boolean;
+  /**
+   * Foto hadiah. Daftar hadiah yang cuma berisi nama dan angka poin tidak
+   * membuat siapa pun ingin mengumpulkan poin — hadiah harus bisa dibayangkan
+   * bentuknya.
+   */
+  image_url?: string | null;
 }): Promise<ActionResult<null>> {
   const { businessId } = await requireOwner();
   const locked = await moduleLock(businessId, "loyalty", "write");
@@ -1363,7 +1412,20 @@ export async function saveRewardAction(data: {
   if (data.point_cost <= 0) return fail("Biaya poin harus lebih dari nol.");
   if (!Number.isInteger(data.market_value) || data.market_value < 0)
     return fail("Nilai jual reward tidak valid.");
-  await db.saveReward(businessId, data);
+
+  const foto = data.image_url?.trim() || null;
+  if (foto) {
+    try {
+      // http diblokir peramban saat halaman dibuka lewat https, jadi fotonya
+      // tidak akan pernah muncul — lebih baik ditolak sekarang daripada jadi
+      // kotak kosong di layar pelanggan.
+      if (new URL(foto).protocol !== "https:") return fail("Alamat foto hadiah harus memakai https.");
+    } catch {
+      return fail("Alamat foto hadiah tidak valid.");
+    }
+  }
+
+  await db.saveReward(businessId, { ...data, image_url: foto });
   revalidatePath("/app/loyalty");
   return done(null);
 }
@@ -1602,6 +1664,8 @@ export async function createOrderAction(input: {
     note?: string;
   } | null;
   discount?: number;
+  /** Kenapa diskonnya diberikan. Wajib begitu nominalnya di atas nol. */
+  discount_reason?: string | null;
   cash_given?: number | null;
   customer_id?: string | null;
   items: { menu_item_id: string; qty: number; note?: string }[];
@@ -1651,6 +1715,19 @@ export async function createOrderAction(input: {
   const serviceRate = Number(business?.pos_service_charge_rate ?? 0);
   const rawDiscount = Number(input.discount ?? 0);
   if (!Number.isFinite(rawDiscount)) return fail("Diskon tidak valid.");
+
+  /**
+   * Diskon tanpa alasan ditolak di sini, bukan cuma diingatkan di layar.
+   *
+   * Layar kasir sudah menanyakan alasannya sejak dulu, tapi jawabannya tidak
+   * pernah dikirim ke server, jadi yang tersimpan cuma nominalnya. Owner bisa
+   * melihat diskon Rp 500.000 sebulan tanpa satu pun cara tahu itu keringanan
+   * buat siapa — dan itu bukan diskon, itu selisih kas.
+   */
+  const alasanDiskon = input.discount_reason?.trim() || "";
+  if (rawDiscount > 0 && alasanDiskon.length < 3) {
+    return fail("Isi dulu alasan diskonnya. Diskon tanpa keterangan tidak bisa dipertanggungjawabkan saat tutup shift.");
+  }
   const deliveryFee = Math.round(Number(input.delivery?.fee ?? 0));
   if (
     !Number.isFinite(deliveryFee) ||
@@ -1675,12 +1752,24 @@ export async function createOrderAction(input: {
       return fail("Uang tunai yang diterima kurang dari total tagihan.");
     }
   }
+  /**
+   * Pesanan meja menempel ke kunjungan yang sedang berjalan di meja itu, dan
+   * membuka kunjungan baru kalau belum ada. Inilah yang bikin tambahan pesanan
+   * punya induk: tagihan awal dan tambahannya jadi satu, bukan dua baris yang
+   * kebetulan bernomor meja sama.
+   */
+  const tableSession =
+    input.service_type === "dine_in" && input.table_no?.trim()
+      ? await db.openTableSession(businessId, input.table_no, userId)
+      : null;
+
   const { order } = await db.createOrder(
     businessId,
     {
       channel: "cashier",
       service_type: input.service_type,
       table_no: input.table_no ?? null,
+      table_session_id: tableSession?.id ?? null,
       /**
        * Tunai lunas seketika: uangnya ada di tangan kasir saat itu juga.
        *
@@ -1691,10 +1780,21 @@ export async function createOrderAction(input: {
        */
       status: input.payment_method === "cash" ? "paid" : "open",
       payment_status: input.payment_method === "cash" ? "paid" : "pending",
-      fulfillment_status:
-        input.payment_method === "cash" ? "completed" : "pending",
+      /**
+       * SELALU masuk antrean dapur, bahkan yang tunai dan lunas seketika.
+       *
+       * Sebelum ini pesanan tunai langsung ditandai `completed` — artinya
+       * pesanan yang diketik kasir tidak pernah sampai ke layar dapur, dan
+       * dapur cuma melihat pesanan dari QR meja. Sisanya diteriakkan lewat
+       * mulut, dan saat ramai itu berarti ada yang tidak dimasak.
+       *
+       * Uang dan makanan adalah dua sumbu berbeda: yang satu sudah lunas
+       * tidak berarti yang satunya sudah keluar dari dapur.
+       */
+      fulfillment_status: "pending",
       delivery: input.delivery ? { ...input.delivery, fee: deliveryFee } : null,
       discount: totals.discount,
+      discount_reason: alasanDiskon || null,
       tax: totals.tax,
       service_charge: totals.serviceCharge,
       payment_method: input.payment_method,
@@ -1731,6 +1831,12 @@ export async function createQrOrderAction(
   serviceType: "dine_in" | "takeaway",
   paymentMethod: "qris" | "cash",
   items: { menu_item_id: string; qty: number; note?: string }[],
+  /**
+   * Nama pemesan. Layar menu digital sudah MEWAJIBKAN pelanggan mengisinya,
+   * tapi sebelum ini namanya tidak pernah ikut terkirim — jadi berhenti di
+   * browser tamu, dan yang sampai ke kasir maupun dapur cuma nomor meja.
+   */
+  customerName?: string,
 ): Promise<ActionResult<{ orderId: string; orderNo: string; total: number }>> {
   if (!items.length) return fail("Keranjang masih kosong.");
 
@@ -1764,7 +1870,24 @@ export async function createQrOrderAction(
     });
   }
 
-  const total = lines.reduce((sum, line) => sum + line.price * line.qty, 0);
+  /**
+   * Pajak dan service charge dihitung dengan tarif toko yang SAMA dengan kasir.
+   *
+   * Sebelum ini jalur QR cuma menjumlahkan harga menu dan tidak pernah
+   * mengirim kedua biaya itu. Jadi begitu Mochi mengaktifkan tarifnya, pesanan
+   * yang persis sama menghasilkan dua angka berbeda: yang lewat kasir kena
+   * pajak, yang lewat QR meja tidak. Pelanggan di meja sebelah membayar lebih
+   * murah untuk menu yang sama, dan yang menjelaskan ke mereka kasirnya.
+   */
+  const business = await db.getBusiness(businessId);
+  const totals = calculateCartTotals(
+    lines.map((line) => ({ price: line.price, qty: line.qty })),
+    0,
+    Number(business?.pos_tax_rate ?? 0),
+    Number(business?.pos_service_charge_rate ?? 0),
+  );
+  const total = totals.total;
+
   const ordering = await db.checkOrderingAvailability(businessId, total);
   if (!ordering.available) return fail(ordering.error);
 
@@ -1783,15 +1906,30 @@ export async function createQrOrderAction(
    * Dapur tidak mulai sebelum itu. Kalau mulai lebih dulu, satu orang iseng
    * cukup memesan sepuluh porsi dari meja lalu pergi.
    */
+  /**
+   * Pesanan dari QR meja masuk ke kunjungan yang SEDANG berjalan di meja itu,
+   * dan membuka kunjungan baru kalau tamunya memesan duluan sebelum kasir
+   * sempat membuka mejanya. Inilah yang menyatukan tagihan: tambahan dari HP
+   * tamu dan tambahan dari kasir berakhir di satu sesi yang sama.
+   */
+  const tableSession =
+    serviceType === "dine_in" && tableNo?.trim()
+      ? await db.openTableSession(businessId, tableNo, null)
+      : null;
+
   const { order } = await db.createOrder(
     businessId,
     {
       channel: "qr",
       service_type: serviceType,
       table_no: tableNo,
+      table_session_id: tableSession?.id ?? null,
+      customer_name: customerName?.trim() || null,
       status: "open",
       payment_status: "pending",
       fulfillment_status: "pending",
+      tax: totals.tax,
+      service_charge: totals.serviceCharge,
       payment_method: paymentMethod,
       created_by: owner.id,
     },
@@ -1905,8 +2043,8 @@ export async function cancelOrderAction(
   const locked = await moduleLock(businessId, "pos", "write");
   if (locked) return fail(locked);
 
-  const order = await db.cancelOrder(orderId, businessId, reason, userId);
-  if (!order) return fail("Pesanan tidak ditemukan.");
+  const res = await db.cancelOrder(orderId, businessId, reason, userId);
+  if (!res.ok) return fail(res.error!);
 
   revalidatePath("/app/pos");
   revalidatePath("/app/pos/station");
@@ -1921,27 +2059,38 @@ export async function refundOrderAction(
   orderId: string,
   amount: number,
   reason: string,
-  category: "lama_datang" | "stok_habis" | "salah_input" | "keringanan_owner" | "komplain_rasa" | "lainnya" = "lainnya",
-  refundMethod: "cash" | "qris" = "cash",
+  category: RefundReasonCode = "lainnya",
+  refundMethod: "cash" | "qris" | "transfer" = "cash",
+  /** Diisi kalau yang dikembalikan cuma satu menu, bukan seluruh nota. */
+  orderItemId?: string | null,
 ): Promise<ActionResult<{ refundId: string; refundAmount: number; orderNo: string }>> {
-  const { businessId, userId } = await requirePermission("pos");
+  /**
+   * Refund adalah uang KELUAR, dan itu keputusan pemilik.
+   *
+   * Aksi ini dulu menerima siapa pun yang berizin POS, padahal kolom
+   * `refunds.approved_by` sejak awal berkomentar "Wajib role owner" dan
+   * fungsi database-nya menamai parameternya `ownerUserId`. Jadi aturannya
+   * sudah tertulis di dua tempat, cuma tidak pernah ditegakkan di pintunya —
+   * dan kasir bisa mengeluarkan uang dari laci atas namanya sendiri.
+   */
+  const { businessId, userId } = await requireOwner();
   const locked = await moduleLock(businessId, "pos", "write");
   if (locked) return fail(locked);
 
   if (!amount || amount <= 0) return fail("Nominal pengembalian dana (refund) tidak valid.");
   if (!reason.trim()) return fail("Keterangan alasan refund wajib diisi.");
 
-  const categoryLabel: Record<string, string> = {
-    lama_datang: "Keterlambatan Penyajian / Lama Datang",
-    stok_habis: "Bahan / Menu Habis di Dapur",
-    salah_input: "Salah Input Kasir",
-    keringanan_owner: "Keringanan Diskon / Saudara Owner",
-    komplain_rasa: "Komplain Rasa / Kualitas Makanan",
-    lainnya: "Alasan Lainnya",
-  };
-
-  const fullReason = `[${categoryLabel[category] || category.toUpperCase()}] ${reason.trim()} (Metode: ${refundMethod.toUpperCase()})`;
-  const res = await db.refundOrder(orderId, businessId, amount, fullReason, userId);
+  /**
+   * Kategori dan metode dikirim sebagai kolom, bukan lagi ditempel ke dalam
+   * kalimat alasan. Yang tersimpan di `reason` sekarang cuma keterangan yang
+   * benar-benar diketik kasir, supaya laporan bisa mengelompokkan sendiri
+   * alasannya tanpa harus membongkar teks.
+   */
+  const res = await db.refundOrder(orderId, businessId, amount, reason.trim(), userId, {
+    method: refundMethod,
+    reasonCode: category,
+    orderItemId: orderItemId ?? null,
+  });
   if (!res.success) {
     return fail(res.error || "Gagal memproses pengembalian dana.");
   }
@@ -1968,19 +2117,87 @@ export async function replaceOrderItemAction(
   orderId: string,
   orderItemId: string,
   newMenuItemId: string,
+  /**
+   * Bagaimana selisih harganya diselesaikan. Untuk nota yang sudah lunas dan
+   * harganya berbeda, ini WAJIB — selisih yang tidak pernah ditagih maupun
+   * dikembalikan akan muncul lagi saat tutup shift tanpa ada yang ingat
+   * penyebabnya.
+   */
+  settlement: ItemChangeSettlement = "none",
   reason?: string,
-): Promise<ActionResult<{ ok: boolean; newName: string; priceDiff: number }>> {
-  const { businessId } = await requirePermission("pos");
+): Promise<
+  ActionResult<{
+    ok: boolean;
+    newName: string;
+    priceDiff: number;
+    settlement: ItemChangeSettlement;
+  }>
+> {
+  const { businessId, userId } = await requirePermission("pos");
   const locked = await moduleLock(businessId, "pos", "write");
   if (locked) return fail(locked);
 
-  const res = await db.replaceOrderItem(orderId, orderItemId, newMenuItemId, businessId, reason);
+  const res = await db.replaceOrderItem(
+    orderId,
+    orderItemId,
+    newMenuItemId,
+    businessId,
+    userId,
+    settlement,
+    reason,
+  );
   if (!res.ok) return fail(res.error || "Gagal mengganti item menu.");
 
   revalidatePath("/app/pos");
   revalidatePath("/app/pos/station");
   revalidatePath("/app/pos/kitchen");
-  return done({ ok: true, newName: res.newName, priceDiff: res.priceDiff });
+  revalidatePath("/app/pos/reports");
+  return done({
+    ok: true,
+    newName: res.newName,
+    priceDiff: res.priceDiff,
+    settlement: res.settlement,
+  });
+}
+
+// -----------------------------------------------------------------------------
+// SESI MEJA
+// -----------------------------------------------------------------------------
+
+/** Membuka meja saat tamu duduk, sebelum pesanan pertama masuk sekalipun. */
+export async function openTableSessionAction(
+  tableNo: string,
+  guestCount?: number | null,
+): Promise<ActionResult<{ sessionId: string }>> {
+  const { businessId, userId } = await requirePermission("pos");
+  const locked = await moduleLock(businessId, "pos", "write");
+  if (locked) return fail(locked);
+  if (!tableNo.trim()) return fail("Nomor meja belum diisi.");
+
+  const session = await db.openTableSession(businessId, tableNo, userId, guestCount);
+  if (!session) return fail("Nomor meja tidak dikenali.");
+
+  revalidatePath("/app/pos");
+  return done({ sessionId: session.id });
+}
+
+/**
+ * Menutup meja setelah tamunya pergi. Menolak selama masih ada tagihan yang
+ * belum lunas — versi lama menyelesaikannya dengan diam-diam menandai pesanan
+ * itu sudah dibayar.
+ */
+export async function closeTableSessionAction(
+  sessionId: string,
+): Promise<ActionResult<null>> {
+  const { businessId, userId } = await requirePermission("pos");
+  const locked = await moduleLock(businessId, "pos", "write");
+  if (locked) return fail(locked);
+
+  const res = await db.closeTableSession(sessionId, businessId, userId);
+  if (!res.ok) return fail(res.error!);
+
+  revalidatePath("/app/pos");
+  return done(null);
 }
 
 /**
@@ -1998,10 +2215,30 @@ export async function saveDirectReviewAction(data: {
   if (!data.rating || data.rating < 1 || data.rating > 5) {
     return fail("Rating bintang 1 s/d 5 wajib dipilih.");
   }
-  const res = await db.saveFeedbackRow(data);
-  revalidatePath("/app/review/reports");
-  revalidatePath("/app/pos/reports/reviews");
-  return done({ id: res.id });
+
+  /**
+   * Ulasan harus menyebutkan DARI MANA asalnya: pesanan yang benar-benar ada,
+   * atau kartu yang benar-benar ada. Keduanya baris di basis data yang tahu
+   * tenantnya sendiri, jadi tidak ada yang perlu dipercaya dari pemanggil.
+   *
+   * Aksi ini memang terbuka tanpa sesi — yang mengisinya pelanggan yang baru
+   * menempelkan ponselnya ke kartu di meja, dan dia tidak punya akun. Justru
+   * karena itu batas tenantnya harus ditegakkan dari bukti, bukan dari
+   * business_id yang ikut dikirim bersama permintaannya.
+   */
+  if (!data.order_id && !data.card_id) {
+    return fail("Ulasan ini tidak bisa disimpan karena tidak menyebutkan pesanan atau kartunya.");
+  }
+
+  try {
+    const res = await db.saveFeedbackRow(data);
+    revalidatePath("/app/review/reports");
+    revalidatePath("/app/pos/reports/reviews");
+    return done({ id: res.id });
+  } catch (err) {
+    console.error("[KAEL] ulasan langsung ditolak", err);
+    return fail("Ulasan tidak bisa disimpan karena tokonya tidak bisa dipastikan.");
+  }
 }
 
 /** Kemajuan dapur. Hanya untuk pesanan yang sudah lunas. */
@@ -2174,6 +2411,24 @@ export async function deleteShiftAction(
   revalidatePath("/app/pos/reports");
   revalidatePath("/app/pos/owner");
   return done(null);
+}
+
+/**
+ * Menandai transaksi sebagai latihan, atau mencabut tandanya.
+ *
+ * Menandai bisa dibatalkan, menghapus tidak. Jadi inilah langkah yang harus
+ * dilewati owner sebelum pembersihan massal boleh menyentuh apa pun.
+ */
+export async function markOrdersAsTestAction(
+  orderIds: string[],
+  isTest: boolean,
+): Promise<ActionResult<{ updatedCount: number }>> {
+  const { businessId } = await requireOwner();
+  const res = await db.markOrdersAsTest(orderIds, businessId, isTest);
+  revalidatePath("/app/pos");
+  revalidatePath("/app/pos/reports");
+  revalidatePath("/app/pos/owner");
+  return done(res);
 }
 
 /** Pembersihan massal data testing (reset pesanan / feedback / shift) khusus owner. */
@@ -2501,6 +2756,15 @@ export async function saveRecipeAction(data: {
   target_margin_pct: number;
   ingredients: { ingredient_id: string; qty: number }[];
   packaging: { name: string; cost: number }[];
+  /**
+   * Menu POS yang resep ini hitungkan modalnya.
+   *
+   * Tanpa penyambungan ini, resep yang sudah susah payah diisi tetap tidak
+   * terbaca laporan laba: laporan mencari modal lewat menu_items.recipe_id,
+   * bukan lewat kemiripan nama. Owner melihat resepnya ada, tapi labanya tetap
+   * kosong, dan tidak ada satu pun layar yang menjelaskan kenapa.
+   */
+  link_menu_item_id?: string | null;
 }): Promise<ActionResult<{ id: string }>> {
   const { businessId } = await requireOwner();
   const locked = await moduleLock(businessId, "finance", "write");
@@ -2543,7 +2807,16 @@ export async function saveRecipeAction(data: {
   }
 
   const recipe = await db.saveRecipe(businessId, data);
+
+  // Menu langsung disambungkan ke resepnya, supaya modalnya ikut terkunci pada
+  // penjualan berikutnya tanpa owner perlu membuka layar menu lagi.
+  if (data.link_menu_item_id) {
+    await db.linkMenuItemToRecipe(data.link_menu_item_id, recipe.id, businessId);
+  }
+
   revalidatePath("/app/finance");
+  revalidatePath("/app/pos");
+  revalidatePath("/app/pos/reports");
   return done({ id: recipe.id });
 }
 

@@ -13,7 +13,8 @@ import {
   Check,
   Loader2,
 } from "lucide-react";
-import type { MenuItem, Order, OrderItem } from "@/lib/types";
+import type { ItemChangeSettlement, MenuItem, Order, OrderItem, RefundReasonCode } from "@/lib/types";
+import { REFUND_REASONS } from "@/lib/types";
 import { formatRupiah } from "@/lib/formatters";
 import { replaceOrderItemAction, refundOrderAction } from "@/lib/actions";
 
@@ -27,14 +28,22 @@ export interface PosReplaceRefundModalProps {
   onSuccess?: () => void;
 }
 
-const REFUND_REASONS = [
-  { key: "bahan_habis", label: "⚠️ Bahan Habis / Stok Habis Tengah Hari" },
-  { key: "lama_datang", label: "⏳ Pelanggan Batal Karena Makanan Lama Datang" },
-  { key: "keringanan_owner", label: "🤝 Keringanan / Diskon Khusus Owner (Saudara/Relasi)" },
-  { key: "salah_input", label: "✍️ Salah Input Kasir / Meja" },
-  { key: "komplain_rasa", label: "👎 Komplain Rasa / Kualitas Makanan" },
-  { key: "lainnya", label: "📝 Lainnya (Catatan Manual)" },
-];
+/**
+ * Daftar alasan diambil dari `@/lib/types`, bukan disalin ke sini.
+ *
+ * Salinan lokalnya dulu memakai kunci "bahan_habis" sementara server mengenal
+ * "stok_habis", jadi tiap kali kasir memilih alasan itu, yang tercatat adalah
+ * "lainnya" — dan laporan alasan refund kehilangan justru alasan yang paling
+ * sering dipakai di dapur.
+ */
+const REASON_ICON: Record<RefundReasonCode, string> = {
+  lama_datang: "⏳",
+  stok_habis: "⚠️",
+  salah_input: "✍️",
+  keringanan_owner: "🤝",
+  komplain_rasa: "👎",
+  lainnya: "📝",
+};
 
 export default function PosReplaceRefundModal({
   isOpen,
@@ -53,8 +62,15 @@ export default function PosReplaceRefundModal({
   const [replacementMenuItemId, setReplacementMenuItemId] = useState<string>("");
   const [replaceNote, setReplaceNote] = useState<string>("");
 
+  /**
+   * Selisih harga penggantian mau diapakan. Untuk nota yang sudah lunas ini
+   * wajib dipilih: selisih yang tidak ditagih maupun dikembalikan akan muncul
+   * lagi saat tutup shift tanpa ada yang ingat penyebabnya.
+   */
+  const [settlement, setSettlement] = useState<ItemChangeSettlement>("none");
+
   // Refund state
-  const [refundReasonKey, setRefundReasonKey] = useState<string>("bahan_habis");
+  const [refundReasonKey, setRefundReasonKey] = useState<RefundReasonCode>("stok_habis");
   const [refundReasonCustom, setRefundReasonCustom] = useState<string>("");
   const [refundPaymentMethod, setRefundPaymentMethod] = useState<"cash" | "qris">("cash");
   const [refundAmount, setRefundAmount] = useState<number>(
@@ -79,9 +95,27 @@ export default function PosReplaceRefundModal({
     : 0;
   const priceDifference = replacementSubtotal - currentItemSubtotal;
 
+  /**
+   * Selisih pada nota yang belum dibayar tidak perlu diselesaikan terpisah —
+   * pelanggan tinggal membayar total yang baru. Yang wajib diputuskan adalah
+   * selisih pada nota yang uangnya sudah telanjur diterima.
+   */
+  const needsSettlement = priceDifference !== 0 && order.payment_status === "paid";
+
   const handleExecuteReplace = async () => {
     if (!selectedItem || !selectedReplacement) {
       setError("Pilih menu pengganti terlebih dahulu.");
+      return;
+    }
+
+    // Nota lunas dengan harga berbeda tidak boleh lanjut sebelum kasir
+    // menentukan nasib selisihnya.
+    if (needsSettlement && settlement === "none") {
+      setError(
+        priceDifference > 0
+          ? "Menu penggantinya lebih mahal. Pilih dulu: ditagih ke pelanggan, atau ditanggung toko."
+          : "Menu penggantinya lebih murah. Pilih dulu: dikembalikan ke pelanggan, atau ditanggung toko.",
+      );
       return;
     }
 
@@ -92,6 +126,7 @@ export default function PosReplaceRefundModal({
       order.id,
       selectedItem.id,
       selectedReplacement.id,
+      settlement,
       replaceNote.trim() || undefined
     );
 
@@ -102,9 +137,17 @@ export default function PosReplaceRefundModal({
       return;
     }
 
+    const kabarSelisih: Record<ItemChangeSettlement, string> = {
+      none: "Harga sama pas.",
+      collect: `Pelanggan menambah bayar ${formatRupiah(Math.abs(res.data.priceDiff))}.`,
+      refund: `Selisih ${formatRupiah(Math.abs(res.data.priceDiff))} dikembalikan ke pelanggan.`,
+      waive: `Selisih ${formatRupiah(Math.abs(res.data.priceDiff))} ditanggung toko, tercatat sebagai diskon.`,
+    };
+
     alert(
       `✓ Menu ${selectedItem.name_snapshot} berhasil diganti dengan ${res.data.newName}!\n` +
-      (res.data.priceDiff !== 0 ? `Selisih harga: ${formatRupiah(res.data.priceDiff)}` : `Harga sama pas.`)
+      kabarSelisih[res.data.settlement] +
+      `\nStok bahan kedua menu sudah ikut disesuaikan.`
     );
 
     if (onSuccess) onSuccess();
@@ -119,20 +162,22 @@ export default function PosReplaceRefundModal({
 
     const selectedReasonLabel =
       REFUND_REASONS.find((r) => r.key === refundReasonKey)?.label || refundReasonKey;
-    const finalReason = refundReasonCustom.trim()
-      ? `${selectedReasonLabel} — ${refundReasonCustom.trim()}`
-      : selectedReasonLabel;
+    // Kategorinya dikirim sebagai kode tersendiri, jadi teks ini cukup berisi
+    // keterangan yang benar-benar diketik kasir.
+    const finalReason = refundReasonCustom.trim() || selectedReasonLabel;
 
     setBusy(true);
     setError(null);
 
-    const catKey = (refundReasonKey === "lama_datang" || refundReasonKey === "stok_habis" || refundReasonKey === "salah_input" || refundReasonKey === "keringanan_owner" || refundReasonKey === "komplain_rasa") ? refundReasonKey : "lainnya";
     const res = await refundOrderAction(
       order.id,
       refundAmount,
       finalReason,
-      catKey,
-      refundPaymentMethod
+      refundReasonKey,
+      refundPaymentMethod,
+      // Refund satu menu ditandai itemnya, supaya laporan bisa menjawab menu
+      // mana yang paling sering dikembalikan.
+      mode === "refund_item" ? selectedItem?.id ?? null : null,
     );
 
     setBusy(false);
@@ -310,6 +355,56 @@ export default function PosReplaceRefundModal({
               </div>
             )}
 
+            {/*
+              Nota yang sudah lunas dan harganya berubah wajib diputuskan di
+              sini. Sebelum ini selisihnya cuma ditampilkan sebagai keterangan,
+              lalu total notanya diam-diam berubah tanpa ada yang menagih
+              maupun mengembalikan — dan selisihnya baru ketahuan saat tutup
+              shift, tanpa ada yang ingat penyebabnya.
+            */}
+            {needsSettlement && (
+              <div className="space-y-2 rounded-2xl border-2 border-amber-400 bg-amber-50 p-3 font-mono text-xs">
+                <p className="font-black text-amber-900">
+                  Nota ini sudah dibayar. Selisihnya mau diapakan?
+                </p>
+                <div className="space-y-1.5">
+                  {(priceDifference > 0
+                    ? ([
+                        ["collect", `Tagih tambahan ${formatRupiah(priceDifference)} ke pelanggan`],
+                        ["waive", `Toko yang menanggung ${formatRupiah(priceDifference)}`],
+                      ] as const)
+                    : ([
+                        ["refund", `Kembalikan ${formatRupiah(Math.abs(priceDifference))} ke pelanggan`],
+                        ["waive", `Tidak dikembalikan, jadi keuntungan toko`],
+                      ] as const)
+                  ).map(([nilai, label]) => (
+                    <label
+                      key={nilai}
+                      className={`flex cursor-pointer items-start gap-2 rounded-xl border-2 p-2.5 transition ${
+                        settlement === nilai
+                          ? "border-amber-700 bg-white"
+                          : "border-amber-200 bg-white/60 hover:border-amber-500"
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="penyelesaian-selisih"
+                        checked={settlement === nilai}
+                        onChange={() => setSettlement(nilai)}
+                        className="mt-0.5 accent-amber-700"
+                      />
+                      <span className="font-bold text-amber-950">{label}</span>
+                    </label>
+                  ))}
+                </div>
+                <p className="text-[10.5px] leading-relaxed text-amber-800">
+                  Yang ditagih akan membuat nota ini kembali berstatus belum
+                  lunas sampai pelanggan membayar sisanya. Yang dikembalikan
+                  tercatat sebagai refund dan ikut terhitung saat tutup shift.
+                </p>
+              </div>
+            )}
+
             <div className="space-y-1 font-mono">
               <label className="block font-bold text-[#0b3d2e]">Catatan Tambahan untuk Dapur (Opsional):</label>
               <input
@@ -346,12 +441,12 @@ export default function PosReplaceRefundModal({
               </label>
               <select
                 value={refundReasonKey}
-                onChange={(e) => setRefundReasonKey(e.target.value)}
+                onChange={(e) => setRefundReasonKey(e.target.value as RefundReasonCode)}
                 className="w-full rounded-xl border-2 border-rose-300 p-2.5 font-bold text-xs bg-white text-rose-950"
               >
                 {REFUND_REASONS.map((r) => (
                   <option key={r.key} value={r.key}>
-                    {r.label}
+                    {REASON_ICON[r.key]} {r.label}
                   </option>
                 ))}
               </select>

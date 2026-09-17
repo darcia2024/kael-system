@@ -28,6 +28,7 @@ import type { DeletableTestData, DeletableOrder, DeletableFeedback, DeletableShi
 import {
   getDeletableTestDataAction,
   deleteOrdersBatchAction,
+  markOrdersAsTestAction,
   deleteFeedbackBatchAction,
   deleteShiftsBatchAction,
   deleteOrderAction,
@@ -194,6 +195,37 @@ export default function ClearTestDataModal({
       setSelectedShiftIds(new Set());
     } else {
       setSelectedShiftIds(new Set(filteredShifts.map((s) => s.id)));
+    }
+  };
+
+  /**
+   * Menandai transaksi terpilih sebagai latihan.
+   *
+   * Ini langkah yang harus dilewati sebelum pembersihan massal boleh menyentuh
+   * apa pun. Sengaja dipisah dari tombol hapus: menandai bisa dibatalkan,
+   * menghapus tidak.
+   */
+  const handleMarkSelectedAsTest = async () => {
+    const ids = Array.from(selectedOrderIds);
+    if (ids.length === 0) return;
+
+    setProcessing(true);
+    setActionMessage(null);
+    try {
+      const res = await markOrdersAsTestAction(ids, true);
+      if (res.ok) {
+        setActionMessage({
+          type: "success",
+          text: `${res.data.updatedCount} transaksi ditandai sebagai latihan. Sekarang boleh ikut dibersihkan massal.`,
+        });
+        setSelectedOrderIds(new Set());
+        await loadTestData();
+        onSuccess();
+      } else {
+        setActionMessage({ type: "error", text: res.error });
+      }
+    } finally {
+      setProcessing(false);
     }
   };
 
@@ -641,6 +673,16 @@ export default function ClearTestDataModal({
                           <Square size={14} className="text-[#889b92]" />
                         )}
                         <span>Pilih Semua ({filteredOrders.length})</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleMarkSelectedAsTest}
+                        disabled={selectedOrderIds.size === 0 || processing}
+                        className="inline-flex items-center gap-1.5 rounded-xl border border-amber-300 bg-amber-50 px-3.5 py-1.5 font-mono text-xs font-black text-amber-900 hover:bg-amber-100 disabled:opacity-40 disabled:cursor-not-allowed shadow-xs transition-all active:scale-95"
+                        title="Menandai bisa dibatalkan, menghapus tidak"
+                      >
+                        <span>Tandai ({selectedOrderIds.size}) Sebagai Latihan</span>
                       </button>
 
                       <button
@@ -1117,10 +1159,25 @@ export default function ClearTestDataModal({
                         <div className="space-y-0.5">
                           <div className="flex items-center gap-1.5 font-black text-xs text-rose-900">
                             <Sparkles size={14} className="text-rose-600" />
-                            <span>Pembersihan Total: Hapus Semua Data Testing Sekaligus</span>
+                            <span>Pembersihan Total: Hapus Semua Data Bertanda Latihan</span>
                           </div>
+                          {/*
+                            Keterangan lamanya berbunyi "mereset SELURUH pesanan
+                            ... untuk memulai toko dari nol bersih", dan kodenya
+                            memang melakukan persis itu: DELETE FROM orders tanpa
+                            saringan apa pun. Owner yang menekan tombol bernama
+                            "Hapus Data Testing" kehilangan seluruh riwayat
+                            penjualannya. Sekarang yang bisa hilang hanya yang
+                            sudah ditandai latihan lebih dulu.
+                          */}
                           <p className="text-[11px] text-rose-700">
-                            Mereset seluruh pesanan, ulasan, refund, dan shift kasir sekaligus untuk memulai toko dari nol bersih.
+                            Menghapus pesanan, ulasan, refund, dan shift yang <b>sudah ditandai
+                            sebagai latihan</b>. Transaksi penjualan sungguhan tidak ikut terhapus,
+                            walaupun tombol ini ditekan.
+                          </p>
+                          <p className="mt-1 text-[11px] text-rose-700">
+                            Belum ada yang bertanda? Pilih transaksinya di daftar atas, lalu tandai
+                            dulu sebagai latihan. Menandai bisa dibatalkan, menghapus tidak.
                           </p>
                         </div>
                       </label>

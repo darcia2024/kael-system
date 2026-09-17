@@ -57,7 +57,8 @@ import type {
   Order,
   OrderItem,
   LoyaltyProgram,
-  Reward
+  Reward,
+  TableSessionSummary,
 } from "@/lib/types";
 import { 
   createOrderAction,
@@ -89,6 +90,12 @@ import OrderQueue from "./order-queue";
 import PosFloorPlan, { TableSummary } from "./pos-floor-plan";
 import { calculateEarnedPoints } from "@/lib/loyalty-engine";
 import { PLACEHOLDER_MENU } from "@/lib/types";
+import {
+  ambilPrinter,
+  sambungPrinter,
+  jalurTulisPrinter,
+  lupakanPrinter,
+} from "@/lib/thermal-printer";
 import TableQrModal from "./table-qr-modal";
 import PosMemberScannerModal from "./pos-member-scanner-modal";
 import PosBellSettingsModal from "./pos-bell-settings-modal";
@@ -121,6 +128,8 @@ interface PosClientProps {
   menuItems: MenuItem[];
   activeShift: Shift | null;
   pendingQrOrders: (Order & { items: OrderItem[] })[];
+  /** Kunjungan meja yang sedang berjalan, penentu meja terisi atau kosong. */
+  tableSessions: TableSessionSummary[];
   staffList: { id: string; name: string }[];
   currentUserId: string;
   /** Pemasangan QRIS hanya untuk pemilik usaha: ini menentukan ke rekening siapa uang masuk. */
@@ -139,6 +148,7 @@ export default function PosClient({
   menuItems,
   activeShift,
   pendingQrOrders,
+  tableSessions,
   staffList,
   currentUserId,
   userRole,
@@ -175,6 +185,20 @@ export default function PosClient({
   const [showDiscountModal, setShowDiscountModal] = useState(false);
   const [discountReasonKey, setDiscountReasonKey] = useState("keringanan_owner");
   const [discountReasonCustom, setDiscountReasonCustom] = useState("");
+
+  /** Alasan diskon yang benar-benar tersimpan bersama transaksinya. */
+  const DISCOUNT_REASON_LABEL: Record<string, string> = {
+    keringanan_owner: "Keringanan saudara atau relasi owner",
+    komplain_pelayanan: "Komplain pelayanan atau keterlambatan",
+    promo_khusus: "Promo khusus atau voucher event",
+    pembulatan: "Pembulatan nominal tagihan",
+    lainnya: "Catatan khusus lainnya",
+  };
+  const labelAlasanDiskon = () => {
+    const dasar = DISCOUNT_REASON_LABEL[discountReasonKey] ?? discountReasonKey;
+    const tambahan = discountReasonCustom.trim();
+    return tambahan ? `${dasar} — ${tambahan}` : dasar;
+  };
   const [targetFinalBillInput, setTargetFinalBillInput] = useState<number>(0);
 
 
@@ -547,8 +571,16 @@ export default function PosClient({
       return;
     }
     const timer = setTimeout(async () => {
-      const res = await searchCustomersAction(loyaltySearchQuery);
-      setLoyaltySearchResults(res);
+      try {
+        const res = await searchCustomersAction(loyaltySearchQuery);
+        setLoyaltySearchResults(res);
+      } catch (err) {
+        // Kasir tanpa izin Poin Pelanggan bikin aksi ini melempar. Yang penting
+        // layarnya tetap hidup: daftar hasilnya dikosongkan, bukan membiarkan
+        // galat tak tertangkap menjatuhkan seluruh layar kasir.
+        console.warn("[KAEL] pencarian member gagal", err);
+        setLoyaltySearchResults([]);
+      }
     }, 200);
     return () => clearTimeout(timer);
   }, [loyaltySearchQuery]);
@@ -637,6 +669,13 @@ export default function PosClient({
             }
           : null,
       discount: cartTotals.discount,
+      /**
+       * Alasan diskon ikut dikirim. Sebelum ini kasir memilihnya di layar,
+       * layarnya bahkan menampilkannya di tombol, tapi tidak ada satu pun
+       * baris yang mengirimkannya ke server — jadi yang tersimpan cuma
+       * nominalnya, dan owner tidak punya cara tahu keringanan itu buat siapa.
+       */
+      discount_reason: cartTotals.discount > 0 ? labelAlasanDiskon() : null,
       cash_given: paymentMethod === "cash" ? cashGivenInput : null,
       customer_id: attachedCustomer?.id || null,
       items: itemsPayload,
@@ -784,28 +823,10 @@ export default function PosClient({
     }
 
     try {
-      const device = await bluetooth.requestDevice({
-        acceptAllDevices: true,
-        optionalServices: [
-          "000018f0-0000-1000-8000-00805f9b34fb",
-          "49535343-fe7d-4ae5-8fa9-9fafd205e455",
-        ],
-      });
-      const server = await device.gatt?.connect();
-      if (!server) throw new Error("Printer tidak dapat dihubungkan.");
+      const device = await ambilPrinter(bluetooth);
+      const server = await sambungPrinter(device);
 
-      const service = await (async () => {
-        for (const uuid of ["000018f0-0000-1000-8000-00805f9b34fb", "49535343-fe7d-4ae5-8fa9-9fafd205e455"]) {
-          try { return await server.getPrimaryService(uuid); } catch { /* coba profil printer berikutnya */ }
-        }
-        throw new Error("Profil ESC/POS printer belum dikenali.");
-      })();
-      const characteristic = await (async () => {
-        for (const uuid of ["00002af1-0000-1000-8000-00805f9b34fb", "49535343-8841-43f4-a8d4-ecbe34729bb3"]) {
-          try { return await service.getCharacteristic(uuid); } catch { /* coba karakteristik berikutnya */ }
-        }
-        throw new Error("Jalur tulis printer belum dikenali.");
-      })();
+      const characteristic = await jalurTulisPrinter(server);
 
       const encoded = new TextEncoder().encode(rawText);
       const openCashDrawer = Boolean(options.openCashDrawer);
@@ -825,7 +846,14 @@ export default function PosClient({
           await characteristic.writeValue(chunk);
         }
       }
-      device.gatt?.disconnect();
+      /**
+       * Koneksinya SENGAJA dibiarkan terbuka.
+       *
+       * Sebelum ini printer diputus tiap selesai satu struk, jadi struk
+       * berikutnya harus menyambung dari nol — dan penyambungan ulang itulah
+       * yang memunculkan dialog Bluetooth lagi. Printer thermal memang
+       * dirancang untuk tetap tersambung selama kasir buka.
+       */
 
       if (options.isCustomerReceipt && options.orderId) {
         const printLog = await recordReceiptPrintAction(
@@ -844,6 +872,13 @@ export default function PosClient({
       );
     } catch (error) {
       setPrinterState("error");
+      /**
+       * Printer yang tersimpan dilupakan begitu gagal dipakai — biasanya karena
+       * printernya mati, kehabisan baterai, atau dibawa keluar jangkauan.
+       * Tanpa ini, percobaan berikutnya terus menulis ke perangkat yang sama
+       * dan gagal lagi tanpa pernah menawarkan memilih ulang.
+       */
+      lupakanPrinter();
       console.warn("[KAEL] cetak Bluetooth gagal", error);
       const useBrowserPrint = window.confirm(`Printer Bluetooth belum bisa menerima ${options.jobName.toLowerCase()}. Buka versi cetak di dialog browser?`);
       if (useBrowserPrint) {
@@ -1733,6 +1768,7 @@ export default function PosClient({
           {posViewMode === "floor_plan" ? (
             <PosFloorPlan
               orders={currentQrOrders}
+              sessions={tableSessions}
               menuItems={menuItems}
               isMochi={isMochiPos}
               onAddItemsToTable={handleAddItemsToTable}
@@ -2291,18 +2327,33 @@ export default function PosClient({
                             onClick={async () => {
                               setGalatMemberBaru(null);
                               setSimpanMemberBaru(true);
-                              const res = await registerCustomerByStaffAction({
-                                name: memberBaruNama,
-                                phone: memberBaruTelp,
-                              });
-                              setSimpanMemberBaru(false);
-                              if (!res.ok) {
-                                setGalatMemberBaru(res.error);
-                                return;
+                              /**
+                               * `finally` bukan hiasan. Tanpa itu, apa pun yang
+                               * dilempar di tengah jalan — penolakan izin,
+                               * jaringan putus — bikin tombolnya berhenti di
+                               * "..." selamanya, tanpa pesan, dan kasir
+                               * mengira sistemnya menggantung.
+                               */
+                              try {
+                                const res = await registerCustomerByStaffAction({
+                                  name: memberBaruNama,
+                                  phone: memberBaruTelp,
+                                });
+                                if (!res.ok) {
+                                  setGalatMemberBaru(res.error);
+                                  return;
+                                }
+                                setAttachedCustomer(res.data.customer);
+                                setFormMemberBaru(false);
+                                setLoyaltySearchQuery("");
+                              } catch (err) {
+                                console.error("[KAEL] daftar member gagal", err);
+                                setGalatMemberBaru(
+                                  "Pendaftaran tidak bisa diselesaikan. Coba lagi, atau minta owner memeriksa izin Poin Pelanggan untuk akun ini.",
+                                );
+                              } finally {
+                                setSimpanMemberBaru(false);
                               }
-                              setAttachedCustomer(res.data.customer);
-                              setFormMemberBaru(false);
-                              setLoyaltySearchQuery("");
                             }}
                             className={`flex-1 rounded-lg py-1.5 text-[11px] font-black disabled:opacity-60 transition-all ${
                               isMochiPos

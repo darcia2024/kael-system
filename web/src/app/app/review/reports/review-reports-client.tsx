@@ -29,6 +29,7 @@ import type { Business, FeedbackRow, FeedbackSummary, FeedbackReasonCode } from 
 import { formatBusinessDateTime } from "@/lib/formatters";
 import { BusinessMark } from "@/components/business-mark";
 import { isMochiBusiness } from "@/lib/mochi-brand";
+import { feedbackDateIso } from "@/lib/feedback-date";
 
 type DateFilterPreset = "all" | "today" | "7d" | "30d" | "this_month" | "custom";
 type SentimentFilter = "all" | "good" | "bad" | "5" | "4" | "3" | "2" | "1";
@@ -78,12 +79,9 @@ export default function ReviewReportsClient({
 
     return safeFeedbacks.filter((f) => {
       if (!f) return false;
-      const fIso = f.created_at
-        ? typeof f.created_at === "string"
-          ? f.created_at
-          : new Date(f.created_at).toISOString()
-        : "";
+      const fIso = feedbackDateIso(f.created_at);
       const fDay = fIso.slice(0, 10);
+      if (datePreset !== "all" && !fIso) return false;
 
       // 1. Date Filter
       if (datePreset === "today") {

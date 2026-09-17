@@ -24,10 +24,33 @@ export async function saveBrandSettingsAction(data: { appName: string; accentCol
   return ok(null);
 }
 
-export async function saveMessagingChannelAction(data: { provider: "manual" | "meta_cloud" | "gateway"; senderPhone?: string; phoneNumberId?: string; businessAccountId?: string; secretRef?: string; enabled: boolean }): Promise<OperationResult> {
+export async function saveMessagingChannelAction(data: {
+  provider: "manual" | "meta_cloud" | "gateway";
+  senderPhone?: string;
+  /**
+   * Nomor yang MENERIMA kabar operasional, terpisah dari nomor PENGIRIM.
+   *
+   * Owner sering bukan orang yang memegang HP toko. Tanpa pemisahan ini,
+   * pesanan masuk dan selisih shift dikirim ke nomor toko dan menumpuk
+   * bersama chat pelanggan — yang artinya tidak pernah benar-benar dibaca.
+   */
+  ownerNotifyPhone?: string;
+  phoneNumberId?: string;
+  businessAccountId?: string;
+  secretRef?: string;
+  enabled: boolean;
+}): Promise<OperationResult> {
   const { businessId, userId } = await requireOwner();
   if (data.provider === "meta_cloud" && (!data.senderPhone?.trim() || !data.phoneNumberId?.trim() || !data.secretRef?.trim())) return fail("Untuk Meta Cloud, isi nomor pengirim, Phone Number ID, dan nama secret token.");
-  await db.saveMessagingChannel(businessId, { provider: data.provider, sender_phone: data.senderPhone?.trim() || null, phone_number_id: data.phoneNumberId?.trim() || null, business_account_id: data.businessAccountId?.trim() || null, secret_ref: data.secretRef?.trim() || null, is_enabled: data.enabled });
+
+  // Disimpan dalam bentuk wa.me: kode negara, tanpa "+", tanpa nol di depan.
+  // 081311506025 menjadi 6281311506025.
+  const notifPhone = data.ownerNotifyPhone?.replace(/[^0-9]/g, "").replace(/^0/, "62") || null;
+  if (notifPhone && (notifPhone.length < 9 || notifPhone.length > 15)) {
+    return fail("Nomor penerima notifikasi tidak valid. Tulis nomor WhatsApp yang benar-benar aktif.");
+  }
+
+  await db.saveMessagingChannel(businessId, { provider: data.provider, sender_phone: data.senderPhone?.trim() || null, owner_notify_phone: notifPhone, phone_number_id: data.phoneNumberId?.trim() || null, business_account_id: data.businessAccountId?.trim() || null, secret_ref: data.secretRef?.trim() || null, is_enabled: data.enabled });
   await db.recordAuditEvent({ businessId, actorUserId: userId, action: "messaging.channel_saved", entityType: "business", entityId: businessId, metadata: { provider: data.provider } });
   revalidatePath("/app/settings");
   return ok(null);

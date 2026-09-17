@@ -14,7 +14,7 @@ export const metadata: Metadata = {
 export default async function PosPage() {
   const { session } = await guardModulePage("pos", "/app/pos");
 
-  const [business, categories, menuItems, activeShift, pendingQrOrders, users, loyaltyProgram, rewards] = await Promise.all([
+  const [business, categories, menuItems, activeShift, pendingQrOrders, users, loyaltyProgram, rewards, tableSessions] = await Promise.all([
     db.getBusiness(session.businessId),
     db.getCategories(session.businessId),
     db.getMenuItems(session.businessId),
@@ -26,6 +26,10 @@ export default async function PosPage() {
     // program loyalty — layarnya lalu tidak menjanjikan poin apa pun.
     db.getLoyaltyProgram(session.businessId),
     db.getRewards(session.businessId),
+    // Meja terisi atau tidak adalah pertanyaan tersendiri, bukan kesimpulan
+    // dari status dapur. Sebelum ini mejanya terbaca kosong begitu makanan
+    // terakhir keluar, padahal tamunya masih duduk di situ.
+    db.getTableSessionSummaries(session.businessId),
   ]);
 
   const isMochi = isMochiBusiness(business);
@@ -37,6 +41,7 @@ export default async function PosPage() {
       menuItems={menuItems}
       activeShift={activeShift}
       pendingQrOrders={pendingQrOrders}
+      tableSessions={tableSessions}
       staffList={users
         .filter((u) => u.is_active && u.role !== "owner" && !u.name.toLowerCase().includes("owner"))
         .map((u) => ({ id: u.id, name: u.name }))}

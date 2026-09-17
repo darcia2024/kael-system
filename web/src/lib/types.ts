@@ -430,6 +430,8 @@ export interface Reward {
   market_value: number;
   stock: number | null;
   is_active: boolean;
+  /** Foto hadiah (https). NULL berarti kartunya memakai inisial nama hadiah. */
+  image_url: string | null;
   created_at: string;
 }
 
@@ -561,9 +563,53 @@ export interface OrderItem {
   menu_item_id: string;
   name_snapshot: string;
   price_snapshot: number;
+  /**
+   * HPP satu unit, DIKUNCI saat transaksi dicatat.
+   *
+   * Sebelum ada kolom ini laporan laba menghitung ulang modal dari harga bahan
+   * hari ini, jadi menaikkan harga satu bahan ikut mengubah laba bulan lalu.
+   *
+   * null berarti waktu itu menunya memang belum punya resep maupun modal pokok.
+   * Itu ditandai "belum lengkap" di laporan, bukan dihitung nol lalu dilaporkan
+   * sebagai laba penuh.
+   */
+  cost_snapshot: number | null;
   qty: number;
   subtotal: number;
   note?: string;
+}
+
+/** Bagaimana selisih harga diselesaikan saat item pesanan diganti. */
+export type ItemChangeSettlement = "none" | "collect" | "refund" | "waive";
+
+export const ITEM_CHANGE_SETTLEMENT_LABEL: Record<ItemChangeSettlement, string> = {
+  none: "Tidak ada selisih",
+  collect: "Pelanggan menambah bayar",
+  refund: "Selisih dikembalikan",
+  waive: "Selisih ditanggung toko",
+};
+
+/**
+ * Satu penggantian item. Barisnya permanen: `order_items` boleh berubah
+ * mengikuti apa yang benar-benar disajikan, riwayat pesanan aslinya di sini.
+ */
+export interface OrderItemChange {
+  id: string;
+  business_id: string;
+  order_id: string;
+  order_item_id: string | null;
+  old_menu_item_id: string | null;
+  old_name: string;
+  old_price: number;
+  new_menu_item_id: string | null;
+  new_name: string;
+  new_price: number;
+  qty: number;
+  price_diff: number;
+  settlement: ItemChangeSettlement;
+  reason: string | null;
+  changed_by: string | null;
+  created_at: string;
 }
 
 /**
@@ -625,13 +671,31 @@ export interface Order {
   delivery_note: string | null;
   subtotal: number;
   discount: number;
+  /**
+   * Kenapa diskonnya diberikan. Wajib ada begitu `discount` > 0.
+   *
+   * Kasir sudah memilih alasan ini di layar sejak dulu, tapi jawabannya tidak
+   * pernah dikirim ke server. Diskon tanpa alasan bukan diskon — itu selisih
+   * kas yang tidak bisa dipertanggungjawabkan siapa pun saat tutup shift.
+   */
+  discount_reason: string | null;
   tax: number;
   service_charge: number;
   total: number;
+  /** Pengikat tagihan awal dan tambahan dalam satu kunjungan tamu. */
+  table_session_id: string | null;
   payment_method: "cash" | "qris" | "transfer";
   cash_given?: number | null;
   cash_change?: number | null;
   customer_id: string | null;
+  /**
+   * Nama yang diketik pemesan di menu digital. Dipakai kasir dan dapur untuk
+   * memanggil orangnya. Berbeda dari delivery_name, yang berarti penerima
+   * kiriman — satu pesanan bisa punya keduanya.
+   */
+  customer_name: string | null;
+  /** Transaksi latihan. HANYA baris bertanda ini yang boleh disapu pembersihan massal. */
+  is_test: boolean;
   shift_id: string | null;
   created_by: string;
   created_at: string;
@@ -641,16 +705,81 @@ export interface Order {
   claimed_by_name?: string | null;
   /** Akumulasi refund pada order ini, diisi oleh query laporan bila diperlukan. */
   refund_total?: number;
+  /**
+   * Kapan bahan bakunya dipotong dari stok. NULL berarti belum pernah, jadi
+   * tidak ada yang perlu dikembalikan kalau itemnya diganti atau dibatalkan.
+   */
+  inventory_applied_at?: string | null;
+  loyalty_applied_at?: string | null;
+  sync_error?: string | null;
 }
+
+/** Alasan refund sebagai daftar tertutup, supaya bisa diringkas jadi laporan. */
+export const REFUND_REASONS = [
+  { key: "lama_datang", label: "Keterlambatan penyajian" },
+  { key: "stok_habis", label: "Bahan atau menu habis" },
+  { key: "salah_input", label: "Salah input kasir" },
+  { key: "keringanan_owner", label: "Keringanan owner" },
+  { key: "komplain_rasa", label: "Komplain rasa atau kualitas" },
+  { key: "lainnya", label: "Alasan lainnya" },
+] as const;
+
+export type RefundReasonCode = (typeof REFUND_REASONS)[number]["key"];
 
 export interface Refund {
   id: string;
   order_id: string;
   amount: number;
   reason: string;
+  /**
+   * Uangnya keluar lewat mana. Dulu dijejalkan ke dalam kalimat alasan sebagai
+   * "(Metode: CASH)" — terbaca manusia, tidak bisa dijumlahkan mesin. Padahal
+   * "berapa yang keluar dari laci hari ini" justru itu yang dicocokkan kasir
+   * tiap tutup shift.
+   */
+  method: "cash" | "qris" | "transfer";
+  reason_code: RefundReasonCode | null;
+  /** NULL berarti refund seluruh pesanan; terisi berarti satu item saja. */
+  order_item_id: string | null;
   approved_by: string;
   shift_id: string | null;
   created_at: string;
+}
+
+// -----------------------------------------------------------------------------
+// SESI MEJA
+// -----------------------------------------------------------------------------
+
+/**
+ * Satu kunjungan tamu di satu meja.
+ *
+ * Meja terisi atau tidak adalah pertanyaan tersendiri, bukan kesimpulan dari
+ * status dapur. Sebelum ada ini, mejanya terbaca kosong begitu makanan
+ * terakhir keluar — padahal tamunya masih duduk di situ.
+ */
+export interface TableSession {
+  id: string;
+  business_id: string;
+  table_no: string;
+  table_key: string;
+  status: "open" | "closed";
+  guest_count: number | null;
+  opened_at: string;
+  opened_by: string | null;
+  closed_at: string | null;
+  closed_by: string | null;
+  note: string | null;
+}
+
+/** Sesi meja beserta ringkasan tagihannya, untuk denah meja kasir. */
+export interface TableSessionSummary extends TableSession {
+  order_count: number;
+  item_count: number;
+  total_bill: number;
+  /** Masih ada tagihan yang belum lunas di kunjungan ini. */
+  has_unpaid: boolean;
+  /** Masih ada yang dikerjakan dapur. */
+  is_cooking: boolean;
 }
 
 // -----------------------------------------------------------------------------

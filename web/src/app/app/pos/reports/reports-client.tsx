@@ -48,6 +48,12 @@ export interface PosReports {
   totalEstimatedHpp: number;
   totalEstimatedGrossProfit: number;
   hppCoverageRevenue: number;
+  /**
+   * Unit terjual yang modalnya belum diketahui. Selama di atas nol, laba di
+   * layar BELUM mencakup semua yang terjual — dan itu harus tertulis, bukan
+   * disembunyikan di balik satu angka bulat.
+   */
+  unitsWithoutCost: number;
   topSellingItems: SoldItem[];
   bestSellers: SoldItem[];
   /** Omzet per metode bayar, diakses lewat kunci seperti .qris dan .cash. */
@@ -330,9 +336,25 @@ export default function PosOwnerReportsPage({
               <h3 className="text-lg sm:text-2xl font-black font-mono text-[#16a34a]">
                 +{formatRupiah(reports.totalEstimatedGrossProfit)}
               </h3>
+              {/*
+                Persentasenya ditampilkan apa adanya. Sebelum ini angka berapa
+                pun diberi label "(Sehat ✓)" — termasuk margin 4%, dan owner
+                yang percaya label itu tidak punya alasan memeriksa lagi.
+              */}
               <span className="text-[9.5px] sm:text-[11px] text-[#16a34a] font-mono font-bold block mt-0.5 sm:mt-1">
-                Margin: {reports.totalNetRevenue > 0 ? Math.round((reports.totalEstimatedGrossProfit / reports.totalNetRevenue) * 100) : 0}% (Sehat ✓)
+                Margin: {reports.totalNetRevenue > 0 ? Math.round((reports.totalEstimatedGrossProfit / reports.totalNetRevenue) * 100) : 0}% dari omzet
               </span>
+              {/*
+                Menu tanpa modal tidak ikut terhitung, jadi laba di atas selalu
+                lebih tinggi dari yang sebenarnya. Itu ditulis di sini, bukan
+                dibiarkan owner menyimpulkan sendiri.
+              */}
+              {reports.unitsWithoutCost > 0 && (
+                <span className="mt-1.5 block rounded-lg bg-[#fffbeb] px-2 py-1 font-mono text-[9.5px] font-bold leading-relaxed text-[#92400e]">
+                  Belum lengkap: {Math.round(reports.unitsWithoutCost)} porsi terjual belum punya resep atau modal pokok,
+                  jadi labanya belum ikut dihitung. Angka aslinya lebih kecil dari ini.
+                </span>
+              )}
             </div>
           </div>
 

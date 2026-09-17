@@ -13,7 +13,7 @@ export default function BrandClient({
 }: {
   business: { name: string; brandColor: string; customDomain: string | null } | null;
   brand: { app_name: string; accent_color: string; support_email: string | null; public_footer_text: string | null; custom_domain_status: string } | null;
-  channel: { provider: "manual" | "meta_cloud" | "gateway"; sender_phone: string | null; phone_number_id: string | null; business_account_id: string | null; secret_ref: string | null; is_enabled: boolean } | null;
+  channel: { provider: "manual" | "meta_cloud" | "gateway"; sender_phone: string | null; owner_notify_phone?: string | null; phone_number_id: string | null; business_account_id: string | null; secret_ref: string | null; is_enabled: boolean } | null;
   themeClassName?: string;
 }) {
   const [appName, setAppName] = useState(brand?.app_name ?? business?.name ?? "Mochi Cafe");
@@ -21,6 +21,12 @@ export default function BrandClient({
   const [domain, setDomain] = useState(business?.customDomain ?? "");
   const [provider, setProvider] = useState(channel?.provider ?? "manual");
   const [sender, setSender] = useState(channel?.sender_phone ?? "");
+  /**
+   * Nomor yang MENERIMA kabar operasional, terpisah dari nomor pengirim.
+   * Owner sering bukan orang yang memegang HP toko, dan kabar yang masuk ke
+   * HP toko menumpuk bersama chat pelanggan sampai tidak pernah dibaca.
+   */
+  const [notifPhone, setNotifPhone] = useState(channel?.owner_notify_phone ?? "");
   const [phoneId, setPhoneId] = useState(channel?.phone_number_id ?? "");
   const [secret, setSecret] = useState(channel?.secret_ref ?? "");
   const [enabled, setEnabled] = useState(channel?.is_enabled ?? false);
@@ -34,7 +40,7 @@ export default function BrandClient({
 
   const saveWa = async (e: React.FormEvent) => {
     e.preventDefault();
-    const r = await saveMessagingChannelAction({ provider, senderPhone: sender, phoneNumberId: phoneId, secretRef: secret, enabled });
+    const r = await saveMessagingChannelAction({ provider, senderPhone: sender, ownerNotifyPhone: notifPhone, phoneNumberId: phoneId, secretRef: secret, enabled });
     if (!r.ok) alert(r.error);
     else location.reload();
   };
@@ -116,6 +122,24 @@ export default function BrandClient({
               onChange={(e) => setSender(e.target.value)}
               className="mt-1.5 w-full rounded-xl border border-[#d8e3de] bg-[#fbfdfc] p-2.5 text-sm font-semibold focus:border-emerald-600 focus:bg-white outline-none"
             />
+            <span className="mt-1 block text-[11px] font-normal leading-relaxed text-[#5b7a6e]">
+              Nomor toko yang MENGIRIM pesan ke pelanggan.
+            </span>
+          </label>
+          <label className="block text-xs font-bold text-[#1a382d]">
+            Nomor penerima notifikasi owner
+            <input
+              value={notifPhone}
+              onChange={(e) => setNotifPhone(e.target.value)}
+              placeholder="0813xxxxxxx"
+              className="mt-1.5 w-full rounded-xl border border-[#d8e3de] bg-[#fbfdfc] p-2.5 text-sm font-semibold focus:border-emerald-600 focus:bg-white outline-none"
+            />
+            <span className="mt-1 block text-[11px] font-normal leading-relaxed text-[#5b7a6e]">
+              Nomor yang MENERIMA kabar operasional: pesanan masuk, stok menipis,
+              selisih tutup shift. Boleh beda dari nomor pengirim — kabar yang
+              masuk ke HP toko menumpuk bersama chat pelanggan sampai tidak
+              pernah terbaca.
+            </span>
           </label>
           {provider === "meta_cloud" && (
             <>

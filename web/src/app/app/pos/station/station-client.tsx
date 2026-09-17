@@ -8,6 +8,7 @@ import { claimOrderAction, confirmPaymentAction, getOrderStationSnapshotAction, 
 import { formatRupiah } from "@/lib/formatters";
 import { serviceTypeLabel, generateKitchenTicketText } from "@/lib/pos-engine";
 import type { Order, OrderItem } from "@/lib/types";
+import { ambilPrinter, sambungPrinter, jalurTulisPrinter, lupakanPrinter } from "@/lib/thermal-printer";
 
 type StationOrder = Order & { items: OrderItem[] };
 type Stage = "cashier" | "kitchen";
@@ -118,29 +119,11 @@ export default function OrderStationClient({
     }
 
     try {
-      const device = await bluetooth.requestDevice({
-        acceptAllDevices: true,
-        optionalServices: [
-          "000018f0-0000-1000-8000-00805f9b34fb",
-          "49535343-fe7d-4ae5-8fa9-9fafd205e455",
-        ],
-      });
-      const server = await device.gatt?.connect();
-      if (!server) throw new Error("Printer tidak terhubung.");
-
-      const service = await (async () => {
-        for (const uuid of ["000018f0-0000-1000-8000-00805f9b34fb", "49535343-fe7d-4ae5-8fa9-9fafd205e455"]) {
-          try { return await server.getPrimaryService(uuid); } catch {}
-        }
-        throw new Error("Profil printer tidak ditemukan.");
-      })();
-
-      const characteristic = await (async () => {
-        for (const uuid of ["00002af1-0000-1000-8000-00805f9b34fb", "49535343-8841-43f4-a8d4-ecbe34729bb3"]) {
-          try { return await service.getCharacteristic(uuid); } catch {}
-        }
-        throw new Error("Karakteristik tulis tidak ditemukan.");
-      })();
+      // Sama seperti layar kasir: printer yang izinnya sudah pernah diberikan
+      // langsung dipakai, jadi tiket dapur tidak membuka dialog Bluetooth lagi.
+      const device = await ambilPrinter(bluetooth);
+      const server = await sambungPrinter(device);
+      const characteristic = await jalurTulisPrinter(server);
 
       const encoded = new TextEncoder().encode(ticketText);
       const finish = [0x0a, 0x0a, 0x0a, 0x1d, 0x56, 0x00];
@@ -157,9 +140,13 @@ export default function OrderStationClient({
           await characteristic.writeValue(chunk);
         }
       }
-      device.gatt?.disconnect();
+      // Sambungan sengaja dibiarkan terbuka; menutupnya berarti tiket
+      // berikutnya harus menyambung ulang, dan itulah yang memunculkan dialog.
       setMessage(`Tiket Dapur #${order.order_no} berhasil dicetak.`);
     } catch (err) {
+      // Printer yang gagal dipakai dilupakan, supaya percobaan berikutnya
+      // menyambung ulang alih-alih menulis ke sesi yang sudah mati.
+      lupakanPrinter();
       console.warn("Print tiket dapur gagal", err);
       const printWindow = window.open("", "_blank", "width=380,height=600");
       if (printWindow) {

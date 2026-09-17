@@ -12,7 +12,8 @@
     "test:engines": "node test-finance.js && node test-loyalty.js && node test-pos.js && tsx test-session-policy.ts",
     "check": "npm run lint && npm run typecheck && npm run test:engines && npm run build",
     "typecheck": "tsc --noEmit",
-    "migrate": "node scripts/migrate.mjs"
+    "migrate": "node scripts/migrate.mjs",
+    "test:integritas": "tsx --conditions react-server test-pos-integritas.ts"
   },
   "dependencies": {
     "lucide-react": "^1.34.0",

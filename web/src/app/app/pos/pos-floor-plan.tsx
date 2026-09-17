@@ -18,10 +18,15 @@ import {
   Search,
   LayoutGrid,
 } from "lucide-react";
-import type { MenuItem, Order, OrderItem } from "@/lib/types";
+import type { MenuItem, Order, OrderItem, TableSessionSummary } from "@/lib/types";
 import { formatRupiah, formatBusinessDateTime } from "@/lib/formatters";
 import { serviceTypeLabel, PAYMENT_STATUS_LABEL } from "@/lib/pos-engine";
-import { setFulfillmentAction, confirmPaymentAction } from "@/lib/actions";
+import {
+  setFulfillmentAction,
+  openTableSessionAction,
+  closeTableSessionAction,
+} from "@/lib/actions";
+import { normalizeTableKey, tableDisplayName } from "@/lib/table-key";
 import PosReplaceRefundModal from "./pos-replace-refund-modal";
 
 type Antrean = Order & { items: OrderItem[] };
@@ -30,6 +35,9 @@ export interface TableSummary {
   tableNo: string;
   displayName: string;
   status: "available" | "cooking" | "dining" | "unpaid";
+  /** Kunjungan yang sedang berjalan di meja ini. null berarti mejanya kosong. */
+  sessionId: string | null;
+  guestCount: number | null;
   orders: Antrean[];
   totalBill: number;
   itemCount: number;
@@ -58,14 +66,6 @@ const PRESET_TABLES = [
   { no: "Bar", name: "Bar Counter" },
 ];
 
-function normalizeTableKey(raw: string | null | undefined): string {
-  if (!raw) return "";
-  const clean = raw.trim().toLowerCase().replace(/^mejas*/, "");
-  if (/^0[1-9]$/.test(clean)) return clean;
-  if (/^[1-9]$/.test(clean)) return `0${clean}`;
-  return clean;
-}
-
 function getElapsedMinutes(isoString: string | null): string {
   if (!isoString) return "";
   const diff = Date.now() - new Date(isoString).getTime();
@@ -79,6 +79,7 @@ function getElapsedMinutes(isoString: string | null): string {
 
 export default function PosFloorPlan({
   orders,
+  sessions,
   menuItems,
   isMochi = true,
   onAddItemsToTable,
@@ -86,6 +87,11 @@ export default function PosFloorPlan({
   onRefresh,
 }: {
   orders: Antrean[];
+  /**
+   * Kunjungan yang sedang berjalan. Inilah yang menentukan sebuah meja terisi
+   * atau kosong — bukan ada tidaknya pesanan yang belum selesai dimasak.
+   */
+  sessions: TableSessionSummary[];
   menuItems: MenuItem[];
   isMochi?: boolean;
   onAddItemsToTable: (tableNo: string) => void;
@@ -102,19 +108,34 @@ export default function PosFloorPlan({
   const [showAdjustModal, setShowAdjustModal] = useState(false);
   const [busyAction, setBusyAction] = useState<string | null>(null);
 
-  // Active unclosed orders
+  /**
+   * Pesanan yang masih milik kunjungan berjalan.
+   *
+   * Dulu di sini ada saringan `fulfillment_status !== "completed"`, dan itulah
+   * yang bikin meja terbaca kosong begitu dapur menandai makanan terakhir
+   * sudah keluar — padahal tamunya masih duduk, dan tagihannya masih terbuka.
+   * Sekarang yang menentukan adalah sesi mejanya masih terbuka atau tidak.
+   */
+  const sessionIds = useMemo(() => new Set(sessions.map((s) => s.id)), [sessions]);
+
   const activeOrders = useMemo(() => {
     return orders.filter(
       (o) =>
         o.status !== "cancelled" &&
         o.payment_status !== "failed" &&
-        o.fulfillment_status !== "completed" &&
-        o.fulfillment_status !== "cancelled"
+        (o.table_session_id
+          ? sessionIds.has(o.table_session_id)
+          : // Pesanan lama dari sebelum sesi meja ada tidak punya induk, jadi
+            // dinilai memakai cara lama supaya tidak mendadak hilang dari layar.
+            o.fulfillment_status !== "completed" && o.fulfillment_status !== "cancelled")
     );
-  }, [orders]);
+  }, [orders, sessionIds]);
 
   // Compute table statuses
   const tableSummaries: TableSummary[] = useMemo(() => {
+    // 0. Kunjungan yang sedang berjalan, dikunci per bentuk baku nomor meja.
+    const sessionByKey = new Map(sessions.map((s) => [normalizeTableKey(s.table_no), s]));
+
     // 1. Map existing orders by normalized table key
     const orderGroups: Record<string, Antrean[]> = {};
 
@@ -145,8 +166,16 @@ export default function PosFloorPlan({
           o.fulfillment_status === "preparing"
       );
 
+      const session = sessionByKey.get(key);
+
+      /**
+       * Meja dianggap terisi selama sesinya masih terbuka, meskipun semua
+       * makanannya sudah keluar dan sudah dibayar. Tamu yang sudah selesai
+       * makan tetap duduk di situ sampai benar-benar pergi, dan kasir yang
+       * menutup mejanya.
+       */
       let status: "available" | "cooking" | "dining" | "unpaid" = "available";
-      if (tableOrders.length > 0) {
+      if (session || tableOrders.length > 0) {
         if (hasUnpaid) status = "unpaid";
         else if (isCooking) status = "cooking";
         else status = "dining";
@@ -162,10 +191,14 @@ export default function PosFloorPlan({
         tableNo: preset.no,
         displayName: preset.name,
         status,
+        sessionId: session?.id ?? null,
+        guestCount: session?.guest_count ?? null,
         orders: tableOrders,
         totalBill,
         itemCount,
-        earliestOrderTime: tableOrders[0]?.created_at || null,
+        // Jam mulai kunjungan, bukan jam pesanan pertama: lama tamu duduk
+        // tidak sama dengan lama makanannya dipesan.
+        earliestOrderTime: session?.opened_at || tableOrders[0]?.created_at || null,
         hasUnpaid,
       });
     });
@@ -186,24 +219,50 @@ export default function PosFloorPlan({
         );
         const rawTableNo = tableOrders[0]?.table_no || key;
 
+        const session = sessionByKey.get(key);
         list.push({
           tableNo: rawTableNo,
-          displayName: `Meja ${rawTableNo}`,
+          displayName: tableDisplayName(rawTableNo),
           status: hasUnpaid ? "unpaid" : isCooking ? "cooking" : "dining",
+          sessionId: session?.id ?? null,
+          guestCount: session?.guest_count ?? null,
           orders: tableOrders,
           totalBill: tableOrders.reduce((sum, o) => sum + Number(o.total), 0),
           itemCount: tableOrders.reduce(
             (sum, o) => sum + o.items.reduce((iSum, i) => iSum + i.qty, 0),
             0
           ),
-          earliestOrderTime: tableOrders[0]?.created_at || null,
+          earliestOrderTime: session?.opened_at || tableOrders[0]?.created_at || null,
           hasUnpaid,
         });
       }
     });
 
+    /**
+     * Meja yang sesinya terbuka tapi belum sempat dipesan sama sekali. Tamu
+     * sudah duduk, kasir sudah membuka mejanya, pesanannya belum masuk — dan
+     * meja itu harus tetap terlihat terisi supaya tidak ditawarkan ke tamu
+     * berikutnya.
+     */
+    sessions.forEach((s) => {
+      const key = normalizeTableKey(s.table_no);
+      if (list.some((t) => normalizeTableKey(t.tableNo) === key)) return;
+      list.push({
+        tableNo: s.table_no,
+        displayName: tableDisplayName(s.table_no),
+        status: "dining",
+        sessionId: s.id,
+        guestCount: s.guest_count,
+        orders: [],
+        totalBill: 0,
+        itemCount: 0,
+        earliestOrderTime: s.opened_at,
+        hasUnpaid: false,
+      });
+    });
+
     return list;
-  }, [activeOrders]);
+  }, [activeOrders, sessions]);
 
   // Selected table detail
   const activeSelectedTable = useMemo(() => {
@@ -226,23 +285,61 @@ export default function PosFloorPlan({
     });
   }, [tableSummaries, filterStatus, searchTable]);
 
-  // Action: Selesaikan semua pesanan meja dan kosongkan meja
+  /**
+   * Menutup meja setelah tamunya pergi.
+   *
+   * Versi sebelumnya memanggil confirmPaymentAction untuk tiap pesanan yang
+   * masih menggantung — artinya "kosongkan meja" diam-diam menyatakan uang
+   * sudah diterima, untuk uang yang mungkin tidak pernah diterima siapa pun.
+   * Selisihnya baru ketahuan saat tutup shift, dan yang ditanya duluan selalu
+   * kasirnya.
+   *
+   * Sekarang tagihan yang belum lunas menahan penutupan, dan server yang
+   * menegakkannya.
+   */
   const handleClearTable = async (table: TableSummary) => {
-    if (table.orders.length === 0) return;
-    const confirm = window.confirm(
-      `Yakin ingin menyelesaikan & mengosongkan ${table.displayName}? Semua pesanan di meja ini akan ditandai selesai.`
+    if (!table.sessionId) return;
+
+    if (table.hasUnpaid) {
+      alert(
+        `${table.displayName} masih punya tagihan yang belum dibayar sebesar ${formatRupiah(table.totalBill)}.\n\n` +
+          `Selesaikan pembayarannya dulu, atau batalkan pesanannya kalau memang tidak jadi.`,
+      );
+      return;
+    }
+
+    const setuju = window.confirm(
+      `Tutup ${table.displayName}? Kunjungan ini akan diakhiri dan mejanya kembali tersedia untuk tamu berikutnya.`,
     );
-    if (!confirm) return;
+    if (!setuju) return;
 
     setBusyAction(table.tableNo);
+    // Makanan yang masih di dapur ditandai selesai — tamunya sudah pergi.
     for (const ord of table.orders) {
-      if (ord.payment_status === "pending") {
-        await confirmPaymentAction(ord.id);
+      if (ord.fulfillment_status !== "completed" && ord.fulfillment_status !== "cancelled") {
+        await setFulfillmentAction(ord.id, "completed");
       }
-      await setFulfillmentAction(ord.id, "completed");
     }
+    const res = await closeTableSessionAction(table.sessionId);
     setBusyAction(null);
+
+    if (!res.ok) {
+      alert(res.error);
+      return;
+    }
     setSelectedTableNo(null);
+    if (onRefresh) onRefresh();
+  };
+
+  /** Membuka meja saat tamu duduk, sebelum pesanan pertama masuk. */
+  const handleOpenTable = async (table: TableSummary) => {
+    setBusyAction(table.tableNo);
+    const res = await openTableSessionAction(table.tableNo);
+    setBusyAction(null);
+    if (!res.ok) {
+      alert(res.error);
+      return;
+    }
     if (onRefresh) onRefresh();
   };
 
@@ -612,9 +709,15 @@ export default function PosFloorPlan({
                   )}
                 </div>
 
+                {/*
+                  Menutup meja adalah keputusan tersendiri, bukan efek samping
+                  dapur selesai memasak. Tombolnya juga tidak lagi menandai
+                  tagihan menggantung sebagai lunas — yang belum dibayar menahan
+                  penutupan sampai benar-benar diselesaikan.
+                */}
                 <button
                   type="button"
-                  disabled={busyAction === activeSelectedTable.tableNo}
+                  disabled={busyAction === activeSelectedTable.tableNo || !activeSelectedTable.sessionId}
                   onClick={() => handleClearTable(activeSelectedTable)}
                   className="w-full flex items-center justify-center gap-1.5 rounded-xl border border-emerald-800/30 bg-white hover:bg-emerald-50 text-[#0b3d2e] py-2 text-xs font-black transition-all disabled:opacity-50"
                 >
@@ -622,9 +725,27 @@ export default function PosFloorPlan({
                   <span>
                     {busyAction === activeSelectedTable.tableNo
                       ? "Memproses..."
-                      : "✓ Tamu Selesai Makan · Tutup & Kosongkan Meja"}
+                      : activeSelectedTable.hasUnpaid
+                        ? "Ada tagihan belum dibayar · selesaikan dulu"
+                        : "✓ Tamu Sudah Pergi · Tutup Meja"}
                   </span>
                 </button>
+
+                {activeSelectedTable.status === "available" && (
+                  <button
+                    type="button"
+                    disabled={busyAction === activeSelectedTable.tableNo}
+                    onClick={() => handleOpenTable(activeSelectedTable)}
+                    className="w-full flex items-center justify-center gap-1.5 rounded-xl border border-emerald-800/30 bg-[#c8f53a] hover:bg-[#d9ff57] text-[#073829] py-2 text-xs font-black transition-all disabled:opacity-50"
+                  >
+                    <Utensils size={14} />
+                    <span>
+                      {busyAction === activeSelectedTable.tableNo
+                        ? "Memproses..."
+                        : "Tamu Duduk di Sini · Buka Meja"}
+                    </span>
+                  </button>
+                )}
               </div>
             )}
           </div>

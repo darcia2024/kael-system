@@ -61,6 +61,19 @@ import { BusinessMark } from "@/components/business-mark";
 interface FinanceClientProps {
   business: Business | null;
   initialRecipes: Recipe[];
+  /**
+   * Menu POS milik toko ini. Yang belum punya resep ikut tampil di katalog
+   * sebagai pekerjaan yang menunggu, supaya owner tidak perlu mengetik ulang
+   * nama dan harga yang sudah ada di sistem.
+   */
+  menuItems: {
+    id: string;
+    name: string;
+    price: number;
+    category: string | null;
+    recipe_id: string | null;
+    cost_price: number;
+  }[];
   initialIngredients: Ingredient[];
   initialCalculatorPresets: FinanceCalculatorPreset[];
   themeClassName?: string;
@@ -69,6 +82,7 @@ interface FinanceClientProps {
 export default function FinanceClient({
   business,
   initialRecipes,
+  menuItems,
   initialIngredients,
   initialCalculatorPresets,
   themeClassName,
@@ -151,6 +165,11 @@ export default function FinanceClient({
    * yang ikut tersimpan.
    */
   const [editingRecipeId, setEditingRecipeId] = useState<string | null>(null);
+  /**
+   * Menu POS yang resep ini nanti disambungkan kepadanya. Tanpa penyambungan,
+   * resepnya tersimpan tapi laporan laba tetap tidak menemukan modalnya.
+   */
+  const [linkMenuItemId, setLinkMenuItemId] = useState<string | null>(null);
   const [recipeName, setRecipeName] = useState("");
   const [recipeCategory, setRecipeCategory] = useState("");
   const [recipeType, setRecipeType] = useState<"olahan" | "kulakan">("olahan");
@@ -276,6 +295,7 @@ export default function FinanceClient({
   // Switch to Editor & Populate Data
   const handleEditRecipe = (recipe: Recipe) => {
     setEditingRecipeId(recipe.id);
+    setLinkMenuItemId(null);
     setRecipeName(recipe.name);
     setRecipeCategory(recipe.category || "Menu");
     setRecipeType(recipe.type);
@@ -291,6 +311,7 @@ export default function FinanceClient({
 
   const handleCreateNewRecipe = () => {
     setEditingRecipeId(null);
+    setLinkMenuItemId(null);
     setRecipeName("");
     setRecipeCategory("");
     setRecipeType("olahan");
@@ -300,6 +321,34 @@ export default function FinanceClient({
     setTargetMarginPct(60);
     // Kosong, bukan satu baris bawaan: angka bawaan yang tidak diubah akan
     // ikut tersimpan sebagai resep sungguhan.
+    setRecipeIngredients([]);
+    setRecipePackaging([]);
+    setActiveTab("editor");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  /**
+   * Membuka editor resep untuk satu menu POS yang belum punya modal.
+   *
+   * Nama, kategori, dan harga jualnya diambil dari menunya sendiri — ketiganya
+   * sudah ada di sistem sejak menu itu dibuat. Yang tersisa buat owner cuma
+   * bagian yang memang cuma dia yang tahu: bahannya apa dan berapa banyak.
+   */
+  const handleBuatResepDariMenu = (menu: {
+    id: string;
+    name: string;
+    price: number;
+    category: string | null;
+  }) => {
+    setEditingRecipeId(null);
+    setLinkMenuItemId(menu.id);
+    setRecipeName(menu.name);
+    setRecipeCategory(menu.category || "Menu");
+    setRecipeType("olahan");
+    setOutputQty(1);
+    setOperationalCost(0);
+    setSellingPrice(menu.price);
+    setTargetMarginPct(60);
     setRecipeIngredients([]);
     setRecipePackaging([]);
     setActiveTab("editor");
@@ -324,6 +373,7 @@ export default function FinanceClient({
       target_margin_pct: targetMarginPct,
       ingredients: recipeIngredients,
       packaging: recipePackaging,
+      link_menu_item_id: linkMenuItemId,
     });
 
     if (!res.ok) {
@@ -462,7 +512,36 @@ export default function FinanceClient({
     return matchesSearch && matchesCategory;
   });
 
-  const categoriesList = Array.from(new Set(recipes.map((r) => r.category || "Lainnya")));
+  /**
+   * Menu POS yang modalnya belum diketahui.
+   *
+   * Inilah yang bikin katalog tidak lagi mulai dari nol. Menunya sudah ada di
+   * sistem — nama, kategori, harga jual — jadi yang ditampilkan di sini adalah
+   * daftar pekerjaan yang tersisa, bukan halaman kosong yang menyuruh owner
+   * mengetik ulang semuanya.
+   *
+   * Yang sudah punya resep TIDAK ikut: modalnya sudah terhitung, dan barisnya
+   * sudah tampil sebagai kartu resep biasa di atas.
+   */
+  const menuTanpaResep = useMemo(() => {
+    const q = searchQuery.toLowerCase();
+    return menuItems
+      .filter((m) => !m.recipe_id)
+      .filter((m) => {
+        const cocokCari =
+          m.name.toLowerCase().includes(q) || (m.category || "").toLowerCase().includes(q);
+        const cocokKategori = filterCategory === "all" || m.category === filterCategory;
+        return cocokCari && cocokKategori;
+      });
+  }, [menuItems, searchQuery, filterCategory]);
+
+  /** Kategori digabung dari resep DAN menu, supaya penyaringnya utuh. */
+  const categoriesList = Array.from(
+    new Set([
+      ...recipes.map((r) => r.category || "Lainnya"),
+      ...menuItems.filter((m) => !m.recipe_id).map((m) => m.category || "Lainnya"),
+    ]),
+  );
   const ingredientUsage = useMemo(() => {
     const usage = new Map<string, string[]>();
     recipes.forEach((recipe) => {
@@ -564,7 +643,18 @@ export default function FinanceClient({
             }`}
           >
             <Package size={14} />
-            <span>1. Katalog Resep ({recipes.length})</span>
+            {/*
+              Angkanya menghitung resep DAN menu yang menunggu diisi. Menulis
+              "(0)" di toko yang menunya 169 bikin owner menyimpulkan katalognya
+              memang belum ada isinya, lalu menutup layarnya.
+            */}
+            <span>
+              1. Katalog Resep ({recipes.length}
+              {menuItems.filter((m) => !m.recipe_id).length > 0
+                ? ` + ${menuItems.filter((m) => !m.recipe_id).length} menunggu`
+                : ""}
+              )
+            </span>
           </button>
 
           <button
@@ -687,6 +777,55 @@ export default function FinanceClient({
                 ))}
               </div>
             </div>
+
+            {/*
+              MENU YANG MODALNYA BELUM DIISI
+
+              Katalog ini dulu cuma membaca tabel resep, jadi toko yang menunya
+              sudah lengkap tetap disambut halaman kosong bertuliskan "(0)" —
+              seolah belum ada apa-apa, padahal 169 menunya sudah ada di sistem
+              beserta nama, kategori, dan harga jualnya.
+
+              Sekarang menunya muncul di sini sebagai daftar pekerjaan. Sekali
+              klik, editornya terbuka dengan ketiga hal itu sudah terisi.
+            */}
+            {menuTanpaResep.length > 0 && (
+              <section className="space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-amber-300 bg-amber-50 p-3.5">
+                  <div>
+                    <p className="font-mono text-xs font-black text-amber-900">
+                      {menuTanpaResep.length} menu belum punya modal
+                    </p>
+                    <p className="mt-0.5 text-[11.5px] leading-relaxed text-amber-800">
+                      Selama modalnya kosong, laporan laba menghitung menu ini sebagai untung
+                      penuh — jadi angkanya lebih tinggi dari yang sebenarnya. Klik menunya untuk
+                      mengisi; nama dan harga jualnya sudah terisi sendiri.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+                  {menuTanpaResep.map((menu) => (
+                    <button
+                      key={menu.id}
+                      type="button"
+                      onClick={() => handleBuatResepDariMenu(menu)}
+                      className="flex flex-col items-start gap-1 rounded-2xl border border-dashed border-amber-400 bg-white p-3.5 text-left transition-all hover:border-amber-600 hover:bg-amber-50"
+                    >
+                      <span className="text-sm font-bold text-[#1a382d]">{menu.name}</span>
+                      <span className="font-mono text-[11px] text-[#527867]">
+                        {menu.category || "Tanpa kategori"} · Jual {formatRupiah(menu.price)}
+                      </span>
+                      <span className="mt-1 rounded-lg bg-amber-100 px-2 py-0.5 font-mono text-[10px] font-black text-amber-900">
+                        {menu.cost_price > 0
+                          ? `Modal pokok ${formatRupiah(menu.cost_price)} · belum ada resep`
+                          : "Belum ada modal · klik untuk isi"}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            )}
 
             {/* Recipes Grid */}
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3.5 sm:gap-4">

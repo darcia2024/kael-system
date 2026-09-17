@@ -27,6 +27,7 @@ import {
   resolveTier,
 } from "./loyalty-engine";
 import { generateLoyaltyCode } from "./loyalty-code";
+import { normalizeTableKey } from "./table-key";
 import {
   generateDailyOrderNo,
   calculateCartTotals,
@@ -41,6 +42,9 @@ import type {
   Card,
   CardService,
   CardTap,
+  TableSession,
+  TableSessionSummary,
+  ItemChangeSettlement,
   Ingredient,
   IngredientPriceHistory,
   Recipe,
@@ -96,6 +100,16 @@ const one = <T>(rows: readonly unknown[]): T | null =>
 /** Uang selalu bigint di Postgres; driver mengembalikannya sebagai string. */
 const num = (v: unknown): number =>
   v === null || v === undefined ? 0 : typeof v === "number" ? v : Number(v);
+
+/** Rupiah untuk pesan galat yang dibaca kasir di layar, bukan untuk laporan. */
+const rupiahRingkas = (value: number) => `Rp ${Math.round(value).toLocaleString("id-ID")}`;
+
+/**
+ * Tipe koneksi di dalam sql.begin(). Dibutuhkan fungsi pembantu yang menerima
+ * transaksi dari pemanggilnya, supaya semua perubahannya ikut dibatalkan
+ * bersama kalau salah satu langkah gagal.
+ */
+type TransaksiSql = Parameters<Parameters<typeof sql.begin>[1]>[0];
 
 export const db = {
   // =========================================================================
@@ -1253,6 +1267,7 @@ export const db = {
       id: string;
       provider: "manual" | "meta_cloud" | "gateway";
       sender_phone: string | null;
+      owner_notify_phone: string | null;
       phone_number_id: string | null;
       business_account_id: string | null;
       secret_ref: string | null;
@@ -1268,6 +1283,8 @@ export const db = {
     data: {
       provider: "manual" | "meta_cloud" | "gateway";
       sender_phone?: string | null;
+      /** Nomor yang MENERIMA kabar operasional, bukan yang mengirim. */
+      owner_notify_phone?: string | null;
       phone_number_id?: string | null;
       business_account_id?: string | null;
       secret_ref?: string | null;
@@ -1279,6 +1296,7 @@ export const db = {
       INSERT INTO business_messaging_channels ${sql({ business_id: businessId, ...data })}
       ON CONFLICT (business_id) DO UPDATE SET
         provider = EXCLUDED.provider, sender_phone = EXCLUDED.sender_phone,
+        owner_notify_phone = EXCLUDED.owner_notify_phone,
         phone_number_id = EXCLUDED.phone_number_id, business_account_id = EXCLUDED.business_account_id,
         secret_ref = EXCLUDED.secret_ref, is_enabled = EXCLUDED.is_enabled, updated_at = NOW()
       RETURNING *
@@ -3135,6 +3153,7 @@ export const db = {
       market_value: data.market_value ?? 0,
       stock: data.stock ?? null,
       is_active: data.is_active ?? true,
+      image_url: data.image_url ?? null,
     };
     if (data.id) {
       const updated = one<Reward>(
@@ -4239,12 +4258,16 @@ export const db = {
         note?: string;
       } | null;
       discount?: number;
+      discount_reason?: string | null;
       tax?: number;
       service_charge?: number;
       payment_method: Order["payment_method"];
       cash_given?: number | null;
       customer_id?: string | null;
+      /** Nama yang diketik pemesan di menu digital, dibaca kasir dan dapur. */
+      customer_name?: string | null;
       shift_id?: string | null;
+      table_session_id?: string | null;
       created_by: string;
     },
     itemsData: {
@@ -4255,6 +4278,14 @@ export const db = {
       note?: string;
     }[],
   ) {
+    /**
+     * Modal per menu dibaca SEBELUM transaksi dibuka, lalu ikut tersimpan di
+     * tiap barisnya. Inilah yang bikin laporan laba berhenti berubah sendiri:
+     * yang dipakai laporan adalah modal saat penjualan terjadi, bukan harga
+     * bahan hari laporan itu dicetak.
+     */
+    const unitCosts = await this.getMenuUnitCosts(businessId);
+
     return sql.begin(async (tx) => {
       // Pajak dan service charge dikirim sudah dalam rupiah oleh pemanggil,
       // jadi engine dipakai hanya untuk subtotal dan pembatasan diskon.
@@ -4317,6 +4348,9 @@ export const db = {
           delivery_note: orderData.delivery?.note ?? null,
           subtotal,
           discount,
+          // Alasan hanya bermakna kalau diskonnya benar-benar ada. Menyimpan
+          // alasan pada diskon nol cuma bikin laporan penuh baris kosong.
+          discount_reason: discount > 0 ? (orderData.discount_reason?.trim() || null) : null,
           tax,
           service_charge: service,
           total,
@@ -4324,7 +4358,9 @@ export const db = {
           cash_given: cashGiven,
           cash_change: cashChange,
           customer_id: orderData.customer_id ?? null,
+          customer_name: orderData.customer_name?.trim() || null,
           shift_id: orderData.shift_id ?? null,
+          table_session_id: orderData.table_session_id ?? null,
           created_by: orderData.created_by,
         })} RETURNING *
       `,
@@ -4340,6 +4376,7 @@ export const db = {
             menu_item_id: i.menu_item_id,
             name_snapshot: i.name,
             price_snapshot: i.price,
+            cost_snapshot: unitCosts.get(i.menu_item_id) ?? null,
             qty: i.qty,
             subtotal: i.price * i.qty,
             note: i.note ?? null,
@@ -4350,6 +4387,179 @@ export const db = {
       }
       return { order, items };
     });
+  },
+
+  // ---------------------------------------------------------------------------
+  // SESI MEJA
+  // ---------------------------------------------------------------------------
+
+  /** Sesi yang sedang berjalan di sebuah meja, kalau ada. */
+  async getOpenTableSession(businessId: string, tableNo: string): Promise<TableSession | null> {
+    const key = normalizeTableKey(tableNo);
+    if (!key) return null;
+    return one<TableSession>(await sql`
+      SELECT * FROM table_sessions
+      WHERE business_id = ${businessId} AND table_key = ${key} AND status = 'open'
+      LIMIT 1
+    `);
+  },
+
+  /**
+   * Membuka meja, atau mengembalikan sesi yang sudah terbuka di meja itu.
+   *
+   * Sengaja idempoten. Dua tablet kasir yang menekan tombol bersamaan, atau
+   * pesanan QR yang masuk tepat saat kasir membuka mejanya, harus berakhir di
+   * satu kunjungan yang sama — bukan dua tagihan yang terpisah di meja yang
+   * sama. Indeks unik parsial di basis data yang menegakkannya; ON CONFLICT di
+   * sini yang membuat lomba itu berakhir damai alih-alih jadi galat di layar.
+   */
+  async openTableSession(
+    businessId: string,
+    tableNo: string,
+    userId: string | null,
+    guestCount?: number | null,
+  ): Promise<TableSession | null> {
+    const key = normalizeTableKey(tableNo);
+    if (!key) return null;
+
+    const inserted = one<TableSession>(await sql`
+      INSERT INTO table_sessions ${sql({
+        business_id: businessId,
+        table_no: tableNo.trim(),
+        table_key: key,
+        status: "open",
+        guest_count: guestCount && guestCount > 0 ? Math.floor(guestCount) : null,
+        opened_by: userId,
+      })}
+      ON CONFLICT (business_id, table_key) WHERE status = 'open' DO NOTHING
+      RETURNING *
+    `);
+    if (inserted) return inserted;
+
+    return this.getOpenTableSession(businessId, tableNo);
+  },
+
+  /**
+   * Menutup meja setelah tamunya benar-benar pergi.
+   *
+   * Menolak selama masih ada tagihan yang belum lunas. Versi lama di layar
+   * denah meja menyelesaikan ini dengan memanggil confirmPaymentAction untuk
+   * tiap pesanan yang menggantung — artinya "kosongkan meja" diam-diam
+   * menyatakan uang sudah diterima, untuk uang yang mungkin tidak pernah
+   * diterima siapa pun. Selisihnya baru ketahuan saat tutup shift, dan yang
+   * ditanya duluan selalu kasirnya.
+   */
+  async closeTableSession(
+    sessionId: string,
+    businessId: string,
+    userId: string,
+  ): Promise<{ ok: boolean; error?: string; session?: TableSession }> {
+    return sql.begin(async (tx) => {
+      const session = one<TableSession>(await tx`
+        SELECT * FROM table_sessions
+        WHERE id = ${sessionId} AND business_id = ${businessId} FOR UPDATE
+      `);
+      if (!session) return { ok: false, error: "Sesi meja tidak ditemukan." };
+      if (session.status === "closed") return { ok: true, session };
+
+      const belumLunas = await tx`
+        SELECT order_no, total FROM orders
+        WHERE table_session_id = ${sessionId}
+          AND status <> 'cancelled'
+          AND payment_status = 'pending'
+      `;
+      if (belumLunas.length) {
+        const daftar = belumLunas.map((o) => o.order_no as string).join(", ");
+        return {
+          ok: false,
+          error: `Masih ada tagihan yang belum dibayar di meja ini: ${daftar}. Selesaikan pembayarannya dulu, atau batalkan pesanannya kalau memang tidak jadi.`,
+        };
+      }
+
+      const closed = one<TableSession>(await tx`
+        UPDATE table_sessions
+        SET status = 'closed', closed_at = NOW(), closed_by = ${userId}
+        WHERE id = ${sessionId}
+        RETURNING *
+      `);
+      return { ok: true, session: closed! };
+    });
+  },
+
+  /**
+   * Denah meja kasir. Yang menentukan sebuah meja terisi adalah ADA SESI
+   * TERBUKA, bukan ada pesanan yang belum selesai dimasak.
+   */
+  async getTableSessionSummaries(businessId: string): Promise<TableSessionSummary[]> {
+    return (await sql`
+      SELECT s.*,
+        COALESCE(a.order_count, 0)::int AS order_count,
+        COALESCE(a.item_count, 0)::int AS item_count,
+        COALESCE(a.total_bill, 0) AS total_bill,
+        COALESCE(a.has_unpaid, FALSE) AS has_unpaid,
+        COALESCE(a.is_cooking, FALSE) AS is_cooking
+      FROM table_sessions s
+      LEFT JOIN (
+        SELECT o.table_session_id,
+          COUNT(*)::int AS order_count,
+          COALESCE(SUM((SELECT SUM(i.qty) FROM order_items i WHERE i.order_id = o.id)), 0)::int AS item_count,
+          COALESCE(SUM(o.total), 0) AS total_bill,
+          BOOL_OR(o.payment_status = 'pending') AS has_unpaid,
+          BOOL_OR(o.fulfillment_status IN ('pending', 'accepted', 'preparing')) AS is_cooking
+        FROM orders o
+        WHERE o.business_id = ${businessId} AND o.status <> 'cancelled'
+        GROUP BY o.table_session_id
+      ) a ON a.table_session_id = s.id
+      WHERE s.business_id = ${businessId} AND s.status = 'open'
+      ORDER BY s.opened_at ASC
+    `) as unknown as TableSessionSummary[];
+  },
+
+  /**
+   * Modal (HPP) satu unit untuk tiap menu, menurut keadaan SEKARANG.
+   *
+   * Dipakai dua tempat dan sengaja cuma ada satu: saat penjualan dicatat
+   * (hasilnya dikunci ke order_items.cost_snapshot) dan saat menandai menu mana
+   * yang belum punya modal. Kalau kedua tempat itu punya rumusnya sendiri,
+   * cepat atau lambat keduanya menjawab beda untuk menu yang sama.
+   *
+   * `null` berarti menunya BELUM punya modal yang bisa dipakai — bukan
+   * modalnya nol. Bedanya penting: nol berarti seluruh harga jual adalah laba,
+   * dan itu angka yang menyesatkan kalau dipakai mengambil keputusan.
+   */
+  async getMenuUnitCosts(businessId: string): Promise<Map<string, number | null>> {
+    const menuItems = await this.getMenuItems(businessId);
+
+    let hppByRecipe = new Map<string, number>();
+    if (menuItems.some((m) => m.recipe_id)) {
+      const calcs = await this.getAllRecipesWithCalculations(businessId);
+      hppByRecipe = new Map(calcs.map((c) => [c.recipe.id, c.calc.hpp_per_unit ?? 0]));
+    }
+
+    const costs = new Map<string, number | null>();
+    for (const item of menuItems) {
+      const dariResep = item.recipe_id ? (hppByRecipe.get(item.recipe_id) ?? 0) : 0;
+      if (dariResep > 0) {
+        costs.set(item.id, Math.round(dariResep));
+        continue;
+      }
+      // Modal pokok yang diketik owner, dipakai kalau menunya belum punya resep.
+      const modalPokok = Number(item.cost_price) || 0;
+      costs.set(item.id, modalPokok > 0 ? Math.round(modalPokok) : null);
+    }
+    return costs;
+  },
+
+  /**
+   * Menu yang belum bisa dihitung labanya. Dipakai laporan untuk berkata
+   * "belum lengkap" alih-alih diam-diam melaporkan laba 100%.
+   */
+  async getMenusWithoutCost(businessId: string): Promise<{ id: string; name: string }[]> {
+    const costs = await this.getMenuUnitCosts(businessId);
+    const menuItems = await this.getMenuItems(businessId);
+    return menuItems
+      .filter((m) => costs.get(m.id) == null)
+      .map((m) => ({ id: m.id, name: m.name }));
   },
 
   async getOrders(businessId: string, limit = 50): Promise<Order[]> {
@@ -4668,24 +4878,57 @@ export const db = {
     card_id?: string;
     business_id?: string;
   }): Promise<{ id: string }> {
-    let bizId = data.business_id;
-    if (!bizId && data.order_id) {
+    /**
+     * Usaha pemilik ulasan ditentukan dari BUKTI, bukan dari yang dikirim
+     * pemanggil.
+     *
+     * Versi sebelumnya menerima business_id apa adanya, lalu — kalau tidak ada
+     * satu pun keterangan — jatuh ke `SELECT id FROM businesses ORDER BY
+     * created_at ASC LIMIT 1`: usaha TERTUA di seluruh tabel. Jadi ulasan tanpa
+     * identitas mendarat di toko orang lain yang kebetulan mendaftar duluan,
+     * dan pemiliknya melihat keluhan pelanggan yang bukan pelanggannya.
+     *
+     * Sekarang urutannya: pesanan dulu, lalu kartu. Keduanya baris nyata yang
+     * tahu tenantnya sendiri. Tanpa salah satunya, ulasannya ditolak.
+     */
+    let bizId: string | undefined;
+    if (data.order_id) {
       const ord = one<{ business_id: string }>(await sql`SELECT business_id FROM orders WHERE id = ${data.order_id}`);
       bizId = ord?.business_id;
     }
     if (!bizId && data.card_id) {
       const crd = one<{ business_id: string }>(await sql`SELECT business_id FROM cards WHERE id = ${data.card_id}`);
-      bizId = crd?.business_id;
+      bizId = crd?.business_id ?? undefined;
     }
     if (!bizId) {
-      const defBiz = one<{ id: string }>(await sql`SELECT id FROM businesses ORDER BY created_at ASC LIMIT 1`);
-      bizId = defBiz?.id;
+      throw new Error("Ulasan tidak bisa disimpan tanpa pesanan atau kartu yang menyebutkan tokonya.");
+    }
+
+    /**
+     * Kalau pemanggil ikut menyebut business_id, itu harus COCOK dengan bukti
+     * di atas. Yang tidak cocok berarti ada yang salah tempel — dan menyimpan
+     * ulasan ke tenant yang salah lebih buruk daripada gagal menyimpannya.
+     */
+    if (data.business_id && data.business_id !== bizId) {
+      throw new Error("Ulasan ini tidak cocok dengan tokonya.");
+    }
+
+    /**
+     * Pelanggan yang dilampirkan harus pelanggan toko ini juga. Tanpa
+     * pemeriksaan ini, satu ulasan bisa ditempelkan ke member usaha lain.
+     */
+    let customerId = data.customer_id || null;
+    if (customerId) {
+      const cust = one<{ id: string }>(
+        await sql`SELECT id FROM customers WHERE id = ${customerId} AND business_id = ${bizId}`,
+      );
+      if (!cust) customerId = null;
     }
 
     const row = one<{ id: string }>(await sql`
       INSERT INTO member_feedback ${sql({
         business_id: bizId,
-        customer_id: data.customer_id || null,
+        customer_id: customerId,
         order_id: data.order_id || null,
         card_id: data.card_id || null,
         rating: data.rating,
@@ -4697,59 +4940,271 @@ export const db = {
   },
 
   /** Mengganti item pesanan yang habis di tengah hari dengan menu lain. */
+  /**
+   * Mengganti satu item pesanan dengan menu lain, biasanya karena bahannya
+   * habis di tengah jalan.
+   *
+   * Versi sebelumnya melakukan tiga hal yang merusak pembukuan sekaligus:
+   *
+   *   1. MENIMPA name_snapshot dan price_snapshot pada barisnya. Padahal
+   *      komentar tabelnya sendiri berbunyi "snapshot harga untuk menjamin
+   *      keaslian audit masa lalu". Setelah penggantian, tidak ada satu pun
+   *      cara tahu pelanggan sebenarnya memesan apa.
+   *   2. Mengubah orders.total tanpa menyelesaikan selisihnya. Nota yang sudah
+   *      lunas bisa totalnya naik Rp 5.000 tanpa ada yang menagih, atau turun
+   *      tanpa ada yang mengembalikan. Selisih itu muncul lagi saat tutup
+   *      shift, tanpa ada yang ingat penyebabnya.
+   *   3. Tidak menyentuh stok sama sekali. Bahan menu lama sudah telanjur
+   *      dipotong, bahan menu pengganti tidak pernah dipotong.
+   *
+   * Sekarang ketiganya ditutup: riwayat pesanan asli pindah ke
+   * order_item_changes, selisihnya WAJIB dinyatakan mau diapakan, dan stok
+   * kedua menu disesuaikan.
+   */
   async replaceOrderItem(
     orderId: string,
     orderItemId: string,
     newMenuItemId: string,
     businessId: string,
+    userId: string,
+    settlement: ItemChangeSettlement,
     reason?: string,
-  ): Promise<{ ok: boolean; error?: string; newName: string; priceDiff: number }> {
+  ): Promise<{
+    ok: boolean;
+    error?: string;
+    newName: string;
+    priceDiff: number;
+    settlement: ItemChangeSettlement;
+  }> {
+    const gagal = (error: string) => ({
+      ok: false as const,
+      error,
+      newName: "",
+      priceDiff: 0,
+      settlement: "none" as ItemChangeSettlement,
+    });
+
+    const unitCosts = await this.getMenuUnitCosts(businessId);
+
     return sql.begin(async (tx) => {
       const order = one<Order>(await tx`
         SELECT * FROM orders WHERE id = ${orderId} AND business_id = ${businessId} FOR UPDATE
       `);
-      if (!order) return { ok: false, error: "Pesanan tidak ditemukan.", newName: "", priceDiff: 0 };
+      if (!order) return gagal("Pesanan tidak ditemukan.");
+      if (order.status === "cancelled") return gagal("Pesanan ini sudah dibatalkan.");
 
       const oldItem = one<OrderItem>(await tx`
         SELECT * FROM order_items WHERE id = ${orderItemId} AND order_id = ${orderId} FOR UPDATE
       `);
-      if (!oldItem) return { ok: false, error: "Item pesanan tidak ditemukan.", newName: "", priceDiff: 0 };
+      if (!oldItem) return gagal("Item pesanan tidak ditemukan.");
 
       const newMenu = one<MenuItem>(await tx`
         SELECT * FROM menu_items WHERE id = ${newMenuItemId} AND business_id = ${businessId}
       `);
-      if (!newMenu) return { ok: false, error: "Menu pengganti tidak ditemukan.", newName: "", priceDiff: 0 };
+      if (!newMenu) return gagal("Menu pengganti tidak ditemukan.");
+      if (newMenu.id === oldItem.menu_item_id) return gagal("Menu penggantinya sama dengan yang lama.");
 
       const newUnitPrice = Number(newMenu.price);
       const newSubtotal = newUnitPrice * oldItem.qty;
       const priceDiff = newSubtotal - oldItem.subtotal;
 
+      const sudahLunas = order.payment_status === "paid";
+
+      /**
+       * Selisih pada nota yang SUDAH lunas tidak boleh menggantung. Kasir harus
+       * menyatakan uangnya ditagih, dikembalikan, atau ditanggung toko. Nota
+       * yang belum dibayar tidak perlu: pelanggan tinggal membayar total baru.
+       */
+      let settlementDipakai: ItemChangeSettlement = "none";
+      if (priceDiff !== 0 && sudahLunas) {
+        if (settlement === "none") {
+          return gagal(
+            priceDiff > 0
+              ? `Menu pengganti lebih mahal ${rupiahRingkas(priceDiff)}. Tentukan dulu: ditagih ke pelanggan, atau ditanggung toko.`
+              : `Menu pengganti lebih murah ${rupiahRingkas(-priceDiff)}. Tentukan dulu: dikembalikan ke pelanggan, atau ditanggung toko.`,
+          );
+        }
+        if (priceDiff > 0 && settlement === "refund") {
+          return gagal("Menu penggantinya lebih mahal, jadi tidak ada yang bisa dikembalikan.");
+        }
+        if (priceDiff < 0 && settlement === "collect") {
+          return gagal("Menu penggantinya lebih murah, jadi tidak ada tambahan yang bisa ditagih.");
+        }
+        settlementDipakai = settlement;
+      } else if (priceDiff !== 0) {
+        // Belum lunas: total berubah, pelanggan membayar angka yang baru.
+        settlementDipakai = "collect";
+      }
+
+      // --- Riwayat pesanan aslinya, disimpan sebelum barisnya berubah. -------
+      await tx`
+        INSERT INTO order_item_changes ${tx({
+          business_id: businessId,
+          order_id: orderId,
+          order_item_id: orderItemId,
+          old_menu_item_id: oldItem.menu_item_id,
+          old_name: oldItem.name_snapshot,
+          old_price: oldItem.price_snapshot,
+          new_menu_item_id: newMenu.id,
+          new_name: newMenu.name,
+          new_price: newUnitPrice,
+          qty: oldItem.qty,
+          price_diff: priceDiff,
+          settlement: settlementDipakai,
+          reason: reason?.trim() || null,
+          changed_by: userId,
+        })}
+      `;
+
       const noteText = reason
         ? `${oldItem.note ? oldItem.note + " · " : ""}[Ganti: ${reason}]`
-        : (oldItem.note || null);
+        : oldItem.note || null;
 
       await tx`
         UPDATE order_items SET
           menu_item_id = ${newMenu.id},
           name_snapshot = ${newMenu.name},
           price_snapshot = ${newUnitPrice},
+          cost_snapshot = ${unitCosts.get(newMenu.id) ?? null},
           subtotal = ${newSubtotal},
           note = ${noteText}
         WHERE id = ${orderItemId}
       `;
 
-      const newOrderSubtotal = Math.max(0, Number(order.subtotal) + priceDiff);
-      const newOrderTotal = Math.max(0, Number(order.total) + priceDiff);
+      // --- Uangnya ----------------------------------------------------------
+      // "waive" berarti toko menanggung selisihnya, jadi yang ditagih tidak
+      // berubah sama sekali: totalnya tetap, dan selisih harga menu dicatat
+      // sebagai diskon supaya laporan tetap menjumlahkan angka yang benar.
+      if (settlementDipakai === "waive") {
+        const diskonBaru = Number(order.discount) + Math.max(0, priceDiff);
+        const alasanLama = order.discount_reason ? order.discount_reason + " · " : "";
+        await tx`
+          UPDATE orders SET
+            subtotal = ${Math.max(0, Number(order.subtotal) + priceDiff)},
+            discount = ${diskonBaru},
+            discount_reason = ${alasanLama + `Penggantian menu ${oldItem.name_snapshot} → ${newMenu.name}`}
+          WHERE id = ${orderId}
+        `;
+      } else {
+        await tx`
+          UPDATE orders SET
+            subtotal = ${Math.max(0, Number(order.subtotal) + priceDiff)},
+            total = ${Math.max(0, Number(order.total) + priceDiff)}
+          WHERE id = ${orderId}
+        `;
+      }
 
-      await tx`
-        UPDATE orders SET
-          subtotal = ${newOrderSubtotal},
-          total = ${newOrderTotal}
-        WHERE id = ${orderId}
+      // Selisih yang dikembalikan ke pelanggan dicatat sebagai refund sungguhan,
+      // supaya ikut terhitung saat kasir mencocokkan laci di akhir shift.
+      if (settlementDipakai === "refund") {
+        await tx`
+          INSERT INTO refunds ${tx({
+            order_id: orderId,
+            order_item_id: orderItemId,
+            amount: Math.abs(priceDiff),
+            reason: `Selisih penggantian menu ${oldItem.name_snapshot} → ${newMenu.name}${reason ? ": " + reason.trim() : ""}`,
+            reason_code: "stok_habis",
+            method: order.payment_method === "cash" ? "cash" : order.payment_method,
+            approved_by: userId,
+            shift_id: order.shift_id,
+          })}
+        `;
+      }
+
+      // Nota lunas yang totalnya naik berarti masih ada yang harus dibayar.
+      if (settlementDipakai === "collect" && sudahLunas && priceDiff > 0) {
+        await tx`
+          UPDATE orders SET payment_status = 'pending', status = 'open'
+          WHERE id = ${orderId}
+        `;
+      }
+
+      // --- Stoknya ----------------------------------------------------------
+      // Hanya untuk pesanan yang bahannya memang sudah dipotong. Pesanan yang
+      // belum lunas belum pernah menyentuh stok, jadi tidak ada yang perlu
+      // dikembalikan.
+      if (order.inventory_applied_at) {
+        await this.adjustInventoryForItemSwap(
+          tx,
+          businessId,
+          orderId,
+          oldItem.menu_item_id,
+          newMenu.id,
+          oldItem.qty,
+          userId,
+          `${oldItem.name_snapshot} → ${newMenu.name} pada ${order.order_no}`,
+        );
+      }
+
+      return { ok: true, newName: newMenu.name, priceDiff, settlement: settlementDipakai };
+    });
+  },
+
+  /**
+   * Mengembalikan bahan menu yang batal disajikan, lalu memotong bahan menu
+   * penggantinya.
+   *
+   * Dicatat sebagai dua pergerakan terpisah, bukan satu selisih bersih. Saat
+   * owner menelusuri kenapa stok susu berkurang, dia harus bisa melihat
+   * kejadiannya, bukan cuma hasil akhirnya.
+   */
+  async adjustInventoryForItemSwap(
+    tx: TransaksiSql,
+    businessId: string,
+    orderId: string,
+    oldMenuItemId: string | null,
+    newMenuItemId: string,
+    qty: number,
+    userId: string,
+    note: string,
+  ) {
+    const kebutuhan = async (menuItemId: string) =>
+      tx`
+        SELECT inventory_item_id, SUM(required_qty) AS required_qty FROM (
+          SELECT iri.inventory_item_id, (iri.qty_per_output * ${qty} / NULLIF(r.output_qty, 0)) AS required_qty
+          FROM menu_items m
+          JOIN recipes r ON r.id = m.recipe_id
+          JOIN inventory_recipe_items iri ON iri.recipe_id = r.id
+          WHERE m.id = ${menuItemId} AND m.business_id = ${businessId}
+          UNION ALL
+          SELECT m.inventory_item_id, (m.inventory_qty_per_sale * ${qty}) AS required_qty
+          FROM menu_items m
+          WHERE m.id = ${menuItemId} AND m.business_id = ${businessId}
+            AND m.inventory_item_id IS NOT NULL AND m.inventory_qty_per_sale IS NOT NULL
+            AND m.recipe_id IS NULL
+        ) usage
+        WHERE inventory_item_id IS NOT NULL
+        GROUP BY inventory_item_id
       `;
 
-      return { ok: true, newName: newMenu.name, priceDiff };
-    });
+    const gerak = async (inventoryItemId: string, delta: number, keterangan: string) => {
+      const item = one<{ id: string; average_cost: number }>(await tx`
+        SELECT id, average_cost FROM inventory_items
+        WHERE id = ${inventoryItemId} AND business_id = ${businessId} FOR UPDATE
+      `);
+      if (!item) return;
+      await tx`UPDATE inventory_items SET stock_qty = stock_qty + ${delta}, updated_at = NOW() WHERE id = ${item.id}`;
+      await tx`INSERT INTO inventory_movements ${tx({
+        business_id: businessId,
+        inventory_item_id: item.id,
+        movement_type: "adjustment",
+        delta_qty: delta,
+        unit_cost: num(item.average_cost),
+        reference_type: "order",
+        reference_id: orderId,
+        created_by: userId,
+        note: keterangan,
+      })}`;
+    };
+
+    if (oldMenuItemId) {
+      for (const need of await kebutuhan(oldMenuItemId)) {
+        await gerak(need.inventory_item_id as string, num(need.required_qty), `Bahan kembali, penggantian menu: ${note}`);
+      }
+    }
+    for (const need of await kebutuhan(newMenuItemId)) {
+      await gerak(need.inventory_item_id as string, -num(need.required_qty), `Bahan terpakai, penggantian menu: ${note}`);
+    }
   },
 
   /** Berapa lama pesanan swalayan boleh menunggu konfirmasi sebelum hangus. */
@@ -4817,7 +5272,11 @@ export const db = {
       FROM orders o
       LEFT JOIN users u ON u.id = o.claimed_by
       WHERE o.business_id = ${businessId}
-        AND o.channel = 'qr'
+        -- Dulu di sini ada saringan channel = 'qr', dan itu berarti pesanan
+        -- yang DIKETIK KASIR tidak pernah muncul di layar dapur sama sekali.
+        -- Dapur cuma melihat pesanan dari QR meja; sisanya diteriakkan lewat
+        -- mulut, dan saat ramai berarti ada yang tidak dimasak. Sekarang
+        -- dua-duanya lewat antrean yang sama.
         AND o.payment_status IN ('pending', 'paid')
         AND o.fulfillment_status NOT IN ('completed', 'cancelled')
       ORDER BY o.created_at ASC
@@ -5082,35 +5541,60 @@ export const db = {
   },
 
   /**
-   * Pembatalan pesanan dari antrean kasir (baik belum bayar maupun salah input).
+   * Pembatalan (void) pesanan yang BELUM dibayar.
+   *
+   * Uang yang sudah diterima tidak bisa dibatalkan, cuma bisa dikembalikan.
+   * Sebelum ini void menerima pesanan apa pun termasuk yang sudah lunas, dan
+   * hasilnya nota hilang dari laporan penjualan tanpa satu pun baris yang
+   * menjelaskan ke mana uangnya pergi — persis bentuk penyalahgunaan yang
+   * paling sulit dilacak di kasir.
+   *
+   * Pesanan yang sudah lunas diarahkan ke refund, yang menyisakan jejak:
+   * nominal, alasan, metode, siapa yang menyetujui, dan shift mana.
    */
   async cancelOrder(
     orderId: string,
     businessId: string,
     reason?: string,
     userId?: string,
-  ): Promise<Order | null> {
-    const updated = one<Order>(
-      await sql`
-      UPDATE orders SET
-        fulfillment_status = 'cancelled',
-        status = 'cancelled',
-        payment_status = CASE WHEN payment_status = 'pending' THEN 'failed' ELSE payment_status END
-      WHERE id = ${orderId} AND business_id = ${businessId}
-      RETURNING *
-    `,
-    );
-    if (updated && userId) {
-      await this.recordAuditEvent({
-        businessId,
-        actorUserId: userId,
-        action: "pos.order_cancelled",
-        entityType: "order",
-        entityId: orderId,
-        metadata: { reason: reason ?? "Dibatalkan kasir dari antrean" },
-      });
-    }
-    return updated;
+  ): Promise<{ ok: boolean; error?: string; order?: Order }> {
+    return sql.begin(async (tx) => {
+      const order = one<Order>(await tx`
+        SELECT * FROM orders WHERE id = ${orderId} AND business_id = ${businessId} FOR UPDATE
+      `);
+      if (!order) return { ok: false, error: "Pesanan tidak ditemukan." };
+      if (order.status === "cancelled") return { ok: true, order };
+
+      if (order.payment_status === "paid") {
+        return {
+          ok: false,
+          error:
+            "Pesanan ini sudah dibayar, jadi tidak bisa dibatalkan begitu saja. Pakai Pengembalian Dana (refund) supaya uang yang keluar tetap ada catatannya.",
+        };
+      }
+
+      const updated = one<Order>(await tx`
+        UPDATE orders SET
+          fulfillment_status = 'cancelled',
+          status = 'cancelled',
+          payment_status = CASE WHEN payment_status = 'pending' THEN 'failed' ELSE payment_status END
+        WHERE id = ${orderId} AND business_id = ${businessId}
+        RETURNING *
+      `);
+      return { ok: true, order: updated! };
+    }).then(async (hasil) => {
+      if (hasil.ok && hasil.order && userId) {
+        await this.recordAuditEvent({
+          businessId,
+          actorUserId: userId,
+          action: "pos.order_cancelled",
+          entityType: "order",
+          entityId: orderId,
+          metadata: { reason: reason ?? "Dibatalkan kasir dari antrean" },
+        });
+      }
+      return hasil;
+    });
   },
 
   /**
@@ -5156,6 +5640,18 @@ export const db = {
     amount: number,
     reason: string,
     ownerUserId: string,
+    /**
+     * Metode, kategori, dan item disimpan sebagai kolom sendiri — bukan
+     * dijejalkan ke dalam kalimat alasan seperti "(Metode: CASH)". Kalimat bisa
+     * dibaca manusia, tidak bisa dijumlahkan mesin, sehingga "berapa yang keluar
+     * dari laci hari ini" tidak punya jawaban padahal itu yang dicocokkan kasir
+     * tiap tutup shift.
+     */
+    opsi?: {
+      method?: Refund["method"];
+      reasonCode?: Refund["reason_code"];
+      orderItemId?: string | null;
+    },
   ) {
     return sql.begin(async (tx) => {
       const order = one<Order>(
@@ -5185,8 +5681,15 @@ export const db = {
         };
       }
 
+      /**
+       * Shift dibutuhkan kalau uangnya keluar dari LACI, dan itu ditentukan
+       * metode refundnya — bukan cara pelanggan dulu membayar. Pelanggan yang
+       * bayar QRIS tetap bisa dikembalikan tunai, dan uang itu tetap harus
+       * muncul di rekap laci saat tutup shift.
+       */
+      const metodeRefund = opsi?.method ?? order.payment_method;
       let shiftId: string | null = null;
-      if (order.payment_method === "cash") {
+      if (metodeRefund === "cash") {
         const activeShift = one<Shift>(
           await tx`
           SELECT * FROM shifts WHERE business_id = ${businessId} AND closed_at IS NULL
@@ -5205,8 +5708,13 @@ export const db = {
         await tx`
         INSERT INTO refunds ${tx({
           order_id: orderId,
+          order_item_id: opsi?.orderItemId ?? null,
           amount,
           reason,
+          reason_code: opsi?.reasonCode ?? null,
+          // Bawaannya mengikuti cara pelanggan membayar: uang yang masuk lewat
+          // QRIS tidak lazim dikembalikan dari laci tunai.
+          method: opsi?.method ?? order.payment_method,
           approved_by: ownerUserId,
           shift_id: shiftId,
         })} RETURNING *
@@ -5278,7 +5786,12 @@ export const db = {
         WITH refunds_by_order AS (SELECT order_id, SUM(amount) AS total FROM refunds GROUP BY order_id)
         SELECT i.menu_item_id, i.name_snapshot AS name,
                COALESCE(SUM(i.qty * GREATEST(o.total - COALESCE(r.total, 0), 0)::numeric / NULLIF(o.total, 0)), 0) AS qty,
-               COALESCE(SUM(i.subtotal * GREATEST(o.total - COALESCE(r.total, 0), 0)::numeric / NULLIF(o.total, 0)), 0) AS revenue
+               COALESCE(SUM(i.subtotal * GREATEST(o.total - COALESCE(r.total, 0), 0)::numeric / NULLIF(o.total, 0)), 0) AS revenue,
+               -- Modal yang DIKUNCI saat transaksi, bukan harga bahan hari ini.
+               COALESCE(SUM(i.cost_snapshot * i.qty * GREATEST(o.total - COALESCE(r.total, 0), 0)::numeric / NULLIF(o.total, 0)), 0) AS hpp_terkunci,
+               -- Berapa unit yang terjual tanpa modal yang diketahui. Dipakai
+               -- menandai laporan "belum lengkap", bukan diam-diam dianggap nol.
+               COALESCE(SUM(CASE WHEN i.cost_snapshot IS NULL THEN i.qty ELSE 0 END), 0) AS qty_tanpa_modal
         FROM order_items i
         JOIN orders o ON o.id = i.order_id
         LEFT JOIN refunds_by_order r ON r.order_id = o.id
@@ -5296,60 +5809,62 @@ export const db = {
     ]);
 
     /**
-     * Laba kotor perkiraan. Inilah sambungan POS ke Finance: menu yang sudah
-     * dipetakan ke resep memakai HPP hasil hitungan, dan yang belum dipetakan
-     * tidak dihitung sama sekali.
+     * Laba kotor, dihitung dari modal yang DIKUNCI saat tiap penjualan terjadi.
      *
-     * Karena itu angka ini selalu perkiraan, dan hanya seakurat pemetaan resep
-     * yang sudah dibuat owner. Jangan ditampilkan sebagai laba final.
+     * Sebelum ini modalnya dihitung ulang dari harga bahan pada hari laporan
+     * dibuka, jadi menaikkan harga satu bahan ikut mengubah laba bulan lalu.
+     * Owner yang mencetak laporan yang sama dua kali dan mendapat dua angka
+     * berbeda akan berhenti mempercayai laporannya, dan dia benar.
+     *
+     * Baris lama dari sebelum penguncian ada (cost_snapshot NULL) tetap
+     * dihitung memakai modal hari ini, supaya laporan lama tidak mendadak
+     * kosong — tapi jumlah unitnya dilaporkan terpisah lewat
+     * `unitsWithoutCost`, supaya layar bisa berkata bagian mana yang masih
+     * perkiraan alih-alih menyajikan semuanya seolah sama pastinya.
      */
-    const menuItems = await this.getMenuItems(businessId);
-    const menuItemMap = new Map(menuItems.map((m) => [m.id, m]));
-    const recipeByMenu = new Map(
-      menuItems
-        .filter((m) => m.recipe_id)
-        .map((m) => [m.id, m.recipe_id as string]),
-    );
+    const unitCosts = await this.getMenuUnitCosts(businessId);
 
-    let hppByRecipe = new Map<string, number>();
-    if (recipeByMenu.size) {
-      const calcs = await this.getAllRecipesWithCalculations(businessId);
-      hppByRecipe = new Map(
-        calcs.map((c) => [c.recipe.id, c.calc.hpp_per_unit ?? 0]),
-      );
-    }
+    /**
+     * HPP satu baris laporan: yang terkunci, plus cadangan untuk baris lama.
+     * Murni — dipanggil dua kali untuk baris yang masuk lima besar, jadi tidak
+     * boleh menyimpan apa pun ke luar.
+     */
+    const hppUntukBaris = (row: Record<string, unknown>) => {
+      const terkunci = num(row.hpp_terkunci);
+      const qtyTanpaModal = num(row.qty_tanpa_modal);
+      if (qtyTanpaModal <= 0) return { hpp: terkunci, unknownUnits: 0 };
 
-    /** HPP per item terjual. Diambil dari resep bahan KAEL Finance atau modal pokok (cost_price) menu. */
-    const hppForMenuItem = (menuItemId: string): number => {
-      const item = menuItemMap.get(menuItemId);
-      if (!item) return 0;
-      if (item.recipe_id && hppByRecipe.has(item.recipe_id)) {
-        const recipeHpp = hppByRecipe.get(item.recipe_id) ?? 0;
-        if (recipeHpp > 0) return recipeHpp;
-      }
-      return Number(item.cost_price) || 0;
+      const modalSekarang = unitCosts.get(row.menu_item_id as string);
+      // Menunya memang belum punya modal sampai sekarang. Tidak ditebak.
+      if (modalSekarang == null) return { hpp: terkunci, unknownUnits: qtyTanpaModal };
+      return { hpp: terkunci + modalSekarang * qtyTanpaModal, unknownUnits: 0 };
     };
 
     let totalEstimatedHpp = 0;
     let mappedRevenue = 0;
+    let unitsWithoutCost = 0;
+
     for (const row of salesByItem) {
-      const hpp = hppForMenuItem(row.menu_item_id as string);
-      if (!hpp) continue;
-      totalEstimatedHpp += hpp * num(row.qty);
+      const { hpp, unknownUnits } = hppUntukBaris(row as Record<string, unknown>);
+      unitsWithoutCost += unknownUnits;
+      if (hpp <= 0) continue;
+      totalEstimatedHpp += hpp;
       mappedRevenue += num(row.revenue);
     }
 
     const totalNetRevenue = num(allTime[0]?.revenue);
     const topSellingItems = salesByItem.slice(0, 5).map((r) => {
       const revenue = num(r.revenue);
-      const hpp = hppForMenuItem(r.menu_item_id as string) * num(r.qty);
+      const { hpp, unknownUnits } = hppUntukBaris(r as Record<string, unknown>);
       return {
         name: r.name as string,
         qty: num(r.qty),
         revenue,
         hpp,
-        // Nol kalau menu belum punya resep. Ditampilkan apa adanya, tidak ditebak.
+        // Nol kalau menu belum punya modal. Ditampilkan apa adanya, tidak ditebak.
         grossProfit: hpp > 0 ? Math.max(0, revenue - hpp) : 0,
+        /** Menunya belum punya resep maupun modal pokok, jadi labanya belum bisa dihitung. */
+        costUnknown: unknownUnits > 0,
       };
     });
 
@@ -5377,6 +5892,12 @@ export const db = {
       totalEstimatedGrossProfit: Math.max(0, mappedRevenue - totalEstimatedHpp),
       /** Porsi omzet yang menunya sudah dipetakan ke resep. */
       hppCoverageRevenue: mappedRevenue,
+      /**
+       * Jumlah unit terjual yang modalnya tidak diketahui. Selama angka ini di
+       * atas nol, laba di layar BELUM mencakup semua yang terjual — dan itu
+       * harus tertulis, bukan disembunyikan di balik satu angka bulat.
+       */
+      unitsWithoutCost,
       topSellingItems,
       bestSellers: topSellingItems,
       paymentBreakdown,
@@ -5722,14 +6243,73 @@ export const db = {
   /**
    * Hapus daftar transaksi/order testing yang dipilih secara batch.
    */
+  /**
+   * Menyambungkan satu menu POS ke resepnya.
+   *
+   * Laporan laba mencari modal lewat kolom ini, bukan lewat kemiripan nama.
+   * Jadi resep yang sudah diisi tapi belum disambungkan tetap tidak terbaca —
+   * dan itu kegagalan yang paling membingungkan, karena semuanya terlihat sudah
+   * dikerjakan.
+   */
+  async linkMenuItemToRecipe(
+    menuItemId: string,
+    recipeId: string,
+    businessId: string,
+  ): Promise<boolean> {
+    const res = await sql`
+      UPDATE menu_items SET recipe_id = ${recipeId}
+      WHERE id = ${menuItemId} AND business_id = ${businessId}
+      RETURNING id
+    `;
+    return res.length > 0;
+  },
+
+  /**
+   * Menandai transaksi sebagai latihan, atau mencabut tandanya.
+   *
+   * Tanpa ini, pembatasan pembersihan massal ke `is_test` bikin fiturnya mati
+   * total untuk toko sungguhan — dan owner yang baru latihan sebelum buka tetap
+   * butuh cara merapikan transaksi coba-cobanya. Menandai adalah langkah yang
+   * bisa dibatalkan; menghapus tidak.
+   */
+  async markOrdersAsTest(
+    orderIds: string[],
+    businessId: string,
+    isTest: boolean,
+  ): Promise<{ updatedCount: number }> {
+    if (!orderIds?.length) return { updatedCount: 0 };
+    const res = await sql`
+      UPDATE orders SET is_test = ${isTest}
+      WHERE id IN ${sql(orderIds)} AND business_id = ${businessId}
+      RETURNING id
+    `;
+    return { updatedCount: res.length };
+  },
+
   async deleteOrdersBatch(orderIds: string[], businessId: string): Promise<{ deletedCount: number }> {
     if (!orderIds || orderIds.length === 0) return { deletedCount: 0 };
     return sql.begin(async (tx) => {
-      await tx`DELETE FROM member_feedback WHERE order_id IN ${sql(orderIds)} AND business_id = ${businessId}`;
-      await tx`DELETE FROM point_ledger WHERE order_id IN ${sql(orderIds)} AND business_id = ${businessId}`;
-      await tx`DELETE FROM refunds WHERE order_id IN ${sql(orderIds)}`;
-      await tx`DELETE FROM order_items WHERE order_id IN ${sql(orderIds)}`;
-      const res = await tx`DELETE FROM orders WHERE id IN ${sql(orderIds)} AND business_id = ${businessId} RETURNING id`;
+      /**
+       * Daftar id disaring dulu ke milik usaha ini, dan SEMUA penghapusan anak
+       * memakai hasil saringan itu.
+       *
+       * Versi sebelumnya menghapus `refunds` dan `order_items` hanya berdasarkan
+       * id yang dikirim pemanggil, tanpa memeriksa pesanan itu milik siapa.
+       * Baris orders-nya memang aman karena disaring business_id, tapi refund
+       * dan rincian item milik usaha LAIN tetap ikut terhapus — cukup dengan
+       * menebak satu id pesanan tetangga.
+       */
+      const milikSendiri = (
+        await tx`SELECT id FROM orders WHERE id IN ${tx(orderIds)} AND business_id = ${businessId}`
+      ).map((r) => r.id as string);
+      if (!milikSendiri.length) return { deletedCount: 0 };
+
+      await tx`DELETE FROM member_feedback WHERE order_id IN ${tx(milikSendiri)} AND business_id = ${businessId}`;
+      await tx`DELETE FROM point_ledger WHERE order_id IN ${tx(milikSendiri)} AND business_id = ${businessId}`;
+      await tx`DELETE FROM order_item_changes WHERE order_id IN ${tx(milikSendiri)} AND business_id = ${businessId}`;
+      await tx`DELETE FROM refunds WHERE order_id IN ${tx(milikSendiri)}`;
+      await tx`DELETE FROM order_items WHERE order_id IN ${tx(milikSendiri)}`;
+      const res = await tx`DELETE FROM orders WHERE id IN ${tx(milikSendiri)} RETURNING id`;
       return { deletedCount: res.length };
     });
   },
@@ -5806,23 +6386,55 @@ export const db = {
   ): Promise<{ success: boolean; deletedCount: number }> {
     return sql.begin(async (tx) => {
       let count = 0;
+
+      /**
+       * SEMUA penghapusan di bawah dibatasi ke `is_test = TRUE`.
+       *
+       * Versi sebelumnya menjalankan `DELETE FROM orders WHERE business_id = ...`
+       * tanpa satu pun saringan tentang apa itu "testing". Artinya satu klik
+       * dari owner menghapus SELURUH riwayat penjualan tokonya — beserta refund,
+       * rincian item, dan poin pembelian pelanggannya — dan tidak ada satu pun
+       * cara mengembalikannya. Tombolnya bernama "Hapus Data Testing", jadi
+       * tidak ada owner yang menduga itu yang akan terjadi.
+       *
+       * Sekarang yang bisa hilang cuma yang memang ditandai sebagai latihan.
+       */
       if (scope === "all_orders" || scope === "everything") {
-        await tx`DELETE FROM member_feedback WHERE business_id = ${businessId}`;
-        await tx`DELETE FROM point_ledger WHERE business_id = ${businessId} AND (order_id IS NOT NULL OR reason = 'purchase')`;
-        await tx`DELETE FROM refunds WHERE order_id IN (SELECT id FROM orders WHERE business_id = ${businessId})`;
-        await tx`DELETE FROM order_items WHERE order_id IN (SELECT id FROM orders WHERE business_id = ${businessId})`;
-        const delOrders = await tx`DELETE FROM orders WHERE business_id = ${businessId} RETURNING id`;
+        const ujiSaja = tx`SELECT id FROM orders WHERE business_id = ${businessId} AND is_test`;
+        await tx`DELETE FROM member_feedback WHERE business_id = ${businessId} AND order_id IN (${ujiSaja})`;
+        await tx`DELETE FROM point_ledger WHERE business_id = ${businessId} AND order_id IN (${ujiSaja})`;
+        await tx`DELETE FROM order_item_changes WHERE business_id = ${businessId} AND order_id IN (${ujiSaja})`;
+        await tx`DELETE FROM refunds WHERE order_id IN (${ujiSaja})`;
+        await tx`DELETE FROM order_items WHERE order_id IN (${ujiSaja})`;
+        const delOrders = await tx`DELETE FROM orders WHERE business_id = ${businessId} AND is_test RETURNING id`;
         count += delOrders.length;
       }
 
+      /**
+       * Feedback tanpa pesanan induk tidak punya penanda uji sendiri, jadi yang
+       * boleh dihapus massal hanya yang menempel pada transaksi latihan.
+       * Ulasan pelanggan sungguhan dihapus satu per satu lewat layar pilihan,
+       * bukan dengan satu tombol sapu bersih.
+       */
       if (scope === "all_feedback" || scope === "everything") {
-        const delFeedback = await tx`DELETE FROM member_feedback WHERE business_id = ${businessId} RETURNING id`;
+        const delFeedback = await tx`
+          DELETE FROM member_feedback
+          WHERE business_id = ${businessId}
+            AND order_id IN (SELECT id FROM orders WHERE business_id = ${businessId} AND is_test)
+          RETURNING id`;
         count += delFeedback.length;
       }
 
+      /** Shift yang masih memegang transaksi sungguhan tidak boleh ikut hilang. */
       if (scope === "all_shifts" || scope === "everything") {
-        await tx`UPDATE orders SET shift_id = NULL WHERE business_id = ${businessId}`;
-        const delShifts = await tx`DELETE FROM shifts WHERE business_id = ${businessId} RETURNING id`;
+        const delShifts = await tx`
+          DELETE FROM shifts
+          WHERE business_id = ${businessId}
+            AND NOT EXISTS (
+              SELECT 1 FROM orders o
+              WHERE o.shift_id = shifts.id AND NOT o.is_test
+            )
+          RETURNING id`;
         count += delShifts.length;
       }
 
