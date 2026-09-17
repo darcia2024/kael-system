@@ -41,6 +41,7 @@ import {
 import type { Business, CustomerDirectoryEntry, MenuItem, LoyaltyCampaignRecipient, LoyaltyCampaignSummary, LoyaltyProgram, PointExpiryCandidate, Reward, User, PointLedger, Redemption, ReferralReportRow, AnnualDateCandidate, LoyaltyTier } from "@/lib/types";
 import {
   addPointsAction, redeemRewardAction, saveRewardAction, deleteRewardAction,
+  getMemberLinkRequestsAction,
   anonymizeCustomerAction, updateLoyaltyProgramAction, searchCustomersAction,
   customerDetailAction, createLoyaltyCampaignAction, expireDuePointsAction, getLoyaltyCampaignRecipientsAction, updateLoyaltyCampaignRecipientStatusAction,
   lookupRedemptionAction, consumeRedemptionAction,
@@ -135,6 +136,38 @@ export default function KaelLoyaltyDashboard({
   const [program, setProgram] = useState<LoyaltyProgram>(initialProgram);
   const [selectedStaffId, setSelectedStaffId] = useState<string>(staffList[0]?.id || "usr-staff-01");
   const [showMemberQrModal, setShowMemberQrModal] = useState(false);
+
+  /**
+   * Permintaan tautan kartu dari pelanggan yang lupa jalan masuknya.
+   *
+   * Selama toko belum menyetel WhatsApp Cloud API, permintaannya tidak bisa
+   * dikirim otomatis. Daftar ini yang membuatnya tetap sampai: stafnya menekan
+   * satu tombol, WhatsApp terbuka dengan pesannya sudah siap.
+   */
+  type PermintaanTautan = {
+    id: string;
+    customerName: string;
+    customerPhone: string;
+    alasan: string;
+    tautanManual: string;
+    createdAt: string;
+  };
+  const [permintaanTautan, setPermintaanTautan] = useState<PermintaanTautan[]>([]);
+
+  useEffect(() => {
+    let batal = false;
+    const muat = async () => {
+      try {
+        const res = await getMemberLinkRequestsAction();
+        if (!batal && res.ok) setPermintaanTautan(res.data as PermintaanTautan[]);
+      } catch {
+        /* daftar susulan bukan inti layar ini; kegagalannya tidak boleh menjatuhkannya */
+      }
+    };
+    void muat();
+    const timer = window.setInterval(muat, 60000);
+    return () => { batal = true; window.clearInterval(timer); };
+  }, []);
 
   const isMochi = (business?.store_code?.toUpperCase() ?? "") === "MOCHIKAFE" || (business?.name?.toLowerCase().includes("mochi") ?? false);
 
@@ -762,6 +795,49 @@ export default function KaelLoyaltyDashboard({
 
       {/* Main Container */}
       <main className="flex-1 mx-auto w-full max-w-6xl p-3 sm:p-6 lg:p-8 space-y-4 sm:space-y-6">
+
+        {/*
+          PERMINTAAN TAUTAN KARTU MEMBER
+
+          Pelanggan yang lupa jalan masuk ke kartunya meminta lewat halaman
+          /m/cari. Kalau WhatsApp otomatis belum disetel, permintaannya mendarat
+          di sini — supaya tidak berhenti jadi catatan yang tidak pernah dibaca.
+        */}
+        {permintaanTautan.length > 0 && (
+          <section className="rounded-3xl border border-amber-300 bg-amber-50 p-4 sm:p-5">
+            <h2 className="font-mono text-xs font-black text-amber-900">
+              {permintaanTautan.length} pelanggan minta dikirimi tautan kartunya
+            </h2>
+            <p className="mt-0.5 text-[11.5px] leading-relaxed text-amber-800">
+              WhatsApp otomatis belum aktif untuk toko ini, jadi tautannya dikirim
+              manual. Tekan tombolnya — pesannya sudah siap, tinggal kirim.
+            </p>
+            <ul className="mt-3 space-y-2">
+              {permintaanTautan.map((p) => (
+                <li
+                  key={p.id}
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-amber-200 bg-white px-3 py-2.5"
+                >
+                  <span className="min-w-0">
+                    <span className="block text-xs font-bold text-[#1a382d]">{p.customerName}</span>
+                    <span className="block font-mono text-[11px] text-[#5b7a6e]">{p.customerPhone}</span>
+                  </span>
+                  {p.tautanManual && (
+                    <a
+                      href={p.tautanManual}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="shrink-0 rounded-xl bg-[#0b3d2e] px-3 py-2 font-mono text-[11px] font-black text-white"
+                    >
+                      Kirim lewat WhatsApp
+                    </a>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
         
         {/* TOP KPI OVERVIEW */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">

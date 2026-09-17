@@ -45,6 +45,7 @@ import {
 import { hashClientIp } from "./auth-security";
 import { normalizeCardCode } from "./card-code";
 import { site } from "./site";
+import { kirimPesanWhatsApp } from "./whatsapp";
 import { CAMPAIGN_GOALS, type CampaignGoalKey } from "./campaign-templates";
 import {
   requireStaff,
@@ -507,6 +508,86 @@ export async function getReceiptQrTargetAction(
     jenis: "member",
     label: "Scan untuk buka kartu member & cek poin",
   });
+}
+
+/**
+ * Mengirim ulang tautan kartu member ke WhatsApp pemilik nomornya.
+ *
+ * KENAPA TIDAK MENAMPILKAN TAUTANNYA DI LAYAR
+ *
+ * Token pada /m/{token} ITU kuncinya: siapa pun yang memegangnya bisa membuka
+ * kartu member, melihat poinnya, dan menukarkan hadiahnya. Halaman yang
+ * menerima nomor HP lalu menampilkan tautannya berarti siapa pun yang tahu
+ * nomor pelanggan bisa menguras poin orang itu — dan nomor HP bukan rahasia.
+ *
+ * Jadi tautannya tidak pernah kembali ke browser yang meminta. Ia dikirim ke
+ * WhatsApp nomor yang bersangkutan, sehingga yang menerimanya hanya pemilik
+ * nomor itu.
+ *
+ * JAWABANNYA SELALU SAMA
+ *
+ * Terdaftar atau tidak, balasannya sama persis. Kalau berbeda, halaman ini jadi
+ * alat memeriksa satu per satu nomor mana yang jadi pelanggan sebuah toko —
+ * daftar itu sendiri informasi yang tidak boleh bocor.
+ */
+export async function requestMemberLinkAction(
+  storeCode: string,
+  phone: string,
+): Promise<ActionResult<{ perluDikirimStaf: boolean }>> {
+  const jawabanNetral = done({ perluDikirimStaf: false });
+
+  if (!isValidIndonesianPhoneNumber(phone)) {
+    return fail("Nomor WhatsApp tidak valid. Contoh: 081234567890");
+  }
+
+  const business = await db.getBusinessByStoreCode(storeCode.trim());
+  if (!business) return jawabanNetral;
+  if (await moduleLock(business.id, "loyalty", "read")) return jawabanNetral;
+
+  const customer = await db.getCustomerByPhone(business.id, phone);
+  if (!customer?.token) return jawabanNetral;
+
+  const asal = site.url.replace(/\/$/, "");
+  const pesan =
+    `Halo${customer.name ? " " + customer.name : ""}! Ini tautan kartu member ${business.name}:\n\n` +
+    `${asal}/m/${customer.token}\n\n` +
+    `Simpan pesan ini ya — poin dan hadiahmu ada di situ. Jangan dibagikan ke orang lain.`;
+
+  const hasil = await kirimPesanWhatsApp(business.id, customer.phone, pesan);
+
+  /**
+   * Yang gagal terkirim otomatis dicatat supaya stafnya bisa menyusulkan.
+   * Tanpa ini, permintaan pelanggan hilang tanpa jejak dan dia menunggu pesan
+   * yang tidak akan pernah datang.
+   */
+  if (!hasil.terkirim) {
+    await db.recordAuditEvent({
+      businessId: business.id,
+      action: "loyalty.member_link_requested",
+      entityType: "customer",
+      entityId: customer.id,
+      metadata: { alasan: hasil.alasan, tautanManual: hasil.tautanManual },
+    });
+    return done({ perluDikirimStaf: true });
+  }
+
+  return jawabanNetral;
+}
+
+/**
+ * Permintaan tautan kartu member yang menunggu disusulkan staf.
+ *
+ * Tautannya memang memuat token, dan itu memang perlu di sini: yang membukanya
+ * staf toko yang sudah masuk dan memang bertugas mengirimkannya ke pemilik
+ * nomor. Bedanya dengan halaman publik jelas — di sana tidak ada siapa pun yang
+ * bisa dipertanggungjawabkan, di sini ada.
+ */
+export async function getMemberLinkRequestsAction(): Promise<
+  ActionResult<Awaited<ReturnType<typeof db.getPendingMemberLinkRequests>>>
+> {
+  const akses = await denganAkses(() => requirePermission("loyalty"));
+  if (!akses.ok) return fail(akses.error);
+  return done(await db.getPendingMemberLinkRequests(akses.sesi.businessId));
 }
 
 /** Penerbitan batch hanya untuk tim KAEL. */

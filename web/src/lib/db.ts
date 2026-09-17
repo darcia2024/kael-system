@@ -2390,10 +2390,62 @@ export const db = {
     );
   },
 
+  /**
+   * Nomornya dibakukan DI SINI, bukan dipercayakan ke pemanggil.
+   *
+   * Yang tersimpan selalu bentuk baku (6283848115843), sementara yang diketik
+   * orang bisa 083848115843, +62 838-4811-5843, atau dengan spasi. Versi
+   * sebelumnya mencocokkan apa adanya, jadi pencarian dengan nomor berawalan 0
+   * — bentuk yang paling lazim diketik — selalu menjawab "tidak ada", dan
+   * jawaban itu tidak bisa dibedakan dari member yang memang belum terdaftar.
+   */
   async getCustomerByPhone(businessId: string, phone: string): Promise<Customer | null> {
+    const nomor = normalizePhoneNumber(phone);
+    if (!nomor) return null;
     return one<Customer>(
-      await sql`SELECT * FROM customers WHERE business_id = ${businessId} AND phone = ${phone}`,
+      await sql`SELECT * FROM customers WHERE business_id = ${businessId} AND phone = ${nomor}`,
     );
+  },
+
+  /**
+   * Permintaan tautan kartu member yang BELUM bisa dikirim otomatis.
+   *
+   * Selama toko belum menyetel WhatsApp Cloud API, permintaan pelanggan cuma
+   * jadi catatan. Tanpa layar yang menampilkannya, catatan itu tidak pernah
+   * dibaca siapa pun dan pelanggannya menunggu pesan yang tidak akan datang.
+   *
+   * metadata disimpan sebagai jsonb lewat JSON.stringify, jadi kembali ke sini
+   * berupa teks dan harus diurai lagi.
+   */
+  async getPendingMemberLinkRequests(businessId: string, limit = 20) {
+    const baris = await sql`
+      SELECT a.id, a.entity_id, a.metadata, a.created_at,
+             c.name AS customer_name, c.phone AS customer_phone
+      FROM audit_events a
+      LEFT JOIN customers c ON c.id = a.entity_id
+      WHERE a.business_id = ${businessId}
+        AND a.action = 'loyalty.member_link_requested'
+        AND a.created_at > NOW() - INTERVAL '7 days'
+      ORDER BY a.created_at DESC
+      LIMIT ${limit}
+    `;
+
+    return baris.map((r) => {
+      let meta: { alasan?: string; tautanManual?: string } = {};
+      try {
+        meta = typeof r.metadata === "string" ? JSON.parse(r.metadata) : (r.metadata ?? {});
+      } catch {
+        /* catatan lama yang bentuknya tidak terduga tetap ditampilkan apa adanya */
+      }
+      return {
+        id: r.id as string,
+        customerName: (r.customer_name as string | null) ?? "Member",
+        customerPhone: (r.customer_phone as string | null) ?? "",
+        alasan: meta.alasan ?? "",
+        tautanManual: meta.tautanManual ?? "",
+        createdAt: r.created_at as string,
+      };
+    });
   },
 
   async searchCustomers(businessId: string, query: string) {
