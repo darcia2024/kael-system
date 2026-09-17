@@ -54,6 +54,43 @@ export function printerSudahDikenal() {
 }
 
 /**
+ * Keterangan apa adanya soal keadaan printer.
+ *
+ * Ada supaya keluhan "harus pairing terus" bisa dijawab dengan pemeriksaan,
+ * bukan tebakan. Jalankan di konsol peramban kasir:
+ *
+ *     await window.__kaelPrinter()
+ *
+ * `izinPermanenTersedia: false` berarti Chrome-nya belum menyimpan izin
+ * perangkat lintas muat ulang halaman — dialognya akan muncul sekali tiap kali
+ * halaman dibuka dari awal, dan itu dibereskan lewat
+ * chrome://flags/#enable-web-bluetooth-new-permissions-backend
+ */
+export async function diagnosaPrinter() {
+  const bluetooth = (navigator as Navigator & { bluetooth?: any }).bluetooth;
+  if (!bluetooth) return { webBluetoothAda: false };
+
+  let tersimpan: any[] = [];
+  let izinPermanenTersedia = typeof bluetooth.getDevices === "function";
+  if (izinPermanenTersedia) {
+    try {
+      tersimpan = await bluetooth.getDevices();
+    } catch {
+      izinPermanenTersedia = false;
+    }
+  }
+
+  return {
+    webBluetoothAda: true,
+    izinPermanenTersedia,
+    jumlahPerangkatTersimpan: tersimpan.length,
+    namaPerangkatTersimpan: tersimpan.map((d) => d.name ?? "(tanpa nama)"),
+    printerSedangDiingat: printerTersimpan?.name ?? null,
+    printerSedangTersambung: Boolean(printerTersimpan?.gatt?.connected),
+  };
+}
+
+/**
  * Mengambil printer, sebisa mungkin TANPA memunculkan dialog.
  *
  * Urutannya: printer yang masih dipegang, lalu izin yang sudah tersimpan di
@@ -97,21 +134,78 @@ export async function ambilPrinter(bluetooth: any): Promise<any> {
 }
 
 /**
- * Printer yang mati atau keluar jangkauan melepas koneksinya sendiri. Kalau
- * tidak dilupakan di sini, cetak berikutnya menulis ke sesi yang sudah mati dan
- * gagal tanpa pernah menawarkan menyambung ulang.
+ * Printer terputus BUKAN alasan melupakannya.
+ *
+ * Ini kekeliruan pada perbaikan sebelumnya. Printer thermal seperti RPP02N
+ * memutus koneksinya SENDIRI setelah beberapa detik menganggur, demi menghemat
+ * baterai — itu perilaku normal, bukan tanda ada yang rusak. Versi sebelumnya
+ * menghapus printernya dari ingatan begitu peristiwa itu datang, sehingga cetak
+ * berikutnya kembali memanggil requestDevice() dan dialognya muncul lagi.
+ * Hasilnya persis seperti sebelum diperbaiki.
+ *
+ * Objek perangkatnya sendiri tetap sah setelah terputus, dan gatt.connect()
+ * bisa menyambungkannya kembali TANPA dialog selama izinnya masih hidup. Jadi
+ * yang dicatat di sini cuma keterangan; printernya tetap diingat.
  */
 function pasangPelepas(device: any) {
   device.addEventListener?.("gattserverdisconnected", () => {
-    if (printerTersimpan === device) printerTersimpan = null;
+    console.info("[KAEL] printer menganggur lalu memutus sendiri; akan disambung ulang saat cetak berikutnya");
   });
 }
 
-/** Menyambung, atau memakai sambungan yang memang masih hidup. */
+/**
+ * Menyambung, atau memakai sambungan yang memang masih hidup.
+ *
+ * Penyambungan ulang di sini tidak pernah memunculkan dialog: izin perangkatnya
+ * sudah diberikan sebelumnya, dan yang dilakukan cuma membuka kembali jalurnya.
+ */
 export async function sambungPrinter(device: any) {
-  const server = device.gatt?.connected ? device.gatt : await device.gatt?.connect();
-  if (!server) throw new Error("Printer tidak dapat dihubungkan.");
-  return server;
+  if (device.gatt?.connected) return device.gatt;
+
+  try {
+    const server = await device.gatt?.connect();
+    if (!server) throw new Error("Printer tidak dapat dihubungkan.");
+    return server;
+  } catch (error) {
+    /**
+     * Gagal MENYAMBUNG adalah satu-satunya tanda printernya benar-benar tidak
+     * ada lagi — mati, kehabisan baterai, atau dibawa pergi. Baru di titik itu
+     * printernya dilupakan, supaya percobaan berikutnya menawarkan memilih
+     * ulang. Kegagalan menulis di tengah jalan TIDAK masuk hitungan; itu
+     * biasanya cuma sambungan basi yang cukup dibuka lagi.
+     */
+    if (printerTersimpan === device) printerTersimpan = null;
+    throw error;
+  }
+}
+
+/**
+ * Mengirim data ke printer, dengan satu kali percobaan ulang.
+ *
+ * Printer yang baru saja menganggur kadang memutus koneksinya tepat di tengah
+ * pengiriman. Menyambung ulang lalu mengulang sekali jauh lebih baik daripada
+ * memunculkan galat ke kasir yang sedang dilihat pembeli.
+ */
+export async function kirimKePrinter(device: any, payload: Uint8Array) {
+  const tulis = async () => {
+    const server = await sambungPrinter(device);
+    const characteristic = await jalurTulisPrinter(server);
+    for (let offset = 0; offset < payload.length; offset += 180) {
+      const chunk = payload.slice(offset, offset + 180);
+      if (typeof characteristic.writeValueWithoutResponse === "function") {
+        await characteristic.writeValueWithoutResponse(chunk);
+      } else {
+        await characteristic.writeValue(chunk);
+      }
+    }
+  };
+
+  try {
+    await tulis();
+  } catch (error) {
+    console.warn("[KAEL] kiriman pertama gagal, menyambung ulang sekali", error);
+    await tulis();
+  }
 }
 
 /** Mencari jalur tulis ESC/POS pada printer yang sudah tersambung. */

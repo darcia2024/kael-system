@@ -92,9 +92,8 @@ import { calculateEarnedPoints } from "@/lib/loyalty-engine";
 import { PLACEHOLDER_MENU } from "@/lib/types";
 import {
   ambilPrinter,
-  sambungPrinter,
-  jalurTulisPrinter,
-  lupakanPrinter,
+  kirimKePrinter,
+  diagnosaPrinter,
 } from "@/lib/thermal-printer";
 import TableQrModal from "./table-qr-modal";
 import PosMemberScannerModal from "./pos-member-scanner-modal";
@@ -283,6 +282,18 @@ export default function PosClient({
 
   // PWA Install Prompt State
   const { isInstallable, isInstalled, triggerInstall } = usePwaInstall();
+
+  /**
+   * Alat periksa printer, dipanggil dari konsol peramban kasir:
+   *
+   *     await window.__kaelPrinter()
+   *
+   * Ada supaya keluhan soal pairing bisa dijawab dengan pemeriksaan, bukan
+   * tebakan — layar kasir jarang bisa dibuka ulang sambil dilihat langsung.
+   */
+  useEffect(() => {
+    (window as unknown as Record<string, unknown>).__kaelPrinter = diagnosaPrinter;
+  }, []);
 
   // Sync props to state if props change
   useEffect(() => {
@@ -824,9 +835,6 @@ export default function PosClient({
 
     try {
       const device = await ambilPrinter(bluetooth);
-      const server = await sambungPrinter(device);
-
-      const characteristic = await jalurTulisPrinter(server);
 
       const encoded = new TextEncoder().encode(rawText);
       const openCashDrawer = Boolean(options.openCashDrawer);
@@ -838,14 +846,9 @@ export default function PosClient({
       payload.set(encoded, 2);
       payload.set(finish, encoded.length + 2);
 
-      for (let offset = 0; offset < payload.length; offset += 180) {
-        const chunk = payload.slice(offset, offset + 180);
-        if (typeof characteristic.writeValueWithoutResponse === "function") {
-          await characteristic.writeValueWithoutResponse(chunk);
-        } else {
-          await characteristic.writeValue(chunk);
-        }
-      }
+      // Menyambung, menulis, dan mengulang sekali kalau printernya sempat
+      // memutus di tengah jalan — semuanya di satu tempat.
+      await kirimKePrinter(device, payload);
       /**
        * Koneksinya SENGAJA dibiarkan terbuka.
        *
@@ -878,7 +881,13 @@ export default function PosClient({
        * Tanpa ini, percobaan berikutnya terus menulis ke perangkat yang sama
        * dan gagal lagi tanpa pernah menawarkan memilih ulang.
        */
-      lupakanPrinter();
+      /**
+       * Printer TIDAK dilupakan di sini. Kegagalan menulis biasanya cuma
+       * sambungan basi, dan melupakannya berarti cetak berikutnya memunculkan
+       * dialog pilih perangkat lagi — persis keluhan yang sedang diperbaiki.
+       * Yang berhak melupakannya cuma kegagalan MENYAMBUNG, dan itu sudah
+       * ditangani di dalam sambungPrinter().
+       */
       console.warn("[KAEL] cetak Bluetooth gagal", error);
       const useBrowserPrint = window.confirm(`Printer Bluetooth belum bisa menerima ${options.jobName.toLowerCase()}. Buka versi cetak di dialog browser?`);
       if (useBrowserPrint) {
