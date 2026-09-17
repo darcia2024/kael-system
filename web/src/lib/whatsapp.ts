@@ -31,10 +31,28 @@ export function tautanWa(tujuan: string, pesan: string): string {
   return `https://wa.me/${normalizePhoneNumber(tujuan)}?text=${encodeURIComponent(pesan)}`;
 }
 
+/**
+ * Template yang dipakai saat pesannya di luar jendela 24 jam.
+ *
+ * WhatsApp Cloud API hanya menerima teks bebas untuk nomor yang MENGIRIM pesan
+ * ke nomor bisnis dalam 24 jam terakhir. Di luar itu ditolak dengan galat
+ * 131047, dan yang boleh dikirim cuma template yang sudah disetujui Meta.
+ *
+ * Dua pemakaian WhatsApp di KAEL justru selalu di luar jendela itu: owner tidak
+ * pernah mengirim pesan ke nomor tokonya sendiri, dan pelanggan meminta tautan
+ * kartunya lewat halaman web. Jadi tanpa template, keduanya hampir selalu gagal.
+ */
+export type JenisPesanWa = "notifikasi" | "tautan_member";
+
 export async function kirimPesanWhatsApp(
   businessId: string,
   tujuan: string,
   pesan: string,
+  /**
+   * Jenis pesan menentukan template mana yang dipakai. Parameternya mengisi
+   * {{1}}, {{2}}, ... pada template yang sudah disetujui, urut.
+   */
+  opsi?: { jenis?: JenisPesanWa; parameter?: string[] },
 ): Promise<HasilKirimWa> {
   const nomor = normalizePhoneNumber(tujuan);
   const manual = tautanWa(nomor, pesan);
@@ -81,21 +99,16 @@ export async function kirimPesanWhatsApp(
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          messaging_product: "whatsapp",
-          to: nomor,
-          type: "text",
-          text: { preview_url: true, body: pesan },
-        }),
+        body: JSON.stringify(bangunIsi(nomor, pesan, channel, opsi)),
       },
     );
 
     if (!balasan.ok) {
       const isi = await balasan.text();
-      console.error("[KAEL] WhatsApp Cloud API menolak", balasan.status, isi.slice(0, 300));
+      console.error("[KAEL] WhatsApp Cloud API menolak", balasan.status, isi.slice(0, 500));
       return {
         terkirim: false,
-        alasan: "WhatsApp menolak pengiriman pesannya.",
+        alasan: alasanPenolakan(isi),
         tautanManual: manual,
       };
     }
@@ -109,4 +122,75 @@ export async function kirimPesanWhatsApp(
       tautanManual: manual,
     };
   }
+}
+
+/**
+ * Menyusun isi permintaan ke Cloud API.
+ *
+ * Template dipakai kalau namanya sudah disetel; kalau tidak, dicoba sebagai
+ * teks bebas — yang cuma berhasil di dalam jendela 24 jam.
+ */
+function bangunIsi(
+  nomor: string,
+  pesan: string,
+  channel: { template_notifikasi?: string | null; template_tautan_member?: string | null; template_bahasa?: string | null },
+  opsi?: { jenis?: JenisPesanWa; parameter?: string[] },
+) {
+  const namaTemplate =
+    opsi?.jenis === "notifikasi"
+      ? channel.template_notifikasi?.trim()
+      : opsi?.jenis === "tautan_member"
+        ? channel.template_tautan_member?.trim()
+        : null;
+
+  if (!namaTemplate) {
+    return {
+      messaging_product: "whatsapp",
+      to: nomor,
+      type: "text",
+      text: { preview_url: true, body: pesan },
+    };
+  }
+
+  return {
+    messaging_product: "whatsapp",
+    to: nomor,
+    type: "template",
+    template: {
+      name: namaTemplate,
+      language: { code: channel.template_bahasa?.trim() || "id" },
+      components: (opsi?.parameter ?? []).length
+        ? [
+            {
+              type: "body",
+              parameters: (opsi!.parameter ?? []).map((teks) => ({ type: "text", text: teks })),
+            },
+          ]
+        : [],
+    },
+  };
+}
+
+/**
+ * Menerjemahkan penolakan Meta jadi kalimat yang menyebut penyebabnya.
+ *
+ * Yang paling sering muncul dan paling membingungkan adalah 131047: pesannya
+ * ditolak bukan karena salah nomor atau salah token, melainkan karena lewat
+ * jendela 24 jam. Tanpa disebutkan, orang akan memeriksa hal yang salah
+ * berjam-jam.
+ */
+function alasanPenolakan(isiBalasan: string): string {
+  if (isiBalasan.includes("131047")) {
+    return "Lewat jendela 24 jam WhatsApp. Pesan bebas cuma boleh ke nomor yang baru mengirim chat; untuk kabar seperti ini butuh template yang sudah disetujui Meta.";
+  }
+  if (isiBalasan.includes("132001") || isiBalasan.includes("does not exist")) {
+    return "Nama template tidak ditemukan di akun WhatsApp toko, atau bahasanya tidak cocok.";
+  }
+  if (isiBalasan.includes("131030")) {
+    return "Nomor tujuan belum terdaftar di daftar penerima uji. Nomor uji Meta cuma bisa mengirim ke nomor yang sudah didaftarkan.";
+  }
+  if (isiBalasan.includes("190") || isiBalasan.toLowerCase().includes("access token")) {
+    return "Token WhatsApp sudah kedaluwarsa atau tidak berlaku. Token sementara hanya hidup 24 jam — pakai token System User yang permanen.";
+  }
+  return "WhatsApp menolak pengiriman pesannya.";
 }

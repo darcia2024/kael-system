@@ -35,6 +35,18 @@ export async function saveMessagingChannelAction(data: {
    * bersama chat pelanggan — yang artinya tidak pernah benar-benar dibaca.
    */
   ownerNotifyPhone?: string;
+  /**
+   * Nama template Meta yang sudah disetujui.
+   *
+   * Tanpa ini, pesan dikirim sebagai teks bebas — dan teks bebas hanya
+   * diterima WhatsApp untuk nomor yang mengirim chat dalam 24 jam terakhir.
+   * Dua pemakaian KAEL justru selalu di luar jendela itu: owner tidak pernah
+   * mengirim pesan ke nomor tokonya, dan pelanggan meminta tautan kartunya
+   * lewat halaman web.
+   */
+  templateNotifikasi?: string;
+  templateTautanMember?: string;
+  templateBahasa?: string;
   phoneNumberId?: string;
   businessAccountId?: string;
   secretRef?: string;
@@ -50,7 +62,7 @@ export async function saveMessagingChannelAction(data: {
     return fail("Nomor penerima notifikasi tidak valid. Tulis nomor WhatsApp yang benar-benar aktif.");
   }
 
-  await db.saveMessagingChannel(businessId, { provider: data.provider, sender_phone: data.senderPhone?.trim() || null, owner_notify_phone: notifPhone, phone_number_id: data.phoneNumberId?.trim() || null, business_account_id: data.businessAccountId?.trim() || null, secret_ref: data.secretRef?.trim() || null, is_enabled: data.enabled });
+  await db.saveMessagingChannel(businessId, { provider: data.provider, sender_phone: data.senderPhone?.trim() || null, owner_notify_phone: notifPhone, template_notifikasi: data.templateNotifikasi?.trim() || null, template_tautan_member: data.templateTautanMember?.trim() || null, template_bahasa: data.templateBahasa?.trim() || "id", phone_number_id: data.phoneNumberId?.trim() || null, business_account_id: data.businessAccountId?.trim() || null, secret_ref: data.secretRef?.trim() || null, is_enabled: data.enabled });
   await db.recordAuditEvent({ businessId, actorUserId: userId, action: "messaging.channel_saved", entityType: "business", entityId: businessId, metadata: { provider: data.provider } });
   revalidatePath("/app/settings");
   return ok(null);

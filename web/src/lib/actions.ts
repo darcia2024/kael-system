@@ -556,7 +556,11 @@ export async function requestMemberLinkAction(
     `${asal}/m/${customer.token}\n\n` +
     `Simpan pesan ini ya — poin dan hadiahmu ada di situ. Jangan dibagikan ke orang lain.`;
 
-  const hasil = await kirimPesanWhatsApp(business.id, customer.phone, pesan);
+  const hasil = await kirimPesanWhatsApp(business.id, customer.phone, pesan, {
+    jenis: "tautan_member",
+    // {{1}} nama pelanggan, {{2}} nama toko, {{3}} tautan kartunya.
+    parameter: [customer.name ?? "Kak", business.name, `${asal}/m/${customer.token}`],
+  });
 
   /**
    * Yang gagal terkirim otomatis dicatat supaya stafnya bisa menyusulkan.
@@ -2327,7 +2331,17 @@ export async function refundOrderAction(
 
 ` +
         `Kalau ini di luar sepengetahuanmu, periksa sekarang selagi pelanggannya masih bisa ditanya.`;
-      await kirimPesanWhatsApp(businessId, tujuanOwner, pesan);
+      await kirimPesanWhatsApp(businessId, tujuanOwner, pesan, {
+        jenis: "notifikasi",
+        // Urutannya harus sama dengan {{1}}..{{5}} pada template yang disetujui.
+        parameter: [
+          orderData?.order?.order_no ?? "-",
+          rupiahRingkasWeb(amount),
+          refundMethod.toUpperCase(),
+          sesi?.name ?? "kasir",
+          reason.trim(),
+        ],
+      });
     }
   } catch (error) {
     console.error("[KAEL] kabar refund ke owner gagal terkirim", error);

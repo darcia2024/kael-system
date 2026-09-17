@@ -1270,6 +1270,10 @@ export const db = {
       provider: "manual" | "meta_cloud" | "gateway";
       sender_phone: string | null;
       owner_notify_phone: string | null;
+      /** Nama template Meta. Kosong = coba teks bebas (cuma jalan di jendela 24 jam). */
+      template_notifikasi: string | null;
+      template_tautan_member: string | null;
+      template_bahasa: string | null;
       phone_number_id: string | null;
       business_account_id: string | null;
       secret_ref: string | null;
@@ -1287,6 +1291,9 @@ export const db = {
       sender_phone?: string | null;
       /** Nomor yang MENERIMA kabar operasional, bukan yang mengirim. */
       owner_notify_phone?: string | null;
+      template_notifikasi?: string | null;
+      template_tautan_member?: string | null;
+      template_bahasa?: string | null;
       phone_number_id?: string | null;
       business_account_id?: string | null;
       secret_ref?: string | null;
@@ -1299,6 +1306,9 @@ export const db = {
       ON CONFLICT (business_id) DO UPDATE SET
         provider = EXCLUDED.provider, sender_phone = EXCLUDED.sender_phone,
         owner_notify_phone = EXCLUDED.owner_notify_phone,
+        template_notifikasi = EXCLUDED.template_notifikasi,
+        template_tautan_member = EXCLUDED.template_tautan_member,
+        template_bahasa = EXCLUDED.template_bahasa,
         phone_number_id = EXCLUDED.phone_number_id, business_account_id = EXCLUDED.business_account_id,
         secret_ref = EXCLUDED.secret_ref, is_enabled = EXCLUDED.is_enabled, updated_at = NOW()
       RETURNING *

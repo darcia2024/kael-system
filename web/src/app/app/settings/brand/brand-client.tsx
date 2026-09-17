@@ -13,7 +13,7 @@ export default function BrandClient({
 }: {
   business: { name: string; brandColor: string; customDomain: string | null } | null;
   brand: { app_name: string; accent_color: string; support_email: string | null; public_footer_text: string | null; custom_domain_status: string } | null;
-  channel: { provider: "manual" | "meta_cloud" | "gateway"; sender_phone: string | null; owner_notify_phone?: string | null; phone_number_id: string | null; business_account_id: string | null; secret_ref: string | null; is_enabled: boolean } | null;
+  channel: { provider: "manual" | "meta_cloud" | "gateway"; sender_phone: string | null; owner_notify_phone?: string | null; template_notifikasi?: string | null; template_tautan_member?: string | null; phone_number_id: string | null; business_account_id: string | null; secret_ref: string | null; is_enabled: boolean } | null;
   themeClassName?: string;
 }) {
   const [appName, setAppName] = useState(brand?.app_name ?? business?.name ?? "Mochi Cafe");
@@ -27,6 +27,15 @@ export default function BrandClient({
    * HP toko menumpuk bersama chat pelanggan sampai tidak pernah dibaca.
    */
   const [notifPhone, setNotifPhone] = useState(channel?.owner_notify_phone ?? "");
+  /**
+   * Nama template Meta yang sudah disetujui.
+   *
+   * WhatsApp cuma menerima teks bebas ke nomor yang mengirim chat dalam 24 jam
+   * terakhir. Dua pemakaian KAEL selalu di luar jendela itu, jadi tanpa template
+   * pesannya hampir selalu ditolak — dan ditolaknya diam-diam.
+   */
+  const [tplNotif, setTplNotif] = useState(channel?.template_notifikasi ?? "");
+  const [tplMember, setTplMember] = useState(channel?.template_tautan_member ?? "");
   const [phoneId, setPhoneId] = useState(channel?.phone_number_id ?? "");
   const [secret, setSecret] = useState(channel?.secret_ref ?? "");
   const [enabled, setEnabled] = useState(channel?.is_enabled ?? false);
@@ -40,7 +49,7 @@ export default function BrandClient({
 
   const saveWa = async (e: React.FormEvent) => {
     e.preventDefault();
-    const r = await saveMessagingChannelAction({ provider, senderPhone: sender, ownerNotifyPhone: notifPhone, phoneNumberId: phoneId, secretRef: secret, enabled });
+    const r = await saveMessagingChannelAction({ provider, senderPhone: sender, ownerNotifyPhone: notifPhone, templateNotifikasi: tplNotif, templateTautanMember: tplMember, phoneNumberId: phoneId, secretRef: secret, enabled });
     if (!r.ok) alert(r.error);
     else location.reload();
   };
@@ -143,6 +152,45 @@ export default function BrandClient({
           </label>
           {provider === "meta_cloud" && (
             <>
+              <div className="rounded-2xl border border-amber-300 bg-amber-50 p-3">
+                <p className="text-[11.5px] font-bold leading-relaxed text-amber-900">
+                  WhatsApp cuma mengizinkan pesan bebas ke nomor yang baru mengirim
+                  chat dalam 24 jam terakhir.
+                </p>
+                <p className="mt-1 text-[11px] leading-relaxed text-amber-800">
+                  Kabar refund dan tautan kartu member selalu di luar jendela itu —
+                  owner tidak pernah chat ke nomor tokonya sendiri, dan pelanggan
+                  meminta tautannya lewat halaman web. Jadi <b>tanpa template yang
+                  sudah disetujui Meta, keduanya akan ditolak.</b>
+                </p>
+              </div>
+
+              <label className="block text-xs font-bold text-[#1a382d]">
+                Nama template kabar operasional
+                <input
+                  value={tplNotif}
+                  onChange={(e) => setTplNotif(e.target.value)}
+                  placeholder="kael_kabar_refund"
+                  className="mt-1.5 w-full rounded-xl border border-[#d8e3de] bg-[#fbfdfc] p-2.5 text-sm font-semibold outline-none focus:border-emerald-600 focus:bg-white"
+                />
+                <span className="mt-1 block text-[11px] font-normal leading-relaxed text-[#5b7a6e]">
+                  Butuh 5 isian: nomor nota, nominal, metode, nama kasir, alasan.
+                </span>
+              </label>
+
+              <label className="block text-xs font-bold text-[#1a382d]">
+                Nama template tautan kartu member
+                <input
+                  value={tplMember}
+                  onChange={(e) => setTplMember(e.target.value)}
+                  placeholder="kael_tautan_member"
+                  className="mt-1.5 w-full rounded-xl border border-[#d8e3de] bg-[#fbfdfc] p-2.5 text-sm font-semibold outline-none focus:border-emerald-600 focus:bg-white"
+                />
+                <span className="mt-1 block text-[11px] font-normal leading-relaxed text-[#5b7a6e]">
+                  Butuh 3 isian: nama pelanggan, nama toko, tautan kartunya.
+                </span>
+              </label>
+
               <label className="block text-xs font-bold text-[#1a382d]">
                 Phone Number ID
                 <input
