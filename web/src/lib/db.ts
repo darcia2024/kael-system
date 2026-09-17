@@ -3192,11 +3192,11 @@ export const db = {
     };
   },
 
-  /** Menu yang layak dipamerkan di kartu member: tersedia, dan ada harganya. */
+  /** Menu yang layak dipamerkan di kartu member: tersedia dan aktif. */
   async getMenuForMemberCard(businessId: string): Promise<MenuItem[]> {
     return (await sql`
       SELECT * FROM menu_items
-      WHERE business_id = ${businessId} AND is_available = TRUE AND price > 0
+      WHERE business_id = ${businessId} AND is_available = TRUE AND price >= 0
       ORDER BY sort_order, name
     `) as unknown as MenuItem[];
   },
