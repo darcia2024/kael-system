@@ -101,6 +101,27 @@ export async function diagnosaPrinter() {
     }
   }
 
+  /**
+   * Jalur tulisnya ikut diperiksa. Inilah bagian yang selama ini gelap: kalau
+   * karakteristik yang terpilih tidak punya sifat tulis, tulisan diterima tanpa
+   * galat lalu hilang — printer diam, layar bilang terkirim.
+   */
+  let jalurTulis: Record<string, unknown> | string = "printer belum disambung";
+  if (printerTersimpan) {
+    try {
+      const server = await sambungPrinter(printerTersimpan);
+      const c = await jalurTulisPrinter(server);
+      jalurTulis = {
+        uuid: c.uuid,
+        dikenal: KARAKTERISTIK_PRINTER.includes(c.uuid),
+        bisaTulisDenganKonfirmasi: Boolean(c.properties?.write),
+        bisaTulisTanpaKonfirmasi: Boolean(c.properties?.writeWithoutResponse),
+      };
+    } catch (error) {
+      jalurTulis = `gagal: ${(error as Error).message}`;
+    }
+  }
+
   return {
     webBluetoothAda: true,
     izinPermanenTersedia,
@@ -108,6 +129,7 @@ export async function diagnosaPrinter() {
     namaPerangkatTersimpan: tersimpan.map((d) => d.name ?? "(tanpa nama)"),
     printerSedangDiingat: printerTersimpan?.name ?? null,
     printerSedangTersambung: Boolean(printerTersimpan?.gatt?.connected),
+    jalurTulis,
   };
 }
 
@@ -264,13 +286,36 @@ export async function kirimKePrinter(device: any, payload: Uint8Array) {
   const tulis = async () => {
     const server = await sambungPrinter(device);
     const characteristic = await jalurTulisPrinter(server);
-    for (let offset = 0; offset < payload.length; offset += 180) {
-      const chunk = payload.slice(offset, offset + 180);
-      if (typeof characteristic.writeValueWithoutResponse === "function") {
-        await characteristic.writeValueWithoutResponse(chunk);
-      } else {
-        await characteristic.writeValue(chunk);
-      }
+    const sifat = characteristic.properties ?? {};
+
+    /**
+     * KIRIM DENGAN KONFIRMASI, POTONGAN KECIL.
+     *
+     * Versi sebelumnya memakai writeValueWithoutResponse dengan potongan 180
+     * byte, dan itu penyebab printer diam padahal layar bilang terkirim:
+     *
+     *   - "tanpa konfirmasi" berarti tumpukan Bluetooth menerima data lalu
+     *     langsung kembali, tanpa menunggu printernya siap. Tidak ada kendali
+     *     arus sama sekali. Begitu penyangga printer penuh, sisanya dibuang
+     *     diam-diam — tidak ada galat, tidak ada yang tercetak.
+     *   - 180 byte melewati MTU bawaan BLE yang cuma 23 byte (isi 20). Printer
+     *     murah banyak yang tidak menegosiasikan MTU lebih besar.
+     *
+     * writeValue menunggu balasan printer tiap potongan, jadi kendali arusnya
+     * datang gratis: kalau printernya belum siap, pengiriman berikutnya
+     * menunggu alih-alih menimpa.
+     */
+    const besarPotongan = 20;
+    const tulisSatu = sifat.write
+      ? (b: Uint8Array) => characteristic.writeValue(b)
+      : (b: Uint8Array) => characteristic.writeValueWithoutResponse(b);
+
+    for (let offset = 0; offset < payload.length; offset += besarPotongan) {
+      await tulisSatu(payload.slice(offset, offset + besarPotongan));
+
+      // Printer tanpa konfirmasi tidak punya cara mengerem, jadi jedanya
+      // dipasang di sini. Yang memakai konfirmasi tidak perlu dan tidak dijeda.
+      if (!sifat.write) await new Promise((r) => setTimeout(r, 12));
     }
   };
 
@@ -285,25 +330,60 @@ export async function kirimKePrinter(device: any, payload: Uint8Array) {
   });
 }
 
-/** Mencari jalur tulis ESC/POS pada printer yang sudah tersambung. */
+/**
+ * Mencari jalur tulis ESC/POS pada printer yang sudah tersambung.
+ *
+ * Versi sebelumnya mengambil karakteristik PERTAMA yang UUID-nya cocok, tanpa
+ * memeriksa apakah benda itu memang bisa ditulisi. Karakteristik yang cuma bisa
+ * dibaca atau memberi notifikasi tetap "ditemukan", tulisan ke sana diterima
+ * tanpa galat, dan datanya hilang — printer diam, layar bilang terkirim, dan
+ * tidak ada satu pun keterangan yang menyambungkan keduanya.
+ *
+ * Sekarang SELURUH layanan dan karakteristik ditelusuri, dan yang dipilih harus
+ * benar-benar punya sifat tulis.
+ */
 export async function jalurTulisPrinter(server: any) {
-  const service = await (async () => {
-    for (const uuid of LAYANAN_PRINTER) {
-      try {
-        return await server.getPrimaryService(uuid);
-      } catch {
-        /* coba profil printer berikutnya */
-      }
-    }
-    throw new Error("Profil ESC/POS printer belum dikenali.");
-  })();
+  const layanan: any[] = [];
 
-  for (const uuid of KARAKTERISTIK_PRINTER) {
+  // Layanan yang sudah dikenal didahulukan, lalu sisanya sebagai cadangan.
+  for (const uuid of LAYANAN_PRINTER) {
     try {
-      return await service.getCharacteristic(uuid);
+      layanan.push(await server.getPrimaryService(uuid));
     } catch {
-      /* coba karakteristik berikutnya */
+      /* printer ini memakai profil lain */
     }
   }
-  throw new Error("Jalur tulis printer belum dikenali.");
+  try {
+    for (const s of await server.getPrimaryServices()) {
+      if (!layanan.some((sudah) => sudah.uuid === s.uuid)) layanan.push(s);
+    }
+  } catch {
+    /* sebagian peramban menolak menelusuri semua layanan */
+  }
+
+  let cadangan: any = null;
+  for (const service of layanan) {
+    let daftar: any[] = [];
+    try {
+      daftar = await service.getCharacteristics();
+    } catch {
+      continue;
+    }
+
+    for (const c of daftar) {
+      const sifat = c.properties ?? {};
+      if (!sifat.write && !sifat.writeWithoutResponse) continue;
+
+      // UUID yang sudah dikenal langsung dipakai; yang lain disimpan sebagai
+      // cadangan kalau ternyata tidak ada yang cocok sama sekali.
+      if (KARAKTERISTIK_PRINTER.includes(c.uuid)) return c;
+      cadangan = cadangan ?? c;
+    }
+  }
+
+  if (cadangan) {
+    console.info("[KAEL] memakai jalur tulis tak dikenal:", cadangan.uuid);
+    return cadangan;
+  }
+  throw new Error("Printer ini tidak punya jalur tulis yang bisa dipakai.");
 }

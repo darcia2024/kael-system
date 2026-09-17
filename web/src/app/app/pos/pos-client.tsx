@@ -923,9 +923,18 @@ export default function PosClient({
         setPrinterState("connected");
       }
 
+      /**
+       * Kalimatnya sengaja cuma menyatakan yang BENAR-BENAR diketahui.
+       *
+       * Yang bisa dipastikan hanya "datanya terkirim". Apakah kertasnya keluar
+       * dan lacinya membuka tidak pernah dikabarkan balik oleh printer. Versi
+       * sebelumnya menyatakan keduanya sudah terjadi — dan pesan sukses palsu
+       * itulah yang bikin printer diam berjam-jam tanpa ada yang curiga.
+       */
       alert(
-        `${options.jobName} #${options.orderNo || ""} terkirim ke ${device.name || "printer thermal"}.` +
-        (openCashDrawer ? " Laci uang dibuka." : ""),
+        `${options.jobName} #${options.orderNo || ""} dikirim ke ${device.name || "printer thermal"}.` +
+        (openCashDrawer ? "\nPerintah buka laci ikut dikirim." : "") +
+        "\n\nKalau tidak ada yang keluar, printernya belum menerima — cek kertas dan dayanya.",
       );
     } catch (error) {
       setPrinterState("error");
