@@ -67,6 +67,17 @@ export interface Business {
   pos_tax_rate: number;
   pos_service_charge_rate: number;
   /**
+   * Pembatas pengembalian dana oleh STAF. 0 berarti tanpa batas.
+   *
+   * Ada karena rekonsiliasi laci tidak pernah menangkap penipuan refund: uang
+   * pelanggan masuk, dicatat keluar, dan lacinya tetap cocok. Batas ini tidak
+   * mencegahnya, tapi memagari seberapa jauh kerugiannya sebelum polanya
+   * terbaca. Owner tidak dibatasi — yang melewati batas berpindah tangan
+   * kepadanya, bukan berhenti.
+   */
+  refund_max_per_transaction: number;
+  refund_daily_limit_per_cashier: number;
+  /**
    * Tenant peragaan yang disiapkan tim KAEL atas nama calon pembeli, bukan
    * pelanggan yang membayar. Hanya baris seperti ini yang boleh disentuh
    * skrip pembersih.

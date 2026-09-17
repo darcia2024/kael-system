@@ -21,13 +21,16 @@ export default async function PosReportsPage() {
   // kasir punya izin POS. Angka margin bukan urusan yang mencatatnya.
   if (session.role !== "owner" && session.role !== "kael_admin") redirect("/app/pos");
 
-  const [business, reports, orders, shifts, feedbackSummary, recentFeedback] = await Promise.all([
+  const [business, reports, orders, shifts, feedbackSummary, recentFeedback, polaRefund] = await Promise.all([
     db.getBusiness(session.businessId),
     db.getPosReports(session.businessId),
     db.getOrders(session.businessId, 100),
     db.getShifts(session.businessId),
     db.getFeedbackSummary(session.businessId),
     db.getRecentFeedback(session.businessId),
+    // Pola refund per kasir. Satu refund tidak pernah mencurigakan dengan
+    // sendirinya; yang berbicara adalah perbandingannya antar orang.
+    db.getRefundRateByCashier(session.businessId, 30),
   ]);
 
   return (
@@ -38,6 +41,7 @@ export default async function PosReportsPage() {
       shifts={shifts}
       feedbackSummary={feedbackSummary}
       recentFeedback={recentFeedback}
+      polaRefund={polaRefund}
       themeClassName={mochiThemeClass(business)}
     />
   );

@@ -69,6 +69,7 @@ export default function PosOwnerReportsPage({
   shifts,
   feedbackSummary,
   recentFeedback,
+  polaRefund,
   themeClassName = "",
 }: {
   business: Business | null;
@@ -77,6 +78,13 @@ export default function PosOwnerReportsPage({
   shifts: ShiftReport[];
   feedbackSummary: FeedbackSummary;
   recentFeedback: FeedbackRow[];
+  /** Perbandingan refund antar kasir. Pola, bukan kejadian tunggal. */
+  polaRefund: {
+    userId: string; nama: string; peran: string;
+    jumlahNota: number; omzet: number;
+    jumlahRefund: number; nilaiRefund: number; refundTunai: number;
+    persenRefund: number;
+  }[];
   themeClassName?: string;
 }) {
   const router = useRouter();
@@ -640,6 +648,86 @@ export default function PosOwnerReportsPage({
             </table>
           </div>
         </div>
+
+        {/*
+          POLA PENGEMBALIAN DANA PER KASIR
+
+          Panel ini ada karena rekonsiliasi laci di bawah TIDAK menangkap
+          penipuan refund. Pelanggan membayar tunai, kasir mencatatnya sebagai
+          refund, uangnya diambil — dan selisih lacinya tetap nol, karena
+          sistem memang mengharapkan uang itu sudah keluar.
+
+          Satu refund tidak pernah mencurigakan dengan sendirinya. Yang
+          berbicara adalah perbandingannya: kasir yang mengembalikan 12%
+          penjualannya sementara rekannya 0,4% adalah pertanyaan yang layak
+          diajukan — dan pertanyaan itu tidak akan pernah muncul kalau angkanya
+          tidak pernah diletakkan bersebelahan.
+        */}
+        {polaRefund.length > 0 && (
+          <div className={isMochi ? "rounded-2xl sm:rounded-3xl border border-[#d8e3de] bg-white p-4 sm:p-6 shadow-sm space-y-4" : "rounded-2xl sm:rounded-3xl border sm:border-2 border-[#232331] bg-white p-4 sm:p-6 shadow-ink-md space-y-4"}>
+            <div className="border-b border-[#dedee8] pb-3">
+              <h3 className={isMochi ? "font-black text-sm sm:text-base text-[#0b3d2e]" : "font-extrabold text-sm sm:text-base text-[#232331]"}>
+                Pola Pengembalian Dana per Kasir · 30 Hari
+              </h3>
+              <p className={isMochi ? "text-[11px] sm:text-xs text-[#526159]" : "text-[11px] sm:text-xs text-[#7b7b8e]"}>
+                Rekonsiliasi laci tidak menangkap refund fiktif — lacinya tetap cocok.
+                Yang terbaca di sini polanya, bukan satu kejadian.
+              </p>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left font-mono text-xs">
+                <thead>
+                  <tr className={isMochi ? "border-b border-[#d8e3de] bg-[#edf8f3] text-[#167052] text-[10px] uppercase font-extrabold" : "border-b border-[#dedee8] text-[#7b7b8e] text-[10px] uppercase"}>
+                    <th className="py-2.5 px-3">Nama</th>
+                    <th className="py-2.5 px-3 text-right">Nota</th>
+                    <th className="py-2.5 px-3 text-right">Penjualan</th>
+                    <th className="py-2.5 px-3 text-right">Refund</th>
+                    <th className="py-2.5 px-3 text-right">Nilai Refund</th>
+                    <th className="py-2.5 px-3 text-right">Tunai</th>
+                    <th className="py-2.5 px-3 text-right">% dari Penjualan</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#dedee8]">
+                  {polaRefund.map((r) => {
+                    // 5% sudah tinggi untuk warung; 10% pantas ditanyakan hari itu juga.
+                    const tinggi = r.persenRefund >= 10;
+                    const sedang = !tinggi && r.persenRefund >= 5;
+                    return (
+                      <tr key={r.userId} className={tinggi ? "bg-rose-50" : sedang ? "bg-amber-50" : ""}>
+                        <td className="py-3 px-3 font-sans text-xs font-black text-[#232331]">
+                          {r.nama}
+                          <span className="ml-1.5 font-mono text-[9.5px] font-normal text-[#7b7b8e]">
+                            {r.peran === "owner" ? "owner" : "kasir"}
+                          </span>
+                        </td>
+                        <td className="py-3 px-3 text-right">{r.jumlahNota}</td>
+                        <td className="py-3 px-3 text-right">{formatRupiah(r.omzet)}</td>
+                        <td className="py-3 px-3 text-right">{r.jumlahRefund}</td>
+                        <td className="py-3 px-3 text-right font-bold text-rose-700">
+                          {r.nilaiRefund > 0 ? formatRupiah(r.nilaiRefund) : "-"}
+                        </td>
+                        <td className="py-3 px-3 text-right">{r.refundTunai || "-"}</td>
+                        <td className={`py-3 px-3 text-right font-black ${tinggi ? "text-rose-700" : sedang ? "text-amber-700" : "text-[#5b7a6e]"}`}>
+                          {r.persenRefund.toFixed(1)}%
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <p className="flex items-start gap-2 text-[11px] leading-relaxed text-[#5b7a6e]">
+              <AlertTriangle size={13} className="mt-0.5 shrink-0 text-amber-600" />
+              <span>
+                Angka tinggi bukan tuduhan — bisa saja satu kasir memang kebagian
+                shift yang banyak komplainnya. Yang penting angkanya ditanyakan,
+                bukan didiamkan.
+              </span>
+            </p>
+          </div>
+        )}
 
         {/* SECTION 3: SHIFTS AUDIT & CASH DRAWER VARIANCE */}
         <div className={isMochi ? "rounded-2xl sm:rounded-3xl border border-[#d8e3de] bg-white p-4 sm:p-6 shadow-sm space-y-4" : "rounded-2xl sm:rounded-3xl border sm:border-2 border-[#232331] bg-white p-4 sm:p-6 shadow-ink-md space-y-4"}>

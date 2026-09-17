@@ -476,6 +476,8 @@ export const db = {
       "timezone",
       "pos_tax_rate",
       "pos_service_charge_rate",
+      "refund_max_per_transaction",
+      "refund_daily_limit_per_cashier",
     ] as const;
     const patch = Object.fromEntries(
       Object.entries(updates).filter(([k]) =>
@@ -4629,6 +4631,92 @@ export const db = {
       WHERE o.business_id = ${businessId}
       ORDER BY o.created_at DESC LIMIT ${limit}
     `) as unknown as Order[];
+  },
+
+  /**
+   * Total pengembalian dana yang sudah dilakukan seseorang HARI INI.
+   *
+   * Dipakai membatasi kerugian sebelum polanya sempat terbaca. Harinya
+   * mengikuti zona waktu toko, bukan UTC — kalau tidak, batas hariannya akan
+   * mereset pukul tujuh pagi di tengah jam kerja.
+   */
+  async getRefundTotalToday(businessId: string, userId: string): Promise<number> {
+    const biz = await this.getBusiness(businessId);
+    const tz = biz?.timezone || "Asia/Jakarta";
+    const [row] = await sql`
+      SELECT COALESCE(SUM(rf.amount), 0)::bigint AS total
+      FROM refunds rf JOIN orders o ON o.id = rf.order_id
+      WHERE o.business_id = ${businessId}
+        AND rf.approved_by = ${userId}
+        AND (rf.created_at AT TIME ZONE ${tz})::date = (NOW() AT TIME ZONE ${tz})::date
+    `;
+    return num(row?.total);
+  },
+
+  /**
+   * Seberapa sering tiap kasir mengembalikan uang, dibanding penjualannya.
+   *
+   * Angka satu refund tidak pernah mencurigakan dengan sendirinya — yang
+   * berbicara adalah POLANYA. Kasir yang mengembalikan 12% penjualannya
+   * sementara rekannya 0,4% adalah pertanyaan yang layak diajukan, dan
+   * pertanyaan itu tidak akan pernah muncul kalau angkanya tidak pernah
+   * diletakkan bersebelahan.
+   */
+  async getRefundRateByCashier(businessId: string, hari = 30) {
+    const biz = await this.getBusiness(businessId);
+    const tz = biz?.timezone || "Asia/Jakarta";
+    const baris = await sql`
+      WITH penjualan AS (
+        SELECT o.created_by AS user_id,
+               COUNT(*)::int AS jumlah_nota,
+               COALESCE(SUM(o.total), 0)::bigint AS omzet
+        FROM orders o
+        WHERE o.business_id = ${businessId} AND o.status = 'paid'
+          AND (o.created_at AT TIME ZONE ${tz})::date
+              > ((NOW() AT TIME ZONE ${tz})::date - ${hari}::int)
+        GROUP BY o.created_by
+      ),
+      pengembalian AS (
+        SELECT rf.approved_by AS user_id,
+               COUNT(*)::int AS jumlah_refund,
+               COALESCE(SUM(rf.amount), 0)::bigint AS nilai_refund,
+               COUNT(*) FILTER (WHERE rf.method = 'cash')::int AS refund_tunai
+        FROM refunds rf JOIN orders o ON o.id = rf.order_id
+        WHERE o.business_id = ${businessId}
+          AND (rf.created_at AT TIME ZONE ${tz})::date
+              > ((NOW() AT TIME ZONE ${tz})::date - ${hari}::int)
+        GROUP BY rf.approved_by
+      )
+      SELECT u.id, u.name, u.role,
+             COALESCE(p.jumlah_nota, 0) AS jumlah_nota,
+             COALESCE(p.omzet, 0) AS omzet,
+             COALESCE(r.jumlah_refund, 0) AS jumlah_refund,
+             COALESCE(r.nilai_refund, 0) AS nilai_refund,
+             COALESCE(r.refund_tunai, 0) AS refund_tunai
+      FROM users u
+      LEFT JOIN penjualan p ON p.user_id = u.id
+      LEFT JOIN pengembalian r ON r.user_id = u.id
+      WHERE u.business_id = ${businessId}
+        AND (COALESCE(p.jumlah_nota, 0) > 0 OR COALESCE(r.jumlah_refund, 0) > 0)
+      ORDER BY COALESCE(r.nilai_refund, 0) DESC
+    `;
+
+    return baris.map((r) => {
+      const omzet = num(r.omzet);
+      const nilaiRefund = num(r.nilai_refund);
+      return {
+        userId: r.id as string,
+        nama: r.name as string,
+        peran: r.role as string,
+        jumlahNota: num(r.jumlah_nota),
+        omzet,
+        jumlahRefund: num(r.jumlah_refund),
+        nilaiRefund,
+        refundTunai: num(r.refund_tunai),
+        /** Porsi omzetnya yang berakhir dikembalikan. */
+        persenRefund: omzet > 0 ? (nilaiRefund / omzet) * 100 : 0,
+      };
+    });
   },
 
   /**

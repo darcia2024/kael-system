@@ -76,6 +76,9 @@ export type ActionResult<T = void> =
   | { ok: false; error: string };
 
 const fail = (error: string): ActionResult<never> => ({ ok: false, error });
+
+/** Rupiah untuk kalimat yang dibaca orang di layar, bukan untuk laporan. */
+const rupiahRingkasWeb = (value: number) => `Rp ${Math.round(value).toLocaleString("id-ID")}`;
 const done = <T>(data: T): ActionResult<T> => ({ ok: true, data });
 
 /**
@@ -2216,6 +2219,40 @@ export async function refundOrderAction(
   if (!reason.trim()) return fail("Keterangan alasan refund wajib diisi.");
 
   /**
+   * BATAS PENGEMBALIAN DANA — ditegakkan di server, bukan di layar.
+   *
+   * Batas yang cuma ada di tombol bisa dilewati siapa pun yang memanggil aksi
+   * ini langsung. Yang mengikat harus di sini.
+   *
+   * Owner tidak dibatasi: batasnya justru ada supaya yang melewatinya berpindah
+   * tangan ke pemiliknya, bukan berhenti sama sekali.
+   */
+  const sesi = await getSession();
+  const adalahOwner = sesi?.role === "owner" || sesi?.role === "kael_admin";
+  if (!adalahOwner) {
+    const biz = await db.getBusiness(businessId);
+    const batasSekali = Number(biz?.refund_max_per_transaction ?? 0);
+    const batasHarian = Number(biz?.refund_daily_limit_per_cashier ?? 0);
+
+    if (batasSekali > 0 && amount > batasSekali) {
+      return fail(
+        `Pengembalian di atas ${rupiahRingkasWeb(batasSekali)} harus dilakukan pemilik usaha. ` +
+          `Minta owner yang memprosesnya.`,
+      );
+    }
+
+    if (batasHarian > 0) {
+      const sudah = await db.getRefundTotalToday(businessId, userId);
+      if (sudah + amount > batasHarian) {
+        return fail(
+          `Batas pengembalian harianmu ${rupiahRingkasWeb(batasHarian)} dan hari ini sudah terpakai ` +
+            `${rupiahRingkasWeb(sudah)}. Sisanya harus diproses pemilik usaha.`,
+        );
+      }
+    }
+  }
+
+  /**
    * Kategori dan metode dikirim sebagai kolom, bukan lagi ditempel ke dalam
    * kalimat alasan. Yang tersimpan di `reason` sekarang cuma keterangan yang
    * benar-benar diketik kasir, supaya laporan bisa mengelompokkan sendiri
@@ -2255,6 +2292,46 @@ export async function refundOrderAction(
       perItem: Boolean(orderItemId),
     },
   });
+
+  /**
+   * OWNER DIBERI TAHU SAAT ITU JUGA.
+   *
+   * Ini lapis yang paling berpengaruh, dan alasannya bukan teknis: kasir yang
+   * tahu pemiliknya menerima pesan pada detik yang sama tidak akan mencoba.
+   * Rekonsiliasi laci tidak menangkap penipuan refund sama sekali — uang
+   * pelanggan masuk, dicatat keluar, lacinya tetap cocok — jadi yang tersisa
+   * adalah membuatnya terlihat seketika.
+   *
+   * Pengirimannya tidak boleh menggagalkan refund yang sudah terjadi: uangnya
+   * sudah berpindah, dan membatalkan pencatatannya karena pesan gagal terkirim
+   * justru menghapus jejak yang ingin dijaga.
+   */
+  try {
+    const channel = await db.getMessagingChannel(businessId);
+    const tujuanOwner = channel?.owner_notify_phone;
+    if (tujuanOwner && !adalahOwner) {
+      const biz = await db.getBusiness(businessId);
+      const pesan =
+        `[${biz?.name ?? "KAEL"}] Pengembalian dana
+
+` +
+        `Nota   : #${orderData?.order?.order_no ?? "-"}
+` +
+        `Nominal: ${rupiahRingkasWeb(amount)}
+` +
+        `Lewat  : ${refundMethod.toUpperCase()}
+` +
+        `Oleh   : ${sesi?.name ?? "kasir"}
+` +
+        `Alasan : ${reason.trim()}
+
+` +
+        `Kalau ini di luar sepengetahuanmu, periksa sekarang selagi pelanggannya masih bisa ditanya.`;
+      await kirimPesanWhatsApp(businessId, tujuanOwner, pesan);
+    }
+  } catch (error) {
+    console.error("[KAEL] kabar refund ke owner gagal terkirim", error);
+  }
 
   revalidatePath("/app/pos");
   revalidatePath("/app/pos/reports");

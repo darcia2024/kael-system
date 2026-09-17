@@ -69,6 +69,10 @@ export default async function SettingsPage() {
         taxRate: Number(business?.pos_tax_rate ?? 0),
         serviceChargeRate: Number(business?.pos_service_charge_rate ?? 0),
       }}
+      refundLimits={{
+        maxPerTransaction: Number(business?.refund_max_per_transaction ?? 0),
+        dailyLimitPerCashier: Number(business?.refund_daily_limit_per_cashier ?? 0),
+      }}
       modules={modules}
     />
     <div className="mx-auto max-w-3xl px-4 pb-8 sm:px-8">

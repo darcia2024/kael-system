@@ -69,3 +69,59 @@ export async function saveBusinessContactSettingsAction(
   };
 }
 
+
+/**
+ * Pembatas pengembalian dana oleh staf.
+ *
+ * Ada karena rekonsiliasi laci TIDAK pernah menangkap penipuan refund. Uang
+ * pelanggan masuk, dicatat keluar, dan selisih lacinya tetap nol — jadi "cocok
+ * saat tutup shift" bukan bukti apa-apa untuk jenis kecurangan ini.
+ *
+ * Batas ini tidak membuatnya mustahil; yang memegang uang fisik sekaligus
+ * entrinya tetap kasir. Yang dilakukannya adalah memagari seberapa jauh
+ * kerugian bisa berjalan sebelum polanya sempat terbaca, dan memindahkan yang
+ * besar ke tangan pemiliknya.
+ */
+export async function saveRefundLimitsAction(
+  maxPerTransaction: number,
+  dailyLimitPerCashier: number,
+): Promise<ActionResult<{ maxPerTransaction: number; dailyLimitPerCashier: number }>> {
+  const { businessId } = await requireOwner();
+  const locked = await moduleLock(businessId, "pos", "write");
+  if (locked) return { ok: false, error: locked };
+
+  const sekali = Math.round(Number(maxPerTransaction));
+  const harian = Math.round(Number(dailyLimitPerCashier));
+
+  if (!Number.isFinite(sekali) || !Number.isFinite(harian) || sekali < 0 || harian < 0) {
+    return { ok: false, error: "Batas refund tidak boleh minus." };
+  }
+
+  /**
+   * Batas harian di bawah batas sekali transaksi tidak pernah bisa terpakai:
+   * refund sebesar batas sekali langsung melewati jatah hariannya. Ditolak di
+   * sini supaya owner tidak menyetel aturan yang diam-diam saling meniadakan.
+   */
+  if (sekali > 0 && harian > 0 && harian < sekali) {
+    return {
+      ok: false,
+      error: "Batas harian tidak boleh lebih kecil dari batas sekali refund — aturannya akan saling meniadakan.",
+    };
+  }
+
+  const updated = await db.updateBusiness(businessId, {
+    refund_max_per_transaction: sekali,
+    refund_daily_limit_per_cashier: harian,
+  });
+  if (!updated) return { ok: false, error: "Pengaturan usaha tidak ditemukan." };
+
+  revalidatePath("/app/settings");
+  revalidatePath("/app/pos");
+  return {
+    ok: true,
+    data: {
+      maxPerTransaction: Number(updated.refund_max_per_transaction),
+      dailyLimitPerCashier: Number(updated.refund_daily_limit_per_cashier),
+    },
+  };
+}

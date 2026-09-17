@@ -5,6 +5,7 @@ import { ArrowLeft, QrCode, CheckCircle2, AlertTriangle, Wrench, ArrowRight, Mes
 
 import QrisSetup from "./qris-setup";
 import PosChargeSetup from "./pos-charge-setup";
+import RefundLimitSetup from "./refund-limit-setup";
 import DeliveryContactSetup from "./delivery-contact-setup";
 import { BusinessMark } from "@/components/business-mark";
 import type { Business } from "@/lib/types";
@@ -36,6 +37,7 @@ export default function SettingsClient({
   storeCode,
   qris,
   posCharges,
+  refundLimits,
   modules,
   business,
   themeClassName,
@@ -49,6 +51,7 @@ export default function SettingsClient({
     nmid: string | null;
   };
   posCharges: { taxRate: number; serviceChargeRate: number };
+  refundLimits: { maxPerTransaction: number; dailyLimitPerCashier: number };
   modules: ModuleRow[];
   business?: Business | null;
   themeClassName?: string;
@@ -157,6 +160,14 @@ export default function SettingsClient({
             </div>
           </div>
           <PosChargeSetup taxRate={posCharges.taxRate} serviceChargeRate={posCharges.serviceChargeRate} />
+
+          <div className="mt-6 border-t border-[#e3ece8] pt-5">
+            <h3 className="mb-3 font-mono text-xs font-black text-[#0b3d2e]">Batas Pengembalian Dana Staf</h3>
+            <RefundLimitSetup
+              maxPerTransaction={refundLimits.maxPerTransaction}
+              dailyLimitPerCashier={refundLimits.dailyLimitPerCashier}
+            />
+          </div>
         </section>
 
         {/* --- Kesiapan modul --- */}
