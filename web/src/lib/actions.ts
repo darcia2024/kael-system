@@ -2192,15 +2192,23 @@ export async function refundOrderAction(
   orderItemId?: string | null,
 ): Promise<ActionResult<{ refundId: string; refundAmount: number; orderNo: string }>> {
   /**
-   * Refund adalah uang KELUAR, dan itu keputusan pemilik.
+   * Refund boleh dilakukan KASIR, bukan cuma pemilik.
    *
-   * Aksi ini dulu menerima siapa pun yang berizin POS, padahal kolom
-   * `refunds.approved_by` sejak awal berkomentar "Wajib role owner" dan
-   * fungsi database-nya menamai parameternya `ownerUserId`. Jadi aturannya
-   * sudah tertulis di dua tempat, cuma tidak pernah ditegakkan di pintunya —
-   * dan kasir bisa mengeluarkan uang dari laci atas namanya sendiri.
+   * Sempat dikunci ke owner karena kolom `refunds.approved_by` berkomentar
+   * "Wajib role owner". Tapi aturan itu tidak cocok dengan cara warung bekerja:
+   * yang berhadapan dengan pelanggan yang membatalkan pesanan adalah kasir,
+   * dan owner sering tidak di tempat. Refund yang harus menunggu owner berarti
+   * pelanggan menunggu, atau kasir mencari jalan lain di luar sistem — dan yang
+   * di luar sistem tidak meninggalkan catatan sama sekali.
+   *
+   * Yang menjaga bukan siapa yang boleh menekan, melainkan jejaknya: tiap
+   * refund menyimpan nominal, alasan, kategori, metode, SIAPA yang melakukannya,
+   * dan shift mana. Owner membacanya di rekap tutup shift.
    */
-  const { businessId, userId } = await requireOwner();
+  const akses = await denganAkses(() => requirePermission("pos"));
+  if (!akses.ok) return fail(akses.error);
+  const { businessId, userId } = akses.sesi;
+
   const locked = await moduleLock(businessId, "pos", "write");
   if (locked) return fail(locked);
 
@@ -2223,6 +2231,30 @@ export async function refundOrderAction(
   }
 
   const orderData = await db.getOrderById(orderId);
+
+  /**
+   * Jejak terpisah di luar tabel refunds.
+   *
+   * Sekarang kasir boleh mengeluarkan uang, jadi yang menjaga bukan lagi siapa
+   * yang boleh menekan, melainkan apakah setiap pengeluaran bisa ditelusuri.
+   * Baris audit ini yang membuat "siapa merefund apa, kapan, lewat mana" bisa
+   * dibaca owner tanpa harus membongkar tabel transaksi.
+   */
+  await db.recordAuditEvent({
+    businessId,
+    actorUserId: userId,
+    action: "pos.refund_issued",
+    entityType: "order",
+    entityId: orderId,
+    metadata: {
+      orderNo: orderData?.order?.order_no ?? null,
+      amount,
+      method: refundMethod,
+      category,
+      reason: reason.trim(),
+      perItem: Boolean(orderItemId),
+    },
+  });
 
   revalidatePath("/app/pos");
   revalidatePath("/app/pos/reports");

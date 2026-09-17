@@ -5696,7 +5696,8 @@ export const db = {
     businessId: string,
     amount: number,
     reason: string,
-    ownerUserId: string,
+    /** Siapa yang melakukan refund — kasir maupun owner, keduanya boleh. */
+    approvedByUserId: string,
     /**
      * Metode, kategori, dan item disimpan sebagai kolom sendiri — bukan
      * dijejalkan ke dalam kalimat alasan seperti "(Metode: CASH)". Kalimat bisa
@@ -5772,7 +5773,7 @@ export const db = {
           // Bawaannya mengikuti cara pelanggan membayar: uang yang masuk lewat
           // QRIS tidak lazim dikembalikan dari laci tunai.
           method: opsi?.method ?? order.payment_method,
-          approved_by: ownerUserId,
+          approved_by: approvedByUserId,
           shift_id: shiftId,
         })} RETURNING *
       `,
@@ -5799,7 +5800,7 @@ export const db = {
             reason: "correction",
             note: "Refund " + order.order_no,
             amount_spent: null,
-            created_by: ownerUserId,
+            created_by: approvedByUserId,
             order_id: orderId,
           })}`;
       }
