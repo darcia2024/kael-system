@@ -22,8 +22,8 @@ import {
   MessageSquare,
   LayoutDashboard,
 } from "lucide-react";
-import type { Business, Order, ShiftReport, FeedbackSummary, FeedbackRow } from "@/lib/types";
-import { FEEDBACK_REASONS } from "@/lib/types";
+import type { Business, Order, ShiftReport, FeedbackSummary, FeedbackRow, RefundReasonCode } from "@/lib/types";
+import { FEEDBACK_REASONS, REFUND_REASONS } from "@/lib/types";
 import { refundOrderAction, deleteOrderAction, deleteFeedbackAction, deleteShiftAction } from "@/lib/actions";
 import ClearTestDataModal from "../clear-test-data-modal";
 import { Trash2 } from "lucide-react";
@@ -86,6 +86,16 @@ export default function PosOwnerReportsPage({
   const [refundingOrderId, setRefundingOrderId] = useState<string | null>(null);
   const [refundReason, setRefundReason] = useState("");
   const [refundAmount, setRefundAmount] = useState<number>(0);
+  /**
+   * Kategori dan metode pengembalian.
+   *
+   * Keduanya kolom sungguhan di tabel refunds, dan METODE-nya yang menentukan
+   * uang keluar dari laci atau tidak — jadi rekap tutup shift ikut bergantung
+   * padanya. Sebelum ini layar ini tidak menanyakan keduanya, jadi kategorinya
+   * selalu "lainnya" dan metodenya selalu menebak dari cara pelanggan membayar.
+   */
+  const [refundCategory, setRefundCategory] = useState<RefundReasonCode>("salah_input");
+  const [refundMethod, setRefundMethod] = useState<"cash" | "qris" | "transfer">("cash");
 
   // Data ditarik ulang dari server, bukan disusun ulang di klien.
   const refreshAll = () => router.refresh();
@@ -138,7 +148,13 @@ export default function PosOwnerReportsPage({
 
     // Pemilik transaksi dan identitas penyetuju ditentukan server dari sesi,
     // bukan dari id yang dikirim halaman ini.
-    const res = await refundOrderAction(refundingOrderId, refundAmount, refundReason);
+    const res = await refundOrderAction(
+      refundingOrderId,
+      refundAmount,
+      refundReason,
+      refundCategory,
+      refundMethod,
+    );
     if (!res.ok) {
       alert(res.error);
       return;
@@ -861,7 +877,51 @@ export default function PosOwnerReportsPage({
               </div>
 
               <div className="space-y-1 font-mono">
-                <label className={`block font-bold ${isMochi ? "text-[#0b3d2e]" : "text-[#232331]"}`}>Alasan Refund:</label>
+                <label className={`block font-bold ${isMochi ? "text-[#0b3d2e]" : "text-[#232331]"}`}>Kategori Alasan:</label>
+                <select
+                  value={refundCategory}
+                  onChange={(e) => setRefundCategory(e.target.value as RefundReasonCode)}
+                  className={`w-full rounded-xl p-2.5 text-xs font-bold ${
+                    isMochi ? "border border-[#ccd9d3] bg-white text-[#0b3d2e]" : "border-2 border-[#232331]"
+                  }`}
+                >
+                  {REFUND_REASONS.map((r) => (
+                    <option key={r.key} value={r.key}>{r.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-1 font-mono">
+                <label className={`block font-bold ${isMochi ? "text-[#0b3d2e]" : "text-[#232331]"}`}>Uang Dikembalikan Lewat:</label>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {([["cash","Tunai"],["qris","QRIS"],["transfer","Transfer"]] as const).map(([nilai,label]) => (
+                    <button
+                      key={nilai}
+                      type="button"
+                      onClick={() => setRefundMethod(nilai)}
+                      className={`rounded-xl py-2 text-[11px] font-bold transition-colors ${
+                        refundMethod === nilai
+                          ? "bg-[#0b3d2e] text-white"
+                          : isMochi ? "border border-[#ccd9d3] bg-white text-[#0b3d2e]" : "border border-[#dedee8] bg-white text-[#232331]"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                {/*
+                  Ditanyakan, bukan ditebak: yang bayar QRIS bisa saja
+                  dikembalikan tunai, dan uang itu tetap keluar dari laci.
+                */}
+                <p className={`text-[10px] leading-relaxed ${isMochi ? "text-[#526159]" : "text-[#7b7b8e]"}`}>
+                  {refundMethod === "cash"
+                    ? "Uang keluar dari laci, dan ikut terhitung saat tutup shift."
+                    : "Tidak menyentuh laci kas, tapi tetap mengurangi omzet."}
+                </p>
+              </div>
+
+              <div className="space-y-1 font-mono">
+                <label className={`block font-bold ${isMochi ? "text-[#0b3d2e]" : "text-[#232331]"}`}>Keterangan:</label>
                 <textarea
                   required
                   rows={2}

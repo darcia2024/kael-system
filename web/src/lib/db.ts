@@ -4170,7 +4170,12 @@ export const db = {
       ) o ON o.shift_id = s.id
       LEFT JOIN (
         SELECT rf.shift_id,
-          SUM(rf.amount) FILTER (WHERE ord.payment_method = 'cash') AS cash_refunds,
+          -- Yang menentukan uang keluar dari LACI adalah metode REFUND-nya,
+          -- bukan cara pelanggan dulu membayar. Sebelum ini disaring dengan
+          -- ord.payment_method, jadi pelanggan yang bayar QRIS lalu dikembalikan
+          -- tunai tidak pernah terhitung — dan selisihnya baru muncul saat kasir
+          -- menghitung laci, tanpa ada baris yang menjelaskannya.
+          SUM(rf.amount) FILTER (WHERE rf.method = 'cash') AS cash_refunds,
           SUM(rf.amount) AS total_refunds
         FROM refunds rf JOIN orders ord ON ord.id = rf.order_id
         WHERE ord.business_id = ${businessId} AND rf.shift_id IS NOT NULL
