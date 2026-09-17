@@ -659,3 +659,36 @@ body {
     transition: none;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   RUANG AMAN LAYAR BERPONI (iPhone, dan ponsel Android berponi)
+
+   Keluhannya konkret: dipasang sebagai PWA di iPhone, seluruh isi layar mepet
+   ke atas sampai tombol kembali dan tab tidak bisa disentuh sama sekali.
+
+   Penyebab utamanya sudah diperbaiki di layout.tsx — statusBarStyle diubah dari
+   "black-translucent" menjadi "default", sehingga iOS sendiri yang menyisakan
+   ruang status bar. Yang di bawah ini jaring pengamannya:
+
+   1. Sisi kiri-kanan. Di posisi mendatar, poni iPhone ada di SAMPING, dan
+      tombol yang menempel tepi layar tertutup olehnya. Kasir sering memegang
+      ponselnya mendatar.
+   2. Header yang menempel. Kalau suatu saat black-translucent dipakai lagi,
+      header tidak lagi tenggelam di bawah status bar.
+
+   Semua nilai env() ini NOL di perangkat tanpa poni dan di desktop, jadi tidak
+   ada satu pun tampilan lain yang berubah karenanya.
+--------------------------------------------------------------------------- */
+
+@supports (padding: env(safe-area-inset-left)) {
+  body {
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+
+  /* Header yang menempel berhenti DI BAWAH poni, bukan di belakangnya. */
+  .sticky.top-0,
+  .fixed.top-0 {
+    top: env(safe-area-inset-top);
+  }
+}

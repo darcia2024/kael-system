@@ -64,7 +64,22 @@ export const metadata: Metadata = {
   },
   appleWebApp: {
     capable: true,
-    statusBarStyle: "black-translucent",
+    /**
+     * "default", BUKAN "black-translucent".
+     *
+     * black-translucent berarti konten web menjulur SAMPAI KE BAWAH status bar
+     * dan notch, dan seluruh urusan ruang amannya diserahkan ke aplikasi. Sisi
+     * bawah memang sudah ditangani lewat env(safe-area-inset-bottom) di
+     * beberapa tempat — tapi sisi ATAS tidak ditangani sama sekali. Akibatnya
+     * setiap header duduk persis di bawah status bar iPhone: tombol kembali,
+     * judul, dan tab tidak bisa disentuh sama sekali saat dipasang sebagai PWA.
+     *
+     * Dengan "default", iOS sendiri yang menyisakan ruang status bar, dan
+     * layarnya mulai di bawahnya. Untuk aplikasi kasir yang dipakai sambil
+     * melayani pembeli, bisa ditekan jauh lebih penting daripada tampilan
+     * menyentuh tepi layar.
+     */
+    statusBarStyle: "default",
     title: "KAEL POS",
   },
   icons: {
