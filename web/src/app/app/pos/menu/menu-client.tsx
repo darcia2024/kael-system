@@ -685,20 +685,20 @@ export default function MenuClient({
             })}
           </div>
 
-          {/* Kartu Grid Daftar Menu */}
-          <div className="grid gap-2.5 sm:gap-3 sm:grid-cols-2">
+          {/* Kartu Grid Daftar Menu (Compact & High-Density) */}
+          <div className="grid gap-2 sm:gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
             {menuTerfilter.map((m) => (
               <div
                 key={m.id}
-                className={`group flex items-start sm:items-center gap-3 sm:gap-3.5 rounded-2xl p-3 sm:p-3.5 transition-all overflow-hidden ${
+                className={`group flex items-center gap-2.5 rounded-xl p-2 sm:p-2.5 transition-all overflow-hidden ${
                   isMochi
-                    ? "border border-[#d8e3de] bg-[#fcfcfe] hover:border-emerald-300 hover:bg-white hover:shadow-sm"
+                    ? "border border-[#d8e3de] bg-[#fcfcfe] hover:border-emerald-300 hover:bg-white hover:shadow-xs"
                     : "border border-[#dedee8] bg-[#fcfcfe]"
                 }`}
               >
-                {/* Foto Menu */}
+                {/* Foto Menu Compact */}
                 <div
-                  className={`relative flex h-16 w-16 sm:h-20 sm:w-20 shrink-0 items-center justify-center overflow-hidden rounded-2xl border ${
+                  className={`relative flex h-12 w-12 sm:h-13 sm:w-13 shrink-0 items-center justify-center overflow-hidden rounded-xl border ${
                     isMochi
                       ? "border-[#d8e3de] bg-[#f0f5f2]"
                       : "border-[#dedee8] bg-white"
@@ -713,25 +713,36 @@ export default function MenuClient({
                   />
                   {!m.photo_url && (
                     <span
-                      className="absolute bottom-0 right-0 rounded-tl-lg bg-[#232331]/80 p-1 text-white"
-                      title="Belum ada foto (menggunakan ilustrasi bawaan)"
+                      className="absolute bottom-0 right-0 rounded-tl-md bg-[#232331]/80 p-0.5 text-white"
+                      title="Belum ada foto"
                     >
-                      <ImageOff size={11} />
+                      <ImageOff size={9} />
                     </span>
                   )}
                 </div>
 
-                {/* Info Menu */}
-                <div className="min-w-0 flex-1 space-y-1">
-                  <div className="flex items-center gap-1.5 flex-wrap">
+                {/* Info Menu Compact */}
+                <div className="min-w-0 flex-1">
+                  {/* Baris 1: Nama & Kategori */}
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <h3 className={`font-black text-xs sm:text-sm truncate leading-tight ${isMochi ? "text-[#0b3d2e]" : "text-[#232331]"}`}>
+                      {m.name}
+                    </h3>
                     <span
-                      className={`inline-block text-[10px] font-bold rounded-md px-1.5 py-0.5 ${
+                      className={`inline-block text-[8.5px] font-bold rounded px-1 py-0.2 shrink-0 ${
                         isMochi
                           ? "bg-emerald-50 text-[#167052] border border-emerald-200/60"
                           : "bg-neutral-100 text-[#7b7b8e]"
                       }`}
                     >
                       {namaKategori(m.category_id)}
+                    </span>
+                  </div>
+
+                  {/* Baris 2: Harga, Status Ketersediaan & HPP */}
+                  <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+                    <span className={`font-mono text-xs font-black ${isMochi ? "text-[#167052]" : "text-[#15803d]"}`}>
+                      {rupiah(m.price)}
                     </span>
 
                     {/* Quick 1-Click Availability Toggle */}
@@ -743,29 +754,21 @@ export default function MenuClient({
                           ? "Klik untuk tandai menu HABIS"
                           : "Klik untuk tandai menu TERSEDIA"
                       }
-                      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[9.5px] font-black transition-all cursor-pointer ${
+                      className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.2 text-[8.5px] font-black transition-all cursor-pointer ${
                         m.is_available
                           ? "bg-emerald-100 text-emerald-800 hover:bg-emerald-200 border border-emerald-300/60"
                           : "bg-rose-100 text-rose-800 hover:bg-rose-200 border border-rose-300/60"
                       }`}
                     >
                       <span
-                        className={`h-1.5 w-1.5 rounded-full ${
+                        className={`h-1 w-1 rounded-full ${
                           m.is_available ? "bg-emerald-600" : "bg-rose-600"
                         }`}
                       />
                       <span>{m.is_available ? "Tersedia" : "Habis"}</span>
                     </button>
-                  </div>
 
-                  <h3 className={`font-black text-sm sm:text-base leading-snug truncate ${isMochi ? "text-[#0b3d2e]" : "text-[#232331]"}`}>
-                    {m.name}
-                  </h3>
-
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <span className={`font-mono text-xs sm:text-sm font-black ${isMochi ? "text-[#167052]" : "text-[#15803d]"}`}>
-                      {rupiah(m.price)}
-                    </span>
+                    {/* HPP tag compact */}
                     {(() => {
                       const modal =
                         m.cost_price && m.cost_price > 0
@@ -779,36 +782,27 @@ export default function MenuClient({
                         const isLaba = laba >= 0;
                         return (
                           <span
-                            className={`inline-flex items-center gap-1 font-mono text-[9px] font-bold px-1.5 py-0.2 rounded-md ${
+                            className={`hidden sm:inline-flex items-center gap-0.5 font-mono text-[8.5px] font-bold px-1 py-0.2 rounded ${
                               !isLaba
-                                ? "bg-rose-100 text-rose-700 border border-rose-200"
+                                ? "bg-rose-100 text-rose-700"
                                 : margin >= 50
-                                ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
-                                : margin >= 30
-                                ? "bg-teal-100 text-teal-800 border border-teal-200"
-                                : "bg-amber-100 text-amber-800 border border-amber-200"
+                                ? "bg-emerald-50 text-emerald-800"
+                                : "bg-amber-50 text-amber-800"
                             }`}
-                            title={`Modal / HPP Pokok: ${rupiah(modal)} | Estimasi Laba: ${isLaba ? "+" : ""}${rupiah(laba)} per porsi`}
+                            title={`Modal: ${rupiah(modal)} | Laba: ${isLaba ? "+" : ""}${rupiah(laba)}`}
                           >
                             <span>HPP {rupiah(modal)}</span>
-                            <span>•</span>
-                            <span>{isLaba ? `+${rupiah(laba)}` : `-${rupiah(Math.abs(laba))}`} ({margin}%)</span>
+                            <span>({margin}%)</span>
                           </span>
                         );
                       }
                       return null;
                     })()}
                   </div>
-
-                  {m.description && (
-                    <p className={`text-[11px] line-clamp-1 ${isMochi ? "text-[#637970]" : "text-[#7b7b8e]"}`}>
-                      {m.description}
-                    </p>
-                  )}
                 </div>
 
-                {/* Tombol Aksi (Ubah & Hapus) */}
-                <div className="flex flex-col sm:flex-row items-center gap-1.5 shrink-0 self-center">
+                {/* Tombol Aksi Compact (Ubah & Hapus) */}
+                <div className="flex items-center gap-1 shrink-0">
                   <button
                     type="button"
                     aria-label={`Ubah ${m.name}`}
@@ -828,27 +822,27 @@ export default function MenuClient({
                       setBukaTambahKategoriModal(false);
                       setTimeout(() => namaInputRef.current?.focus(), 150);
                     }}
-                    className={`flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-xl transition-all shadow-xs active:scale-95 ${
+                    className={`flex h-7 w-7 sm:h-8 sm:w-8 items-center justify-center rounded-lg transition-all shadow-xs active:scale-95 ${
                       isMochi
                         ? "border border-[#d8e3de] bg-white text-[#0b3d2e] hover:border-[#0b3d2e] hover:bg-[#f0f5f2]"
-                        : "border-2 border-[#232331] bg-white"
+                        : "border border-[#232331] bg-white"
                     }`}
-                    title="Ubah data menu"
+                    title="Ubah menu"
                   >
-                    <Pencil size={14} />
+                    <Pencil size={12} />
                   </button>
                   <button
                     type="button"
                     aria-label={`Hapus ${m.name}`}
                     onClick={() => hapus(m)}
-                    className={`flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-xl transition-all shadow-xs active:scale-95 ${
+                    className={`flex h-7 w-7 sm:h-8 sm:w-8 items-center justify-center rounded-lg transition-all shadow-xs active:scale-95 ${
                       isMochi
                         ? "border border-rose-200 bg-rose-50/70 text-[#c2410c] hover:bg-rose-100"
-                        : "border-2 border-[#232331] bg-white text-[#c2410c]"
+                        : "border border-[#232331] bg-white text-[#c2410c]"
                     }`}
                     title="Hapus menu"
                   >
-                    <Trash2 size={14} />
+                    <Trash2 size={12} />
                   </button>
                 </div>
               </div>

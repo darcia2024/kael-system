@@ -26,7 +26,7 @@
  * aplikasi yang isinya uang, halaman "tidak ada koneksi" yang jujur lebih aman.
  */
 
-const CACHE = "kael-pos-v4";
+const CACHE = "kael-pos-v5";
 const HALAMAN_OFFLINE = "/offline.html";
 
 self.addEventListener("install", (event) => {
