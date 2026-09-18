@@ -22,16 +22,29 @@
  * peramban, bukan kekurangan kode.
  */
 
-/** Profil layanan ESC/POS yang dipakai printer thermal 58mm dan 80mm. */
+/** Profil layanan ESC/POS yang dipakai printer thermal 58mm dan 80mm di pasaran. */
 export const LAYANAN_PRINTER = [
-  "000018f0-0000-1000-8000-00805f9b34fb",
-  "49535343-fe7d-4ae5-8fa9-9fafd205e455",
+  "000018f0-0000-1000-8000-00805f9b34fb", // Standar 18F0
+  "0000ffe0-0000-1000-8000-00805f9b34fb", // Feasycom / Panda / VSC / Eppos FFE0
+  "6e400001-b5a3-f393-e0a9-e50e24dcca9e", // Nordic UART NUS
+  "49535343-fe7d-4ae5-8fa9-9fafd205e455", // ISSC Microchip
+  "0000ff00-0000-1000-8000-00805f9b34fb", // Xprinter / ZJiang FF00
+  "0000ae30-0000-1000-8000-00805f9b34fb", // ZJiang AE30
+  "0000fff0-0000-1000-8000-00805f9b34fb", // Custom FFF0
+  "e7810a71-73ae-499d-8c15-faa9aef0c3f2", // Telink / Star
+  "0000180a-0000-1000-8000-00805f9b34fb", // Device Information
 ];
 
 /** Jalur tulis di dalam layanan di atas. */
 export const KARAKTERISTIK_PRINTER = [
-  "00002af1-0000-1000-8000-00805f9b34fb",
-  "49535343-8841-43f4-a8d4-ecbe34729bb3",
+  "00002af1-0000-1000-8000-00805f9b34fb", // Standar 2AF1
+  "0000ffe1-0000-1000-8000-00805f9b34fb", // Feasycom FFE1
+  "6e400002-b5a3-f393-e0a9-e50e24dcca9e", // Nordic UART RX
+  "49535343-8841-43f4-a8d4-ecbe34729bb3", // ISSC TX
+  "0000ff02-0000-1000-8000-00805f9b34fb", // Xprinter FF02
+  "0000ae01-0000-1000-8000-00805f9b34fb", // ZJiang AE01
+  "0000fff2-0000-1000-8000-00805f9b34fb", // Custom FFF2
+  "bef8d6c9-9c21-4c9e-b632-bd58c1009f9f", // Telink TX
 ];
 
 /**
@@ -179,7 +192,19 @@ export async function ambilPrinter(bluetooth: any): Promise<any> {
         { namePrefix: "POS" },
         { namePrefix: "Printer" },
         { namePrefix: "BlueTooth Printer" },
+        { namePrefix: "Bluetooth Printer" },
         { namePrefix: "Thermal" },
+        { namePrefix: "PT-" },
+        { namePrefix: "JP-" },
+        { namePrefix: "XP-" },
+        { namePrefix: "Panda" },
+        { namePrefix: "VSC" },
+        { namePrefix: "Eppos" },
+        { namePrefix: "Iware" },
+        { namePrefix: "Zywell" },
+        { namePrefix: "ZJ-" },
+        { namePrefix: "58" },
+        { namePrefix: "80" },
       ],
       optionalServices: LAYANAN_PRINTER,
     });
@@ -263,13 +288,6 @@ export async function sambungPrinter(device: any) {
     if (!server) throw new Error("Printer tidak dapat dihubungkan.");
     return server;
   } catch (error) {
-    /**
-     * Gagal MENYAMBUNG adalah satu-satunya tanda printernya benar-benar tidak
-     * ada lagi — mati, kehabisan baterai, atau dibawa pergi. Baru di titik itu
-     * printernya dilupakan, supaya percobaan berikutnya menawarkan memilih
-     * ulang. Kegagalan menulis di tengah jalan TIDAK masuk hitungan; itu
-     * biasanya cuma sambungan basi yang cukup dibuka lagi.
-     */
     if (printerTersimpan === device) printerTersimpan = null;
     throw error;
   }
@@ -277,10 +295,6 @@ export async function sambungPrinter(device: any) {
 
 /**
  * Mengirim data ke printer, dengan satu kali percobaan ulang.
- *
- * Printer yang baru saja menganggur kadang memutus koneksinya tepat di tengah
- * pengiriman. Menyambung ulang lalu mengulang sekali jauh lebih baik daripada
- * memunculkan galat ke kasir yang sedang dilihat pembeli.
  */
 export async function kirimKePrinter(device: any, payload: Uint8Array) {
   const tulis = async () => {
@@ -288,34 +302,47 @@ export async function kirimKePrinter(device: any, payload: Uint8Array) {
     const characteristic = await jalurTulisPrinter(server);
     const sifat = characteristic.properties ?? {};
 
-    /**
-     * KIRIM DENGAN KONFIRMASI, POTONGAN KECIL.
-     *
-     * Versi sebelumnya memakai writeValueWithoutResponse dengan potongan 180
-     * byte, dan itu penyebab printer diam padahal layar bilang terkirim:
-     *
-     *   - "tanpa konfirmasi" berarti tumpukan Bluetooth menerima data lalu
-     *     langsung kembali, tanpa menunggu printernya siap. Tidak ada kendali
-     *     arus sama sekali. Begitu penyangga printer penuh, sisanya dibuang
-     *     diam-diam — tidak ada galat, tidak ada yang tercetak.
-     *   - 180 byte melewati MTU bawaan BLE yang cuma 23 byte (isi 20). Printer
-     *     murah banyak yang tidak menegosiasikan MTU lebih besar.
-     *
-     * writeValue menunggu balasan printer tiap potongan, jadi kendali arusnya
-     * datang gratis: kalau printernya belum siap, pengiriman berikutnya
-     * menunggu alih-alih menimpa.
-     */
     const besarPotongan = 20;
-    const tulisSatu = sifat.write
-      ? (b: Uint8Array) => characteristic.writeValue(b)
-      : (b: Uint8Array) => characteristic.writeValueWithoutResponse(b);
+    const tulisSatu = async (b: Uint8Array) => {
+      // Prioritaskan writeWithoutResponse jika didukung untuk mencegah freeze menunggu GATT ACK
+      if (sifat.writeWithoutResponse && typeof characteristic.writeValueWithoutResponse === "function") {
+        try {
+          await characteristic.writeValueWithoutResponse(b);
+          return;
+        } catch {
+          // fallback ke write dengan response jika gagal
+        }
+      }
+
+      if (sifat.write && typeof characteristic.writeValueWithResponse === "function") {
+        try {
+          await characteristic.writeValueWithResponse(b);
+          return;
+        } catch {
+          // fallback
+        }
+      }
+
+      if (typeof characteristic.writeValue === "function") {
+        try {
+          await characteristic.writeValue(b);
+          return;
+        } catch {
+          if (typeof characteristic.writeValueWithoutResponse === "function") {
+            await characteristic.writeValueWithoutResponse(b);
+            return;
+          }
+        }
+      }
+
+      if (typeof characteristic.writeValueWithoutResponse === "function") {
+        await characteristic.writeValueWithoutResponse(b);
+      }
+    };
 
     for (let offset = 0; offset < payload.length; offset += besarPotongan) {
       await tulisSatu(payload.slice(offset, offset + besarPotongan));
-
-      // Printer tanpa konfirmasi tidak punya cara mengerem, jadi jedanya
-      // dipasang di sini. Yang memakai konfirmasi tidak perlu dan tidak dijeda.
-      if (!sifat.write) await new Promise((r) => setTimeout(r, 12));
+      await new Promise((r) => setTimeout(r, 12));
     }
   };
 
