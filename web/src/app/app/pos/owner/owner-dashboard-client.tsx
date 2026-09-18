@@ -49,6 +49,7 @@ import { Trash2, MoreHorizontal } from "lucide-react";
 import TableQrModal from "../table-qr-modal";
 import { isMochiBusiness } from "@/lib/mochi-brand";
 import { BusinessMark } from "@/components/business-mark";
+import PwaInstallBanner from "@/components/pwa-install-banner";
 
 type MenuItemStat = {
   id: string;
@@ -535,6 +536,41 @@ export default function OwnerDashboardClient({
 
       {/* Main Content */}
       <main className="mx-auto w-full max-w-7xl space-y-3 p-3 sm:space-y-6 sm:p-6">
+        {/* PWA INSTALL RECOMMENDATION BANNER */}
+        <PwaInstallBanner isMochi={isMochi} />
+
+        {/* MOBILE PROMINENT CAFE MENU SHORTCUT BANNER */}
+        <div className="sm:hidden">
+          <Link
+            href="/app/pos/menu"
+            className={`flex items-center justify-between gap-3 p-3.5 rounded-3xl border transition-all shadow-xs ${
+              isMochi
+                ? "bg-gradient-to-r from-[#0b3d2e] via-[#144f3d] to-[#0b3d2e] text-white border-emerald-700/60 hover:brightness-105 active:scale-98"
+                : "bg-[#232331] text-white border-[#232331]"
+            }`}
+          >
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#c8f53a] text-[#073829] shadow-xs">
+                <UtensilsCrossed size={20} />
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <span className="font-black text-sm text-white">Kelola Menu Kafe</span>
+                  <span className="rounded-full bg-[#c8f53a]/20 text-[#c8f53a] px-2 py-0.2 font-mono text-[9px] font-black uppercase">
+                    Aktif
+                  </span>
+                </div>
+                <p className="text-[11px] text-emerald-100/80 truncate mt-0.5">
+                  Tambah menu, ubah harga, upload foto &amp; atur stok
+                </p>
+              </div>
+            </div>
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-white/10 text-white">
+              <ArrowRight size={16} />
+            </div>
+          </Link>
+        </div>
+
         {/* PUSAT PILIHAN LAPORAN OWNER (EXECUTIVE QUICK SWITCHER) */}
         <section
           className={
@@ -590,12 +626,7 @@ export default function OwnerDashboardClient({
           </div>
 
           {/* Quick Switcher Cards / Pills */}
-          {/*
-            Di HP: satu baris yang digeser, bukan tiga baris ubin dua kolom. Enam
-            tujuan yang sama tetap ada; bedanya cuma tidak lagi mendorong angka
-            omzet ke layar kedua.
-          */}
-          <div className="-mx-3 mt-2.5 flex snap-x gap-2 overflow-x-auto px-3 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:mx-0 sm:mt-3.5 sm:grid sm:grid-cols-3 sm:gap-2.5 sm:overflow-visible sm:px-0 sm:pb-0 lg:grid-cols-6">
+          <div className="-mx-3 mt-2.5 flex snap-x gap-2 overflow-x-auto px-3 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:mx-0 sm:mt-3.5 sm:grid sm:grid-cols-3 sm:gap-2.5 sm:overflow-visible sm:px-0 sm:pb-0 lg:grid-cols-7">
             {/* 1. Ringkasan Utama (Current) */}
             <div
               className={`w-[132px] shrink-0 snap-start p-2.5 sm:w-auto sm:p-3 rounded-2xl border transition-all ${
@@ -614,7 +645,28 @@ export default function OwnerDashboardClient({
               <p className="hidden text-[10px] text-emerald-200/80 line-clamp-1 sm:block">Omzet, jam ramai, menu</p>
             </div>
 
-            {/* 2. Laporan Penjualan & Profit */}
+            {/* 2. Kelola Menu Kafe */}
+            <Link
+              href="/app/pos/menu"
+              className={`group w-[132px] shrink-0 snap-start p-2.5 sm:w-auto sm:p-3 rounded-2xl border transition-all ${
+                isMochi
+                  ? "border-emerald-300 bg-[#edf8f3] hover:border-emerald-400 hover:bg-[#e2f3ea]"
+                  : "border border-[#dedee8] bg-[#fcfcfe] hover:border-[#232331]"
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <span className="font-mono text-[9px] font-black uppercase tracking-wider text-[#167052]">
+                  PRODUK &amp; HARGA
+                </span>
+                <ChevronRight size={12} className="text-[#167052] group-hover:translate-x-0.5 transition-transform" />
+              </div>
+              <p className={`mt-1 font-black text-xs sm:text-sm ${isMochi ? "text-[#0b3d2e]" : "text-[#232331]"}`}>
+                Kelola Menu
+              </p>
+              <p className="hidden text-[10px] text-[#167052] line-clamp-1 sm:block">Tambah, harga &amp; foto</p>
+            </Link>
+
+            {/* 3. Laporan Penjualan & Profit */}
             <Link
               href="/app/pos/reports"
               className={`group w-[132px] shrink-0 snap-start p-2.5 sm:w-auto sm:p-3 rounded-2xl border transition-all ${
@@ -635,7 +687,7 @@ export default function OwnerDashboardClient({
               <p className="hidden text-[10px] text-[#7b7b8e] line-clamp-1 sm:block">Laba kotor, shift, audit</p>
             </Link>
 
-            {/* 3. Laporan Loyalty & Member */}
+            {/* 4. Laporan Loyalty & Member */}
             <Link
               href="/app/loyalty/analytics"
               className={`group w-[132px] shrink-0 snap-start p-2.5 sm:w-auto sm:p-3 rounded-2xl border transition-all ${
@@ -656,7 +708,7 @@ export default function OwnerDashboardClient({
               <p className="hidden text-[10px] text-[#7b7b8e] line-clamp-1 sm:block">Pertumbuhan &amp; repeat</p>
             </Link>
 
-            {/* 4. Laporan Review & Kepuasan */}
+            {/* 5. Laporan Review & Kepuasan */}
             <Link
               href="/app/review/reports"
               className={`group w-[132px] shrink-0 snap-start p-2.5 sm:w-auto sm:p-3 rounded-2xl border transition-all ${
@@ -677,7 +729,7 @@ export default function OwnerDashboardClient({
               <p className="hidden text-[10px] text-[#7b7b8e] line-clamp-1 sm:block">Google &amp; keluhan privat</p>
             </Link>
 
-            {/* 5. Laporan Keuangan */}
+            {/* 6. Laporan Keuangan */}
             <Link
               href="/app/finance/reports"
               className={`group w-[132px] shrink-0 snap-start p-2.5 sm:w-auto sm:p-3 rounded-2xl border transition-all ${
@@ -698,7 +750,7 @@ export default function OwnerDashboardClient({
               <p className="hidden text-[10px] text-[#7b7b8e] line-clamp-1 sm:block">Laba rugi &amp; arus kas</p>
             </Link>
 
-            {/* 6. Laporan SDM / Absensi */}
+            {/* 7. Laporan SDM / Absensi */}
             <Link
               href="/app/hr/attendance"
               className={`group w-[132px] shrink-0 snap-start p-2.5 sm:w-auto sm:p-3 rounded-2xl border transition-all ${

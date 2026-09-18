@@ -31,7 +31,12 @@ import {
 import qrcode from "qrcode-generator";
 import type { Business, Category, MenuItem } from "@/lib/types";
 import { PLACEHOLDER_MENU } from "@/lib/types";
-import { createQrOrderAction, getQrOrderStatusAction, panggilPelayanAction } from "@/lib/actions";
+import {
+  catatKunjunganMenuAction,
+  createQrOrderAction,
+  getQrOrderStatusAction,
+  panggilPelayanAction,
+} from "@/lib/actions";
 import QrCode from "@/components/qr-code";
 import { buildDynamicQris } from "@/lib/qris-engine";
 import { formatRupiah } from "@/lib/formatters";
@@ -148,6 +153,36 @@ export default function CustomerQrOrderPage({
     const d = detik % 60;
     return `${m}:${String(d).padStart(2, "0")}`;
   };
+
+  /**
+   * Mencatat kunjungan, sekali per meja per hari per perangkat ini.
+   *
+   * Dedup-nya di localStorage, bukan di server. Tanpa ini, satu tamu yang
+   * membuka-tutup halamannya lima kali sambil menunggu makanan tercatat
+   * sebagai lima kunjungan, dan angka yang owner lihat jadi tidak berarti
+   * apa-apa untuk menilai seberapa ramai QR mejanya benar-benar dipindai.
+   *
+   * Kalau localStorage diblokir (mode penyamaran, dsb), kunjungannya tetap
+   * dicatat tanpa dedup — lebih baik terhitung berlebih daripada tidak
+   * terhitung sama sekali.
+   */
+  useEffect(() => {
+    if (!business?.id) return;
+    const hariIni = new Date().toISOString().slice(0, 10);
+    const kunciKunjungan = `kael_view_${business.id}_${tableNo}_${hariIni}`;
+
+    try {
+      if (localStorage.getItem(kunciKunjungan)) return;
+      localStorage.setItem(kunciKunjungan, "1");
+    } catch {
+      // Lanjut mencatat walau localStorage tidak bisa dipakai.
+    }
+
+    void catatKunjunganMenuAction(business.id, tableNo);
+    // Sengaja hanya businessId dan tableNo: kunjungan dicatat sekali per
+    // pemuatan halaman, tidak per perubahan kategori atau pencarian menu.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [business?.id, tableNo]);
 
   const handlePanggilPelayan = async (
     jenis: "siap_memesan" | "tambah_pesanan" | "minta_bill" = "siap_memesan",

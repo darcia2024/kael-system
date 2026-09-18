@@ -21,6 +21,7 @@ import {
   Star,
   MessageSquare,
   LayoutDashboard,
+  QrCode,
 } from "lucide-react";
 import type { Business, Order, ShiftReport, FeedbackSummary, FeedbackRow, RefundReasonCode } from "@/lib/types";
 import { FEEDBACK_REASONS, REFUND_REASONS } from "@/lib/types";
@@ -70,6 +71,7 @@ export default function PosOwnerReportsPage({
   feedbackSummary,
   recentFeedback,
   polaRefund,
+  menuViewStats,
   themeClassName = "",
 }: {
   business: Business | null;
@@ -85,6 +87,13 @@ export default function PosOwnerReportsPage({
     jumlahRefund: number; nilaiRefund: number; refundTunai: number;
     persenRefund: number;
   }[];
+  /** Kunjungan ke menu digital. Menjawab "QR-nya dipindai atau tidak", terlepas dari ada yang pesan atau tidak. */
+  menuViewStats: {
+    hariIni: number;
+    tujuhHari: number;
+    tigaPuluhHari: number;
+    perMeja: { tableNo: string; jumlah: number }[];
+  };
   themeClassName?: string;
 }) {
   const router = useRouter();
@@ -728,6 +737,78 @@ export default function PosOwnerReportsPage({
             </p>
           </div>
         )}
+
+        {/*
+          KUNJUNGAN MENU DIGITAL
+
+          Owner yang mencetak QR di tiap meja tidak punya cara tahu apakah
+          QR-nya benar-benar dipindai, atau cuma tertempel diam di meja. Tanpa
+          angka ini, "menu digital sepi" dan "menu digital ramai tapi tidak
+          ada yang pesan" terlihat identik dari kasir — padahal dua masalah
+          itu solusinya berbeda total: yang satu soal QR-nya tidak terlihat
+          atau tidak menarik, yang satu soal menu atau harganya.
+        */}
+        <div className={isMochi ? "rounded-2xl sm:rounded-3xl border border-[#d8e3de] bg-white p-4 sm:p-6 shadow-sm space-y-4" : "rounded-2xl sm:rounded-3xl border sm:border-2 border-[#232331] bg-white p-4 sm:p-6 shadow-ink-md space-y-4"}>
+          <div className="flex items-center gap-2 border-b border-[#dedee8] pb-3">
+            <QrCode size={16} className={isMochi ? "text-[#167052]" : "text-[#232331]"} />
+            <div>
+              <h3 className={isMochi ? "font-black text-sm sm:text-base text-[#0b3d2e]" : "font-extrabold text-sm sm:text-base text-[#232331]"}>
+                Kunjungan Menu Digital
+              </h3>
+              <p className={isMochi ? "text-[11px] sm:text-xs text-[#526159]" : "text-[11px] sm:text-xs text-[#7b7b8e]"}>
+                Berapa kali QR di meja dipindai — terpisah dari ada tidaknya pesanan.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-2 sm:gap-3">
+            <div className={isMochi ? "rounded-xl bg-[#edf8f3] p-3 text-center" : "rounded-xl bg-[#f4f4fb] p-3 text-center"}>
+              <p className="font-mono text-[10px] uppercase text-[#7b8a82]">Hari Ini</p>
+              <p className={isMochi ? "font-black text-lg text-[#0b3d2e]" : "font-extrabold text-lg text-[#232331]"}>
+                {menuViewStats.hariIni}
+              </p>
+            </div>
+            <div className={isMochi ? "rounded-xl bg-[#edf8f3] p-3 text-center" : "rounded-xl bg-[#f4f4fb] p-3 text-center"}>
+              <p className="font-mono text-[10px] uppercase text-[#7b8a82]">7 Hari</p>
+              <p className={isMochi ? "font-black text-lg text-[#0b3d2e]" : "font-extrabold text-lg text-[#232331]"}>
+                {menuViewStats.tujuhHari}
+              </p>
+            </div>
+            <div className={isMochi ? "rounded-xl bg-[#edf8f3] p-3 text-center" : "rounded-xl bg-[#f4f4fb] p-3 text-center"}>
+              <p className="font-mono text-[10px] uppercase text-[#7b8a82]">30 Hari</p>
+              <p className={isMochi ? "font-black text-lg text-[#0b3d2e]" : "font-extrabold text-lg text-[#232331]"}>
+                {menuViewStats.tigaPuluhHari}
+              </p>
+            </div>
+          </div>
+
+          {menuViewStats.perMeja.length > 0 ? (
+            <div>
+              <p className="mb-1.5 font-mono text-[10px] uppercase text-[#7b8a82]">
+                Meja paling sering memindai · 7 hari
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {menuViewStats.perMeja.map((m) => (
+                  <span
+                    key={m.tableNo}
+                    className={isMochi
+                      ? "inline-flex items-center gap-1 rounded-lg bg-[#f0f5f2] px-2.5 py-1 font-mono text-[11px] text-[#0b3d2e]"
+                      : "inline-flex items-center gap-1 rounded-lg bg-[#f4f4fb] px-2.5 py-1 font-mono text-[11px] text-[#232331]"}
+                  >
+                    Meja {m.tableNo}
+                    <span className="font-bold">{m.jumlah}×</span>
+                  </span>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <p className="text-[11px] leading-relaxed text-[#7b8a82]">
+              Belum ada kunjungan tercatat. Kalau QR-nya sudah tertempel di
+              meja tapi angkanya tetap nol, kemungkinan besar tidak ada tamu
+              yang memindainya — bukan berarti sistemnya diam.
+            </p>
+          )}
+        </div>
 
         {/* SECTION 3: SHIFTS AUDIT & CASH DRAWER VARIANCE */}
         <div className={isMochi ? "rounded-2xl sm:rounded-3xl border border-[#d8e3de] bg-white p-4 sm:p-6 shadow-sm space-y-4" : "rounded-2xl sm:rounded-3xl border sm:border-2 border-[#232331] bg-white p-4 sm:p-6 shadow-ink-md space-y-4"}>

@@ -38,6 +38,7 @@ import type { Business, Category, MenuItem } from "@/lib/types";
 import { PLACEHOLDER_MENU } from "@/lib/types";
 import { isMochiBusiness } from "@/lib/mochi-brand";
 import { BusinessMark } from "@/components/business-mark";
+import PwaInstallBanner from "@/components/pwa-install-banner";
 
 const rupiah = (n: number) => "Rp " + Math.round(n).toLocaleString("id-ID");
 
@@ -403,6 +404,9 @@ export default function MenuClient({
             <span>Dashboard Owner</span>
           </Link>
         </div>
+
+        {/* PWA INSTALL RECOMMENDATION BANNER */}
+        <PwaInstallBanner isMochi={isMochi} />
 
         {/* Header Toko */}
         <header
@@ -874,6 +878,23 @@ export default function MenuClient({
             )}
           </div>
         </section>
+      </div>
+
+      {/* MOBILE FLOATING ACTION BUTTON (FAB) FOR QUICK + MENU */}
+      <div className="sm:hidden fixed bottom-6 right-5 z-30">
+        <button
+          type="button"
+          onClick={bukaTambahMenu}
+          className={`flex items-center gap-2 rounded-full px-5 py-3.5 shadow-2xl font-black text-xs transition-all active:scale-95 cursor-pointer ${
+            isMochi
+              ? "bg-[#0b3d2e] text-[#c8f53a] border border-[#c8f53a]/40 shadow-[#0b3d2e]/50"
+              : "border-2 border-[#232331] bg-[#d9ff57] text-[#232331] shadow-ink-lg"
+          }`}
+          aria-label="Tambah Menu Baru"
+        >
+          <Plus size={18} strokeWidth={2.8} />
+          <span>+ Tambah Menu</span>
+        </button>
       </div>
 
       {/* ------------------------------------------------------------ MODAL FORM TAMBAH / UBAH MENU */}

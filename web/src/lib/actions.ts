@@ -2059,6 +2059,46 @@ export async function resolveTableCallAction(callId: string): Promise<ActionResu
   return done(null);
 }
 
+
+// ===========================================================================
+// Kunjungan menu digital
+// ===========================================================================
+
+/**
+ * Mencatat satu kunjungan ke menu digital.
+ *
+ * TERBUKA tanpa login, dengan alasan yang sama seperti panggilan pelayan:
+ * yang membuka halaman ini adalah tamu yang sedang duduk di meja, tidak
+ * punya akun sama sekali.
+ *
+ * Dedup "satu tamu, satu meja, satu hari" dilakukan di BROWSER (localStorage),
+ * bukan di sini — server cuma menerima kabar bahwa satu kunjungan baru boleh
+ * dicatat. Tanpa dedup di sisi tamu, satu orang yang membuka-tutup layarnya
+ * lima kali sambil menunggu makanan akan tercatat sebagai lima kunjungan, dan
+ * angka yang dilihat owner jadi tidak berarti apa-apa.
+ */
+export async function catatKunjunganMenuAction(
+  businessId: string,
+  tableNo: string,
+): Promise<ActionResult<null>> {
+  if (!businessId || !tableNo?.trim()) return fail("Meja tidak dikenali.");
+
+  const business = await db.getBusiness(businessId);
+  if (!business) return fail("Toko tidak ditemukan.");
+
+  await db.recordMenuPageView(businessId, tableNo);
+  return done(null);
+}
+
+/** Ringkasan kunjungan menu digital, untuk layar laporan owner. */
+export async function getMenuViewStatsAction(): Promise<
+  ActionResult<Awaited<ReturnType<typeof db.getMenuViewStats>>>
+> {
+  const akses = await denganAkses(() => requirePermission("pos"));
+  if (!akses.ok) return fail(akses.error);
+  return done(await db.getMenuViewStats(akses.sesi.businessId));
+}
+
 export async function createQrOrderAction(
   businessId: string,
   tableNo: string,
@@ -2385,6 +2425,61 @@ export async function markPaymentFailedAction(
  * Yang menjaga bukan siapa yang boleh menekan, melainkan jejaknya: tiap
  * pembatalan menyimpan alasannya, nasib makanannya, dan siapa yang melakukannya.
  */
+/**
+ * Mengubah harga satu baris karena permintaan pelanggan.
+ *
+ * Kejadian hariannya: "nasambur tapi dadarnya diganti ayam". Menunya tetap,
+ * harganya yang berubah — dan sebelum ini tidak ada jalannya sama sekali,
+ * karena Ganti Menu cuma bisa ke menu lain yang sudah terdaftar dan diskon
+ * cuma bisa menurunkan.
+ *
+ * Kasir yang melakukannya, bukan owner: yang berhadapan dengan permintaannya
+ * adalah kasir, dan yang harus menunggu owner berarti pelanggan menunggu.
+ * Yang menjaga adalah alasannya yang wajib, namanya yang tercatat, dan
+ * selisihnya yang masuk riwayat penggantian item.
+ */
+export async function adjustOrderItemPriceAction(
+  orderId: string,
+  orderItemId: string,
+  hargaBaru: number,
+  reason: string,
+): Promise<ActionResult<{ totalBaru: number; selisih: number }>> {
+  const akses = await denganAkses(() => requirePermission("pos"));
+  if (!akses.ok) return fail(akses.error);
+  const { businessId, userId } = akses.sesi;
+
+  const locked = await moduleLock(businessId, "pos", "write");
+  if (locked) return fail(locked);
+
+  const hasil = await db.adjustOrderItemPrice(orderId, orderItemId, businessId, userId, {
+    hargaBaru,
+    reason,
+  });
+  if (!hasil.ok) return fail(hasil.error ?? "Harga gagal diubah.");
+
+  await db.recordAuditEvent({
+    businessId,
+    actorUserId: userId,
+    action: "pos.item_price_adjusted",
+    entityType: "order",
+    entityId: orderId,
+    metadata: {
+      orderItemId,
+      hargaBaru: Math.round(hargaBaru),
+      selisih: hasil.selisih,
+      reason: reason.trim(),
+      totalBaru: hasil.totalBaru,
+    },
+  });
+
+  revalidatePath("/app/pos");
+  revalidatePath("/app/pos/station");
+  revalidatePath("/app/pos/kitchen");
+  revalidatePath("/app/pos/reports");
+
+  return done({ totalBaru: hasil.totalBaru ?? 0, selisih: hasil.selisih ?? 0 });
+}
+
 export async function cancelOrderItemAction(
   orderId: string,
   orderItemId: string,

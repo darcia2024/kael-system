@@ -31,6 +31,7 @@ import { normalizeTableKey, tableDisplayName } from "@/lib/table-key";
 import PosReplaceRefundModal from "./pos-replace-refund-modal";
 import PosSplitBillModal, { type ItemBagiTagihan } from "./pos-split-bill-modal";
 import PosCancelItemModal from "./pos-cancel-item-modal";
+import PosAdjustPriceModal from "./pos-adjust-price-modal";
 
 type Antrean = Order & { items: OrderItem[] };
 
@@ -124,6 +125,14 @@ export default function PosFloorPlan({
   const [showAdjustModal, setShowAdjustModal] = useState(false);
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [showSplitBill, setShowSplitBill] = useState(false);
+  const [itemUbahHarga, setItemUbahHarga] = useState<{
+    orderId: string;
+    orderNo: string;
+    itemId: string;
+    nama: string;
+    qty: number;
+    harga: number;
+  } | null>(null);
   const [itemDibatalkan, setItemDibatalkan] = useState<{
     orderId: string;
     orderNo: string;
@@ -703,6 +712,32 @@ export default function PosFloorPlan({
                                   <span>Batalkan</span>
                                 </button>
                               )}
+
+                              {/*
+                                Permintaan tukar lauk: menunya tetap, harganya
+                                berbeda. Ganti Menu tidak menjawabnya karena itu
+                                cuma bisa pindah ke menu yang sudah terdaftar,
+                                dan diskon cuma bisa menurunkan.
+                              */}
+                              {order.payment_status === "pending" && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setItemUbahHarga({
+                                      orderId: order.id,
+                                      orderNo: order.order_no,
+                                      itemId: item.id,
+                                      nama: item.name_snapshot,
+                                      qty: item.qty,
+                                      harga: Number(item.price_snapshot),
+                                    })
+                                  }
+                                  className="flex items-center gap-1 rounded-lg border border-[#ccd9d3] bg-white px-2 py-1 text-[10px] font-bold text-[#0b3d2e] hover:bg-[#edf8f3]"
+                                  title="Harga beda karena permintaan pelanggan, misalnya tukar lauk"
+                                >
+                                  <span>Ubah Harga</span>
+                                </button>
+                              )}
                             </div>
                           </li>
                         ))}
@@ -882,6 +917,23 @@ export default function PosFloorPlan({
           menuItems={menuItems}
           isMochi={isMochi}
           onSuccess={() => {
+            if (onRefresh) onRefresh();
+          }}
+        />
+      )}
+
+      {itemUbahHarga && (
+        <PosAdjustPriceModal
+          orderId={itemUbahHarga.orderId}
+          orderNo={itemUbahHarga.orderNo}
+          itemId={itemUbahHarga.itemId}
+          namaMenu={itemUbahHarga.nama}
+          qty={itemUbahHarga.qty}
+          hargaSekarang={itemUbahHarga.harga}
+          isMochi={isMochi}
+          onClose={() => setItemUbahHarga(null)}
+          onSelesai={() => {
+            setItemUbahHarga(null);
             if (onRefresh) onRefresh();
           }}
         />
