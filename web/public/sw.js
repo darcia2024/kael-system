@@ -1,5 +1,5 @@
 // KAEL System - Progressive Web App Service Worker
-const CACHE_VERSION = "kael-pos-v1";
+const CACHE_VERSION = "kael-pos-v2";
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const DYNAMIC_CACHE = `${CACHE_VERSION}-dynamic`;
 
