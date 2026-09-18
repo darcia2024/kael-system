@@ -108,7 +108,21 @@ export default function NotifikasiSetup() {
        * ada pesan apa pun yang menjelaskan kenapa.
        */
       const reg = await navigator.serviceWorker.register("/sw.js");
-      await navigator.serviceWorker.ready;
+
+      /**
+       * `.ready` tidak pernah menyerah sendiri. Selama precache sw.js memuat
+       * /favicon.ico yang tidak ada, pemasangannya gagal di SETIAP perangkat
+       * dan tombol ini berputar selamanya. Lima belas detik jauh melebihi
+       * waktu pemasangan yang wajar; lewat dari itu owner diberi tahu.
+       */
+      const siap = await Promise.race([
+        navigator.serviceWorker.ready.then(() => true),
+        new Promise<false>((selesai) => setTimeout(() => selesai(false), 15_000)),
+      ]);
+      if (!siap) {
+        setPesan("Layanan notifikasi di perangkat ini belum aktif. Muat ulang halaman, lalu coba lagi.");
+        return;
+      }
 
       const langgananLama = await reg.pushManager.getSubscription();
       const langganan =

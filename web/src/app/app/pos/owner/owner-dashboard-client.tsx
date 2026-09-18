@@ -50,6 +50,7 @@ import TableQrModal from "../table-qr-modal";
 import { isMochiBusiness } from "@/lib/mochi-brand";
 import { BusinessMark } from "@/components/business-mark";
 import PwaInstallBanner from "@/components/pwa-install-banner";
+import { usePasangAplikasi } from "@/components/pasang-aplikasi";
 
 type MenuItemStat = {
   id: string;
@@ -152,6 +153,14 @@ export default function OwnerDashboardClient({
   const [menuAksiHp, setMenuAksiHp] = useState(false);
   const [tabMenuHp, setTabMenuHp] = useState<"laku" | "kurang">("laku");
   const [feedLengkapHp, setFeedLengkapHp] = useState(false);
+
+  /*
+   * Jalan kedua memasang KAEL Owner, lewat menu ⋯. Banner di atas cuma muncul
+   * kalau peramban menawarkan jendela pasang atau di iPhone, dan bisa ditutup;
+   * yang ini selalu ada, dan kalau jendela pasangnya tidak tersedia ia
+   * membuka panduan.
+   */
+  const pasangAplikasi = usePasangAplikasi();
 
   const reasonMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -432,6 +441,18 @@ export default function OwnerDashboardClient({
                         <a.icon size={15} className="text-[#167052]" /> {a.label}
                       </button>
                     ),
+                  )}
+                  {pasangAplikasi.tampil && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMenuAksiHp(false);
+                        pasangAplikasi.pasang();
+                      }}
+                      className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left text-[13px] font-bold hover:bg-[#f4f8f6]"
+                    >
+                      <Smartphone size={15} className="text-[#167052]" /> Pasang di layar utama
+                    </button>
                   )}
                   {/*
                     Aksi yang menghapus data ditaruh terakhir dan dipisah garis.
@@ -2522,6 +2543,8 @@ export default function OwnerDashboardClient({
         }}
         isMochi={isMochi}
       />
+
+      {pasangAplikasi.lembar}
     </div>
   );
 }

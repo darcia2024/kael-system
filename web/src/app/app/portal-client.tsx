@@ -21,6 +21,7 @@ import {
   CheckCircle2,
   Lock,
   Star,
+  Smartphone,
 } from "lucide-react";
 import type { Business, User, SafeUser } from "@/lib/types";
 import type { LicenseState, ModuleStatus } from "@/lib/licensing";
@@ -34,6 +35,7 @@ import { formatBusinessDate } from "@/lib/formatters";
 import { BusinessMark } from "@/components/business-mark";
 import { mochiThemeClass } from "@/lib/mochi-theme";
 import { isMochiBusiness } from "@/lib/mochi-brand";
+import { usePasangAplikasi } from "@/components/pasang-aplikasi";
 
 /**
  * Satu modul sebagaimana ditampilkan di beranda.
@@ -88,6 +90,10 @@ export default function AppPortalHub({
 }) {
   const router = useRouter();
   const isMochi = isMochiBusiness(business);
+
+  // Beranda ini halaman pertama owner sesudah masuk — tempat paling wajar
+  // untuk menawarkan aplikasi KAEL Owner.
+  const pasangAplikasi = usePasangAplikasi();
 
   // Add staff modal state
   const [showAddStaff, setShowAddStaff] = useState(false);
@@ -309,7 +315,7 @@ export default function AppPortalHub({
                   Akses langsung ke ringkasan omzet hari ini, performa menu terlaris, laci kasir, audit kepuasan pelanggan, serta seluruh pilihan laporan bisnis.
                 </p>
               </div>
-              <div className="flex items-center gap-2 shrink-0">
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
                 <Link
                   href="/app/pos/owner"
                   className="inline-flex items-center gap-2 rounded-2xl bg-[#c8f53a] px-5 py-3 font-mono text-xs font-black text-[#073829] shadow-sm hover:bg-[#bbf028] transition-all active:scale-95"
@@ -317,6 +323,16 @@ export default function AppPortalHub({
                   <span>Buka Dashboard Owner Utama</span>
                   <ArrowRight size={15} />
                 </Link>
+                {pasangAplikasi.tampil && (
+                  <button
+                    type="button"
+                    onClick={pasangAplikasi.pasang}
+                    className="inline-flex items-center gap-2 rounded-2xl border border-[#c8f53a]/60 bg-white/5 px-4 py-3 font-mono text-xs font-black text-[#c8f53a] hover:bg-white/10 transition-all active:scale-95"
+                  >
+                    <Smartphone size={15} />
+                    <span>Pasang aplikasi</span>
+                  </button>
+                )}
               </div>
             </div>
 
@@ -956,6 +972,8 @@ export default function AppPortalHub({
           </form>
         </div>
       )}
+
+      {pasangAplikasi.lembar}
 
       <footer className={`border-t py-4 text-center text-xs font-mono ${
         isMochi ? "border-[#d8e3de] bg-white text-[#637970]" : "border-[#dedee8] bg-white text-[#7b7b8e]"

@@ -50,7 +50,12 @@ export function usePasangAplikasi() {
   return { tampil: !isInstalled, pasang, lembar };
 }
 
-const ikonSebaris = "mx-0.5 inline-block -translate-y-px align-middle";
+/**
+ * Ikon di tengah kalimat. Spasi di sekitarnya ditulis eksplisit ({" "}): JSX
+ * membuang pindah baris di antara teks dan elemen, dan ikonnya aria-hidden —
+ * tanpa spasi, pembaca layar membaca "Ketuk menudi pojok".
+ */
+const ikonSebaris = "inline-block -translate-y-px align-middle";
 
 function LembarPanduan({ perangkat, onTutup }: { perangkat: Perangkat; onTutup: () => void }) {
   useEffect(() => {
@@ -65,12 +70,12 @@ function LembarPanduan({ perangkat, onTutup }: { perangkat: Perangkat; onTutup: 
     perangkat === "ios"
       ? [
           <>
-            Ketuk tombol <b>Bagikan</b>
+            Ketuk tombol <b>Bagikan</b>{" "}
             <Share size={14} className={ikonSebaris} aria-hidden="true" /> — di iPhone ada di bawah
             layar, di iPad di kanan atas.
           </>,
           <>
-            Gulir ke bawah, pilih <b>Tambah ke Layar Utama</b>
+            Gulir ke bawah, pilih <b>Tambah ke Layar Utama</b>{" "}
             <SquarePlus size={14} className={ikonSebaris} aria-hidden="true" />.
           </>,
           <>
@@ -80,8 +85,8 @@ function LembarPanduan({ perangkat, onTutup }: { perangkat: Perangkat; onTutup: 
       : perangkat === "android"
         ? [
             <>
-              Ketuk menu
-              <EllipsisVertical size={14} className={ikonSebaris} aria-hidden="true" />
+              Ketuk menu{" "}
+              <EllipsisVertical size={14} className={ikonSebaris} aria-hidden="true" />{" "}
               di pojok kanan atas Chrome.
             </>,
             <>
@@ -93,8 +98,8 @@ function LembarPanduan({ perangkat, onTutup }: { perangkat: Perangkat; onTutup: 
           ]
         : [
             <>
-              Klik ikon pasang
-              <MonitorDown size={14} className={ikonSebaris} aria-hidden="true" />
+              Klik ikon pasang{" "}
+              <MonitorDown size={14} className={ikonSebaris} aria-hidden="true" />{" "}
               di ujung kanan kolom alamat Chrome atau Edge.
             </>,
             <>

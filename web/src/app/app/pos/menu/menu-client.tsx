@@ -412,13 +412,13 @@ export default function MenuClient({
         <header
           className={`flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between ${
             isMochi
-              ? "rounded-3xl border border-[#d8e3de] bg-white p-6 shadow-[0_4px_24px_rgba(11,61,46,0.04)]"
-              : "rounded-2xl border-2 border-[#232331] bg-white p-5 shadow-ink-md"
+              ? "rounded-3xl border border-[#d8e3de] bg-white p-4 sm:p-6 shadow-[0_4px_24px_rgba(11,61,46,0.04)]"
+              : "rounded-2xl border-2 border-[#232331] bg-white p-4 sm:p-5 shadow-ink-md"
           }`}
         >
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3.5 sm:gap-4">
             {isMochi ? (
-              <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-white p-1 border border-emerald-400/40 shadow-xs overflow-hidden">
+              <div className="flex h-12 w-12 sm:h-14 sm:w-14 shrink-0 items-center justify-center rounded-2xl bg-white p-1 border border-emerald-400/40 shadow-xs overflow-hidden">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src="/logo-mochi.png" alt="Mochi Logo" className="h-full w-full object-contain" />
               </div>
@@ -441,7 +441,7 @@ export default function MenuClient({
                   {isMochi ? "Mochi Cafe n Resto · POS" : "KAEL POS"}
                 </span>
               </div>
-              <h1 className={`text-2xl sm:text-3xl font-black tracking-tight ${isMochi ? "text-[#0b3d2e]" : ""}`}>
+              <h1 className={`text-xl sm:text-3xl font-black tracking-tight ${isMochi ? "text-[#0b3d2e]" : ""}`}>
                 Kelola Menu
               </h1>
               <p className={`mt-0.5 text-xs sm:text-sm ${isMochi ? "text-[#4d665a]" : "text-[#7b7b8e]"}`}>
@@ -453,7 +453,7 @@ export default function MenuClient({
           <button
             type="button"
             onClick={bukaTambahMenu}
-            className={`inline-flex items-center justify-center gap-2 rounded-2xl px-5 py-3 text-sm font-black transition-all shadow-md active:scale-95 ${
+            className={`hidden sm:inline-flex items-center justify-center gap-2 rounded-2xl px-5 py-3 text-sm font-black transition-all shadow-md active:scale-95 ${
               isMochi
                 ? "bg-[#0b3d2e] text-[#c8f53a] hover:bg-[#167052] hover:shadow-lg"
                 : "border-2 border-[#232331] bg-[#d9ff57] text-[#232331]"
@@ -504,8 +504,8 @@ export default function MenuClient({
         <section
           className={`space-y-4 ${
             isMochi
-              ? "rounded-3xl border border-[#d8e3de] bg-white p-6 shadow-[0_4px_24px_rgba(11,61,46,0.04)]"
-              : "rounded-2xl border-2 border-[#232331] bg-white p-5 shadow-ink-md"
+              ? "rounded-3xl border border-[#d8e3de] bg-white p-4 sm:p-6 shadow-[0_4px_24px_rgba(11,61,46,0.04)]"
+              : "rounded-2xl border-2 border-[#232331] bg-white p-4 sm:p-5 shadow-ink-md"
           }`}
         >
           <div className="flex items-center justify-between">
@@ -583,15 +583,15 @@ export default function MenuClient({
 
         {/* ----------------------------------------------------- DAFTAR MENU */}
         <section
-          className={`space-y-5 ${
+          className={`space-y-4 sm:space-y-5 ${
             isMochi
-              ? "rounded-3xl border border-[#d8e3de] bg-white p-6 shadow-[0_4px_24px_rgba(11,61,46,0.04)]"
-              : "rounded-2xl border-2 border-[#232331] bg-white p-5 shadow-ink-md"
+              ? "rounded-3xl border border-[#d8e3de] bg-white p-3.5 sm:p-6 shadow-[0_4px_24px_rgba(11,61,46,0.04)]"
+              : "rounded-2xl border-2 border-[#232331] bg-white p-3.5 sm:p-5 shadow-ink-md"
           }`}
         >
           {/* Baris Judul & Pencarian */}
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-2.5">
+          <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-2">
               <Utensils size={18} className={isMochi ? "text-[#167052]" : "text-[#7958d8]"} />
               <h2 className={`text-base sm:text-lg font-black ${isMochi ? "text-[#0b3d2e]" : ""}`}>
                 Daftar Menu
@@ -606,7 +606,7 @@ export default function MenuClient({
             </div>
 
             <div className="flex items-center gap-2 w-full sm:w-auto">
-              <div className="relative w-full sm:w-64">
+              <div className="relative flex-1 sm:w-64">
                 <Search
                   size={16}
                   className={`absolute left-3.5 top-1/2 -translate-y-1/2 ${
@@ -637,16 +637,16 @@ export default function MenuClient({
               <button
                 type="button"
                 onClick={bukaTambahMenu}
-                className="inline-flex items-center gap-1 rounded-xl bg-[#0b3d2e] px-3.5 py-2 text-xs font-black text-[#c8f53a] hover:bg-[#167052] transition-all shadow-xs shrink-0"
+                className="inline-flex items-center gap-1.5 rounded-xl bg-[#0b3d2e] px-3.5 py-2 text-xs font-black text-[#c8f53a] hover:bg-[#167052] transition-all shadow-xs shrink-0 active:scale-95"
               >
-                <Plus size={14} />
-                <span>+ Menu</span>
+                <Plus size={15} />
+                <span>Tambah</span>
               </button>
             </div>
           </div>
 
           {/* Filter Tab Kategori */}
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <button
               type="button"
               onClick={() => setFilterKategori("all")}
@@ -686,11 +686,11 @@ export default function MenuClient({
           </div>
 
           {/* Kartu Grid Daftar Menu */}
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-2.5 sm:gap-3 sm:grid-cols-2">
             {menuTerfilter.map((m) => (
               <div
                 key={m.id}
-                className={`group flex items-center gap-3.5 rounded-2xl p-3.5 transition-all ${
+                className={`group flex items-start sm:items-center gap-3 sm:gap-3.5 rounded-2xl p-3 sm:p-3.5 transition-all overflow-hidden ${
                   isMochi
                     ? "border border-[#d8e3de] bg-[#fcfcfe] hover:border-emerald-300 hover:bg-white hover:shadow-sm"
                     : "border border-[#dedee8] bg-[#fcfcfe]"
@@ -698,7 +698,7 @@ export default function MenuClient({
               >
                 {/* Foto Menu */}
                 <div
-                  className={`relative flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-2xl border ${
+                  className={`relative flex h-16 w-16 sm:h-20 sm:w-20 shrink-0 items-center justify-center overflow-hidden rounded-2xl border ${
                     isMochi
                       ? "border-[#d8e3de] bg-[#f0f5f2]"
                       : "border-[#dedee8] bg-white"
@@ -722,7 +722,7 @@ export default function MenuClient({
                 </div>
 
                 {/* Info Menu */}
-                <div className="min-w-0 flex-1">
+                <div className="min-w-0 flex-1 space-y-1">
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <span
                       className={`inline-block text-[10px] font-bold rounded-md px-1.5 py-0.5 ${
@@ -758,11 +758,12 @@ export default function MenuClient({
                     </button>
                   </div>
 
-                  <p className={`mt-0.5 truncate text-sm font-black ${isMochi ? "text-[#0b3d2e]" : "text-[#232331]"}`}>
+                  <h3 className={`font-black text-sm sm:text-base leading-snug truncate ${isMochi ? "text-[#0b3d2e]" : "text-[#232331]"}`}>
                     {m.name}
-                  </p>
-                  <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
-                    <span className={`font-mono text-xs font-black ${isMochi ? "text-[#167052]" : "text-[#15803d]"}`}>
+                  </h3>
+
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className={`font-mono text-xs sm:text-sm font-black ${isMochi ? "text-[#167052]" : "text-[#15803d]"}`}>
                       {rupiah(m.price)}
                     </span>
                     {(() => {
@@ -778,7 +779,7 @@ export default function MenuClient({
                         const isLaba = laba >= 0;
                         return (
                           <span
-                            className={`inline-flex items-center gap-1 font-mono text-[9.5px] font-bold px-1.5 py-0.5 rounded-md ${
+                            className={`inline-flex items-center gap-1 font-mono text-[9px] font-bold px-1.5 py-0.2 rounded-md ${
                               !isLaba
                                 ? "bg-rose-100 text-rose-700 border border-rose-200"
                                 : margin >= 50
@@ -798,15 +799,16 @@ export default function MenuClient({
                       return null;
                     })()}
                   </div>
+
                   {m.description && (
-                    <p className={`truncate text-[11px] ${isMochi ? "text-[#637970]" : "text-[#7b7b8e]"}`}>
+                    <p className={`text-[11px] line-clamp-1 ${isMochi ? "text-[#637970]" : "text-[#7b7b8e]"}`}>
                       {m.description}
                     </p>
                   )}
                 </div>
 
-                {/* Tombol Aksi */}
-                <div className="flex shrink-0 gap-1.5">
+                {/* Tombol Aksi (Ubah & Hapus) */}
+                <div className="flex flex-col sm:flex-row items-center gap-1.5 shrink-0 self-center">
                   <button
                     type="button"
                     aria-label={`Ubah ${m.name}`}
@@ -826,27 +828,27 @@ export default function MenuClient({
                       setBukaTambahKategoriModal(false);
                       setTimeout(() => namaInputRef.current?.focus(), 150);
                     }}
-                    className={`rounded-xl p-2.5 transition-all shadow-xs ${
+                    className={`flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-xl transition-all shadow-xs active:scale-95 ${
                       isMochi
                         ? "border border-[#d8e3de] bg-white text-[#0b3d2e] hover:border-[#0b3d2e] hover:bg-[#f0f5f2]"
                         : "border-2 border-[#232331] bg-white"
                     }`}
                     title="Ubah data menu"
                   >
-                    <Pencil size={15} />
+                    <Pencil size={14} />
                   </button>
                   <button
                     type="button"
                     aria-label={`Hapus ${m.name}`}
                     onClick={() => hapus(m)}
-                    className={`rounded-xl p-2.5 transition-all shadow-xs ${
+                    className={`flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-xl transition-all shadow-xs active:scale-95 ${
                       isMochi
-                        ? "border border-rose-200 bg-rose-50/50 text-[#c2410c] hover:bg-rose-100"
+                        ? "border border-rose-200 bg-rose-50/70 text-[#c2410c] hover:bg-rose-100"
                         : "border-2 border-[#232331] bg-white text-[#c2410c]"
                     }`}
                     title="Hapus menu"
                   >
-                    <Trash2 size={15} />
+                    <Trash2 size={14} />
                   </button>
                 </div>
               </div>

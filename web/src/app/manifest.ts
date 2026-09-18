@@ -2,6 +2,13 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
+    /**
+     * Ditulis tegas karena sekarang ada dua aplikasi di domain yang sama:
+     * KAEL POS ini untuk tablet kasir, dan KAEL Owner (lib/owner-app.ts) untuk
+     * HP pemilik. Nilainya sama dengan bawaan (start_url), jadi aplikasi yang
+     * sudah terpasang tidak berubah identitas.
+     */
+    id: "/app/pos",
     name: "KAEL System - Smart POS & Resto",
     short_name: "KAEL POS",
     description: "Sistem Kasir POS, Kitchen Display, dan Manajemen Resto",

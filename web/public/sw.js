@@ -1,96 +1,85 @@
-// KAEL System - Progressive Web App Service Worker
-const CACHE_VERSION = "kael-pos-v3";
-const STATIC_CACHE = `${CACHE_VERSION}-static`;
-const DYNAMIC_CACHE = `${CACHE_VERSION}-dynamic`;
+/**
+ * KAEL — service worker.
+ *
+ * Sengaja kecil: halaman "tidak ada koneksi" untuk perpindahan halaman yang
+ * gagal, dan notifikasi dorong untuk pemilik usaha. Tidak ada HTML yang
+ * disimpan.
+ *
+ * Versi sebelumnya tidak pernah aktif di satu perangkat pun. Daftar precache-
+ * nya memuat /favicon.ico — berkas yang tidak pernah ada — dan cache.addAll()
+ * menggagalkan SELURUH pemasangan begitu satu berkas 404. Peramban membuang
+ * service worker itu diam-diam: "installing", lalu "redundant". Akibatnya:
+ *
+ * - Tombol "Nyalakan notifikasi" di Pengaturan berputar selamanya, karena
+ *   `navigator.serviceWorker.ready` menunggu service worker yang tidak akan
+ *   pernah aktif. Kabar refund ke HP owner tidak pernah bisa dinyalakan.
+ * - Menaikkan versi cache tidak berpengaruh apa-apa: cache-nya memang tidak
+ *   pernah dipakai.
+ *
+ * Maka aturannya di sini: tidak ada satu berkas pun yang boleh menggagalkan
+ * pemasangan.
+ *
+ * HTML sengaja tidak disimpan. Versi lama menyimpan setiap halaman yang dibuka
+ * — termasuk dasbor owner berisi omzet — lalu menyajikannya lagi saat jaringan
+ * putus: kasir di tablet yang sama bisa melihat angka owner, dan layar kasir
+ * yang sudah basi tampak masih bekerja padahal setiap tombolnya gagal. Untuk
+ * aplikasi yang isinya uang, halaman "tidak ada koneksi" yang jujur lebih aman.
+ */
 
-const PRECACHE_ASSETS = [
-  "/icon-192.png",
-  "/icon-512.png",
-  "/icon-maskable-512.png",
-  "/apple-touch-icon.png",
-  "/favicon.ico",
-];
+const CACHE = "kael-pos-v4";
+const HALAMAN_OFFLINE = "/offline.html";
 
-// Install: precache essential shell assets
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(STATIC_CACHE).then((cache) => {
-      return cache.addAll(PRECACHE_ASSETS);
-    })
+    caches
+      .open(CACHE)
+      .then((cache) => cache.add(HALAMAN_OFFLINE))
+      // Halaman offline yang gagal disimpan cuma berarti peramban menampilkan
+      // layar galatnya sendiri — jauh lebih ringan daripada kehilangan
+      // notifikasi. Pemasangan tetap diteruskan.
+      .catch(() => undefined)
   );
   self.skipWaiting();
 });
 
-// Activate: clean up old caches
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches.keys().then((keys) => {
-      return Promise.all(
-        keys
-          .filter((key) => key.startsWith("kael-pos-") && key !== STATIC_CACHE && key !== DYNAMIC_CACHE)
-          .map((key) => caches.delete(key))
+    (async () => {
+      // Sisa versi lama: kael-pos-v1, -v2, -v3, masing-masing -static/-dynamic.
+      const semua = await caches.keys();
+      await Promise.all(
+        semua
+          .filter((nama) => nama.startsWith("kael-") && nama !== CACHE)
+          .map((nama) => caches.delete(nama))
       );
-    }).then(() => self.clients.claim())
+      // Permintaan halaman berangkat bersamaan dengan service worker bangun,
+      // bukan menunggunya, supaya membuka halaman tidak jadi lebih lambat.
+      if (self.registration.navigationPreload) {
+        await self.registration.navigationPreload.enable();
+      }
+      await self.clients.claim();
+    })()
   );
 });
 
-// Fetch: Strategy
 self.addEventListener("fetch", (event) => {
   const { request } = event;
 
-  // Only handle GET requests, never intercept mutations/POST/Server Actions
-  if (request.method !== "GET") return;
+  // Hanya perpindahan halaman. Gambar, skrip, data, dan Server Action lewat
+  // apa adanya tanpa disentuh.
+  if (request.mode !== "navigate" || request.method !== "GET") return;
 
-  const url = new URL(request.url);
-
-  // Ignore non-http(s) schemes (e.g. chrome-extension, data)
-  if (!url.protocol.startsWith("http")) return;
-
-  // Static assets: cache-first with network fallback
-  if (
-    url.pathname.startsWith("/_next/static/") ||
-    url.pathname.startsWith("/fonts/") ||
-    url.pathname.endsWith(".png") ||
-    url.pathname.endsWith(".webp") ||
-    url.pathname.endsWith(".jpg") ||
-    url.pathname.endsWith(".svg") ||
-    url.pathname.endsWith(".woff2")
-  ) {
-    event.respondWith(
-      caches.match(request).then((cached) => {
-        if (cached) return cached;
-        return fetch(request).then((response) => {
-          if (response && response.status === 200) {
-            const clone = response.clone();
-            caches.open(STATIC_CACHE).then((cache) => cache.put(request, clone));
-          }
-          return response;
-        });
-      })
-    );
-    return;
-  }
-
-  // HTML and dynamic routes: Network-first with cache fallback
-  if (request.headers.get("accept")?.includes("text/html")) {
-    event.respondWith(
-      fetch(request)
-        .then((response) => {
-          if (response && response.status === 200) {
-            const clone = response.clone();
-            caches.open(DYNAMIC_CACHE).then((cache) => cache.put(request, clone));
-          }
-          return response;
-        })
-        .catch(() => {
-          return caches.match(request).then((cached) => {
-            if (cached) return cached;
-            // Return cached fallback if available
-            return caches.match("/app/pos");
-          });
-        })
-    );
-  }
+  event.respondWith(
+    (async () => {
+      try {
+        const dimuatDulu = await event.preloadResponse;
+        if (dimuatDulu) return dimuatDulu;
+        return await fetch(request);
+      } catch (_) {
+        return (await caches.match(HALAMAN_OFFLINE)) || Response.error();
+      }
+    })()
+  );
 });
 
 /**
@@ -117,8 +106,11 @@ self.addEventListener("push", (event) => {
   const judul = isi.judul || "KAEL";
   const opsi = {
     body: isi.pesan || "Ada kabar baru di KAEL.",
-    icon: "/icon-192.png",
-    badge: "/icon-192.png",
+    // Kabar ini untuk pemilik usaha mana pun, jadi ikonnya ikon KAEL Owner.
+    icon: "/owner/icon-192.png",
+    // Android menggambar badge di bilah status sebagai siluet satu warna;
+    // ikon berwarna penuh berubah jadi kotak putih polos.
+    badge: "/owner/badge-96.png",
     // Notifikasi dengan tag sama saling menimpa, bukan menumpuk — supaya lima
     // refund berturut-turut tidak meninggalkan lima baris di layar kunci.
     tag: isi.tag || "kael",
