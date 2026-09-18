@@ -4667,6 +4667,9 @@ export const db = {
 
       await tx`
         UPDATE table_sessions SET
+          status = 'closed',
+          closed_at = NOW(),
+          closed_by = ${userId},
           dibayar_dengan = ${opsi.method},
           tunai_diterima = ${cashGiven},
           kembalian = ${change},
@@ -4901,6 +4904,75 @@ export const db = {
       RETURNING id
     `;
     return rows.length;
+  },
+
+  // =========================================================================
+  // Kunjungan menu digital
+  // =========================================================================
+
+  /**
+   * Mencatat satu kunjungan ke menu digital.
+   *
+   * Dipanggil dari halaman meja tanpa login, jadi tidak ada pengecekan izin
+   * di sini — pengamannya ada di action pemanggilnya (memvalidasi bisnisnya
+   * ada dan mejanya dikenali). Dedup "satu tamu, satu meja, satu hari" sudah
+   * dilakukan di browser lewat localStorage sebelum sampai ke sini, supaya
+   * tamu yang membuka-tutup layarnya berkali-kali tidak menggembungkan angka.
+   */
+  async recordMenuPageView(businessId: string, tableNo: string): Promise<void> {
+    const tableKey = normalizeTableKey(tableNo);
+    if (!tableKey) return;
+    await sql`
+      INSERT INTO menu_page_views ${sql({
+        business_id: businessId,
+        table_no: tableNo.trim().slice(0, 40),
+        table_key: tableKey,
+      })}
+    `;
+  },
+
+  /**
+   * Ringkasan kunjungan untuk layar laporan owner.
+   *
+   * Dipisah jadi hari ini dan 7 hari terakhir karena keduanya menjawab
+   * pertanyaan yang berbeda: hari ini untuk "apakah QR meja hari ini
+   * dipindai", 7 hari untuk melihat pola mingguan tanpa harus menunggu
+   * sebulan data terkumpul.
+   */
+  async getMenuViewStats(businessId: string): Promise<{
+    hariIni: number;
+    tujuhHari: number;
+    tigaPuluhHari: number;
+    perMeja: { tableNo: string; jumlah: number }[];
+  }> {
+    const [ringkas, perMeja] = await Promise.all([
+      sql`
+        SELECT
+          COUNT(*) FILTER (WHERE viewed_at >= date_trunc('day', NOW()))::int AS hari_ini,
+          COUNT(*) FILTER (WHERE viewed_at >= NOW() - INTERVAL '7 days')::int AS tujuh_hari,
+          COUNT(*) FILTER (WHERE viewed_at >= NOW() - INTERVAL '30 days')::int AS tiga_puluh_hari
+        FROM menu_page_views
+        WHERE business_id = ${businessId}
+      `,
+      sql`
+        SELECT table_no, COUNT(*)::int AS jumlah
+        FROM menu_page_views
+        WHERE business_id = ${businessId} AND viewed_at >= NOW() - INTERVAL '7 days'
+        GROUP BY table_no
+        ORDER BY jumlah DESC
+        LIMIT 10
+      `,
+    ]);
+
+    return {
+      hariIni: Number(ringkas[0]?.hari_ini ?? 0),
+      tujuhHari: Number(ringkas[0]?.tujuh_hari ?? 0),
+      tigaPuluhHari: Number(ringkas[0]?.tiga_puluh_hari ?? 0),
+      perMeja: (perMeja as unknown as { table_no: string; jumlah: number }[]).map((r) => ({
+        tableNo: r.table_no,
+        jumlah: r.jumlah,
+      })),
+    };
   },
 
   /**
@@ -5686,6 +5758,140 @@ export const db = {
    * pemotongan stok, dan laporan penjualan. Yang tersisa cuma jejaknya, dan
    * itu yang membedakan pembatalan jujur dari uang yang menguap.
    */
+  /**
+   * Mengubah harga SATU baris pada nota yang belum dibayar.
+   *
+   * Ada karena permintaan tukar lauk adalah kejadian harian di rumah makan:
+   * "nasambur tapi dadarnya diganti ayam". Menunya tetap yang itu, cuma
+   * harganya berubah. Sebelum ini kasir tidak punya jalan sama sekali — mengganti
+   * menu cuma bisa ke menu lain yang sudah terdaftar, dan diskon cuma bisa
+   * menurunkan, tidak pernah menaikkan.
+   *
+   * ALASANNYA WAJIB, DAN ITU BUKAN FORMALITAS
+   *
+   * Kasir yang bisa menyetel harga apa pun tanpa jejak bisa menyetelnya jadi
+   * Rp 0, menerima uang tunai pelanggannya, dan lacinya tetap cocok — karena
+   * yang tercatat memang nol. Alasan, nama yang mengubah, dan selisihnya
+   * tersimpan di riwayat yang sama dengan penggantian menu, jadi owner
+   * membacanya di satu tempat.
+   *
+   * Alasannya juga ikut menempel ke catatan barisnya, supaya tercetak di tiket
+   * dapur: yang memasak perlu tahu lauknya diganti, bukan cuma yang menagih.
+   */
+  async adjustOrderItemPrice(
+    orderId: string,
+    orderItemId: string,
+    businessId: string,
+    userId: string,
+    opsi: { hargaBaru: number; reason: string },
+  ): Promise<{ ok: boolean; error?: string; totalBaru?: number; selisih?: number }> {
+    return sql.begin(async (tx) => {
+      const order = one<Order>(await tx`
+        SELECT * FROM orders WHERE id = ${orderId} AND business_id = ${businessId} FOR UPDATE
+      `);
+      if (!order) return { ok: false, error: "Pesanan tidak ditemukan." };
+
+      if (order.payment_status === "paid") {
+        return {
+          ok: false,
+          error:
+            "Nota ini sudah dibayar, jadi harganya tidak bisa diubah begitu saja. Pakai Ganti / Refund supaya selisih uangnya tetap ada catatannya.",
+        };
+      }
+
+      const item = one<OrderItem>(await tx`
+        SELECT * FROM order_items WHERE id = ${orderItemId} AND order_id = ${orderId} FOR UPDATE
+      `);
+      if (!item) return { ok: false, error: "Menu ini tidak ada di nota tersebut." };
+      if (item.cancelled_at) return { ok: false, error: "Menu ini sudah dibatalkan." };
+
+      const alasan = opsi.reason?.trim();
+      if (!alasan || alasan.length < 3) {
+        return {
+          ok: false,
+          error: "Isi dulu alasannya, misalnya \"dadar diganti ayam\". Perubahan harga tanpa keterangan tidak bisa dipertanggungjawabkan saat tutup shift.",
+        };
+      }
+
+      const hargaBaru = Math.round(Number(opsi.hargaBaru));
+      if (!Number.isFinite(hargaBaru) || hargaBaru < 0 || hargaBaru > 100_000_000) {
+        return { ok: false, error: "Harga barunya tidak masuk akal." };
+      }
+
+      const hargaLama = Number(item.price_snapshot);
+      if (hargaBaru === hargaLama) {
+        return { ok: false, error: "Harganya sama dengan yang sekarang." };
+      }
+
+      const selisih = (hargaBaru - hargaLama) * item.qty;
+
+      /**
+       * Riwayatnya menumpang tabel yang sama dengan penggantian menu.
+       *
+       * Keduanya menjawab pertanyaan yang sama — "kenapa baris ini tidak
+       * seperti daftar menu?" — dan memisahkannya cuma memaksa owner membaca
+       * dua laporan untuk satu pertanyaan.
+       */
+      await tx`
+        INSERT INTO order_item_changes ${tx({
+          business_id: businessId,
+          order_id: orderId,
+          order_item_id: orderItemId,
+          old_menu_item_id: item.menu_item_id,
+          old_name: item.name_snapshot,
+          old_price: hargaLama,
+          new_menu_item_id: item.menu_item_id,
+          new_name: item.name_snapshot,
+          new_price: hargaBaru,
+          qty: item.qty,
+          price_diff: selisih,
+          // Belum lunas: yang ditagih nanti memang angka yang baru.
+          settlement: "collect",
+          reason: alasan,
+          changed_by: userId,
+        })}
+      `;
+
+      const catatanBaru = `${item.note ? item.note + " · " : ""}${alasan}`;
+
+      await tx`
+        UPDATE order_items SET
+          price_snapshot = ${hargaBaru},
+          subtotal = ${hargaBaru * item.qty},
+          note = ${catatanBaru.slice(0, 200)}
+        WHERE id = ${orderItemId}
+      `;
+
+      const sisa = (await tx`
+        SELECT price_snapshot, qty FROM order_items
+        WHERE order_id = ${orderId} AND cancelled_at IS NULL
+      `) as unknown as { price_snapshot: string; qty: number }[];
+
+      const biz = one<{ pos_tax_rate: string; pos_service_charge_rate: string }>(await tx`
+        SELECT pos_tax_rate, pos_service_charge_rate FROM businesses WHERE id = ${businessId}
+      `);
+      const totals = calculateCartTotals(
+        sisa.map((r) => ({ price: Number(r.price_snapshot), qty: r.qty })),
+        Number(order.discount ?? 0),
+        Number(biz?.pos_tax_rate ?? 0),
+        Number(biz?.pos_service_charge_rate ?? 0),
+      );
+      const totalBaru = totals.total + Number(order.delivery_fee ?? 0);
+
+      await tx`
+        UPDATE orders SET
+          subtotal = ${totals.subtotal},
+          discount = ${totals.discount},
+          tax = ${totals.tax},
+          service_charge = ${totals.serviceCharge},
+          total = ${totalBaru}
+        WHERE id = ${orderId}
+      `;
+
+      return { ok: true, totalBaru, selisih };
+    });
+  },
+
   async cancelOrderItem(
     orderId: string,
     orderItemId: string,
