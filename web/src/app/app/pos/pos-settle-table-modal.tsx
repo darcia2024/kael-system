@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { Banknote, CreditCard, Loader2, Smartphone, UserPlus, X } from "lucide-react";
 
 import { formatRupiah } from "@/lib/formatters";
+import { IsianTunai } from "./pos-terima-tunai";
 
 /**
  * Tamu selesai makan dan membayar seluruh tagihan mejanya.
@@ -30,9 +31,6 @@ const METODE: { nilai: MetodeBayar; label: string; ikon: typeof Banknote }[] = [
   { nilai: "qris", label: "QRIS", ikon: Smartphone },
   { nilai: "transfer", label: "Transfer", ikon: CreditCard },
 ];
-
-/** Pecahan yang paling sering disodorkan tamu, supaya kasir tidak mengetik. */
-const PECAHAN = [10_000, 20_000, 50_000, 100_000];
 
 export default function PosSettleTableModal({
   namaMeja,
@@ -129,59 +127,7 @@ export default function PosSettleTableModal({
             </div>
           </div>
 
-          {metode === "cash" && (
-            <div className="space-y-2">
-              <label className="block font-mono text-xs font-bold text-[#0b3d2e]">
-                Uang diterima
-                <input
-                  type="number"
-                  min={0}
-                  step={500}
-                  value={tunai}
-                  onChange={(e) => setTunai(Number(e.target.value) || 0)}
-                  className="mt-1.5 h-11 w-full rounded-xl border border-[#d8e3de] px-3 text-right font-mono text-lg font-black text-[#0b3d2e]"
-                />
-              </label>
-
-              <div className="grid grid-cols-4 gap-1.5">
-                {/* Uang pas dulu: itu yang paling sering terjadi di kafe. */}
-                <button
-                  type="button"
-                  onClick={() => setTunai(total)}
-                  className="rounded-xl border border-[#d8e3de] bg-white py-2 font-mono text-[10.5px] font-black text-[#0b3d2e]"
-                >
-                  Pas
-                </button>
-                {PECAHAN.filter((p) => p > total).slice(0, 3).map((p) => (
-                  <button
-                    key={p}
-                    type="button"
-                    onClick={() => setTunai(p)}
-                    className="rounded-xl border border-[#d8e3de] bg-white py-2 font-mono text-[10.5px] font-black text-[#0b3d2e]"
-                  >
-                    {p / 1000}rb
-                  </button>
-                ))}
-              </div>
-
-              <div
-                className={`flex items-center justify-between rounded-xl px-3.5 py-2.5 ${
-                  cukup ? "bg-[#edf8f3]" : "bg-amber-50"
-                }`}
-              >
-                <span className="font-mono text-xs font-bold text-[#0b3d2e]">
-                  {cukup ? "Kembalian" : "Uangnya masih kurang"}
-                </span>
-                <span
-                  className={`font-mono text-lg font-black tabular-nums ${
-                    cukup ? "text-[#0b3d2e]" : "text-amber-800"
-                  }`}
-                >
-                  {formatRupiah(Math.abs(kembalian))}
-                </span>
-              </div>
-            </div>
-          )}
+          {metode === "cash" && <IsianTunai total={total} tunai={tunai} onUbah={setTunai} />}
 
           {/*
             Kesempatan pertama sekaligus terakhir menawarkan member: di alur ini

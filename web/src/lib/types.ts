@@ -463,6 +463,35 @@ export interface FakturPesanan {
   };
 }
 
+/**
+ * Satu pembayaran hari ini, seperti yang tercetak di struknya.
+ *
+ * Meja yang memesan tiga kali lalu membayar sekali di kasir adalah SATU
+ * pembayaran, bukan tiga: tunai diterima dan kembaliannya milik kunjungan itu
+ * (table_sessions), bukan milik salah satu notanya.
+ */
+export interface PembayaranHariIni {
+  kunci: string;
+  metode: "cash" | "qris" | "transfer";
+  /** Jumlah nota sebelum refund — sama dengan TOTAL BAYAR di struk. */
+  total: number;
+  refund: number;
+  nota: string[];
+  meja: string | null;
+  jenisLayanan: "dine_in" | "takeaway" | "delivery";
+  /** Dilunasi sekaligus semeja lewat denah meja. */
+  lewatMeja: boolean;
+  /**
+   * Kosong untuk non-tunai, dan untuk tunai yang dikonfirmasi dari antrean
+   * pesanan: tombol "Pembayaran sudah masuk" tidak menanyakan uangnya.
+   */
+  tunaiDiterima: number | null;
+  kembalian: number | null;
+  dibayarPada: string;
+  /** Yang menerima uangnya. */
+  kasir: string | null;
+}
+
 export interface MemberCardSettings {
   business_id: string;
   headline: string | null;

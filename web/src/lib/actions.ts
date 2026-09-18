@@ -2257,15 +2257,21 @@ export async function getQrOrderStatusAction(
  * gerbang pembayaran yang mengabarkannya. Karena itu yang menekan tombolnya
  * ikut tercatat — konfirmasi yang tidak bisa ditelusuri ke siapa pun sama saja
  * dengan tidak ada konfirmasi.
+ *
+ * Pesanan tunai wajib membawa uang yang diterima (db.confirmOrderPayment
+ * menolaknya kalau kosong atau kurang). Tunai diterima dan kembalian yang
+ * tersimpan dikembalikan ke layar, supaya struk mencetak angka yang sama
+ * persis dengan yang ada di database.
  */
 export async function confirmPaymentAction(
   orderId: string,
-): Promise<ActionResult<{ orderNo: string }>> {
+  tunaiDiterima?: number | null,
+): Promise<ActionResult<{ orderNo: string; tunaiDiterima: number | null; kembalian: number | null }>> {
   const { businessId, userId } = await requirePermission("pos");
   const locked = await moduleLock(businessId, "pos", "write");
   if (locked) return fail(locked);
 
-  const result = await db.confirmOrderPayment(orderId, businessId, userId);
+  const result = await db.confirmOrderPayment(orderId, businessId, userId, tunaiDiterima);
   if (!result.order) {
     return fail(
       result.error ??
@@ -2277,7 +2283,11 @@ export async function confirmPaymentAction(
   await db.syncPaidOrder(order.id, businessId, userId);
 
   revalidatePath("/app/pos");
-  return done({ orderNo: order.order_no });
+  return done({
+    orderNo: order.order_no,
+    tunaiDiterima: order.cash_given === null || order.cash_given === undefined ? null : Number(order.cash_given),
+    kembalian: order.cash_change === null || order.cash_change === undefined ? null : Number(order.cash_change),
+  });
 }
 
 /**

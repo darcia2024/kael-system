@@ -9,6 +9,7 @@ import { formatRupiah } from "@/lib/formatters";
 import { serviceTypeLabel, generateKitchenTicketText } from "@/lib/pos-engine";
 import type { Order, OrderItem } from "@/lib/types";
 import { ambilPrinter, kirimKePrinter, alasanGagalCetak } from "@/lib/thermal-printer";
+import PosTerimaTunaiModal from "../pos-terima-tunai";
 
 type StationOrder = Order & { items: OrderItem[] };
 type Stage = "cashier" | "kitchen";
@@ -173,6 +174,39 @@ export default function OrderStationClient({
       await refresh(false);
     });
   };
+
+  /**
+   * Tunai: tanyakan dulu berapa uang yang disodorkan tamu, supaya struk dan
+   * laporan owner mencatat tunai diterima dan kembaliannya. Non-tunai tetap
+   * langsung dicatat seperti sebelumnya.
+   */
+  const [terimaTunai, setTerimaTunai] = useState<StationOrder | null>(null);
+  const konfirmasiBayar = (order: StationOrder) => {
+    if (order.payment_method === "cash") {
+      setTerimaTunai(order);
+      return;
+    }
+    run(() => confirmPaymentAction(order.id));
+  };
+
+  const modalTunai = terimaTunai ? (
+    <PosTerimaTunaiModal
+      orderNo={terimaTunai.order_no}
+      keterangan={serviceTypeLabel(terimaTunai.service_type, terimaTunai.table_no)}
+      total={Number(terimaTunai.total)}
+      isMochi={isMochiStation}
+      onClose={() => setTerimaTunai(null)}
+      onTerima={async (tunai) => {
+        const res = await confirmPaymentAction(terimaTunai.id, tunai);
+        if (!res.ok) throw new Error(res.error);
+        setTerimaTunai(null);
+        setMessage(
+          `#${res.data.orderNo} lunas · kembalian ${formatRupiah(res.data.kembalian ?? 0)}.`,
+        );
+        await refresh(false);
+      }}
+    />
+  ) : null;
 
   const visibleOrders = mode === "cashier"
     ? orders
@@ -449,7 +483,7 @@ export default function OrderStationClient({
                           <button
                             type="button"
                             disabled={isPending}
-                            onClick={() => run(() => confirmPaymentAction(order.id))}
+                            onClick={() => konfirmasiBayar(order)}
                             className="w-full rounded-xl bg-[#c8f53a] hover:bg-[#d9ff57] text-[#073829] py-3 text-xs font-black shadow-sm flex items-center justify-center gap-2 active:scale-98 transition-all disabled:opacity-50"
                           >
                             <Check size={16} strokeWidth={2.6} />
@@ -530,6 +564,7 @@ export default function OrderStationClient({
             </div>
           )}
         </section>
+        {modalTunai}
       </main>
     );
   }
@@ -563,10 +598,11 @@ export default function OrderStationClient({
           return <article key={order.id} className={`mochi-panel border-2 p-4 shadow-ink-sm ${pendingPayment ? "border-[#d97706] bg-[#fffaf0]" : "border-[#232331] bg-white"}`}>
             <div className="flex items-start justify-between gap-3 border-b-2 border-[#dedee8] pb-3"><div><p className="font-mono text-xl font-black">#{order.order_no}</p><p className="font-mono text-[11px] text-[#777587]">{serviceTypeLabel(order.service_type, order.table_no)} · {timeSince(order.created_at)}</p></div><div className="text-right"><p className="font-black">{formatRupiah(Number(order.total))}</p><p className="font-mono text-[10px] font-bold uppercase text-[#7958d8]">{pendingPayment ? "Menunggu bayar" : order.fulfillment_status}</p></div></div>
             <ul className="my-3 space-y-1.5 font-mono text-xs">{order.items.map((item) => <li key={item.id} className="flex justify-between gap-3"><span>{item.qty}x {item.name_snapshot}{item.note ? <span className="block pl-5 text-[10px] text-[#777587]">Catatan: {item.note}</span> : null}</span><span>{formatRupiah(Number(item.subtotal))}</span></li>)}</ul>
-            <div className="border-t-2 border-[#dedee8] pt-3">{mode === "cashier" ? pendingPayment ? <button type="button" disabled={isPending} onClick={() => run(() => confirmPaymentAction(order.id))} className="btn-tactile w-full rounded-lg border-2 border-[#232331] bg-[#d9ff57] px-3 py-2.5 font-mono text-xs font-black shadow-ink-xs disabled:opacity-50">Pembayaran sudah masuk</button> : <div className="space-y-2">{order.claimed_by && order.claimed_by !== currentUserId ? <p className="font-mono text-xs font-bold text-[#7958d8]">Sedang dipegang {order.claimed_by_name ?? "staf lain"}.</p> : order.claimed_by === currentUserId ? <p className="flex items-center gap-1.5 font-mono text-xs font-bold text-[#15803d]"><Check size={14} /> Kamu pegang pesanan ini</p> : null}<div className="flex gap-2"><button type="button" disabled={isPending} onClick={() => run(() => setFulfillmentAction(order.id, "completed"))} className="btn-tactile flex-1 rounded-lg border-2 border-[#232331] bg-[#d9ff57] px-3 py-2.5 font-mono text-xs font-black shadow-ink-xs disabled:opacity-50">✓ Selesai &amp; Diserahkan</button>{!order.claimed_by && <button type="button" disabled={isPending} onClick={() => run(() => claimOrderAction(order.id))} className="btn-tactile rounded-lg border-2 border-[#232331] bg-white px-3 py-2.5 font-mono text-xs font-black shadow-ink-xs disabled:opacity-50">Pegang</button>}<button type="button" onClick={() => void printKitchenTicket(order)} className="btn-tactile rounded-lg border-2 border-[#232331] bg-white px-3 py-2.5 shadow-ink-xs" title="Cetak Tiket Dapur"><Printer size={15} /></button></div></div> : step ? <div className="flex gap-2"><button type="button" disabled={isPending} onClick={() => run(() => setFulfillmentAction(order.id, step.next))} className="btn-tactile flex-1 rounded-lg border-2 border-[#232331] bg-[#d9ff57] px-3 py-2.5 font-mono text-xs font-black shadow-ink-xs disabled:opacity-50">{step.label}</button><button type="button" onClick={() => void printKitchenTicket(order)} className="btn-tactile rounded-lg border-2 border-[#232331] bg-white px-3 py-2.5 shadow-ink-xs" title="Cetak Tiket Dapur"><Printer size={15} /></button></div> : null}</div>
+            <div className="border-t-2 border-[#dedee8] pt-3">{mode === "cashier" ? pendingPayment ? <button type="button" disabled={isPending} onClick={() => konfirmasiBayar(order)} className="btn-tactile w-full rounded-lg border-2 border-[#232331] bg-[#d9ff57] px-3 py-2.5 font-mono text-xs font-black shadow-ink-xs disabled:opacity-50">Pembayaran sudah masuk</button> : <div className="space-y-2">{order.claimed_by && order.claimed_by !== currentUserId ? <p className="font-mono text-xs font-bold text-[#7958d8]">Sedang dipegang {order.claimed_by_name ?? "staf lain"}.</p> : order.claimed_by === currentUserId ? <p className="flex items-center gap-1.5 font-mono text-xs font-bold text-[#15803d]"><Check size={14} /> Kamu pegang pesanan ini</p> : null}<div className="flex gap-2"><button type="button" disabled={isPending} onClick={() => run(() => setFulfillmentAction(order.id, "completed"))} className="btn-tactile flex-1 rounded-lg border-2 border-[#232331] bg-[#d9ff57] px-3 py-2.5 font-mono text-xs font-black shadow-ink-xs disabled:opacity-50">✓ Selesai &amp; Diserahkan</button>{!order.claimed_by && <button type="button" disabled={isPending} onClick={() => run(() => claimOrderAction(order.id))} className="btn-tactile rounded-lg border-2 border-[#232331] bg-white px-3 py-2.5 font-mono text-xs font-black shadow-ink-xs disabled:opacity-50">Pegang</button>}<button type="button" onClick={() => void printKitchenTicket(order)} className="btn-tactile rounded-lg border-2 border-[#232331] bg-white px-3 py-2.5 shadow-ink-xs" title="Cetak Tiket Dapur"><Printer size={15} /></button></div></div> : step ? <div className="flex gap-2"><button type="button" disabled={isPending} onClick={() => run(() => setFulfillmentAction(order.id, step.next))} className="btn-tactile flex-1 rounded-lg border-2 border-[#232331] bg-[#d9ff57] px-3 py-2.5 font-mono text-xs font-black shadow-ink-xs disabled:opacity-50">{step.label}</button><button type="button" onClick={() => void printKitchenTicket(order)} className="btn-tactile rounded-lg border-2 border-[#232331] bg-white px-3 py-2.5 shadow-ink-xs" title="Cetak Tiket Dapur"><Printer size={15} /></button></div> : null}</div>
           </article>;
         })}</div>}
       </section>
+      {modalTunai}
     </main>
   );
 }

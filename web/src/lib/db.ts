@@ -72,7 +72,7 @@ import type {
   OrderItem,
   Refund,
   SafeUser,
-  MemberCardSettings, FakturPesanan,
+  MemberCardSettings, FakturPesanan, PembayaranHariIni,
   DeletableTestData,
   DeletableOrder,
   DeletableFeedback,
@@ -6379,11 +6379,18 @@ export const db = {
    *
    * Syarat payment_status = 'pending' di WHERE membuat penekanan tombol dua
    * kali tidak menimpa penjamin pertama.
+   *
+   * Untuk tunai, uang yang disodorkan tamu WAJIB ada. Dulu tombolnya tidak
+   * menanyakannya: struk pesanan antrean tidak bisa mencetak tunai diterima
+   * dan kembalian, dan laporan owner tidak punya apa-apa untuk ditunjukkan.
+   * Kembaliannya dihitung dari total baris yang dikunci di sini, bukan dari
+   * angka di layar kasir — ongkir bisa saja berubah sesudah layarnya dibuka.
    */
   async confirmOrderPayment(
     orderId: string,
     businessId: string,
     confirmedBy: string,
+    tunaiDiterima?: number | null,
   ): Promise<{ order: Order | null; error?: string }> {
     return sql.begin(async (tx) => {
       const pending = one<Order>(
@@ -6396,6 +6403,8 @@ export const db = {
       if (!pending) return { order: null };
 
       let shiftId = pending.shift_id;
+      let cashGiven: number | null = null;
+      let cashChange: number | null = null;
       if (pending.payment_method === "cash") {
         const activeShift = one<Shift>(
           await tx`
@@ -6411,6 +6420,17 @@ export const db = {
           };
         }
         shiftId = activeShift.id;
+
+        const total = Number(pending.total);
+        const diterima = Math.round(Number(tunaiDiterima));
+        if (tunaiDiterima === null || tunaiDiterima === undefined || !Number.isFinite(diterima)) {
+          return { order: null, error: "Isi dulu uang tunai yang diterima dari tamu." };
+        }
+        if (diterima < total) {
+          return { order: null, error: "Uang tunai yang diterima kurang dari total tagihan." };
+        }
+        cashGiven = diterima;
+        cashChange = diterima - total;
       }
 
       const order = one<Order>(
@@ -6424,7 +6444,9 @@ export const db = {
         END,
         paid_confirmed_by = ${confirmedBy},
         paid_confirmed_at = NOW(),
-        shift_id = ${shiftId}
+        shift_id = ${shiftId},
+        cash_given = ${cashGiven},
+        cash_change = ${cashChange}
         WHERE id = ${orderId} AND business_id = ${businessId}
       RETURNING *
       `,
@@ -6992,6 +7014,7 @@ export const db = {
       cashierSales,
       recentOrders,
       menuPerformance,
+      pembayaran,
     ] = await Promise.all([
       sql`
         WITH refunded AS (SELECT order_id, SUM(amount) AS total FROM refunds GROUP BY order_id)
@@ -7118,6 +7141,61 @@ export const db = {
         WHERE m.business_id = ${businessId}
         ORDER BY week_qty DESC, month_qty DESC, m.name ASC
       `,
+      /**
+       * Pembayaran hari ini, satu baris per peristiwa bayar — bukan per nota.
+       *
+       * Nota yang dilunasi bersama semeja (settleTableSession) dikenali dari
+       * paid_confirmed_at yang SAMA PERSIS dengan dibayar_pada sesinya: keduanya
+       * ditulis NOW() di transaksi yang sama. Nota semeja yang dibayar sendiri-
+       * sendiri lebih dulu tetap jadi pembayarannya masing-masing.
+       *
+       * Himpunan notanya sama dengan ringkasan di atas (lunas, dibuat hari ini),
+       * jadi jumlah per metode di sini selalu cocok dengan angka Tunai/QRIS/
+       * Transfer yang sudah tampil.
+       */
+      sql`
+        WITH refunded AS (SELECT order_id, SUM(amount) AS total FROM refunds GROUP BY order_id),
+        nota AS (
+          SELECT
+            o.id, o.order_no, o.created_at, o.total, o.payment_method, o.table_no, o.service_type,
+            o.cash_given, o.cash_change,
+            COALESCE(r.total, 0) AS refund,
+            ts.tunai_diterima, ts.kembalian,
+            CASE WHEN ts.dibayar_pada IS NOT NULL AND o.paid_confirmed_at = ts.dibayar_pada
+              THEN ts.id END AS sesi_id,
+            CASE WHEN ts.dibayar_pada IS NOT NULL AND o.paid_confirmed_at = ts.dibayar_pada
+              THEN ts.dibayar_pada ELSE COALESCE(o.paid_confirmed_at, o.created_at) END AS waktu_bayar,
+            -- Yang menerima uangnya: kasir yang melunasi meja, yang menekan
+            -- "Pembayaran sudah masuk", atau kasir yang mengetik pesanannya.
+            CASE WHEN ts.dibayar_pada IS NOT NULL AND o.paid_confirmed_at = ts.dibayar_pada
+              THEN ts.dibayar_oleh ELSE COALESCE(o.paid_confirmed_by, o.created_by) END AS penerima
+          FROM orders o
+          LEFT JOIN refunded r ON r.order_id = o.id
+          LEFT JOIN table_sessions ts ON ts.id = o.table_session_id
+          WHERE o.business_id = ${businessId} AND o.status = 'paid'
+            AND (o.created_at AT TIME ZONE ${tz})::date = (NOW() AT TIME ZONE ${tz})::date
+        )
+        SELECT
+          COALESCE(n.sesi_id, n.id)::text AS kunci,
+          bool_or(n.sesi_id IS NOT NULL) AS lewat_meja,
+          MIN(n.payment_method) AS metode,
+          SUM(n.total) AS total,
+          SUM(n.refund) AS refund,
+          array_agg(n.order_no ORDER BY n.created_at) AS nota,
+          MAX(n.table_no) AS meja,
+          MIN(n.service_type) AS jenis_layanan,
+          MAX(n.cash_given) AS cash_given,
+          MAX(n.cash_change) AS cash_change,
+          MAX(n.tunai_diterima) AS tunai_diterima,
+          MAX(n.kembalian) AS kembalian,
+          MAX(n.waktu_bayar) AS waktu_bayar,
+          MIN(NULLIF(TRIM(u.name), '')) AS kasir
+        FROM nota n
+        LEFT JOIN users u ON u.id = n.penerima
+        GROUP BY COALESCE(n.sesi_id, n.id)
+        ORDER BY MAX(n.waktu_bayar) DESC
+        LIMIT 500
+      `,
     ]);
 
     const payment = summary[0] ?? {};
@@ -7198,6 +7276,25 @@ export const db = {
         revenue: num(row.revenue),
       })),
       recentOrders: recentOrders as unknown as Order[],
+      payments: (pembayaran as unknown as Record<string, unknown>[]).map((p): PembayaranHariIni => {
+        const lewatMeja = Boolean(p.lewat_meja);
+        const angkaAtauKosong = (v: unknown) => (v === null || v === undefined ? null : num(v));
+        return {
+          kunci: p.kunci as string,
+          metode: p.metode as PembayaranHariIni["metode"],
+          total: num(p.total),
+          refund: num(p.refund),
+          nota: (p.nota as string[] | null) ?? [],
+          meja: (p.meja as string | null) ?? null,
+          jenisLayanan: p.jenis_layanan as PembayaranHariIni["jenisLayanan"],
+          lewatMeja,
+          // Semeja: uangnya dicatat di kunjungan. Sendiri: di notanya.
+          tunaiDiterima: angkaAtauKosong(lewatMeja ? p.tunai_diterima : p.cash_given),
+          kembalian: angkaAtauKosong(lewatMeja ? p.kembalian : p.cash_change),
+          dibayarPada: new Date(p.waktu_bayar as string | Date).toISOString(),
+          kasir: (p.kasir as string | null) ?? null,
+        };
+      }),
       menuAnalytics: {
         totalMenuItems: mappedMenuItems.length,
         today: {

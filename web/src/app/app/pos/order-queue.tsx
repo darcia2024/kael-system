@@ -32,6 +32,7 @@ import {
 import { formatRupiah } from "@/lib/formatters";
 import type { Order, OrderItem, MenuItem } from "@/lib/types";
 import PosReplaceRefundModal from "./pos-replace-refund-modal";
+import PosTerimaTunaiModal from "./pos-terima-tunai";
 
 type Antrean = Order & { items: OrderItem[] };
 
@@ -156,6 +157,9 @@ export default function OrderQueue({
     total: number | string;
     payment_method: string;
     customer_name?: string | null;
+    /** Diisi sesudah pembayaran tunai dikonfirmasi, supaya struknya ikut mencetaknya. */
+    cash_given?: number | null;
+    cash_change?: number | null;
   },
   /** Rangkap mana yang dicetak. Kosong berarti ketiganya. */
   bagian?: "dapur" | "kasir" | "pelanggan" | "semua") => void;
@@ -176,6 +180,8 @@ export default function OrderQueue({
   const [modalOrder, setModalOrder] = useState<Antrean | null>(null);
   const [modalItem, setModalItem] = useState<OrderItem | null>(null);
   const [showAdjustModal, setShowAdjustModal] = useState(false);
+  // Pesanan tunai yang sedang ditanyakan uangnya sebelum dicatat lunas.
+  const [terimaTunai, setTerimaTunai] = useState<Antrean | null>(null);
 
 
   useEffect(() => {
@@ -575,6 +581,11 @@ export default function OrderQueue({
                             type="button"
                             disabled={busy}
                             onClick={async () => {
+                              // Tunai: tanyakan dulu uangnya. Transfer: langsung dicatat.
+                              if (o.payment_method === "cash") {
+                                setTerimaTunai(o);
+                                return;
+                              }
                               await jalankan(o.id, () => confirmPaymentAction(o.id));
                               if (autoPrintThreePly && onPrintThreePly) {
                                 onPrintThreePly(o);
@@ -799,6 +810,32 @@ export default function OrderQueue({
           isMochi={isMochi}
           onSuccess={() => {
             router.refresh();
+          }}
+        />
+      )}
+
+      {terimaTunai && (
+        <PosTerimaTunaiModal
+          orderNo={terimaTunai.order_no}
+          keterangan={serviceTypeLabel(terimaTunai.service_type, terimaTunai.table_no)}
+          total={Number(terimaTunai.total)}
+          isMochi={isMochi}
+          onClose={() => setTerimaTunai(null)}
+          onTerima={async (tunai) => {
+            const o = terimaTunai;
+            const res = await confirmPaymentAction(o.id, tunai);
+            if (!res.ok) throw new Error(res.error);
+            setTerimaTunai(null);
+            router.refresh();
+            // Angka dari server, bukan dari layar: yang tercetak harus sama
+            // dengan yang tersimpan.
+            if (autoPrintThreePly && onPrintThreePly) {
+              onPrintThreePly({
+                ...o,
+                cash_given: res.data.tunaiDiterima,
+                cash_change: res.data.kembalian,
+              });
+            }
           }}
         />
       )}

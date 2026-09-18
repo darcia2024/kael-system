@@ -39,7 +39,14 @@ import {
   QrCode,
 } from "lucide-react";
 
-import type { Business, Order, FeedbackSummary, FeedbackRow, MemberGrowthSummary } from "@/lib/types";
+import type {
+  Business,
+  Order,
+  FeedbackSummary,
+  FeedbackRow,
+  MemberGrowthSummary,
+  PembayaranHariIni,
+} from "@/lib/types";
 import { FEEDBACK_REASONS } from "@/lib/types";
 import { formatBusinessDateTime, formatRupiah } from "@/lib/formatters";
 import { PAYMENT_STATUS_LABEL, serviceTypeLabel } from "@/lib/pos-engine";
@@ -79,6 +86,7 @@ type Dashboard = {
   hourlySales: { hour: number; orders: number; revenue: number }[];
   cashierSales: { name: string; orders: number; revenue: number }[];
   recentOrders: Order[];
+  payments: PembayaranHariIni[];
   menuAnalytics?: {
     totalMenuItems: number;
     today: {
@@ -144,6 +152,13 @@ export default function OwnerDashboardClient({
   const [feedbackFilter, setFeedbackFilter] = useState<"all" | "complaints" | "positive">("all");
   const [showReportsModal, setShowReportsModal] = useState(false);
   const [showClearModal, setShowClearModal] = useState(false);
+  const [rincianBayar, setRincianBayar] = useState<FilterBayar | null>(null);
+
+  /*
+   * Rekap per cara bayar dihitung dari daftar pembayaran yang sama dengan
+   * rinciannya, jadi angka di kartu dan di jendela rincian tidak mungkin beda.
+   */
+  const rekapBayar = useMemo(() => rekapPembayaran(dashboard.payments), [dashboard.payments]);
 
   /*
    * Tiga keadaan yang cuma dipakai di layar HP. Di layar lebar semuanya tampil
@@ -220,6 +235,7 @@ export default function OwnerDashboardClient({
   const paymentRows = useMemo(
     () => [
       {
+        key: "cash" as const,
         label: "Tunai",
         value: dashboard.today.payment.cash,
         icon: Banknote,
@@ -227,6 +243,7 @@ export default function OwnerDashboardClient({
         barColor: isMochi ? "bg-[#0b3d2e]" : "bg-[#232331]",
       },
       {
+        key: "qris" as const,
         label: "QRIS",
         value: dashboard.today.payment.qris,
         icon: Smartphone,
@@ -234,6 +251,7 @@ export default function OwnerDashboardClient({
         barColor: isMochi ? "bg-[#167052]" : "bg-[#232331]",
       },
       {
+        key: "transfer" as const,
         label: "Transfer",
         value: dashboard.today.payment.transfer,
         icon: CreditCard,
@@ -1007,51 +1025,101 @@ export default function OwnerDashboardClient({
             }
           >
             <div
-              className={`pb-3.5 ${
+              className={`flex items-start justify-between gap-2 pb-3.5 ${
                 isMochi ? "border-b border-[#e5ece8]" : "border-b border-[#dedee8]"
               }`}
             >
-              <h2
-                className={`text-sm font-black sm:text-base ${
-                  isMochi ? "text-[#0b3d2e]" : "text-[#232331]"
+              <div>
+                <h2
+                  className={`text-sm font-black sm:text-base ${
+                    isMochi ? "text-[#0b3d2e]" : "text-[#232331]"
+                  }`}
+                >
+                  Cara pelanggan bayar
+                </h2>
+                <p className={`mt-0.5 hidden text-[11px] sm:block ${isMochi ? "text-[#637970]" : "text-[#7b7b8e]"}`}>
+                  Masuk otomatis dari transaksi POS.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRincianBayar("semua")}
+                className={`inline-flex shrink-0 items-center gap-1 font-mono text-[10px] font-bold ${
+                  isMochi ? "text-[#167052] hover:text-[#0b3d2e]" : "text-[#6d4cc4]"
                 }`}
               >
-                Cara pelanggan bayar
-              </h2>
-              <p className={`mt-0.5 hidden text-[11px] sm:block ${isMochi ? "text-[#637970]" : "text-[#7b7b8e]"}`}>
-                Masuk otomatis dari transaksi POS.
-              </p>
+                Rincian <ChevronRight size={13} />
+              </button>
             </div>
-            <div className="mt-2.5 space-y-2.5 sm:mt-3.5 sm:space-y-3.5">
-              {paymentRows.map(({ label, value, icon: Icon, color, barColor }) => (
-                <div key={label}>
-                  <div className="flex items-center justify-between gap-2 text-xs">
-                    <span className="flex items-center gap-2 font-bold">
-                      <span className={`flex h-7 w-7 items-center justify-center rounded-xl ${color}`}>
-                        <Icon size={14} />
-                      </span>
-                      <span className={isMochi ? "text-[#1a382d]" : "text-[#232331]"}>{label}</span>
-                    </span>
-                    <span className={`font-mono font-black ${isMochi ? "text-[#0b3d2e]" : ""}`}>
-                      {formatRupiah(value)}
-                    </span>
-                  </div>
-                  <div
-                    className={`mt-1.5 h-2 overflow-hidden ${
-                      isMochi ? "rounded-full bg-[#edf4f0]" : "bg-[#ecebf1]"
+            {/*
+              Tiap baris bisa diketuk untuk melihat pembayarannya satu per satu —
+              total, tunai diterima, dan kembalian, persis seperti di struknya.
+            */}
+            <div className="mt-1.5 space-y-1 sm:mt-2.5 sm:space-y-1.5">
+              {paymentRows.map(({ key, label, value, icon: Icon, color, barColor }) => {
+                const rekap = rekapBayar[key];
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => setRincianBayar(key)}
+                    className={`block w-full rounded-xl px-1.5 py-1.5 text-left transition-colors ${
+                      isMochi ? "hover:bg-[#f4f8f6]" : "hover:bg-[#f7f6fc]"
                     }`}
                   >
+                    <div className="flex items-center justify-between gap-2 text-xs">
+                      <span className="flex min-w-0 items-center gap-2 font-bold">
+                        <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-xl ${color}`}>
+                          <Icon size={14} />
+                        </span>
+                        <span className={isMochi ? "text-[#1a382d]" : "text-[#232331]"}>{label}</span>
+                        <span
+                          className={`truncate font-mono text-[10px] font-bold ${
+                            isMochi ? "text-[#52665e]" : "text-[#5c5c70]"
+                          }`}
+                        >
+                          {rekap.jumlah} pembayaran
+                        </span>
+                      </span>
+                      <span
+                        className={`flex shrink-0 items-center gap-0.5 font-mono font-black ${
+                          isMochi ? "text-[#0b3d2e]" : ""
+                        }`}
+                      >
+                        {formatRupiah(value)}
+                        <ChevronRight size={13} className="opacity-50" aria-hidden="true" />
+                      </span>
+                    </div>
                     <div
-                      className={`h-full transition-all ${
-                        isMochi ? `${barColor} rounded-full` : "bg-[#232331]"
+                      className={`mt-1.5 h-2 overflow-hidden ${
+                        isMochi ? "rounded-full bg-[#edf4f0]" : "bg-[#ecebf1]"
                       }`}
-                      style={{
-                        width: `${totalPayment ? Math.round((value / totalPayment) * 100) : 0}%`,
-                      }}
-                    />
-                  </div>
-                </div>
-              ))}
+                    >
+                      <div
+                        className={`h-full transition-all ${
+                          isMochi ? `${barColor} rounded-full` : "bg-[#232331]"
+                        }`}
+                        style={{
+                          width: `${totalPayment ? Math.round((value / totalPayment) * 100) : 0}%`,
+                        }}
+                      />
+                    </div>
+                    {key === "cash" && rekap.jumlah > 0 && (
+                      <p
+                        className={`mt-1 font-mono text-[10px] leading-relaxed ${
+                          isMochi ? "text-[#52665e]" : "text-[#5c5c70]"
+                        }`}
+                      >
+                        Tunai diterima <b>{formatRupiah(rekap.tunaiDiterima)}</b> · Kembalian{" "}
+                        <b>{formatRupiah(rekap.kembalian)}</b>
+                        {rekap.tanpaCatatan > 0 && (
+                          <span className="text-amber-800"> · {rekap.tanpaCatatan} tanpa catatan</span>
+                        )}
+                      </p>
+                    )}
+                  </button>
+                );
+              })}
             </div>
           </div>
         </section>
@@ -2544,7 +2612,262 @@ export default function OwnerDashboardClient({
         isMochi={isMochi}
       />
 
+      {rincianBayar && (
+        <RincianPembayaran
+          daftar={dashboard.payments}
+          rekap={rekapBayar}
+          awal={rincianBayar}
+          timezone={dashboard.timezone}
+          isMochi={isMochi}
+          onTutup={() => setRincianBayar(null)}
+        />
+      )}
+
       {pasangAplikasi.lembar}
+    </div>
+  );
+}
+
+type MetodeBayar = PembayaranHariIni["metode"];
+type FilterBayar = "semua" | MetodeBayar;
+
+const LABEL_METODE: Record<MetodeBayar, string> = { cash: "Tunai", qris: "QRIS", transfer: "Transfer" };
+
+type RekapMetode = {
+  jumlah: number;
+  /** Sesudah refund — sama dengan angka per metode di ringkasan dasbor. */
+  bersih: number;
+  tunaiDiterima: number;
+  kembalian: number;
+  /** Pembayaran tunai yang uang diterimanya tidak dicatat kasir. */
+  tanpaCatatan: number;
+};
+
+function rekapPembayaran(daftar: PembayaranHariIni[]): Record<MetodeBayar, RekapMetode> {
+  const kosong = (): RekapMetode => ({ jumlah: 0, bersih: 0, tunaiDiterima: 0, kembalian: 0, tanpaCatatan: 0 });
+  const rekap: Record<MetodeBayar, RekapMetode> = { cash: kosong(), qris: kosong(), transfer: kosong() };
+  for (const p of daftar) {
+    const r = rekap[p.metode];
+    if (!r) continue;
+    r.jumlah += 1;
+    r.bersih += p.total - p.refund;
+    if (p.metode !== "cash") continue;
+    if (p.tunaiDiterima === null) {
+      r.tanpaCatatan += 1;
+    } else {
+      r.tunaiDiterima += p.tunaiDiterima;
+      r.kembalian += p.kembalian ?? 0;
+    }
+  }
+  return rekap;
+}
+
+/**
+ * Pembayaran hari ini satu per satu, dengan angka yang sama dengan struknya:
+ * TOTAL BAYAR, Tunai Diterima, dan Kembalian.
+ *
+ * Satu meja yang memesan berkali-kali lalu membayar sekali tampil sebagai satu
+ * baris berisi semua notanya — begitulah uangnya diterima kasir.
+ */
+function RincianPembayaran({
+  daftar,
+  rekap,
+  awal,
+  timezone,
+  isMochi,
+  onTutup,
+}: {
+  daftar: PembayaranHariIni[];
+  rekap: Record<MetodeBayar, RekapMetode>;
+  awal: FilterBayar;
+  timezone: string;
+  isMochi: boolean;
+  onTutup: () => void;
+}) {
+  const [filter, setFilter] = useState<FilterBayar>(awal);
+
+  useEffect(() => {
+    const tutupDenganEsc = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onTutup();
+    };
+    window.addEventListener("keydown", tutupDenganEsc);
+    return () => window.removeEventListener("keydown", tutupDenganEsc);
+  }, [onTutup]);
+
+  const tampil = filter === "semua" ? daftar : daftar.filter((p) => p.metode === filter);
+  const jumlahTampil = tampil.length;
+  const bersihTampil = tampil.reduce((n, p) => n + p.total - p.refund, 0);
+  const tunai = filter === "semua" || filter === "cash" ? rekap.cash : null;
+
+  const redup = isMochi ? "text-[#52665e]" : "text-[#5c5c70]";
+  const pilihan: { nilai: FilterBayar; label: string; jumlah: number }[] = [
+    { nilai: "semua", label: "Semua", jumlah: daftar.length },
+    { nilai: "cash", label: "Tunai", jumlah: rekap.cash.jumlah },
+    { nilai: "qris", label: "QRIS", jumlah: rekap.qris.jumlah },
+    { nilai: "transfer", label: "Transfer", jumlah: rekap.transfer.jumlah },
+  ];
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end justify-center bg-[#07281e]/60 backdrop-blur-sm sm:items-center sm:p-4"
+      onClick={onTutup}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="judul-rincian-bayar"
+        className={`flex max-h-[92vh] w-full max-w-lg flex-col rounded-t-3xl bg-white shadow-2xl sm:rounded-3xl ${
+          isMochi ? "border border-emerald-700/60 text-[#1a382d]" : "border-2 border-[#232331] text-[#232331]"
+        }`}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-3 px-4 pt-4 sm:px-5 sm:pt-5">
+          <div>
+            <h3
+              id="judul-rincian-bayar"
+              className={`text-base font-black ${isMochi ? "text-[#0b3d2e]" : "text-[#232331]"}`}
+            >
+              Rincian pembayaran hari ini
+            </h3>
+            <p className={`mt-0.5 text-[11px] ${redup}`}>
+              Sama dengan struknya: total, tunai diterima, dan kembalian.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onTutup}
+            aria-label="Tutup"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#f1f0f6] text-[#5c5c70]"
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="mt-3 flex gap-1.5 overflow-x-auto px-4 pb-1 [scrollbar-width:none] sm:px-5 [&::-webkit-scrollbar]:hidden">
+          {pilihan.map((p) => {
+            const aktif = filter === p.nilai;
+            return (
+              <button
+                key={p.nilai}
+                type="button"
+                onClick={() => setFilter(p.nilai)}
+                aria-pressed={aktif}
+                className={`shrink-0 rounded-full px-3 py-1.5 font-mono text-[11px] font-black transition-colors ${
+                  aktif
+                    ? isMochi
+                      ? "bg-[#0b3d2e] text-[#c8f53a]"
+                      : "bg-[#232331] text-[#d9ff57]"
+                    : isMochi
+                      ? "bg-[#edf4f0] text-[#1a382d]"
+                      : "bg-[#f1f0f6] text-[#232331]"
+                }`}
+              >
+                {p.label} · {p.jumlah}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Rekap filter yang sedang dipilih */}
+        <div className={`mx-4 mt-2 rounded-2xl p-3 sm:mx-5 ${isMochi ? "bg-[#f4f8f6]" : "bg-[#f7f6fc]"}`}>
+          <div className="flex items-baseline justify-between gap-2">
+            <span className={`font-mono text-[11px] font-bold ${redup}`}>{jumlahTampil} pembayaran</span>
+            <span className="font-mono text-sm font-black">{formatRupiah(bersihTampil)}</span>
+          </div>
+          {tunai && tunai.jumlah > 0 && (
+            <div className={`mt-1.5 space-y-0.5 border-t pt-1.5 font-mono text-[11px] ${
+              isMochi ? "border-[#e0ebe5]" : "border-[#e6e5ee]"
+            }`}>
+              <div className="flex justify-between gap-2">
+                <span className={redup}>Tunai diterima</span>
+                <b>{formatRupiah(tunai.tunaiDiterima)}</b>
+              </div>
+              <div className="flex justify-between gap-2">
+                <span className={redup}>Kembalian</span>
+                <b>{formatRupiah(tunai.kembalian)}</b>
+              </div>
+              {tunai.tanpaCatatan > 0 && (
+                <p className="pt-0.5 text-[10.5px] leading-relaxed text-amber-800">
+                  {tunai.tanpaCatatan} pembayaran tunai tanpa catatan uang diterima — dikonfirmasi
+                  dari antrean pesanan, yang tidak menanyakan jumlah uangnya.
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+
+        <ul
+          className={`mt-1 flex-1 divide-y overflow-y-auto px-4 pb-[calc(1rem_+_env(safe-area-inset-bottom))] sm:px-5 sm:pb-5 ${
+            isMochi ? "divide-[#edf4f0]" : "divide-[#ecebf1]"
+          }`}
+        >
+          {tampil.length === 0 ? (
+            <li className={`py-8 text-center text-xs ${redup}`}>
+              Belum ada pembayaran {filter === "semua" ? "" : `${LABEL_METODE[filter]} `}hari ini.
+            </li>
+          ) : (
+            tampil.map((p) => {
+              const jam = formatBusinessDateTime(p.dibayarPada, timezone, {
+                day: undefined,
+                month: undefined,
+                year: undefined,
+              });
+              const keterangan = [
+                jam,
+                serviceTypeLabel(p.jenisLayanan, p.meja),
+                p.nota.length > 1 ? `${p.nota.length} nota` : null,
+                p.kasir,
+              ].filter(Boolean);
+              return (
+                <li key={p.kunci} className="py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-xs font-black">{p.nota.map((n) => `#${n}`).join(", ")}</p>
+                      <p className={`mt-0.5 font-mono text-[10.5px] ${redup}`}>{keterangan.join(" · ")}</p>
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <p className="font-mono text-xs font-black">{formatRupiah(p.total)}</p>
+                      <span
+                        className={`mt-0.5 inline-block rounded-md px-1.5 py-0.5 font-mono text-[9px] font-black ${
+                          isMochi ? "bg-[#edf8f3] text-[#167052]" : "bg-[#f0edff] text-[#6d4cc4]"
+                        }`}
+                      >
+                        {LABEL_METODE[p.metode]}
+                      </span>
+                    </div>
+                  </div>
+
+                  {p.metode === "cash" &&
+                    (p.tunaiDiterima !== null ? (
+                      <div
+                        className={`mt-1.5 flex flex-wrap justify-between gap-x-3 rounded-xl px-2.5 py-1.5 font-mono text-[11px] ${
+                          isMochi ? "bg-[#f4f8f6]" : "bg-[#f7f6fc]"
+                        }`}
+                      >
+                        <span>
+                          <span className={redup}>Tunai diterima</span> <b>{formatRupiah(p.tunaiDiterima)}</b>
+                        </span>
+                        <span>
+                          <span className={redup}>Kembalian</span> <b>{formatRupiah(p.kembalian ?? 0)}</b>
+                        </span>
+                      </div>
+                    ) : (
+                      <p className="mt-1.5 text-[10.5px] leading-relaxed text-amber-800">
+                        Tunai diterima tidak tercatat — dikonfirmasi dari antrean pesanan.
+                      </p>
+                    ))}
+
+                  {p.refund > 0 && (
+                    <p className="mt-1 font-mono text-[10.5px] font-bold text-rose-700">
+                      Refund {formatRupiah(p.refund)} · bersih {formatRupiah(p.total - p.refund)}
+                    </p>
+                  )}
+                </li>
+              );
+            })
+          )}
+        </ul>
+      </div>
     </div>
   );
 }
