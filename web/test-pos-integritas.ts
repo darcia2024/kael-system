@@ -266,6 +266,242 @@ async function main() {
   );
 
   // -------------------------------------------------------------------------
+  console.log("\n10. Nota yang belum dibayar tidak hilang saat dapur selesai");
+  // -------------------------------------------------------------------------
+  /**
+   * Pembayaran dan dapur berjalan sendiri-sendiri, dan dulu keduanya dianggap
+   * satu: begitu dapur menandai makanan sudah disajikan, notanya keluar dari
+   * antrean kasir walaupun uangnya belum masuk sama sekali.
+   *
+   * Yang kejadian di Mochi: lonceng pesanan masuk tetap menghitungnya, tapi
+   * popup-nya terbuka kosong saat ditekan, dan di riwayat statusnya "belum
+   * bayar" tanpa satu pun tombol yang bisa menagihnya. Uangnya hilang
+   * diam-diam, dan mejanya ikut tidak bisa ditutup.
+   */
+  const { order: belumBayar } = await db.createOrder(
+    businessId,
+    {
+      channel: "qr",
+      service_type: "dine_in",
+      table_no: MEJA,
+      table_session_id: sesi!.id,
+      status: "open",
+      payment_status: "pending",
+      fulfillment_status: "completed",
+      payment_method: "qris",
+      created_by: owner.id,
+    },
+    [{ menu_item_id: menuB.id, name: menuB.name, price: Number(menuB.price), qty: 1 }],
+  );
+  dibuat.push(belumBayar.id);
+
+  const antreanKasir = await db.getOrderStationOrders(businessId);
+  cek(
+    "nota belum lunas tetap di antrean walau dapur sudah selesai",
+    antreanKasir.some((o) => o.id === belumBayar.id),
+    "kasir kehilangan satu-satunya tombol untuk menagihnya",
+  );
+
+  /** Sebaliknya: yang sudah lunas DAN sudah disajikan memang harus keluar. */
+  const { order: selesaiLunas } = await db.createOrder(
+    businessId,
+    {
+      channel: "qr",
+      service_type: "dine_in",
+      table_no: MEJA,
+      table_session_id: sesi!.id,
+      status: "paid",
+      payment_status: "paid",
+      fulfillment_status: "completed",
+      payment_method: "qris",
+      created_by: owner.id,
+    },
+    [{ menu_item_id: menuB.id, name: menuB.name, price: Number(menuB.price), qty: 1 }],
+  );
+  dibuat.push(selesaiLunas.id);
+
+  const antreanLagi = await db.getOrderStationOrders(businessId);
+  cek(
+    "nota lunas dan sudah disajikan keluar dari antrean",
+    !antreanLagi.some((o) => o.id === selesaiLunas.id),
+    "antrean kasir akan menumpuk terus tanpa pernah kosong",
+  );
+
+  // -------------------------------------------------------------------------
+  console.log("\n11. Menghapus pesanan tidak meninggalkan meja 'Disajikan' selamanya");
+  // -------------------------------------------------------------------------
+  /**
+   * Denah meja menandai meja bersesi terbuka sebagai "Disajikan" walaupun belum
+   * ada pesanan — tamu yang baru duduk memang harus terlihat. Tapi dulu
+   * penghapusan pesanan tidak menyentuh sesinya sama sekali, jadi sesudah owner
+   * membersihkan data latihan, mejanya menyala "Disajikan" tanpa satu pun nota
+   * yang bisa ditutup untuk mematikannya.
+   */
+  /**
+   * Sisa dari jalannya uji yang sempat gagal dibuang dulu.
+   *
+   * Tanpa ini, satu run yang berhenti di tengah meninggalkan nota yang masih
+   * menempel ke sesi mejanya — dan run berikutnya memakai ulang sesi itu, lalu
+   * GAGAL karena sesinya memang masih punya pesanan. Kegagalannya menuding
+   * kode yang sebenarnya benar, dan itu jenis kegagalan yang paling mahal:
+   * yang membuat orang membongkar bagian yang tidak rusak.
+   */
+  const MEJA_UJI = ["uji-yatim", "uji-tamubaru", "uji-lain"];
+  const sisaLama = await sql`
+    SELECT id FROM orders WHERE business_id = ${businessId} AND table_no ILIKE 'meja uji-%'
+  `;
+  if (sisaLama.length) {
+    const ids = sisaLama.map((r) => r.id as string);
+    await sql`DELETE FROM order_item_changes WHERE order_id = ANY(${ids})`;
+    await sql`DELETE FROM refunds WHERE order_id = ANY(${ids})`;
+    await sql`DELETE FROM point_ledger WHERE order_id = ANY(${ids})`;
+    await sql`DELETE FROM order_items WHERE order_id = ANY(${ids})`;
+    await sql`DELETE FROM orders WHERE id = ANY(${ids})`;
+  }
+  await sql`
+    DELETE FROM table_sessions
+    WHERE business_id = ${businessId} AND table_key = ANY(${MEJA_UJI})
+  `;
+
+  const sesiYatim = await db.openTableSession(businessId, "meja uji-yatim", owner.id);
+  const { order: notaYatim } = await db.createOrder(
+    businessId,
+    {
+      channel: "cashier",
+      table_no: "meja uji-yatim",
+      service_type: "dine_in",
+      table_session_id: sesiYatim!.id,
+      status: "paid",
+      payment_status: "paid",
+      fulfillment_status: "completed",
+      payment_method: "cash",
+      created_by: owner.id,
+    },
+    [{ menu_item_id: menuA.id, name: menuA.name, price: Number(menuA.price), qty: 1 }],
+  );
+
+  await db.deleteOrdersBatch([notaYatim.id], businessId);
+
+  const sisaYatim = await sql`SELECT id FROM table_sessions WHERE id = ${sesiYatim!.id}`;
+  cek(
+    "sesi meja ikut hilang saat seluruh notanya dihapus",
+    sisaYatim.length === 0,
+    "mejanya akan tersangkut 'Disajikan' di denah",
+  );
+
+  /**
+   * Sisi sebaliknya, dan ini yang gampang rusak saat memperbaiki yang di atas:
+   * meja yang tamunya baru duduk dan belum memesan TIDAK boleh ikut terbuang.
+   */
+  const sesiTamuBaru = await db.openTableSession(businessId, "meja uji-tamubaru", owner.id);
+  const { order: notaLain } = await db.createOrder(
+    businessId,
+    {
+      channel: "cashier",
+      table_no: "meja uji-lain",
+      service_type: "dine_in",
+      status: "paid",
+      payment_status: "paid",
+      fulfillment_status: "completed",
+      payment_method: "cash",
+      created_by: owner.id,
+    },
+    [{ menu_item_id: menuA.id, name: menuA.name, price: Number(menuA.price), qty: 1 }],
+  );
+  await db.deleteOrdersBatch([notaLain.id], businessId);
+
+  const tamuBaruMasihAda = await sql`SELECT id FROM table_sessions WHERE id = ${sesiTamuBaru!.id}`;
+  cek(
+    "meja yang tamunya belum memesan tetap terisi",
+    tamuBaruMasihAda.length === 1,
+    "tamu yang sudah duduk jadi hilang dari denah",
+  );
+  await sql`DELETE FROM table_sessions WHERE id = ${sesiTamuBaru!.id}`;
+
+  // -------------------------------------------------------------------------
+  console.log("\n12. Panggilan meja: satu meja, satu panggilan menunggu");
+  // -------------------------------------------------------------------------
+  /**
+   * Tamu yang merasa lama akan menekan tombol panggil berkali-kali. Itu wajar,
+   * dan bukan alasan untuk membanjiri layar kasir dengan lima baris meja yang
+   * sama sampai panggilan meja LAIN tenggelam di bawahnya.
+   */
+  await sql`DELETE FROM table_calls WHERE business_id = ${businessId}`;
+
+  const panggilPertama = await db.createTableCall(businessId, "Meja uji-panggil");
+  cek("panggilan pertama tercatat", panggilPertama.ok && panggilPertama.sudahAda === false);
+
+  const panggilLagi = await db.createTableCall(businessId, "meja UJI-PANGGIL");
+  cek(
+    "tekan lagi tidak menggandakan barisnya",
+    panggilLagi.ok && panggilLagi.sudahAda === true,
+    "layar kasir akan penuh satu meja yang sama",
+  );
+  cek(
+    "tekan lagi TIDAK dianggap gagal",
+    panggilLagi.ok === true,
+    "memberi galat berarti menghukum tamu yang sedang menunggu",
+  );
+
+  const daftarPanggilan = await db.getOpenTableCalls(businessId);
+  cek("cuma satu panggilan menunggu untuk meja itu", daftarPanggilan.length === 1,
+    `dapat ${daftarPanggilan.length}`);
+
+  const ditutup = await db.resolveTableCall(daftarPanggilan[0].id, businessId, owner.id);
+  cek("pelayan bisa menutup panggilan", ditutup);
+  cek("menutup dua kali ditolak",
+    !(await db.resolveTableCall(daftarPanggilan[0].id, businessId, owner.id)),
+    "dua pelayan bisa sama-sama mengira dialah yang melayani");
+
+  const panggilSetelahDilayani = await db.createTableCall(businessId, "Meja uji-panggil");
+  cek("meja yang sudah dilayani boleh memanggil lagi",
+    panggilSetelahDilayani.ok && panggilSetelahDilayani.sudahAda === false,
+    "tamu tidak bisa minta tambah pesanan");
+
+  await sql`DELETE FROM table_calls WHERE business_id = ${businessId}`;
+
+  // -------------------------------------------------------------------------
+  console.log("\n13. Jeda panggil ulang supaya bunyinya tetap berarti");
+  // -------------------------------------------------------------------------
+  /**
+   * Kasir yang dibunyikan sepuluh kali oleh meja yang sama akan mulai
+   * mengabaikan bunyinya — dan saat itu terjadi, meja LAIN yang benar-benar
+   * menunggu ikut tidak terdengar. Jeda ini yang menjaga bunyinya tetap berarti.
+   */
+  const panggilBercatatan = await db.createTableCall(businessId, "Meja uji-jeda");
+  cek("panggilan tercatat", panggilBercatatan.ok);
+
+  const daftarBercatatan = await db.getOpenTableCalls(businessId);
+  const catatanTersimpan = daftarBercatatan.find((c) => c.table_key === "uji-jeda");
+  cek("panggilannya terbaca di daftar kasir", Boolean(catatanTersimpan));
+
+  const dalamJeda = await db.createTableCall(businessId, "meja UJI-JEDA");
+  cek("panggil ulang dalam jeda tidak membunyikan kasir",
+    (dalamJeda.jedaDetik ?? 0) > 0, `sisa ${dalamJeda.jedaDetik} detik`);
+  cek("tapi tetap dijawab berhasil, bukan galat", dalamJeda.ok === true,
+    "memberi galat berarti menghukum tamu yang sedang menunggu");
+
+  const waktuAwal = catatanTersimpan!.created_at;
+  await sql`
+    UPDATE table_calls SET ping_terakhir = NOW() - INTERVAL '3 minutes'
+    WHERE business_id = ${businessId} AND table_key = 'uji-jeda'
+  `;
+  const sesudahJeda = await db.createTableCall(businessId, "meja UJI-JEDA");
+  cek("sesudah jedanya lewat, boleh memanggil lagi", (sesudahJeda.jedaDetik ?? 99) === 0);
+
+  const setelahPingKedua = (await db.getOpenTableCalls(businessId))
+    .find((c) => c.table_key === "uji-jeda");
+  cek("jumlah panggilan naik jadi 2", setelahPingKedua?.jumlah_ping === 2,
+    String(setelahPingKedua?.jumlah_ping));
+  cek(
+    "lama menunggu TIDAK ikut ter-reset saat panggil ulang",
+    new Date(setelahPingKedua!.created_at).getTime() === new Date(waktuAwal).getTime(),
+    "meja yang sudah lama diabaikan akan terlihat seperti baru memanggil",
+  );
+
+  await sql`DELETE FROM table_calls WHERE business_id = ${businessId}`;
+
+  // -------------------------------------------------------------------------
   console.log("\nMembersihkan data uji...");
   // -------------------------------------------------------------------------
   await sql`DELETE FROM order_item_changes WHERE order_id = ANY(${dibuat})`;

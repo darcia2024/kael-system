@@ -72,7 +72,7 @@ import type {
   OrderItem,
   Refund,
   SafeUser,
-  MemberCardSettings,
+  MemberCardSettings, FakturPesanan,
   DeletableTestData,
   DeletableOrder,
   DeletableFeedback,
@@ -110,6 +110,42 @@ const rupiahRingkas = (value: number) => `Rp ${Math.round(value).toLocaleString(
  * bersama kalau salah satu langkah gagal.
  */
 type TransaksiSql = Parameters<Parameters<typeof sql.begin>[1]>[0];
+
+/**
+ * Membuang sesi meja yang pesanannya sudah tidak ada lagi.
+ *
+ * Denah meja sengaja menampilkan meja bersesi terbuka sebagai "Disajikan"
+ * walaupun belum ada pesanan sama sekali — tamu yang baru duduk memang harus
+ * terlihat, supaya mejanya tidak ditawarkan ke tamu berikutnya.
+ *
+ * Tapi begitu riwayat pesanannya dihapus, sesi itu tidak lagi mewakili siapa
+ * pun. Mejanya menyala "Disajikan" selamanya, dan owner yang baru
+ * membersihkan data latihan mengira pembersihannya gagal — padahal yang
+ * tertinggal cuma satu baris sesi tanpa induk.
+ *
+ * Yang dibuang HANYA sesi yang tadi dipakai oleh pesanan yang barusan dihapus,
+ * dan hanya kalau sesudahnya benar-benar tidak menyisakan pesanan. Sesi meja
+ * yang tamunya baru duduk dan belum memesan tidak ikut tersentuh.
+ */
+async function bersihkanSesiMejaYatim(
+  tx: TransaksiSql,
+  businessId: string,
+  sessionIds: string[],
+): Promise<number> {
+  const unik = Array.from(new Set(sessionIds));
+  if (!unik.length) return 0;
+
+  const res = await tx`
+    DELETE FROM table_sessions
+    WHERE business_id = ${businessId}
+      AND id IN ${tx(unik)}
+      AND NOT EXISTS (
+        SELECT 1 FROM orders o WHERE o.table_session_id = table_sessions.id
+      )
+    RETURNING id
+  `;
+  return res.length;
+}
 
 export const db = {
   // =========================================================================
@@ -552,7 +588,7 @@ export const db = {
         SELECT oi.name_snapshot AS name, SUM(oi.qty)::int AS qty
           FROM order_items oi
           JOIN orders o ON o.id = oi.order_id
-         WHERE o.business_id = ${businessId} AND o.status = 'paid'
+         WHERE o.business_id = ${businessId} AND oi.cancelled_at IS NULL AND o.status = 'paid'
            AND o.created_at >= now() - interval '30 days'
          GROUP BY oi.name_snapshot
          ORDER BY qty DESC
@@ -3849,7 +3885,7 @@ export const db = {
       sql`SELECT COALESCE(SUM(amount) FILTER (WHERE type = 'income'), 0)::bigint AS income, COALESCE(SUM(amount) FILTER (WHERE type = 'expense'), 0)::bigint AS expenses, COALESCE(SUM(amount) FILTER (WHERE type = 'expense' AND source <> 'inventory'), 0)::bigint AS operating_expenses, COALESCE(SUM(amount) FILTER (WHERE type = 'expense' AND category IN ('Sewa', 'Gaji', 'Internet', 'Listrik', 'Langganan')), 0)::bigint AS fixed_costs FROM finance_transactions WHERE business_id = ${businessId} AND date_trunc('month', occurred_on) = date_trunc('month', CURRENT_DATE)`,
       sql`WITH refunded AS (SELECT order_id, SUM(amount) AS total FROM refunds GROUP BY order_id) SELECT COALESCE(SUM(o.total - COALESCE(r.total, 0)), 0)::bigint AS revenue FROM orders o LEFT JOIN refunded r ON r.order_id = o.id WHERE o.business_id = ${businessId} AND o.status = 'paid' AND date_trunc('month', o.created_at) = date_trunc('month', NOW())`,
       sql`SELECT COALESCE(SUM((purchase_cost - salvage_value)::numeric / useful_life_months), 0)::bigint AS depreciation FROM finance_assets WHERE business_id = ${businessId} AND is_active = TRUE`,
-      sql`WITH refunded AS (SELECT order_id, SUM(amount) AS total FROM refunds GROUP BY order_id) SELECT i.menu_item_id, COALESCE(SUM(i.qty * GREATEST(o.total - COALESCE(r.total, 0), 0)::numeric / NULLIF(o.total, 0)), 0) AS qty, COALESCE(SUM(i.subtotal * GREATEST(o.total - COALESCE(r.total, 0), 0)::numeric / NULLIF(o.total, 0)), 0) AS revenue FROM order_items i JOIN orders o ON o.id = i.order_id LEFT JOIN refunded r ON r.order_id = o.id WHERE o.business_id = ${businessId} AND o.status = 'paid' AND date_trunc('month', o.created_at) = date_trunc('month', NOW()) GROUP BY i.menu_item_id`,
+      sql`WITH refunded AS (SELECT order_id, SUM(amount) AS total FROM refunds GROUP BY order_id) SELECT i.menu_item_id, COALESCE(SUM(i.qty * GREATEST(o.total - COALESCE(r.total, 0), 0)::numeric / NULLIF(o.total, 0)), 0) AS qty, COALESCE(SUM(i.subtotal * GREATEST(o.total - COALESCE(r.total, 0), 0)::numeric / NULLIF(o.total, 0)), 0) AS revenue FROM order_items i JOIN orders o ON o.id = i.order_id LEFT JOIN refunded r ON r.order_id = o.id WHERE o.business_id = ${businessId} AND i.cancelled_at IS NULL AND o.status = 'paid' AND date_trunc('month', o.created_at) = date_trunc('month', NOW()) GROUP BY i.menu_item_id`,
     ]);
     const menuItems = await this.getMenuItems(businessId);
     const recipeByMenu = new Map(
@@ -4518,6 +4554,140 @@ export const db = {
    * diterima siapa pun. Selisihnya baru ketahuan saat tutup shift, dan yang
    * ditanya duluan selalu kasirnya.
    */
+  /**
+   * Menyelesaikan SELURUH tagihan satu meja dalam satu kali bayar.
+   *
+   * Inilah inti alur "bayar di akhir": tamu memesan berkali-kali sepanjang dua
+   * jam, lalu membayar sekali saat pulang. Yang dikerjakan di sini karena itu
+   * bukan satu nota, melainkan semua nota yang masih menggantung di kunjungan
+   * itu — sekaligus, di dalam satu transaksi.
+   *
+   * Sekaligus, dan itu bukan soal kerapian: kalau nota pertama sempat tercatat
+   * lunas lalu langkah berikutnya gagal, mejanya jadi setengah terbayar. Kasir
+   * melihat sisa tagihan yang tidak dia mengerti, tamunya sudah pergi, dan
+   * tidak ada yang bisa memastikan berapa yang sebenarnya diterima.
+   */
+  async settleTableSession(
+    sessionId: string,
+    businessId: string,
+    userId: string,
+    opsi: {
+      method: "cash" | "qris" | "transfer";
+      /** Uang yang disodorkan tamu. Wajib untuk tunai. */
+      cashGiven?: number | null;
+      /** Member yang dilekatkan saat membayar, kalau tamunya mendaftar. */
+      customerId?: string | null;
+    },
+  ): Promise<{
+    ok: boolean;
+    error?: string;
+    data?: {
+      orderIds: string[];
+      orderNos: string[];
+      total: number;
+      cashGiven: number | null;
+      change: number | null;
+    };
+  }> {
+    return sql.begin(async (tx) => {
+      const session = one<TableSession>(await tx`
+        SELECT * FROM table_sessions
+        WHERE id = ${sessionId} AND business_id = ${businessId} FOR UPDATE
+      `);
+      if (!session) return { ok: false, error: "Sesi meja tidak ditemukan." };
+
+      const notaBelumLunas = (await tx`
+        SELECT id, order_no, total FROM orders
+        WHERE table_session_id = ${sessionId}
+          AND business_id = ${businessId}
+          AND status <> 'cancelled'
+          AND payment_status = 'pending'
+        ORDER BY created_at
+        FOR UPDATE
+      `) as unknown as { id: string; order_no: string; total: string }[];
+
+      if (!notaBelumLunas.length) {
+        return { ok: false, error: "Tidak ada tagihan yang menunggu dibayar di meja ini." };
+      }
+
+      const total = notaBelumLunas.reduce((n, o) => n + Number(o.total), 0);
+
+      /**
+       * Tunai wajib punya shift yang terbuka.
+       *
+       * Uang tunai masuk ke laci fisik, dan laci yang tidak menempel pada shift
+       * mana pun tidak bisa dicocokkan saat tutup — selisihnya tidak akan
+       * pernah ketahuan milik siapa.
+       */
+      let shiftId: string | null = null;
+      let cashGiven: number | null = null;
+      let change: number | null = null;
+
+      if (opsi.method === "cash") {
+        const shift = one<Shift>(await tx`
+          SELECT * FROM shifts WHERE business_id = ${businessId} AND closed_at IS NULL
+          ORDER BY opened_at DESC LIMIT 1 FOR UPDATE
+        `);
+        if (!shift) {
+          return { ok: false, error: "Buka shift kasir dulu sebelum menerima pembayaran tunai." };
+        }
+        shiftId = shift.id;
+
+        cashGiven = Math.round(Number(opsi.cashGiven ?? 0));
+        if (!Number.isFinite(cashGiven) || cashGiven < total) {
+          return { ok: false, error: "Uang tunai yang diterima kurang dari total tagihan meja." };
+        }
+        change = cashGiven - total;
+      }
+
+      /**
+       * Member dilekatkan ke SEMUA nota kunjungan ini, bukan cuma yang terakhir.
+       *
+       * Poinnya dihitung dari nilai tiap nota. Melekatkannya cuma ke satu nota
+       * berarti tamu yang memesan empat kali cuma dapat poin dari pesanan
+       * terakhirnya — dan dia tidak akan pernah tahu kenapa poinnya kurang.
+       */
+      const idNota = notaBelumLunas.map((o) => o.id);
+
+      await tx`
+        UPDATE orders SET
+          payment_status = 'paid',
+          status = 'paid',
+          payment_method = ${opsi.method},
+          paid_confirmed_by = ${userId},
+          paid_confirmed_at = NOW(),
+          shift_id = COALESCE(${shiftId}, shift_id),
+          customer_id = COALESCE(${opsi.customerId ?? null}, customer_id),
+          fulfillment_status = CASE
+            WHEN fulfillment_status = 'pending' THEN 'accepted'
+            ELSE fulfillment_status
+          END
+        WHERE id IN ${tx(idNota)} AND business_id = ${businessId}
+      `;
+
+      await tx`
+        UPDATE table_sessions SET
+          dibayar_dengan = ${opsi.method},
+          tunai_diterima = ${cashGiven},
+          kembalian = ${change},
+          dibayar_pada = NOW(),
+          dibayar_oleh = ${userId}
+        WHERE id = ${sessionId}
+      `;
+
+      return {
+        ok: true,
+        data: {
+          orderIds: idNota,
+          orderNos: notaBelumLunas.map((o) => o.order_no),
+          total,
+          cashGiven,
+          change,
+        },
+      };
+    });
+  },
+
   async closeTableSession(
     sessionId: string,
     businessId: string,
@@ -4571,7 +4741,7 @@ export const db = {
       LEFT JOIN (
         SELECT o.table_session_id,
           COUNT(*)::int AS order_count,
-          COALESCE(SUM((SELECT SUM(i.qty) FROM order_items i WHERE i.order_id = o.id)), 0)::int AS item_count,
+          COALESCE(SUM((SELECT SUM(i.qty) FROM order_items i WHERE i.order_id = o.id AND i.cancelled_at IS NULL)), 0)::int AS item_count,
           COALESCE(SUM(o.total), 0) AS total_bill,
           BOOL_OR(o.payment_status = 'pending') AS has_unpaid,
           BOOL_OR(o.fulfillment_status IN ('pending', 'accepted', 'preparing')) AS is_cooking
@@ -4582,6 +4752,155 @@ export const db = {
       WHERE s.business_id = ${businessId} AND s.status = 'open'
       ORDER BY s.opened_at ASC
     `) as unknown as TableSessionSummary[];
+  },
+
+  // =========================================================================
+  // Panggilan meja
+  // =========================================================================
+
+  /**
+   * Batas hidup satu panggilan, dalam menit.
+   *
+   * Panggilan yang tidak pernah ditutup akan menumpuk semalaman dan membuat
+   * layar kasir esok paginya penuh panggilan dari tamu yang sudah lama pulang.
+   * Yang lewat batas ini ditandai kedaluwarsa, BUKAN dilayani — karena memang
+   * tidak ada yang mendatanginya, dan itu justru yang perlu terlihat.
+   */
+  PANGGILAN_MENIT: 45,
+
+  /**
+   * Jeda sebelum satu meja boleh memanggil lagi, dalam menit.
+   *
+   * Bukan untuk membatasi tamu, melainkan untuk menjaga bunyinya tetap berarti.
+   * Kasir yang dibunyikan sepuluh kali oleh meja yang sama akan mulai
+   * mengabaikan bunyinya — dan saat itu terjadi, meja LAIN yang benar-benar
+   * menunggu ikut tidak terdengar.
+   */
+  PANGGILAN_JEDA_MENIT: 2,
+
+  /**
+   * Tamu menekan tombol panggil dari halaman menu digital.
+   *
+   * Tidak ada sesi, tidak ada login: yang memanggil adalah orang yang sedang
+   * duduk di meja itu. Karena itu satu-satunya pengaman yang masuk akal di sini
+   * bukan otentikasi, melainkan pembatasan jumlah — dan itu ditegakkan indeks
+   * unik di basis data, bukan tombol yang dinonaktifkan di layar.
+   */
+  async createTableCall(
+    businessId: string,
+    tableNo: string,
+    jenis: "siap_memesan" | "tambah_pesanan" | "minta_bill" | "bantuan" = "siap_memesan",
+  ): Promise<{
+    ok: boolean;
+    sudahAda?: boolean;
+    menungguSejak?: string;
+    /** Detik tersisa sebelum meja ini boleh memanggil lagi. 0 berarti boleh. */
+    jedaDetik?: number;
+  }> {
+    const tableKey = normalizeTableKey(tableNo);
+    if (!tableKey) return { ok: false };
+
+    await this.expireStaleTableCalls(businessId);
+
+    const sudahAda = one<{ id: string; created_at: string; ping_terakhir: string }>(await sql`
+      SELECT id, created_at, ping_terakhir FROM table_calls
+      WHERE business_id = ${businessId} AND table_key = ${tableKey} AND status = 'menunggu'
+      LIMIT 1
+    `);
+
+    if (sudahAda) {
+      const jedaMs = this.PANGGILAN_JEDA_MENIT * 60_000;
+      const sejakPingMs = Date.now() - new Date(sudahAda.ping_terakhir).getTime();
+      const sisaDetik = Math.max(0, Math.ceil((jedaMs - sejakPingMs) / 1000));
+
+      /**
+       * Masih dalam jeda: panggilannya memang sudah tercatat, jadi ini BUKAN
+       * kegagalan. Yang dikembalikan sisa waktunya, supaya layar tamu bisa
+       * menghitung mundur alih-alih menampilkan galat kepada orang yang justru
+       * sedang menunggu.
+       */
+      if (sisaDetik > 0) {
+        return {
+          ok: true,
+          sudahAda: true,
+          menungguSejak: sudahAda.created_at,
+          jedaDetik: sisaDetik,
+        };
+      }
+
+      /**
+       * Jedanya sudah lewat: kasir dibunyikan lagi.
+       *
+       * created_at TIDAK ikut digeser. Itu yang menjaga "sudah menunggu berapa
+       * lama" tetap terbaca apa adanya — kalau ikut bergeser, meja yang sudah
+       * 20 menit diabaikan akan terlihat seperti baru memanggil.
+       */
+      await sql`
+        UPDATE table_calls SET
+          ping_terakhir = NOW(),
+          jumlah_ping = jumlah_ping + 1
+        WHERE id = ${sudahAda.id}
+      `;
+      return {
+        ok: true,
+        sudahAda: true,
+        menungguSejak: sudahAda.created_at,
+        jedaDetik: 0,
+      };
+    }
+
+    const baris = one<{ created_at: string }>(await sql`
+      INSERT INTO table_calls ${sql({
+        business_id: businessId,
+        table_no: tableNo.trim().slice(0, 40),
+        table_key: tableKey,
+        jenis,
+      })}
+      ON CONFLICT DO NOTHING
+      RETURNING created_at
+    `);
+
+    return { ok: true, sudahAda: false, menungguSejak: baris?.created_at, jedaDetik: 0 };
+  },
+
+  /** Panggilan yang belum didatangi, terlama di atas — yang paling lama menunggu yang paling mendesak. */
+  async getOpenTableCalls(businessId: string) {
+    await this.expireStaleTableCalls(businessId);
+    return (await sql`
+      SELECT id, table_no, table_key, jenis, created_at, jumlah_ping
+      FROM table_calls
+      WHERE business_id = ${businessId} AND status = 'menunggu'
+      ORDER BY created_at ASC
+    `) as unknown as {
+      id: string;
+      table_no: string;
+      table_key: string;
+      jenis: string;
+      created_at: string;
+      jumlah_ping: number;
+    }[];
+  },
+
+  /** Pelayan menyatakan mejanya sudah didatangi. */
+  async resolveTableCall(callId: string, businessId: string, userId: string): Promise<boolean> {
+    const rows = await sql`
+      UPDATE table_calls
+      SET status = 'dilayani', handled_at = NOW(), handled_by = ${userId}
+      WHERE id = ${callId} AND business_id = ${businessId} AND status = 'menunggu'
+      RETURNING id
+    `;
+    return rows.length > 0;
+  },
+
+  /** Menutup panggilan yang sudah terlalu lama menggantung. */
+  async expireStaleTableCalls(businessId: string): Promise<number> {
+    const rows = await sql`
+      UPDATE table_calls SET status = 'kedaluwarsa', handled_at = NOW()
+      WHERE business_id = ${businessId} AND status = 'menunggu'
+        AND created_at < NOW() - (${this.PANGGILAN_MENIT} * INTERVAL '1 minute')
+      RETURNING id
+    `;
+    return rows.length;
   },
 
   /**
@@ -4778,10 +5097,148 @@ export const db = {
     );
   },
 
-  async getOrderItems(orderId: string): Promise<OrderItem[]> {
+  /**
+   * Isi sebuah nota. Menu yang DIBATALKAN tidak ikut, kecuali diminta.
+   *
+   * Penyaringannya ditaruh di sini, bukan di tiap pemanggil, supaya tidak ada
+   * satu pun jalur yang ketinggalan: struk, tiket dapur, pemotongan stok,
+   * bagi tagihan, dan laporan per menu semuanya lewat fungsi ini. Satu tempat
+   * yang lupa menyaring berarti tamu menerima struk berisi menu yang dia
+   * batalkan, atau stok terpotong untuk makanan yang tidak pernah dibuat.
+   */
+  async getOrderItems(
+    orderId: string,
+    opsi?: { termasukDibatalkan?: boolean },
+  ): Promise<OrderItem[]> {
+    if (opsi?.termasukDibatalkan) {
+      return (await sql`
+        SELECT * FROM order_items WHERE order_id = ${orderId} ORDER BY id
+      `) as unknown as OrderItem[];
+    }
     return (await sql`
-      SELECT * FROM order_items WHERE order_id = ${orderId} ORDER BY id
+      SELECT * FROM order_items
+      WHERE order_id = ${orderId} AND cancelled_at IS NULL
+      ORDER BY id
     `) as unknown as OrderItem[];
+  },
+
+  /**
+   * Bahan faktur WhatsApp untuk satu pesanan.
+   *
+   * Beda dari getOrderById: yang ini MENYARING business_id. Struk publik
+   * memang boleh dibuka siapa pun yang memegang tautannya, tapi faktur ini
+   * dipanggil dari layar kasir dan mengembalikan nomor WhatsApp pelanggan —
+   * tanpa saringan, kasir toko mana pun bisa menarik nomor pelanggan toko lain
+   * cukup dengan menebak id pesanannya.
+   *
+   * Penerimanya diputuskan di sini, bukan di layar. Pesanan antar punya
+   * penerima sendiri (delivery_phone) yang bisa berbeda dari membernya —
+   * orang memesankan makanan untuk rumah ibunya. Selain itu, nomor member
+   * yang menempel ke pesanan. Kalau keduanya tidak ada, penerimanya kosong
+   * dan kasir mengetiknya sendiri.
+   *
+   * Item yang dibatalkan tidak ikut — getOrderItems sudah menyaringnya. Faktur
+   * yang masih mencantumkan menu yang tidak jadi dibuat akan ditagih pelanggan
+   * ke kasir, dan dia benar.
+   */
+  async getOrderInvoice(orderId: string, businessId: string): Promise<FakturPesanan | null> {
+    const order = one<Order>(await sql`
+      SELECT * FROM orders WHERE id = ${orderId} AND business_id = ${businessId}
+    `);
+    if (!order) return null;
+
+    const [items, business, customer] = await Promise.all([
+      this.getOrderItems(order.id),
+      this.getBusiness(businessId),
+      order.customer_id
+        ? sql`
+            SELECT name, phone FROM customers
+            WHERE id = ${order.customer_id} AND business_id = ${businessId}
+          `.then((rows) => one<{ name: string | null; phone: string }>(rows))
+        : Promise.resolve(null),
+    ]);
+
+    const antar = order.service_type === "delivery";
+    const nomorAntar = order.delivery_phone?.trim() || null;
+
+    return {
+      orderId: order.id,
+      namaToko: business?.name ?? "",
+      orderNo: order.order_no,
+      items: items.map((i) => ({
+        nama: i.name_snapshot,
+        qty: num(i.qty),
+        harga: num(i.price_snapshot),
+      })),
+      subtotal: num(order.subtotal),
+      diskon: num(order.discount),
+      pajak: num(order.tax),
+      serviceCharge: num(order.service_charge),
+      ongkir: num(order.delivery_fee),
+      total: num(order.total),
+      caraBayar: order.payment_method,
+      penerima: {
+        nomor: (antar && nomorAntar) || customer?.phone || nomorAntar || null,
+        nama: (antar && order.delivery_name?.trim()) || customer?.name || null,
+        alamat: antar ? order.delivery_address?.trim() || null : null,
+      },
+    };
+  },
+
+  /** Berapa lama tautan QR faktur berlaku. Cukup untuk dipindai, tidak lebih. */
+  INVOICE_LINK_MINUTES: 15,
+
+  /**
+   * Membuat tautan pendek untuk QR faktur.
+   *
+   * Pesanannya diperiksa milik toko ini sebelum tautan dibuat — tanpa itu,
+   * kasir toko mana pun bisa membuat tautan yang, saat dibuka, merakit faktur
+   * pesanan toko lain beserta isinya.
+   *
+   * Tautan kedaluwarsa dibersihkan di sini juga, bukan lewat cron: tabelnya
+   * cuma bertambah saat kasir membuat faktur, jadi di situlah waktu yang tepat
+   * untuk menyapunya.
+   */
+  async createInvoiceLink(
+    businessId: string, orderId: string, nomor: string, userId: string,
+  ): Promise<string | null> {
+    return sql.begin(async (tx) => {
+      const order = one<{ id: string }>(await tx`
+        SELECT id FROM orders WHERE id = ${orderId} AND business_id = ${businessId}
+      `);
+      if (!order) return null;
+
+      await tx`DELETE FROM invoice_links WHERE expires_at < NOW()`;
+
+      const token = generateCustomerToken(12);
+      // Kedaluwarsanya dihitung jam DATABASE, bukan jam server aplikasi. Yang
+      // membandingkannya nanti juga NOW() di database, jadi keduanya tidak
+      // pernah bisa selisih karena jam dua mesin berbeda.
+      await tx`
+        INSERT INTO invoice_links (token, business_id, order_id, nomor, created_by, expires_at)
+        VALUES (
+          ${token}, ${businessId}, ${orderId}, ${nomor}, ${userId},
+          NOW() + (${this.INVOICE_LINK_MINUTES} * INTERVAL '1 minute')
+        )
+      `;
+      return token;
+    });
+  },
+
+  /**
+   * Membuka tautan faktur: nomor tujuan dan fakturnya, atau null kalau sudah
+   * kedaluwarsa. Yang membukanya HP kasir tanpa sesi KAEL, jadi pengamannya
+   * adalah token acak yang berumur pendek — bukan login.
+   */
+  async resolveInvoiceLink(token: string): Promise<{ nomor: string; faktur: FakturPesanan } | null> {
+    const link = one<{ business_id: string; order_id: string; nomor: string }>(await sql`
+      SELECT business_id, order_id, nomor FROM invoice_links
+      WHERE token = ${token} AND expires_at > NOW()
+    `);
+    if (!link) return null;
+    const faktur = await this.getOrderInvoice(link.order_id, link.business_id);
+    if (!faktur) return null;
+    return { nomor: link.nomor, faktur };
   },
 
   /** Struk digital. Dibuka lewat tautan, jadi tidak menyaring business_id. */
@@ -5165,6 +5622,126 @@ export const db = {
    * order_item_changes, selisihnya WAJIB dinyatakan mau diapakan, dan stok
    * kedua menu disesuaikan.
    */
+  /**
+   * Membatalkan SATU menu dari nota yang belum dibayar.
+   *
+   * Barisnya tidak dihapus, cuma ditandai batal. Kasir yang bisa menghapus
+   * baris dari nota belum lunas memegang alat pencurian yang sempurna: tamu
+   * membayar tunai, barisnya dihapus, dan tidak ada jejak item itu pernah ada
+   * — laci pun tetap cocok, karena barisnya memang tidak pernah ikut dihitung.
+   *
+   * Yang dibatalkan otomatis hilang dari tagihan, struk, tiket dapur,
+   * pemotongan stok, dan laporan penjualan. Yang tersisa cuma jejaknya, dan
+   * itu yang membedakan pembatalan jujur dari uang yang menguap.
+   */
+  async cancelOrderItem(
+    orderId: string,
+    orderItemId: string,
+    businessId: string,
+    userId: string,
+    opsi: {
+      reason: string;
+      disposition: "belum_dibuat" | "sudah_dibuat_dibuang" | "sudah_dibuat_disajikan";
+    },
+  ): Promise<{ ok: boolean; error?: string; totalBaru?: number; notaIkutBatal?: boolean }> {
+    return sql.begin(async (tx) => {
+      const order = one<Order>(await tx`
+        SELECT * FROM orders WHERE id = ${orderId} AND business_id = ${businessId} FOR UPDATE
+      `);
+      if (!order) return { ok: false, error: "Pesanan tidak ditemukan." };
+
+      /**
+       * Nota yang sudah dibayar TIDAK boleh dibatalkan begitu saja.
+       *
+       * Uangnya sudah berpindah, jadi mengurangi tagihannya tanpa mengembalikan
+       * uangnya berarti selisih kas yang tidak ada catatannya. Yang benar untuk
+       * itu adalah refund, dan refund punya jejaknya sendiri.
+       */
+      if (order.payment_status === "paid") {
+        return {
+          ok: false,
+          error:
+            "Nota ini sudah dibayar, jadi menunya tidak bisa dibatalkan begitu saja. Pakai Pengembalian Dana (refund) supaya uang yang keluar tetap ada catatannya.",
+        };
+      }
+
+      const item = one<OrderItem>(await tx`
+        SELECT * FROM order_items WHERE id = ${orderItemId} AND order_id = ${orderId} FOR UPDATE
+      `);
+      if (!item) return { ok: false, error: "Menu ini tidak ada di nota tersebut." };
+      if (item.cancelled_at) return { ok: false, error: "Menu ini sudah dibatalkan sebelumnya." };
+
+      const alasan = opsi.reason?.trim();
+      if (!alasan) {
+        return { ok: false, error: "Isi dulu alasan pembatalannya." };
+      }
+
+      await tx`
+        UPDATE order_items SET
+          cancelled_at = NOW(),
+          cancelled_by = ${userId},
+          cancel_reason = ${alasan},
+          cancel_disposition = ${opsi.disposition}
+        WHERE id = ${orderItemId}
+      `;
+
+      const sisa = (await tx`
+        SELECT price_snapshot, qty FROM order_items
+        WHERE order_id = ${orderId} AND cancelled_at IS NULL
+      `) as unknown as { price_snapshot: string; qty: number }[];
+
+      /**
+       * Nota yang seluruh menunya dibatalkan ikut dibatalkan.
+       *
+       * Nota kosong berisi nol rupiah tetap muncul di antrean kasir dan menahan
+       * mejanya supaya tidak bisa ditutup — dan tidak ada satu pun cara
+       * menyelesaikannya, karena memang tidak ada yang perlu dibayar.
+       */
+      if (!sisa.length) {
+        await tx`
+          UPDATE orders SET
+            status = 'cancelled',
+            fulfillment_status = 'cancelled',
+            payment_status = CASE WHEN payment_status = 'pending' THEN 'failed' ELSE payment_status END,
+            subtotal = 0, tax = 0, service_charge = 0, total = 0
+          WHERE id = ${orderId}
+        `;
+        return { ok: true, totalBaru: 0, notaIkutBatal: true };
+      }
+
+      /**
+       * Tagihannya dihitung ULANG dari menu yang tersisa, bukan dikurangi.
+       *
+       * Pajak dan service charge itu persentase: menguranginya sebesar harga
+       * item yang batal akan meninggalkan sisa beberapa rupiah yang tidak
+       * pernah cocok saat dijumlahkan. Diskon dan ongkir dipertahankan apa
+       * adanya — keduanya keputusan tersendiri, bukan turunan dari isi nota.
+       */
+      const biz = one<{ pos_tax_rate: string; pos_service_charge_rate: string }>(await tx`
+        SELECT pos_tax_rate, pos_service_charge_rate FROM businesses WHERE id = ${businessId}
+      `);
+      const totals = calculateCartTotals(
+        sisa.map((r) => ({ price: Number(r.price_snapshot), qty: r.qty })),
+        Math.min(Number(order.discount ?? 0), sisa.reduce((n, r) => n + Number(r.price_snapshot) * r.qty, 0)),
+        Number(biz?.pos_tax_rate ?? 0),
+        Number(biz?.pos_service_charge_rate ?? 0),
+      );
+      const totalBaru = totals.total + Number(order.delivery_fee ?? 0);
+
+      await tx`
+        UPDATE orders SET
+          subtotal = ${totals.subtotal},
+          discount = ${totals.discount},
+          tax = ${totals.tax},
+          service_charge = ${totals.serviceCharge},
+          total = ${totalBaru}
+        WHERE id = ${orderId}
+      `;
+
+      return { ok: true, totalBaru, notaIkutBatal: false };
+    });
+  },
+
   async replaceOrderItem(
     orderId: string,
     orderItemId: string,
@@ -5482,7 +6059,18 @@ export const db = {
         -- mulut, dan saat ramai berarti ada yang tidak dimasak. Sekarang
         -- dua-duanya lewat antrean yang sama.
         AND o.payment_status IN ('pending', 'paid')
-        AND o.fulfillment_status NOT IN ('completed', 'cancelled')
+        AND o.fulfillment_status <> 'cancelled'
+        /*
+         * Pesanan yang uangnya BELUM masuk tetap ditahan di antrean, walaupun
+         * dapur sudah menandainya selesai.
+         *
+         * Dulu saringannya membuang semua yang 'completed', dan itu membuat
+         * nota yang belum dibayar lenyap dari layar kasir begitu makanannya
+         * keluar — tidak ada lagi tombol untuk menagihnya, mejanya tidak bisa
+         * ditutup, dan satu-satunya jejak tersisa cuma baris "belum bayar" di
+         * riwayat yang tidak bisa diapa-apakan.
+         */
+        AND (o.payment_status = 'pending' OR o.fulfillment_status <> 'completed')
       ORDER BY o.created_at ASC
     `) as unknown as Order[];
     return Promise.all(orders.map(async (order) => ({
@@ -5621,12 +6209,12 @@ export const db = {
           JOIN menu_items m ON m.id = oi.menu_item_id
           JOIN recipes r ON r.id = m.recipe_id
           JOIN inventory_recipe_items iri ON iri.recipe_id = r.id
-          WHERE oi.order_id = ${orderId}
+          WHERE oi.order_id = ${orderId} AND oi.cancelled_at IS NULL
           UNION ALL
           SELECT m.inventory_item_id, (m.inventory_qty_per_sale * oi.qty) AS required_qty
           FROM order_items oi
           JOIN menu_items m ON m.id = oi.menu_item_id
-          WHERE oi.order_id = ${orderId} AND m.inventory_item_id IS NOT NULL
+          WHERE oi.order_id = ${orderId} AND oi.cancelled_at IS NULL AND m.inventory_item_id IS NOT NULL
             AND m.inventory_qty_per_sale IS NOT NULL AND m.recipe_id IS NULL
         ) usage
         GROUP BY inventory_item_id
@@ -5679,13 +6267,31 @@ export const db = {
     });
   },
 
-  async syncPaidOrder(orderId: string, businessId: string, userId: string) {
+  async syncPaidOrder(
+    orderId: string,
+    businessId: string,
+    userId: string,
+    /**
+     * Poinnya sudah diurus pemanggil.
+     *
+     * Dipakai pembayaran satu meja: di sana poin dihitung SEKALI dari total
+     * yang benar-benar dibayar, bukan per nota. Kalau di sini dihitung lagi,
+     * satu belanja akan menghasilkan dua kali poin.
+     */
+    opsi?: { lewatiPoin?: boolean },
+  ) {
     try {
       const order = one<Order>(
         await sql`SELECT * FROM orders WHERE id = ${orderId} AND business_id = ${businessId} AND payment_status = 'paid'`,
       );
       if (!order) return;
-      if (order.customer_id && (await this.getLoyaltyProgram(businessId))) {
+      if (opsi?.lewatiPoin) {
+        /**
+         * Ditandai sudah diproses supaya antrean sinkronisasi owner tidak
+         * memberi poin kedua kalinya untuk nota yang sama.
+         */
+        await sql`UPDATE orders SET loyalty_applied_at = COALESCE(loyalty_applied_at, NOW()) WHERE id = ${orderId} AND business_id = ${businessId}`;
+      } else if (order.customer_id && (await this.getLoyaltyProgram(businessId))) {
         await this.earnPointsFromPurchase(
           businessId,
           order.customer_id,
@@ -6000,7 +6606,7 @@ export const db = {
         FROM order_items i
         JOIN orders o ON o.id = i.order_id
         LEFT JOIN refunds_by_order r ON r.order_id = o.id
-        WHERE o.business_id = ${businessId} AND o.status = 'paid'
+        WHERE o.business_id = ${businessId} AND i.cancelled_at IS NULL AND o.status = 'paid'
         GROUP BY i.menu_item_id, i.name_snapshot
         ORDER BY qty DESC
       `,
@@ -6203,6 +6809,7 @@ export const db = {
           FROM order_items oi
           JOIN orders o ON o.id = oi.order_id
           WHERE o.business_id = ${businessId}
+            AND oi.cancelled_at IS NULL
             AND o.status = 'paid'
             AND (o.created_at AT TIME ZONE ${tz})::date = (NOW() AT TIME ZONE ${tz})::date
           GROUP BY oi.menu_item_id
@@ -6215,6 +6822,7 @@ export const db = {
           FROM order_items oi
           JOIN orders o ON o.id = oi.order_id
           WHERE o.business_id = ${businessId}
+            AND oi.cancelled_at IS NULL
             AND o.status = 'paid'
             AND o.created_at >= (NOW() - interval '7 days')
           GROUP BY oi.menu_item_id
@@ -6227,6 +6835,7 @@ export const db = {
           FROM order_items oi
           JOIN orders o ON o.id = oi.order_id
           WHERE o.business_id = ${businessId}
+            AND oi.cancelled_at IS NULL
             AND o.status = 'paid'
             AND o.created_at >= (NOW() - interval '30 days')
           GROUP BY oi.menu_item_id
@@ -6365,7 +6974,7 @@ export const db = {
           o.payment_method,
           o.created_at,
           c.name AS customer_name,
-          COALESCE((SELECT COUNT(*) FROM order_items oi WHERE oi.order_id = o.id), 0)::int AS item_count
+          COALESCE((SELECT COUNT(*) FROM order_items oi WHERE oi.order_id = o.id AND oi.cancelled_at IS NULL), 0)::int AS item_count
         FROM orders o
         LEFT JOIN customers c ON c.id = o.customer_id
         WHERE o.business_id = ${businessId}
@@ -6504,10 +7113,18 @@ export const db = {
        * dan rincian item milik usaha LAIN tetap ikut terhapus — cukup dengan
        * menebak satu id pesanan tetangga.
        */
-      const milikSendiri = (
-        await tx`SELECT id FROM orders WHERE id IN ${tx(orderIds)} AND business_id = ${businessId}`
-      ).map((r) => r.id as string);
+      const baris = await tx`
+        SELECT id, table_session_id FROM orders
+        WHERE id IN ${tx(orderIds)} AND business_id = ${businessId}
+      `;
+      const milikSendiri = baris.map((r) => r.id as string);
       if (!milikSendiri.length) return { deletedCount: 0 };
+
+      // Dicatat SEBELUM pesanannya hilang: sesudah dihapus, jejak meja mana
+      // yang terpengaruh ikut lenyap bersama barisnya.
+      const sesiTerdampak = baris
+        .map((r) => r.table_session_id as string | null)
+        .filter((id): id is string => Boolean(id));
 
       await tx`DELETE FROM member_feedback WHERE order_id IN ${tx(milikSendiri)} AND business_id = ${businessId}`;
       await tx`DELETE FROM point_ledger WHERE order_id IN ${tx(milikSendiri)} AND business_id = ${businessId}`;
@@ -6515,6 +7132,9 @@ export const db = {
       await tx`DELETE FROM refunds WHERE order_id IN ${tx(milikSendiri)}`;
       await tx`DELETE FROM order_items WHERE order_id IN ${tx(milikSendiri)}`;
       const res = await tx`DELETE FROM orders WHERE id IN ${tx(milikSendiri)} RETURNING id`;
+
+      await bersihkanSesiMejaYatim(tx, businessId, sesiTerdampak);
+
       return { deletedCount: res.length };
     });
   },
@@ -6547,6 +7167,14 @@ export const db = {
    */
   async deleteOrder(orderId: string, businessId: string): Promise<boolean> {
     return sql.begin(async (tx) => {
+      // Sesi mejanya dicatat dulu: sesudah pesanannya hilang, tidak ada lagi
+      // yang menunjuk ke meja mana nota ini duduk.
+      const induk = await tx`
+        SELECT table_session_id FROM orders
+        WHERE id = ${orderId} AND business_id = ${businessId}
+      `;
+      const sesi = induk[0]?.table_session_id as string | null | undefined;
+
       // 1. Delete associated feedback
       await tx`DELETE FROM member_feedback WHERE order_id = ${orderId} AND business_id = ${businessId}`;
       // 2. Delete point ledger entries tied to this order
@@ -6557,6 +7185,10 @@ export const db = {
       await tx`DELETE FROM order_items WHERE order_id = ${orderId}`;
       // 5. Delete order
       const res = await tx`DELETE FROM orders WHERE id = ${orderId} AND business_id = ${businessId} RETURNING id`;
+
+      // 6. Meja yang kehilangan seluruh notanya tidak boleh tetap "Disajikan"
+      if (res.length && sesi) await bersihkanSesiMejaYatim(tx, businessId, [sesi]);
+
       return res.length > 0;
     });
   },
@@ -6606,6 +7238,15 @@ export const db = {
        */
       if (scope === "all_orders" || scope === "everything") {
         const ujiSaja = tx`SELECT id FROM orders WHERE business_id = ${businessId} AND is_test`;
+
+        // Dicatat sebelum penghapusan, selagi tautan ke mejanya masih ada.
+        const sesiTerdampak = (
+          await tx`
+            SELECT DISTINCT table_session_id FROM orders
+            WHERE business_id = ${businessId} AND is_test AND table_session_id IS NOT NULL
+          `
+        ).map((r) => r.table_session_id as string);
+
         await tx`DELETE FROM member_feedback WHERE business_id = ${businessId} AND order_id IN (${ujiSaja})`;
         await tx`DELETE FROM point_ledger WHERE business_id = ${businessId} AND order_id IN (${ujiSaja})`;
         await tx`DELETE FROM order_item_changes WHERE business_id = ${businessId} AND order_id IN (${ujiSaja})`;
@@ -6613,6 +7254,8 @@ export const db = {
         await tx`DELETE FROM order_items WHERE order_id IN (${ujiSaja})`;
         const delOrders = await tx`DELETE FROM orders WHERE business_id = ${businessId} AND is_test RETURNING id`;
         count += delOrders.length;
+
+        await bersihkanSesiMejaYatim(tx, businessId, sesiTerdampak);
       }
 
       /**

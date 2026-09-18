@@ -485,7 +485,11 @@ export default function PosMemberScannerModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-3 sm:p-4 backdrop-blur-xs animate-in fade-in-50">
+    /*
+      z-[70]: layar ini bisa dibuka DARI layar terima pembayaran (z-60), dan
+      pemindai yang muncul di belakangnya bikin kasir mengira tombolnya rusak.
+    */
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/75 p-3 sm:p-4 backdrop-blur-xs animate-in fade-in-50">
       <div
         className={`w-full max-w-md rounded-3xl bg-white shadow-2xl overflow-hidden flex flex-col max-h-[92vh] animate-in zoom-in-95 ${
           isMochiPos ? "border border-emerald-900/20" : "border-2 border-[#232331]"

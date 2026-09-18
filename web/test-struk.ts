@@ -154,5 +154,110 @@ console.log("\n7. Lebar struk tidak melewati 32 karakter");
     terlalu.length ? `${terlalu.length} baris kepanjangan: ${JSON.stringify(terlalu[0])}` : "");
 }
 
+console.log("\n8. Bagi tagihan: struk sebagian tidak boleh terbaca sebagai tagihan penuh");
+{
+  const dasarBagi = {
+    businessName: "Mochi Cafe n Resto",
+    orderNo: "MEJA-07",
+    tableNo: "07",
+    serviceType: "dine_in" as const,
+    cashierName: "Kasir",
+    createdAt: WAKTU,
+    timezone: "Asia/Jakarta",
+    subtotal: 32000,
+    discount: 0,
+    tax: 0,
+    serviceCharge: 0,
+    total: 32000,
+    paymentMethod: "cash",
+    bagian: "pelanggan" as const,
+  };
+
+  const bagian = generateThreePlyReceiptText({
+    ...dasarBagi,
+    items: [{ name: "Dalgona Coklat", qty: 1, price: 32000 }],
+    bagiTagihan: { bagianKe: 2, dariBagian: 5, totalMeja: 187000 },
+  });
+
+  cek("struk menyebut dirinya bagi tagihan", bagian.includes("BAGI TAGIHAN"));
+  cek("nomor bagiannya tercetak", bagian.includes("BAGIAN 2 DARI 5"));
+  cek(
+    "total seluruh meja ikut tercetak",
+    bagian.includes("187.000"),
+    "tanpa ini, satu bagian gampang disangka tagihan penuh",
+  );
+  cek(
+    "totalnya diberi label bagian, bukan TOTAL BAYAR",
+    bagian.includes("BAYAR BAGIAN INI") && !bagian.includes("TOTAL BAYAR"),
+  );
+  cek(
+    "keterangan bagian muncul SEBELUM angka totalnya",
+    bagian.indexOf("BAGI TAGIHAN") < bagian.indexOf("BAYAR BAGIAN INI"),
+    "yang baca struk berhenti di angka total; keterangan setelahnya sudah telat",
+  );
+  cek(
+    "bagian tagihan tetap muat di kertas 58mm",
+    bagian.split("\n").every((l) => l.length <= 32),
+  );
+
+  // Tanpa bagiTagihan, struk biasa TIDAK boleh berubah sedikit pun.
+  const biasa = generateThreePlyReceiptText({
+    ...dasarBagi,
+    items: [{ name: "Dalgona Coklat", qty: 1, price: 32000 }],
+  });
+  cek("struk biasa tidak ikut berubah", biasa.includes("TOTAL BAYAR") && !biasa.includes("BAGI TAGIHAN"));
+  cek("struk biasa tidak mencantumkan total meja", !biasa.includes("Total meja"));
+}
+
+console.log("\n9. Cara bayar tercetak, supaya struknya bisa dibukukan");
+{
+  const dasarBayar = {
+    businessName: "Mochi Cafe n Resto",
+    orderNo: "MEJA-24", tableNo: "24", serviceType: "dine_in" as const,
+    cashierName: "Rizka", createdAt: WAKTU, timezone: "Asia/Jakarta",
+    items: [{ name: "Coffee Susu Aren Dingin", qty: 1, price: 20000 }],
+    subtotal: 65000, discount: 0, tax: 0, serviceCharge: 0, total: 65000,
+  };
+
+  /**
+   * Struk ini disortir jadi tumpukan tunai, QRIS, dan transfer saat staf dan
+   * pemilik membukukan bersama. Lembar tanpa keterangan cara bayar tidak bisa
+   * masuk tumpukan mana pun, dan berakhir sebagai selisih yang tidak ada yang
+   * bisa jelaskan.
+   */
+  for (const [metode, tertulis] of [
+    ["cash", "TUNAI"],
+    ["qris", "QRIS"],
+    ["transfer", "TRANSFER BANK"],
+  ] as const) {
+    for (const bagian of ["pelanggan", "kasir"] as const) {
+      const t = generateThreePlyReceiptText({ ...dasarBayar, paymentMethod: metode, bagian });
+      cek(
+        `rangkap ${bagian} menyebut cara bayar ${tertulis}`,
+        t.includes("CARA BAYAR") && t.includes(tertulis),
+        "struknya tidak bisa disortir saat pembukuan",
+      );
+    }
+  }
+
+  const tunai = generateThreePlyReceiptText({
+    ...dasarBayar, paymentMethod: "cash", cashGiven: 100000, cashChange: 35000,
+    bagian: "pelanggan",
+  });
+  cek("tunai menampilkan uang diterima dan kembalian",
+    tunai.includes("Uang diterima") && tunai.includes("35.000"));
+
+  const qris = generateThreePlyReceiptText({ ...dasarBayar, paymentMethod: "qris", bagian: "pelanggan" });
+  cek("non-tunai tidak menampilkan kembalian palsu",
+    !qris.includes("Kembalian"),
+    "QRIS tidak punya kembalian; menampilkannya bikin kasir ragu");
+
+  for (const bagian of ["pelanggan", "kasir"] as const) {
+    const t = generateThreePlyReceiptText({ ...dasarBayar, paymentMethod: "cash", bagian });
+    cek(`rangkap ${bagian} tetap muat di kertas 58mm`,
+      t.split("\n").every((l) => l.length <= 32));
+  }
+}
+
 console.log(`\n=== ${lulus} LULUS, ${gagal} GAGAL ===\n`);
 process.exit(gagal > 0 ? 1 : 0);

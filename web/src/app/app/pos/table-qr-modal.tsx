@@ -24,20 +24,17 @@ interface TableQrModalProps {
   isMochi?: boolean;
 }
 
-const QUICK_TABLES = [
-  "1",
-  "2",
-  "3",
-  "4",
-  "5",
-  "6",
-  "7",
-  "8",
-  "9",
-  "10",
-  "VIP",
-  "Lesehan",
-];
+/**
+ * Mochi punya 24 meja, dan tiap meja butuh QR-nya sendiri.
+ *
+ * Angkanya ditaruh di satu tempat supaya tombol pilihan cepat, unduh massal,
+ * dan tulisan di tombolnya tidak pernah bisa berbeda-beda — dulu daftarnya
+ * ditulis ulang di tiga tempat, dan yang satu ketinggalan berarti ada meja
+ * yang QR-nya tidak pernah ikut tercetak.
+ */
+const JUMLAH_MEJA = 24;
+
+const QUICK_TABLES = Array.from({ length: JUMLAH_MEJA }, (_, i) => String(i + 1));
 
 export default function TableQrModal({
   isOpen,
@@ -201,9 +198,8 @@ export default function TableQrModal({
   const handleDownloadBatchTables = async () => {
     setIsDownloading(true);
     try {
-      const tables = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"];
-      for (let i = 0; i < tables.length; i++) {
-        const t = tables[i];
+      for (let i = 0; i < QUICK_TABLES.length; i++) {
+        const t = QUICK_TABLES[i];
         const canvas = await generatePureQrCanvas(t, withCenterLogo, isTransparentBg);
         const numFormatted = t.length === 1 ? `0${t}` : t;
         const link = document.createElement("a");
@@ -1202,7 +1198,9 @@ export default function TableQrModal({
                     className="w-full flex items-center justify-center gap-2 rounded-2xl border-2 border-[#0b3d2e] bg-white px-4 py-3 text-xs font-black text-[#0b3d2e] shadow-xs hover:bg-[#edf8f3] active:scale-95 transition-all disabled:opacity-50 cursor-pointer"
                   >
                     <Download size={14} />
-                    <span>⚡ Download Sekaligus Meja 01 s/d 10 (10 File HD)</span>
+                    <span>
+                      ⚡ Download Sekaligus Meja 01 s/d {String(JUMLAH_MEJA).padStart(2, "0")} ({JUMLAH_MEJA} File HD)
+                    </span>
                   </button>
                 </div>
               </div>

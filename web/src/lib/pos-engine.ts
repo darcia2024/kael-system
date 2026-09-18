@@ -330,6 +330,24 @@ export function generateKitchenTicketText(params: {
  * 2. COPY KASIR / ARSIP TOKO (Bukti transaksi kasir & rekonsiliasi kas shift)
  * 3. STRUK PELANGGAN (Rincian lengkap harga, diskon, pajak, nominal tunai & kembalian)
  */
+/**
+ * Cara bayar dalam bahasa yang dibaca orang, bukan nama kolom database.
+ *
+ * Struk ini dipakai staf dan pemilik untuk membukukan bersama di akhir hari:
+ * lembarannya disortir jadi tumpukan tunai, QRIS, dan transfer, lalu tiap
+ * tumpukan dicocokkan ke sumbernya masing-masing — laci, mutasi QRIS, dan
+ * rekening. "CASH" yang tercetak apa adanya memaksa mereka menghafal istilah
+ * sistem, dan yang salah sortir baru ketahuan saat angkanya tidak ketemu.
+ */
+export function labelCaraBayar(metode: string): string {
+  const kunci = (metode || "").trim().toLowerCase();
+  if (kunci === "cash" || kunci === "tunai") return "TUNAI";
+  if (kunci === "qris") return "QRIS";
+  if (kunci === "transfer") return "TRANSFER BANK";
+  // Tagihan meja yang belum diselesaikan memakai kata-katanya sendiri.
+  return (metode || "-").toUpperCase().slice(0, 16);
+}
+
 export function generateThreePlyReceiptText(params: {
   businessName: string;
   businessAddress?: string;
@@ -362,6 +380,22 @@ export function generateThreePlyReceiptText(params: {
    * sendiri, keluar terpisah dari printer.
    */
   bagian?: "dapur" | "kasir" | "pelanggan" | "semua";
+  /**
+   * Struk untuk SEBAGIAN tagihan meja, bukan seluruhnya.
+   *
+   * Dipakai saat tamu rombongan minta struk sendiri-sendiri per menu yang
+   * mereka pesan. Yang dicetak cuma bagiannya, tapi total seluruh mejanya ikut
+   * dicantumkan — tanpa itu, satu lembar bagian gampang disangka tagihan penuh,
+   * entah oleh tamunya sendiri saat patungan atau oleh siapa pun yang
+   * memeriksanya belakangan.
+   */
+  bagiTagihan?: {
+    bagianKe: number;
+    /** Jumlah seluruh bagian, kalau kasir sudah tahu. */
+    dariBagian?: number;
+    /** Total tagihan seluruh meja. */
+    totalMeja: number;
+  };
 }): string {
   const bagian = params.bagian ?? "semua";
   const semua = bagian === "semua";
@@ -447,7 +481,12 @@ export function generateThreePlyReceiptText(params: {
 
   lines.push(divider);
   lines.push(row("TOTAL", `Rp ${params.total.toLocaleString("id-ID")}`));
-  lines.push(row("BAYAR", params.paymentMethod.toUpperCase()));
+  lines.push(divider);
+  lines.push(row("CARA BAYAR", labelCaraBayar(params.paymentMethod)));
+  if (params.paymentMethod === "cash" && params.cashGiven) {
+    lines.push(row("  Uang diterima", `Rp ${params.cashGiven.toLocaleString("id-ID")}`));
+    lines.push(row("  Kembalian", `Rp ${(params.cashChange || 0).toLocaleString("id-ID")}`));
+  }
   lines.push(doubleDivider);
   lines.push(center("ARSIP KASIR & REKONSILIASI"));
   if (semua) lines.push(...tearGap);
@@ -471,6 +510,21 @@ export function generateThreePlyReceiptText(params: {
   if (params.customerName) {
     lines.push(row(`Member: ${params.customerName.slice(0, 14)}`, "LOYALTY ✓"));
   }
+
+  /**
+   * Penanda bagian dipasang di ATAS daftar menunya, bukan cuma di bawah.
+   *
+   * Yang membaca struk bagi tagihan hampir selalu berhenti di angka totalnya.
+   * Kalau keterangannya baru muncul setelah total, sudah telat: orangnya
+   * terlanjur mengira itu tagihan seluruh meja.
+   */
+  if (params.bagiTagihan) {
+    const { bagianKe, dariBagian } = params.bagiTagihan;
+    lines.push(divider);
+    lines.push(center("*** BAGI TAGIHAN ***"));
+    lines.push(center(dariBagian ? `BAGIAN ${bagianKe} DARI ${dariBagian}` : `BAGIAN KE-${bagianKe}`));
+  }
+
   lines.push(divider);
 
   params.items.forEach((item) => {
@@ -489,10 +543,32 @@ export function generateThreePlyReceiptText(params: {
   if (params.tax > 0) lines.push(row("Pajak PB1", `Rp ${params.tax.toLocaleString("id-ID")}`));
   if (params.deliveryFee && params.deliveryFee > 0) lines.push(row("Ongkir", `Rp ${params.deliveryFee.toLocaleString("id-ID")}`));
   lines.push(doubleDivider);
-  lines.push(row("TOTAL BAYAR", `Rp ${params.total.toLocaleString("id-ID")}`));
+  lines.push(
+    row(
+      params.bagiTagihan ? "BAYAR BAGIAN INI" : "TOTAL BAYAR",
+      `Rp ${params.total.toLocaleString("id-ID")}`,
+    ),
+  );
+
+  // Total seluruh meja ditulis terang-terangan, supaya satu bagian tidak
+  // pernah bisa dibaca sebagai tagihan penuh.
+  if (params.bagiTagihan) {
+    lines.push(row("Total meja", `Rp ${params.bagiTagihan.totalMeja.toLocaleString("id-ID")}`));
+  }
+
+  /*
+   * Cara bayar ikut tercetak di lembar pelanggan juga.
+   *
+   * Sebelumnya cuma ada di arsip kasir, dan itu tidak cukup: saat staf dan
+   * pemilik membukukan bersama, lembar yang dipegang tamu sering jadi satu-
+   * satunya yang tersisa untuk transaksi yang arsipnya hilang atau tercetak
+   * gagal. Struk tanpa keterangan cara bayar tidak bisa dimasukkan ke tumpukan
+   * mana pun, dan berakhir sebagai selisih yang tidak ada yang bisa jelaskan.
+   */
+  lines.push(row("CARA BAYAR", labelCaraBayar(params.paymentMethod)));
 
   if (params.paymentMethod === "cash" && params.cashGiven) {
-    lines.push(row("Tunai", `Rp ${params.cashGiven.toLocaleString("id-ID")}`));
+    lines.push(row("Uang diterima", `Rp ${params.cashGiven.toLocaleString("id-ID")}`));
     lines.push(row("Kembalian", `Rp ${(params.cashChange || 0).toLocaleString("id-ID")}`));
   }
 

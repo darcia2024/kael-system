@@ -98,6 +98,9 @@ export default async function QrOrderPage({
       fontClassName={plusJakartaSans.className}
       // Tampilkan seluruh menu; menu yang habis akan diberi penanda 'HABIS' & dinonaktifkan di tampilan klien.
       menuItems={menuItems}
+      modeMenu={
+        business.qr_menu_mode === "lihat_panggil" ? "lihat_panggil" : "pesan_bayar"
+      }
     />
   );
 }

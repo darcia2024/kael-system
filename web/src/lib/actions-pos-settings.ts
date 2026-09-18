@@ -31,6 +31,79 @@ export async function savePosChargeSettingsAction(
   return { ok: true, data: { taxRate: Number(updated.pos_tax_rate), serviceChargeRate: Number(updated.pos_service_charge_rate) } };
 }
 
+/**
+ * Cara toko ini memakai menu digitalnya.
+ *
+ * Bukan sekadar pilihan tampilan: yang berubah adalah siapa yang mengetik
+ * pesanan dan kapan uangnya diterima. Karena itu setelannya di tangan owner,
+ * bukan kasir — kasir yang bisa mengubahnya berarti bisa memindahkan waktu
+ * pembayaran ke belakang tanpa sepengetahuan pemiliknya.
+ */
+export async function saveQrMenuModeAction(
+  mode: "pesan_bayar" | "lihat_panggil",
+): Promise<ActionResult<{ mode: string }>> {
+  const { businessId } = await requireOwner();
+
+  if (mode !== "pesan_bayar" && mode !== "lihat_panggil") {
+    return { ok: false, error: "Mode menu digital tidak dikenali." };
+  }
+
+  const updated = await db.updateBusiness(businessId, { qr_menu_mode: mode });
+  if (!updated) return { ok: false, error: "Pengaturan usaha tidak ditemukan." };
+
+  revalidatePath("/app/settings");
+  revalidatePath("/app/pos");
+  // Halaman menu digital dirender per permintaan, tapi tautannya dibuka tamu
+  // dari QR yang sudah tercetak — jadi seluruh cabangnya ikut disegarkan.
+  revalidatePath("/order", "layout");
+
+  return { ok: true, data: { mode } };
+}
+
+/**
+ * Kapan uangnya diterima kasir.
+ *
+ * Bukan setelan tampilan: yang berubah adalah kapan sebuah nota dinyatakan
+ * lunas, dan itu ikut menentukan rekap tutup shift, laporan penjualan, serta
+ * kapan poin member dihitung. Karena itu hanya owner yang boleh mengubahnya.
+ */
+export async function savePaymentTimingAction(
+  timing: "di_depan" | "di_akhir",
+): Promise<ActionResult<{ timing: string }>> {
+  const { businessId } = await requireOwner();
+
+  if (timing !== "di_depan" && timing !== "di_akhir") {
+    return { ok: false, error: "Waktu pembayaran tidak dikenali." };
+  }
+
+  /**
+   * Masih ada meja yang tagihannya menggantung? Perubahannya ditahan.
+   *
+   * Memindahkan aturan di tengah jalan membuat nota yang sudah telanjur
+   * dicatat belum lunas kehilangan layar tempat menagihnya — tombol
+   * "Terima Pembayaran" cuma muncul di alur bayar-di-akhir.
+   */
+  if (timing === "di_depan") {
+    const menggantung = await db.getTableSessionSummaries(businessId);
+    const belumLunas = menggantung.filter((s) => s.has_unpaid);
+    if (belumLunas.length) {
+      const daftar = belumLunas.map((s) => `Meja ${s.table_no}`).join(", ");
+      return {
+        ok: false,
+        error: `Masih ada tagihan yang belum dibayar di ${daftar}. Selesaikan dulu pembayarannya, baru ubah setelan ini.`,
+      };
+    }
+  }
+
+  const updated = await db.updateBusiness(businessId, { pos_payment_timing: timing });
+  if (!updated) return { ok: false, error: "Pengaturan usaha tidak ditemukan." };
+
+  revalidatePath("/app/settings");
+  revalidatePath("/app/pos");
+
+  return { ok: true, data: { timing } };
+}
+
 export async function saveBusinessContactSettingsAction(
   phone: string,
   address?: string,

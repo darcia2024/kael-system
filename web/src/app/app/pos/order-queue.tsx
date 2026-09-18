@@ -11,6 +11,7 @@ import {
   AlertTriangle,
   ChefHat,
   MessageSquare,
+  Receipt,
   Printer,
   CheckCircle2,
   Trash2,
@@ -50,6 +51,7 @@ export default function OrderQueue({
   autoPrintThreePly,
   onToggleAutoPrintThreePly,
   menuItems = [],
+  onKirimFaktur,
 }: {
   orders: Antrean[];
   onOrdersChange?: (orders: Antrean[]) => void;
@@ -65,10 +67,18 @@ export default function OrderQueue({
     total: number | string;
     payment_method: string;
     customer_name?: string | null;
-  }) => void;
+  },
+  /** Rangkap mana yang dicetak. Kosong berarti ketiganya. */
+  bagian?: "dapur" | "kasir" | "pelanggan" | "semua") => void;
   autoPrintThreePly?: boolean;
   onToggleAutoPrintThreePly?: (val: boolean) => void;
   menuItems?: MenuItem[];
+  /**
+   * Membuka faktur WhatsApp pelanggan untuk satu pesanan. Modalnya dipegang
+   * layar kasir, bukan antrean ini, supaya hanya ada satu faktur terbuka pada
+   * satu waktu dan satu tempat yang merakitnya.
+   */
+  onKirimFaktur?: (orderId: string) => void;
 }) {
   const router = useRouter();
   const [localOrders, setLocalOrders] = useState<Antrean[]>(orders);
@@ -83,14 +93,29 @@ export default function OrderQueue({
     setLocalOrders(orders);
   }, [orders]);
 
-  // Antrean aktif: belum berstatus selesai (completed) dan belum dibatalkan (cancelled/failed)
+  /**
+   * Antrean aktif kasir.
+   *
+   * Pembayaran dan dapur adalah DUA hal yang berjalan sendiri-sendiri, dan
+   * dulu keduanya diperlakukan sebagai satu: begitu dapur menandai makanan
+   * sudah disajikan, pesanannya keluar dari antrean — termasuk kalau uangnya
+   * belum masuk sama sekali.
+   *
+   * Akibatnya persis seperti yang kejadian di Mochi: lonceng di pojok tetap
+   * menghitung pesanan itu, tapi popup-nya terbuka kosong saat ditekan, dan
+   * di riwayat statusnya "belum bayar" tanpa satu pun tombol yang bisa
+   * menagihnya. Uangnya hilang diam-diam, dan mejanya pun tidak bisa ditutup.
+   *
+   * Aturannya sekarang satu kalimat: selama uangnya belum masuk, pesanan itu
+   * masih urusan kasir — apa pun kata dapur.
+   */
   const activeOrders = useMemo(() => {
     return localOrders.filter(
       (o) =>
         o.status !== "cancelled" &&
         o.payment_status !== "failed" &&
-        o.fulfillment_status !== "completed" &&
-        o.fulfillment_status !== "cancelled",
+        o.fulfillment_status !== "cancelled" &&
+        (o.payment_status === "pending" || o.fulfillment_status !== "completed"),
     );
   }, [localOrders]);
 
@@ -566,26 +591,33 @@ export default function OrderQueue({
                       <span>Cetak 3 Rangkap 🖨️</span>
                     </button>
                   )}
-                  {onPrintKitchenTicket && (
+                  {/*
+                    Faktur ke PELANGGAN, lewat QR yang dipindai kasir. Paling
+                    berguna untuk pesanan antar dari kartu member: ongkirnya
+                    ikut tertulis sebagai baris sendiri, dan pesanan seperti
+                    itu tidak pernah lewat layar sesudah bayar.
+                  */}
+                  {onKirimFaktur && (
                     <button
                       type="button"
-                      onClick={() => {
-                        if (o.fulfillment_status === "pending") {
-                          void jalankan(o.id, () => setFulfillmentAction(o.id, "accepted"));
-                        }
-                        onPrintKitchenTicket(o);
-                      }}
-                      className={`inline-flex items-center justify-center gap-1.5 rounded-xl border py-2 px-3 font-mono text-[11px] font-bold transition-all ${
+                      onClick={() => onKirimFaktur(o.id)}
+                      className={`inline-flex items-center justify-center gap-1.5 rounded-xl py-2 px-3 font-mono text-[11px] font-black transition-colors ${
                         isMochi
-                          ? "border-emerald-800/20 bg-white text-[#0b3d2e] hover:bg-[#edf8f3]"
-                          : "border border-[#232331] bg-white text-[#232331]"
+                          ? "bg-[#0b3d2e] text-[#c8f53a] hover:bg-[#124a39]"
+                          : "border-2 border-[#232331] bg-[#25D366] text-white"
                       }`}
-                      title="Cetak tiket dapur via printer thermal"
+                      title="Kirim faktur pesanan ini ke WhatsApp pelanggan"
                     >
-                      <ChefHat size={13} />
-                      <span>Tiket Dapur</span>
+                      <Receipt size={13} />
+                      <span>Faktur</span>
                     </button>
                   )}
+                  {/*
+                    Tombol ini dulu bernama "WA" saja. Sejak ada tombol faktur
+                    di sebelahnya, "WA" jadi bisa berarti dua hal — dan yang ini
+                    meneruskan pesanan ke STAF, bukan ke pelanggan. Kasir yang
+                    salah pilih akan mengirim notifikasi dapur ke tamunya.
+                  */}
                   <button
                     type="button"
                     onClick={() => forwardToWhatsapp(o)}
@@ -599,9 +631,52 @@ export default function OrderQueue({
                     title="Kirim detail pesanan ini ke nomor WhatsApp staf atau grup dapur"
                   >
                     <MessageSquare size={13} />
-                    <span>WA</span>
+                    <span>WA dapur</span>
                   </button>
                 </div>
+
+                {/*
+                  Tiap rangkap bisa dicetak sendiri.
+
+                  Sebelumnya cuma ada "Cetak 3 Rangkap", dan ketiganya keluar
+                  sebagai satu gulungan panjang: logo tokonya cuma tercetak
+                  sekali di paling atas, dan kasir harus menggunting sendiri di
+                  garis sobek sambil dilihat tamunya. Lewat tombol ini tiap
+                  lembar keluar sebagai struk sendiri — berlogo sendiri, dan
+                  dipotong printer sendiri.
+                */}
+                {(onPrintThreePly || onPrintKitchenTicket) && (
+                  <div className="grid grid-cols-3 gap-1.5 pt-1.5">
+                    {([
+                      { kunci: "pelanggan", label: "Pelanggan" },
+                      { kunci: "kasir", label: "Kasir" },
+                      { kunci: "dapur", label: "Dapur" },
+                    ] as const).map((r) => (
+                      <button
+                        key={r.kunci}
+                        type="button"
+                        onClick={() => {
+                          if (o.fulfillment_status === "pending") {
+                            void jalankan(o.id, () => setFulfillmentAction(o.id, "accepted"));
+                          }
+                          // Dapur punya tiket sendiri yang memang dirancang untuk
+                          // dibaca juru masak: tanpa harga, hurufnya besar.
+                          if (r.kunci === "dapur" && onPrintKitchenTicket) onPrintKitchenTicket(o);
+                          else onPrintThreePly?.(o, r.kunci);
+                        }}
+                        title={`Cetak rangkap ${r.label} saja`}
+                        className={`flex flex-col items-center justify-center gap-1 rounded-xl border py-2 font-mono text-[10.5px] font-bold transition-all ${
+                          isMochi
+                            ? "border-emerald-800/20 bg-white text-[#0b3d2e] hover:bg-[#edf8f3]"
+                            : "border-[#232331] bg-white text-[#232331]"
+                        }`}
+                      >
+                        {r.kunci === "dapur" ? <ChefHat size={13} /> : <Printer size={13} />}
+                        <span>{r.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             );
           })}        </div>

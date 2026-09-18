@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useEffect, useRef } from "react";
 import {
+  BellRing,
   CheckCircle2,
   Coffee,
   CupSoda,
@@ -30,7 +31,7 @@ import {
 import qrcode from "qrcode-generator";
 import type { Business, Category, MenuItem } from "@/lib/types";
 import { PLACEHOLDER_MENU } from "@/lib/types";
-import { createQrOrderAction, getQrOrderStatusAction } from "@/lib/actions";
+import { createQrOrderAction, getQrOrderStatusAction, panggilPelayanAction } from "@/lib/actions";
 import QrCode from "@/components/qr-code";
 import { buildDynamicQris } from "@/lib/qris-engine";
 import { formatRupiah } from "@/lib/formatters";
@@ -63,18 +64,143 @@ export default function CustomerQrOrderPage({
   categories,
   menuItems,
   fontClassName,
+  modeMenu = "pesan_bayar",
 }: {
   tableNo: string;
   business: Business | null;
   categories: Category[];
   menuItems: MenuItem[];
   fontClassName: string;
+  /**
+   * Cara toko ini memakai menu digitalnya.
+   *
+   *   pesan_bayar    tamu memesan dan membayar sendiri dari HP
+   *   lihat_panggil  menu cuma untuk dilihat; tamu menulis pesanannya di kertas
+   *                  lalu menekan tombol panggil, dan pelayan yang menginputnya
+   */
+  modeMenu?: "pesan_bayar" | "lihat_panggil";
 }) {
   const isMochi = isMochiBusiness(business);
+
+  /**
+   * Satu bendera yang menentukan seluruh layar ini.
+   *
+   * Dipakai daripada menyembunyikan tombol satu per satu: keranjang yang masih
+   * bisa terisi walau tombolnya hilang tetap bisa mengirim pesanan lewat jalan
+   * lain, dan toko yang memakai alur pelayan akan menerima pesanan yang tidak
+   * pernah dikonfirmasi ketersediaannya.
+   */
+  const bolehPesan = modeMenu === "pesan_bayar";
+
+  /**
+   * Keranjang tetap hidup di mode lihat_panggil, tapi artinya BEDA.
+   *
+   * Di sini keranjang bukan pesanan: tidak mengirim apa pun, tidak menagih, dan
+   * tidak mengunci stok. Gunanya jadi catatan yang ikut terbawa saat tombol
+   * panggil ditekan — supaya pelayan sampai di meja sudah tahu mau apa, dan
+   * bisa langsung bilang "yang ini kosong, mau diganti apa?" di kesempatan
+   * pertama, bukan setelah bolak-balik ke dapur.
+   */
+  const keranjangSebagaiCatatan = !bolehPesan;
+
+  /**
+   * Catatan tamu disimpan di HP-nya sendiri.
+   *
+   * Tanpa ini, satu kali layar terkunci atau halaman ter-refresh sudah cukup
+   * untuk menghapus seluruh catatan yang barusan disusun — dan orang yang
+   * kehilangan catatannya sekali tidak akan mau memakainya lagi. Yang disimpan
+   * tidak pernah meninggalkan HP-nya: bukan pesanan, dan tidak dikirim ke mana
+   * pun.
+   */
+  const kunciCatatan = business ? `kael_catatan_${business.id}_${tableNo}` : null;
+
+
+
+  /**
+   * Panggilan pelayan.
+   *
+   * Yang disimpan cuma "sudah dipanggil sejak kapan". Sengaja TIDAK ada
+   * pembatalan dari sisi tamu: yang menutup panggilan adalah pelayan yang
+   * benar-benar mendatangi mejanya, dan tombol batal di HP tamu cuma akan
+   * membuat pelayan berjalan ke meja yang panggilannya sudah lenyap.
+   */
+  const [panggilanSejak, setPanggilanSejak] = useState<number | null>(null);
+  const [panggilanSibuk, setPanggilanSibuk] = useState(false);
+  const [panggilanGalat, setPanggilanGalat] = useState<string | null>(null);
+
+  /**
+   * Sisa jeda sebelum meja ini boleh memanggil lagi, dalam detik.
+   *
+   * Yang menentukan tetap server — angka di sini cuma salinannya, supaya
+   * tombolnya bisa menghitung mundur alih-alih menampilkan penolakan kepada
+   * orang yang justru sedang menunggu.
+   */
+  const [sisaJeda, setSisaJeda] = useState(0);
+
+  useEffect(() => {
+    if (sisaJeda <= 0) return;
+    const t = window.setInterval(() => setSisaJeda((n) => Math.max(0, n - 1)), 1000);
+    return () => window.clearInterval(t);
+  }, [sisaJeda]);
+
+  const hitungMundur = (detik: number) => {
+    const m = Math.floor(detik / 60);
+    const d = detik % 60;
+    return `${m}:${String(d).padStart(2, "0")}`;
+  };
+
+  const handlePanggilPelayan = async (
+    jenis: "siap_memesan" | "tambah_pesanan" | "minta_bill" = "siap_memesan",
+  ) => {
+    if (!business) return;
+    setPanggilanSibuk(true);
+    setPanggilanGalat(null);
+    /**
+     * Keranjangnya TIDAK ikut terkirim, dan itu disengaja.
+     *
+     * Catatan ini milik tamu, bukan pesanan yang dioper ke kasir. Kalau ikut
+     * terkirim, daftar yang mungkin baru setengah jadi sudah tampil di layar
+     * kasir seolah pesanan — dan godaan untuk langsung mengetiknya tanpa
+     * memastikan ketersediaannya justru membatalkan alasan alur ini dibuat.
+     *
+     * Tamu menunjukkan layarnya ke pelayan, dan pelayan yang mengetiknya.
+     */
+    const res = await panggilPelayanAction(business.id, tableNo, jenis);
+    setPanggilanSibuk(false);
+    if (!res.ok) {
+      setPanggilanGalat(res.error);
+      return;
+    }
+    setPanggilanSejak(
+      res.data.menungguSejak ? new Date(res.data.menungguSejak).getTime() : Date.now(),
+    );
+    // Jeda berikutnya dimulai sekarang; server yang menentukan panjangnya.
+    setSisaJeda(res.data.jedaDetik > 0 ? res.data.jedaDetik : 120);
+  };
   const [activeCategory, setActiveCategory] = useState<string>(categories[0]?.id ?? "");
   const [searchQuery, setSearchQuery] = useState("");
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [cart, setCart] = useState<Record<string, { item: MenuItem; qty: number; note: string }>>({});
+
+  useEffect(() => {
+    if (!kunciCatatan || !keranjangSebagaiCatatan) return;
+    try {
+      const tersimpan = localStorage.getItem(kunciCatatan);
+      if (tersimpan) setCart(JSON.parse(tersimpan));
+    } catch {
+      // Penyimpanan bisa diblokir (mode penyamaran). Catatannya hilang, tapi
+      // halamannya tetap harus terbuka seperti biasa.
+    }
+  }, [kunciCatatan, keranjangSebagaiCatatan]);
+
+  useEffect(() => {
+    if (!kunciCatatan || !keranjangSebagaiCatatan) return;
+    try {
+      localStorage.setItem(kunciCatatan, JSON.stringify(cart));
+    } catch {
+      // Sama seperti di atas: gagal menyimpan tidak boleh mematikan halamannya.
+    }
+  }, [cart, kunciCatatan, keranjangSebagaiCatatan]);
   const [selectedMenuItem, setSelectedMenuItem] = useState<MenuItem | null>(null);
   const [modalQty, setModalQty] = useState(1);
   const [modalNote, setModalNote] = useState("");
@@ -1078,6 +1204,7 @@ export default function CustomerQrOrderPage({
           </label>
         </div>
 
+        {bolehPesan && (
         <fieldset>
           <legend className="mb-1.5 text-xs font-semibold text-[#35483f]">Pilihan Cara Bayar</legend>
           <div className="grid grid-cols-2 gap-2">
@@ -1120,12 +1247,53 @@ export default function CustomerQrOrderPage({
             </p>
           )}
         </fieldset>
+        )}
+
+        {keranjangSebagaiCatatan && (
+          <p className="rounded-lg border border-[#cbe0d5] bg-[#eaf4ef] p-2.5 text-[10.5px] font-medium leading-relaxed text-[#2c5243]">
+            📋 Daftar ini <b>catatan saja</b>, belum jadi pesanan. Tekan tombol di
+            bawah untuk memanggil pelayan — dia akan datang membawa daftar ini,
+            memastikan menunya tersedia, lalu mencatatnya di kasir.{" "}
+            <b>Pembayaran di kasir setelah makan.</b>
+          </p>
+        )}
 
         <div className="flex items-center justify-between border-t border-[#dce5e0] pt-3">
           <div>
-            <span className="block text-[10px] font-semibold uppercase text-[#78857e]">Total</span>
+            <span className="block text-[10px] font-semibold uppercase text-[#78857e]">
+              {keranjangSebagaiCatatan ? "Perkiraan" : "Total"}
+            </span>
             <span className="text-xl font-extrabold text-[#18392f]">{formatRupiah(cartTotal)}</span>
           </div>
+          {keranjangSebagaiCatatan ? (
+            /*
+              Di mode catatan, tombolnya TIDAK mengirim pesanan. Yang dikirim
+              cuma panggilan beserta daftar ini, dan pelayan yang memastikan
+              ketersediaannya lalu mengetiknya di kasir. Tulisannya sengaja
+              tidak memakai kata "pesan" sama sekali supaya tamu tidak mengira
+              makanannya sudah mulai dibuat.
+            */
+            <button
+              type="button"
+              onClick={() => {
+                setIsCartOpen(false);
+                void handlePanggilPelayan("siap_memesan");
+              }}
+              disabled={panggilanSibuk || sisaJeda > 0}
+              className={`flex min-h-12 items-center justify-center gap-2 rounded-xl px-5 text-sm font-black shadow-md transition-all disabled:cursor-not-allowed disabled:opacity-50 ${
+                isMochi
+                  ? "bg-[#c8f53a] text-[#0b3d2e] hover:bg-[#d9ff57] active:scale-[0.98]"
+                  : "bg-[#0aae6f] text-white hover:bg-[#079760]"
+              }`}
+            >
+              <BellRing size={16} />
+              <span>
+                {sisaJeda > 0
+                  ? `Tunggu ${hitungMundur(sisaJeda)}`
+                  : `Panggil Pelayan (${totalItemCount} menu)`}
+              </span>
+            </button>
+          ) : (
           <button
             type="button"
             onClick={handleCheckout}
@@ -1150,6 +1318,7 @@ export default function CustomerQrOrderPage({
               <span>Kirim Pesanan ({formatRupiah(cartTotal)})</span>
             )}
           </button>
+          )}
         </div>
       </div>
     </div>
@@ -1516,6 +1685,7 @@ export default function CustomerQrOrderPage({
           </section>
         </div>
 
+        {(bolehPesan || keranjangSebagaiCatatan) && (
         <aside className="hidden self-start rounded-lg border border-[#d5ded9] bg-white p-4 shadow-[0_8px_24px_rgba(25,67,52,0.07)] lg:sticky lg:top-24 lg:block">
           {cartList.length > 0 ? (
             renderCartContent(false)
@@ -1529,10 +1699,11 @@ export default function CustomerQrOrderPage({
             </div>
           )}
         </aside>
+        )}
       </main>
 
       {/* MOBILE BOTTOM FLOATING BAR: KERANJANG ATAU STATUS PESANAN */}
-      {cartList.length > 0 ? (
+      {bolehPesan && cartList.length > 0 ? (
         <div className="fixed inset-x-0 bottom-0 z-40 border-t border-[#d1ddd7] bg-white px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 shadow-[0_-8px_24px_rgba(25,67,52,0.12)] lg:hidden">
           <button
             type="button"
@@ -1585,6 +1756,82 @@ export default function CustomerQrOrderPage({
           </button>
         </div>
       ) : null}
+
+      {/*
+        BAR PANGGIL PELAYAN
+
+        Muncul di mode "lihat_panggil", menggantikan keranjang. Tetap tampil di
+        layar besar juga (tanpa lg:hidden): tamu memindai QR dari HP, tapi
+        pelayan dan pemilik sering membukanya dari tablet saat memeriksa, dan
+        tombol yang menghilang di layar lebar bikin mereka mengira fiturnya
+        belum jadi.
+      */}
+      {!bolehPesan && (
+        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-[#d1ddd7] bg-white px-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3 shadow-[0_-8px_24px_rgba(25,67,52,0.12)]">
+          <div className="mx-auto w-full max-w-md space-y-2">
+            {panggilanSejak ? (
+              <>
+                <div
+                  className={`flex min-h-12 items-center justify-center gap-2 rounded-xl px-4 text-center ${
+                    isMochi ? "bg-[#edf8f3] text-[#0b3d2e]" : "bg-[#f0fdf4] text-[#15803d]"
+                  }`}
+                >
+                  <span className="flex h-3 w-3 shrink-0">
+                    <span className="absolute inline-flex h-3 w-3 animate-ping rounded-full bg-[#0aae6f] opacity-70" />
+                    <span className="relative inline-flex h-3 w-3 rounded-full bg-[#0aae6f]" />
+                  </span>
+                  <span className="text-xs font-extrabold">
+                    Pelayan sudah dipanggil, sedang menuju Meja {tableNo}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void handlePanggilPelayan("siap_memesan")}
+                  disabled={panggilanSibuk || sisaJeda > 0}
+                  className="w-full text-center text-[11px] font-bold text-[#527867] underline disabled:no-underline disabled:opacity-60"
+                >
+                  {sisaJeda > 0
+                    ? `Bisa panggil lagi dalam ${hitungMundur(sisaJeda)}`
+                    : "Belum ada yang datang? Panggil lagi"}
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={() => void handlePanggilPelayan("siap_memesan")}
+                disabled={panggilanSibuk || sisaJeda > 0}
+                className={`flex min-h-14 w-full items-center justify-center gap-2.5 rounded-xl px-4 text-sm font-black transition-transform active:scale-[0.99] disabled:opacity-60 ${
+                  isMochi
+                    ? "border border-emerald-600/40 bg-[#0b3d2e] text-[#c8f53a] shadow-xl"
+                    : "bg-[#176c4f] text-white"
+                }`}
+              >
+                <BellRing size={19} aria-hidden="true" />
+                <span>
+                  {panggilanSibuk
+                    ? "Memanggil..."
+                    : sisaJeda > 0
+                      ? `Tunggu ${hitungMundur(sisaJeda)}`
+                      : totalItemCount > 0
+                        ? `Panggil Pelayan (${totalItemCount} menu dicatat)`
+                        : "Sudah Siap Memesan · Panggil Pelayan"}
+                </span>
+              </button>
+            )}
+
+            {panggilanGalat && (
+              <p className="text-center text-[11px] font-bold text-rose-700">{panggilanGalat}</p>
+            )}
+
+            <p className="text-center text-[10.5px] leading-relaxed text-[#78857e]">
+              Tandai menu yang kamu mau (atau tulis di kertas), lalu tekan tombol
+              di atas. Pelayan akan datang membawa catatanmu, memastikan menunya
+              tersedia, lalu mencatatnya di kasir.{" "}
+              <b>Pembayaran di kasir setelah makan.</b>
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* MOBILE CART DRAWER */}
       {isCartOpen && cartList.length > 0 && (

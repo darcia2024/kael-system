@@ -12,6 +12,30 @@ function StatusContent() {
 
   const isSuspended = type === "suspended";
 
+  /**
+   * QR faktur WhatsApp yang sudah lewat masanya.
+   *
+   * Yang melihat ini kasir, bukan pelanggan — dia baru saja memindai layar
+   * kasirnya sendiri. Pesan kartu NFC ("Kartu Tidak Dikenali") akan membuatnya
+   * mengira ada yang rusak, padahal jalan keluarnya cuma satu: tampilkan QR baru.
+   */
+  if (type === "invoice_expired") {
+    return (
+      <div className="min-h-screen bg-[#f7f6fc] text-[#232331] flex flex-col items-center justify-center p-4 font-sans">
+        <div className="w-full max-w-md rounded-3xl border-2 border-[#232331] bg-white p-6 sm:p-8 shadow-ink-lg text-center space-y-4">
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl border-2 border-[#232331] bg-[#fff8e1] text-[#8a6d00] shadow-ink-xs">
+            <HelpCircle size={32} />
+          </div>
+          <h1 className="text-xl sm:text-2xl font-extrabold">QR Faktur Sudah Kedaluwarsa</h1>
+          <p className="text-sm leading-relaxed text-[#5c5c70]">
+            QR faktur cuma berlaku 15 menit. Tutup halaman ini, lalu buka lagi faktur
+            pesanannya di layar kasir untuk memunculkan QR yang baru.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#f7f6fc] text-[#232331] flex flex-col items-center justify-center p-4 font-sans">
       <div className="w-full max-w-md rounded-3xl border-2 border-[#232331] bg-white p-6 sm:p-8 shadow-ink-lg text-center space-y-6">

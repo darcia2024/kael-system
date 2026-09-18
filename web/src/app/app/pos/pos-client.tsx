@@ -15,6 +15,7 @@ import {
   Search, 
   ArrowLeft, 
   Share2, 
+  MessageSquare,
   Printer, 
   QrCode, 
   Clock, 
@@ -71,7 +72,11 @@ import {
   getReceiptQrTargetAction,
   recordReceiptPrintAction,
   getPendingQrOrdersAction,
+  getTableCallsAction,
+  settleTableSessionAction,
+  resolveTableCallAction,
   redeemRewardAction,
+  getOrderInvoiceAction,
 } from "@/lib/actions";
 import { 
   calculateCartTotals, 
@@ -89,8 +94,12 @@ import { formatRupiah, formatBusinessDateTime } from "@/lib/formatters";
 import QrisPayment from "./qris-payment";
 import OrderQueue from "./order-queue";
 import PosFloorPlan, { TableSummary } from "./pos-floor-plan";
+import type { ItemBagiTagihan } from "./pos-split-bill-modal";
+import PosSettleTableModal, { type MetodeBayar } from "./pos-settle-table-modal";
+import PosInvoiceQrModal from "./pos-invoice-qr-modal";
 import { calculateEarnedPoints } from "@/lib/loyalty-engine";
 import { PLACEHOLDER_MENU } from "@/lib/types";
+import type { FakturPesanan } from "@/lib/types";
 import {
   ambilPrinter,
   kirimKePrinter,
@@ -113,7 +122,7 @@ import PosMemberScannerModal from "./pos-member-scanner-modal";
 import PosBellSettingsModal from "./pos-bell-settings-modal";
 import { MemberQrModal } from "@/components/member-qr-modal";
 import { usePwaInstall } from "@/components/pwa-register";
-import { alertNewIncomingOrder, buildPrinterBuzzerPayload } from "@/lib/pos-audio";
+import { alertNewIncomingOrder, alertTableCall, buildPrinterBuzzerPayload } from "@/lib/pos-audio";
 
 function getPosCategoryIcon(categoryName: string): LucideIcon {
   const normalized = categoryName.toLowerCase();
@@ -224,7 +233,39 @@ export default function PosClient({
    * pesanan, dan di layar ini jawabannya selalu kasir. Yang perlu dipilih
    * kasir adalah cara penyajiannya.
    */
-  const [serviceType, setServiceType] = useState<ServiceType>("takeaway");
+  /**
+   * Bawaannya mengikuti alur toko, bukan selalu "takeaway".
+   *
+   * Di alur panggil-pelayan hampir SEMUA pesanan adalah tamu yang duduk di
+   * meja. Bawaan takeaway berarti pelayan harus ingat memindahkannya tiap kali
+   * — dan sekali lupa, pesanannya tersimpan tanpa nomor meja: tidak menempel
+   * ke kunjungan mana pun, mejanya tidak terbaca terisi, dan di akhir tidak ada
+   * yang tahu tagihan itu punya meja mana.
+   */
+  const alurPanggilPelayan = business?.qr_menu_mode === "lihat_panggil";
+  const [serviceType, setServiceType] = useState<ServiceType>(
+    alurPanggilPelayan ? "dine_in" : "takeaway",
+  );
+
+  /**
+   * Dine-in di alur panggil-pelayan tidak boleh lanjut tanpa nomor meja.
+   *
+   * Penjaga yang sama juga ada di server, dan itu yang sebenarnya mengikat.
+   * Yang di sini tugasnya lain: memberi tahu SEBELUM kasir menekan, bukan
+   * menolak sesudahnya di depan tamu yang sedang menunggu.
+   */
+  const perluNomorMeja =
+    alurPanggilPelayan && serviceType === "dine_in" && !selectedTableNo.trim();
+
+  /**
+   * Makan di tempat yang uangnya baru diterima saat tamu pulang.
+   *
+   * Bungkus dan antar sengaja dikecualikan: tidak ada meja yang menahan
+   * tamunya sampai selesai, jadi menunda pembayarannya berarti membiarkan
+   * orang membawa pesanan tanpa membayar.
+   */
+  const bayarDiAkhirToko = business?.pos_payment_timing === "di_akhir";
+  const bayarDiAkhir = bayarDiAkhirToko && serviceType === "dine_in";
 
   // Pengantaran
   const [kirimNama, setKirimNama] = useState("");
@@ -267,6 +308,25 @@ export default function PosClient({
   } | null>(null);
   const [printerState, setPrinterState] = useState<"idle" | "printing" | "connected" | "error">("idle");
 
+  /**
+   * Faktur WhatsApp. Datanya dirakit server dari database, bukan dari keranjang
+   * di layar ini — supaya item yang dibatalkan belakangan, ongkir, dan nomor
+   * penerimanya selalu sama dengan yang benar-benar tercatat.
+   */
+  const [faktur, setFaktur] = useState<FakturPesanan | null>(null);
+  const [memuatFaktur, setMemuatFaktur] = useState(false);
+
+  const bukaFaktur = async (orderId: string) => {
+    setMemuatFaktur(true);
+    const res = await getOrderInvoiceAction(orderId);
+    setMemuatFaktur(false);
+    if (!res.ok) {
+      alert(res.error);
+      return;
+    }
+    setFaktur(res.data);
+  };
+
   // Shift Modal State
   const [showQueue, setShowQueue] = useState(false);
   const [showShiftModal, setShowShiftModal] = useState(false);
@@ -278,6 +338,28 @@ export default function PosClient({
 
   // Live QR Orders & Bell Notification States
   const [currentQrOrders, setCurrentQrOrders] = useState(pendingQrOrders);
+
+  /**
+   * Panggilan meja yang belum didatangi.
+   *
+   * Dipisah dari antrean pesanan karena artinya beda: pesanan adalah pekerjaan
+   * yang sudah masuk, panggilan adalah orang yang sedang MENUNGGU. Yang kedua
+   * jauh lebih mendesak, dan menggabungkannya ke daftar yang sama akan membuat
+   * tamu yang menunggu tenggelam di bawah pesanan yang sudah aman tercatat.
+   */
+  const [tableCalls, setTableCalls] = useState<
+    {
+      id: string;
+      table_no: string;
+      jenis: string;
+      created_at: string;
+      jumlah_ping: number;
+    }[]
+  >([]);
+  const knownCallIds = useRef(new Set<string>());
+  const [callBusy, setCallBusy] = useState<string | null>(null);
+  const [mejaDibayar, setMejaDibayar] = useState<TableSummary | null>(null);
+  const [showFakturQr, setShowFakturQr] = useState(false);
   const knownOrderIds = useRef(new Set(pendingQrOrders.map((o) => o.id)));
 
   const [showBellModal, setShowBellModal] = useState(false);
@@ -422,6 +504,48 @@ export default function PosClient({
           freshOrders.forEach((o) => knownOrderIds.current.add(o.id));
           setCurrentQrOrders(freshOrders);
         }
+
+        /**
+         * Panggilan meja ikut ditarik di putaran yang sama.
+         *
+         * Dibuat satu putaran, bukan dua timer terpisah: dua timer yang jalan
+         * berbarengan menggandakan permintaan ke server sepanjang jam ramai,
+         * dan yang didapat cuma selisih beberapa detik yang tidak terasa oleh
+         * siapa pun.
+         */
+        const panggilan = await getTableCallsAction();
+        if (panggilan.ok) {
+          const daftar = panggilan.data.calls;
+          /**
+           * Penandanya id DAN jumlah ping.
+           *
+           * Panggil ulang tidak membuat baris baru — id-nya tetap sama — jadi
+           * kalau yang diingat cuma id, tamu yang sudah menunggu lalu menekan
+           * lagi tidak akan membunyikan apa pun. Justru panggilan kedua itulah
+           * yang paling perlu terdengar.
+           */
+          const tandaPanggilan = (c: { id: string; jumlah_ping: number }) =>
+            `${c.id}:${c.jumlah_ping}`;
+          const baruMasuk = daftar.filter((c) => !knownCallIds.current.has(tandaPanggilan(c)));
+
+          if (baruMasuk.length > 0 && soundEnabled) {
+            void alertTableCall({
+              tableNo: baruMasuk[0].table_no,
+              withVoice: voiceEnabled,
+            });
+          }
+
+          /**
+           * Panggilan yang sudah ditutup dilupakan lagi.
+           *
+           * Tanpa ini, meja yang memanggil untuk KEDUA kalinya setelah dilayani
+           * tidak akan berbunyi — id-nya memang baru, tapi hanya karena
+           * daftarnya terus menumpuk id lama yang tidak pernah dibersihkan
+           * ingatannya akan tumbuh sepanjang shift.
+           */
+          knownCallIds.current = new Set(daftar.map(tandaPanggilan));
+          setTableCalls(daftar);
+        }
       } catch {
         // network polling failure ignored
       }
@@ -429,6 +553,44 @@ export default function PosClient({
 
     return () => window.clearInterval(pollInterval);
   }, [soundEnabled, voiceEnabled]);
+
+  /** Sudah berapa lama mejanya menunggu, dibaca sekilas tanpa menghitung jam. */
+  const menitMenunggu = (iso: string) => {
+    const menit = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 60000));
+    if (menit < 1) return "baru saja";
+    return `${menit} menit`;
+  };
+
+  /**
+   * Dari panggilan langsung ke pencatatan pesanan meja itu.
+   *
+   * Ini jembatan yang paling gampang hilang kalau tidak dibuat: pelayan yang
+   * baru kembali dari meja harus mengingat nomornya, memilih Dine-In, lalu
+   * mengetik nomor mejanya lagi — tiga langkah yang semuanya bisa meleset,
+   * dan kalau meleset tagihannya nyasar ke meja lain.
+   *
+   * Panggilannya sekalian ditutup, karena menekan tombol ini memang berarti
+   * mejanya sudah didatangi.
+   */
+  const handleCatatPesananDariPanggilan = async (call: { id: string; table_no: string }) => {
+    setServiceType("dine_in");
+    setSelectedTableNo(call.table_no);
+    setPosViewMode("catalog");
+    setTableCalls((lama) => lama.filter((c) => c.id !== call.id));
+    await resolveTableCallAction(call.id);
+  };
+
+  /** Pelayan menyatakan mejanya sudah didatangi. */
+  const handleResolveCall = async (callId: string) => {
+    setCallBusy(callId);
+    const res = await resolveTableCallAction(callId);
+    setCallBusy(null);
+    if (!res.ok) {
+      alert(res.error);
+      return;
+    }
+    setTableCalls((lama) => lama.filter((c) => c.id !== callId));
+  };
 
   const handleQuickSearchOrScan = async (q: string) => {
     const clean = q.trim();
@@ -509,8 +671,22 @@ export default function PosClient({
     setPosViewMode("catalog");
   };
 
-  // Handle Cetak Bill Gabungan Meja
-  const handlePrintCombinedTableBill = (table: TableSummary) => {
+  /**
+   * Cetak tagihan gabungan satu meja.
+   *
+   * Pesanan yang masuk dari QR meja menumpuk jadi beberapa nota untuk meja yang
+   * sama, dan kasir mencetaknya sekali dari popup meja. Dulu sekali tekan
+   * langsung keluar tiga rangkap menyambung — logonya cuma tercetak sekali di
+   * paling atas, dan kasir harus menggunting sendiri di garis sobek sambil
+   * dilihat tamunya.
+   *
+   * Sekarang rangkapnya dipilih: tiap lembar keluar sebagai struk sendiri,
+   * berlogo sendiri, dan dipotong printer sendiri.
+   */
+  const handlePrintCombinedTableBill = (
+    table: TableSummary,
+    bagian: "dapur" | "kasir" | "pelanggan" | "semua" = "semua",
+  ) => {
     const combinedItems: {
       name_snapshot: string;
       qty: number;
@@ -532,16 +708,120 @@ export default function PosClient({
     });
 
     const firstOrder = table.orders[0];
-    void handlePrintThreePlyBluetooth({
-      order_no: `MEJA-${table.tableNo}`,
-      table_no: table.tableNo,
-      service_type: "dine_in",
-      created_at: firstOrder?.created_at || new Date().toISOString(),
-      items: combinedItems,
-      total: table.totalBill,
-      payment_method: table.hasUnpaid ? "Belum Lunas" : "Lunas",
-      customer_name: firstOrder?.delivery_name || `Tamu Meja ${table.tableNo}`,
-    });
+    void handlePrintThreePlyBluetooth(
+      {
+        order_no: `MEJA-${table.tableNo}`,
+        table_no: table.tableNo,
+        service_type: "dine_in",
+        created_at: firstOrder?.created_at || new Date().toISOString(),
+        items: combinedItems,
+        total: table.totalBill,
+        payment_method: table.hasUnpaid ? "Belum Lunas" : "Lunas",
+        customer_name: firstOrder?.delivery_name || `Tamu Meja ${table.tableNo}`,
+      },
+      bagian,
+    );
+  };
+
+  /**
+   * Cetak satu bagian tagihan meja untuk tamu rombongan.
+   *
+   * Yang dibagi CUMA cetakannya. Notanya tetap satu transaksi utuh seperti
+   * aslinya — memecah pencatatan uangnya jadi beberapa pembayaran itu urusan
+   * tersendiri, dan mengubahnya diam-diam bakal bikin laporan penjualan,
+   * rekap shift, dan HPP tidak lagi cocok satu sama lain.
+   */
+  const handlePrintSplitBill = async (
+    table: TableSummary,
+    items: ItemBagiTagihan[],
+    totalBagian: number,
+    bagianKe: number,
+  ) => {
+    const firstOrder = table.orders[0];
+    await handlePrintThreePlyBluetooth(
+      {
+        order_no: `MEJA-${table.tableNo}`,
+        table_no: table.tableNo,
+        service_type: "dine_in",
+        created_at: firstOrder?.created_at || new Date().toISOString(),
+        items: items.map((i) => ({
+          name_snapshot: i.nama,
+          qty: i.qty,
+          unit_price_snapshot: i.harga,
+          subtotal: i.subtotal,
+          note: i.catatan,
+        })),
+        total: totalBagian,
+        payment_method: table.hasUnpaid ? "Belum Lunas" : "Lunas",
+        customer_name: null,
+      },
+      // Bagian tagihan cuma masuk akal sebagai lembar pelanggan: dapur tidak
+      // memasak ulang, dan arsip kasir tetap memakai nota utuhnya.
+      "pelanggan",
+      { bagianKe, totalMeja: table.totalBill },
+    );
+  };
+
+  /**
+   * Tamu selesai makan dan membayar seluruh tagihan mejanya.
+   *
+   * Struknya dicetak SESUDAH uangnya tercatat masuk, bukan sebelum. Struk yang
+   * keluar duluan lalu pembayarannya gagal berarti tamu memegang bukti lunas
+   * untuk uang yang tidak pernah diterima — dan yang memegang kertas itu selalu
+   * lebih dipercaya daripada catatan di layar.
+   */
+  const handleSettleTable = async (table: TableSummary, metode: MetodeBayar, tunai: number | null) => {
+    if (!table.sessionId) {
+      alert("Meja ini tidak punya kunjungan aktif, jadi tagihannya tidak bisa digabung.");
+      return;
+    }
+
+    const res = await settleTableSessionAction(
+      table.sessionId,
+      metode,
+      tunai,
+      attachedCustomer?.id ?? null,
+    );
+    if (!res.ok) throw new Error(res.error);
+
+    setMejaDibayar(null);
+    setAttachedCustomer(null);
+
+    // Struk pelanggan langsung keluar; rangkap lain tinggal ditekan dari popup.
+    await handlePrintThreePlyBluetooth(
+      {
+        order_no: res.data.orderNos.join(" + "),
+        table_no: table.tableNo,
+        service_type: "dine_in",
+        created_at: new Date().toISOString(),
+        items: table.orders.flatMap((ord) =>
+          ord.items.map((i) => ({
+            name_snapshot: i.name_snapshot,
+            qty: i.qty,
+            unit_price_snapshot: Number(i.price_snapshot),
+            subtotal: Number(i.subtotal),
+            note: i.note,
+          })),
+        ),
+        total: res.data.total,
+        payment_method: metode,
+        customer_name: attachedCustomer?.name ?? null,
+      },
+      "pelanggan",
+      undefined,
+      /**
+       * Id salah satu nota yang barusan dilunasi.
+       *
+       * Inilah yang membuat QR di struk terisi: servernya memutuskan sendiri
+       * isinya — tautan kartu member kalau notanya punya pemilik, atau tautan
+       * pendaftaran kalau belum. Token member karena itu tidak pernah lewat
+       * pencarian kasir, dan cuma terungkap lewat transaksi yang benar-benar
+       * terjadi.
+       */
+      res.data.orderIds[0],
+    );
+
+    router.refresh();
   };
 
   // Handle Klaim Reward Loyalty di POS
@@ -659,15 +939,27 @@ export default function PosClient({
   // ---------------------------------------------------------------------------
   const handleOpenPayment = () => {
     if (cartList.length === 0) return;
+
+    /**
+     * Tidak ada uang yang berpindah sekarang, jadi tidak ada yang perlu
+     * ditanyakan. Layar hitung kembalian di alur ini justru menyesatkan:
+     * kasir bisa mengira uangnya sudah diterima padahal tamunya baru mulai
+     * makan.
+     */
+    if (bayarDiAkhir) {
+      void handleProcessPayment();
+      return;
+    }
+
     setCashGivenInput(checkoutTotal);
     setShowPaymentModal(true);
   };
 
-  const handleProcessPayment = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleProcessPayment = async (e?: React.FormEvent) => {
+    e?.preventDefault();
     if (cartList.length === 0) return;
 
-    if (paymentMethod === "cash" && !cashChangeCalc.isSufficient) {
+    if (!bayarDiAkhir && paymentMethod === "cash" && !cashChangeCalc.isSufficient) {
       alert("Uang tunai yang diterima kurang dari total tagihan.");
       return;
     }
@@ -700,7 +992,7 @@ export default function PosClient({
        * nominalnya, dan owner tidak punya cara tahu keringanan itu buat siapa.
        */
       discount_reason: cartTotals.discount > 0 ? labelAlasanDiskon() : null,
-      cash_given: paymentMethod === "cash" ? cashGivenInput : null,
+      cash_given: !bayarDiAkhir && paymentMethod === "cash" ? cashGivenInput : null,
       customer_id: attachedCustomer?.id || null,
       items: itemsPayload,
     });
@@ -727,6 +1019,13 @@ export default function PosClient({
       deliveryFee: res.data.deliveryFee,
       cashGiven: paymentMethod === "cash" ? cashGivenInput : undefined,
       customerName: attachedCustomer?.name,
+      /*
+       * Nomor penerima faktur SENGAJA tidak dibawa di sini. Nomor member tidak
+       * ada di layar kasir — hasil pencarian member hanya membawa nomor yang
+       * disamarkan — dan menambahkannya berarti setiap pencarian mengirim nomor
+       * lengkap puluhan pelanggan. Faktur meminta nomornya sendiri lewat
+       * getOrderInvoiceAction, untuk satu pesanan, saat kasir memilih mengirim.
+       */
       items: cartList.map((c) => ({
         name: c.item.name,
         qty: c.qty,
@@ -1099,6 +1398,14 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
    * di garis sobek sambil dilihat pembeli.
    */
   bagian: "dapur" | "kasir" | "pelanggan" | "semua" = "semua",
+  /**
+   * Diisi kalau yang dicetak cuma SEBAGIAN tagihan meja, untuk rombongan yang
+   * minta struk sendiri-sendiri. Total seluruh meja ikut tercetak supaya satu
+   * bagian tidak pernah bisa dibaca sebagai tagihan penuh.
+   */
+  bagiTagihan?: { bagianKe: number; dariBagian?: number; totalMeja: number },
+  /** Nota yang jadi sumber QR member di struk pelanggan. */
+  orderIdUntukQr?: string,
   ) => {
     const orderData = customOrder || (completedOrder ? {
       order_no: completedOrder.orderNo,
@@ -1149,6 +1456,7 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
       cashChange: completedOrder?.change,
       customerName: orderData.customer_name,
       bagian,
+      bagiTagihan,
     });
 
     const namaRangkap = {
@@ -1159,14 +1467,15 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
     } as const;
 
     await sendRawEscPosToBluetooth(receiptText, {
-      jobName: namaRangkap[bagian],
+      jobName: bagiTagihan ? `Bagi Tagihan ${bagiTagihan.bagianKe}` : namaRangkap[bagian],
       orderNo: orderData.order_no,
       // Laci cukup membuka sekali, saat rangkap kasir tercetak.
       openCashDrawer:
+        !bagiTagihan &&
         orderData.payment_method === "cash" && (bagian === "kasir" || bagian === "semua"),
       // Kode QR member cuma di lembar yang dibawa pulang pelanggan.
       isCustomerReceipt: bagian === "pelanggan" || bagian === "semua",
-      orderId: completedOrder?.orderId,
+      orderId: orderIdUntukQr ?? completedOrder?.orderId,
     });
   };
 
@@ -1248,17 +1557,39 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
         {serviceType === "dine_in" && (
           <div className="mt-2 flex items-center gap-2">
             <span className="text-[11px] font-bold text-[#556b62] shrink-0 font-mono">No. Meja:</span>
-            <input
-              type="text"
+            {/*
+              Dipilih dari daftar, bukan diketik.
+
+              Mengetik nomor meja berarti "21" untuk meja 2 bisa lolos diam-diam,
+              dan tagihannya baru ketahuan nyasar saat meja 21 diminta membayar
+              sesuatu yang tidak pernah dipesannya. Dengan 24 meja yang memang
+              tetap, tidak ada alasan menyisakan celah itu.
+            */}
+            <select
               value={selectedTableNo}
               onChange={(e) => setSelectedTableNo(e.target.value)}
-              placeholder="Contoh: 04, Meja 2"
-              className={`flex-1 h-8 rounded-lg border px-2.5 text-xs font-mono font-bold ${
-                isMochiPos
-                  ? "border-[#ccd9d3] bg-[#edf8f3] text-[#0b3d2e] focus:border-[#167052] focus:bg-white"
-                  : "border-[#ccd7d2] bg-white text-[#21352d]"
+              className={`h-9 flex-1 rounded-lg border px-2.5 text-xs font-mono font-bold ${
+                !selectedTableNo.trim()
+                  ? "border-amber-400 bg-amber-50 text-amber-900"
+                  : isMochiPos
+                    ? "border-[#ccd9d3] bg-[#edf8f3] text-[#0b3d2e]"
+                    : "border-[#ccd7d2] bg-white text-[#21352d]"
               } focus:outline-hidden`}
-            />
+            >
+              <option value="">— Pilih meja —</option>
+              {Array.from({ length: 24 }, (_, i) => String(i + 1).padStart(2, "0")).map((no) => (
+                <option key={no} value={no}>{`Meja ${no}`}</option>
+              ))}
+              {/*
+                Nomor meja yang datang dari panggilan atau pesanan lama bisa
+                saja di luar 24 itu (meja tambahan saat acara). Kalau dibuang
+                dari daftar, pilihannya akan terlihat kosong padahal terisi.
+              */}
+              {selectedTableNo.trim() &&
+                !Array.from({ length: 24 }, (_, i) => String(i + 1).padStart(2, "0")).includes(
+                  selectedTableNo,
+                ) && <option value={selectedTableNo}>{`Meja ${selectedTableNo}`}</option>}
+            </select>
           </div>
         )}
       </fieldset>
@@ -1449,9 +1780,20 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
           </strong>
         </div>
 
+        {/*
+          Peringatan meja kosong muncul SEBELUM tombolnya, bukan sesudah ditekan.
+          Kasir yang baru tahu setelah menekan sudah terlanjur menghadap tamunya.
+        */}
+        {perluNomorMeja && (
+          <p className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-[11px] font-bold leading-relaxed text-amber-900">
+            Isi nomor mejanya dulu. Tanpa itu, tagihan ini tidak menempel ke meja
+            mana pun dan hilang saat tamunya membayar di akhir.
+          </p>
+        )}
+
         <button
           type="button"
-          disabled={cartList.length === 0}
+          disabled={cartList.length === 0 || perluNomorMeja}
           onClick={handleOpenPayment}
           className={`flex h-12 w-full items-center justify-center gap-2 rounded-xl px-4 text-sm font-black transition-all active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-40 shadow-md ${
             isMochiPos
@@ -1460,8 +1802,24 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
           }`}
         >
           <CreditCard size={17} aria-hidden="true" />
-          <span>Lanjut Pembayaran ({cartList.reduce((sum, line) => sum + line.qty, 0)})</span>
+          {/*
+            Tulisannya menyebut apa yang BENAR-BENAR terjadi. "Lanjut
+            Pembayaran" di alur bayar-di-akhir bakal bikin kasir mengira
+            uangnya diterima sekarang — padahal tamunya baru mulai makan.
+          */}
+          <span>
+            {bayarDiAkhir
+              ? `Simpan Pesanan · Bayar Nanti (${cartList.reduce((sum, line) => sum + line.qty, 0)})`
+              : `Lanjut Pembayaran (${cartList.reduce((sum, line) => sum + line.qty, 0)})`}
+          </span>
         </button>
+
+        {bayarDiAkhir && cartList.length > 0 && (
+          <p className="text-center font-mono text-[10.5px] leading-relaxed text-[#527867]">
+            Tagihan menumpuk di {selectedTableNo ? `Meja ${selectedTableNo}` : "mejanya"} dan
+            dibayar sekali saat tamunya pulang.
+          </p>
+        )}
       </div>
     </section>
   );
@@ -1770,6 +2128,79 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
         </div>
       </header>
 
+      {/*
+        PANGGILAN MEJA
+
+        Ditaruh di atas segalanya dan tidak bisa ditutup, karena yang diwakili
+        baris ini adalah orang yang SEDANG MENUNGGU di mejanya. Pesanan yang
+        menumpuk masih aman tercatat; tamu yang menunggu tidak — dia cuma
+        merasa didiamkan, dan itu yang diingatnya saat pulang.
+
+        Yang menutup baris ini adalah pelayan yang benar-benar mendatangi
+        mejanya, bukan bunyi yang lewat.
+      */}
+      {tableCalls.length > 0 && (
+        <div className="fixed inset-x-0 top-14 z-45 px-3">
+          <div className="mx-auto w-full max-w-lg space-y-1.5">
+            {tableCalls.map((call, idx) => (
+              <div
+                key={call.id}
+                className={`flex items-center justify-between gap-3 rounded-2xl border p-3 shadow-2xl ${
+                  idx === 0
+                    ? "border-[#c8f53a] bg-[#0b3d2e] text-white"
+                    : "border-emerald-700/40 bg-[#124d3a] text-white"
+                }`}
+              >
+                <div className="flex min-w-0 items-center gap-2.5">
+                  <span className="relative flex h-3 w-3 shrink-0">
+                    <span className="absolute inline-flex h-3 w-3 animate-ping rounded-full bg-[#c8f53a] opacity-75" />
+                    <span className="relative inline-flex h-3 w-3 rounded-full bg-[#c8f53a]" />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-sm font-black text-[#c8f53a]">
+                      Meja {call.table_no} sudah siap memesan
+                    </p>
+                    <p className="font-mono text-[10.5px] text-emerald-200/80">
+                      menunggu {menitMenunggu(call.created_at)}
+                      {call.jumlah_ping > 1 && (
+                        <span className="ml-1.5 rounded bg-amber-400/90 px-1.5 py-0.5 text-[9px] font-black text-[#3a2a00]">
+                          DIPANGGIL {call.jumlah_ping}×
+                        </span>
+                      )}
+                    </p>
+
+                  </div>
+                </div>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <button
+                    type="button"
+                    disabled={callBusy === call.id}
+                    onClick={() => void handleCatatPesananDariPanggilan(call)}
+                    className="rounded-xl bg-[#c8f53a] px-3 py-2 text-[11px] font-black text-[#073829] disabled:opacity-60"
+                  >
+                    Catat Pesanan
+                  </button>
+                  {/*
+                    Tidak semua panggilan berujung pesanan — tamu bisa cuma minta
+                    air atau sendok. Tombol ini untuk menutupnya tanpa membuka
+                    keranjang yang tidak akan dipakai.
+                  */}
+                  <button
+                    type="button"
+                    disabled={callBusy === call.id}
+                    onClick={() => void handleResolveCall(call.id)}
+                    title="Sudah didatangi, tapi belum memesan"
+                    className="rounded-xl border border-emerald-300/40 px-2.5 py-2 text-[11px] font-bold text-emerald-100 disabled:opacity-60"
+                  >
+                    {callBusy === call.id ? "..." : "Selesai"}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* FLOATING INCOMING ORDER BANNER */}
       {incomingToast && (
         <div className="fixed top-16 left-1/2 -translate-x-1/2 z-40 w-[94%] max-w-lg animate-in slide-in-from-top-4 duration-300">
@@ -1915,6 +2346,8 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
               isMochi={isMochiPos}
               onAddItemsToTable={handleAddItemsToTable}
               onPrintCombinedTableBill={handlePrintCombinedTableBill}
+              onPrintSplitBill={handlePrintSplitBill}
+              onSettleTable={bayarDiAkhirToko ? setMejaDibayar : undefined}
               onRefresh={refreshAll}
             />
           ) : (
@@ -2634,6 +3067,19 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
         </div>
       )}
 
+      {mejaDibayar && (
+        <PosSettleTableModal
+          namaMeja={mejaDibayar.displayName}
+          total={mejaDibayar.totalBill}
+          jumlahNota={mejaDibayar.orders.length}
+          namaMember={attachedCustomer?.name ?? null}
+          isMochi={isMochiPos}
+          onClose={() => setMejaDibayar(null)}
+          onBayar={(metode, tunai) => handleSettleTable(mejaDibayar, metode, tunai)}
+          onCariMember={() => setShowMemberScannerModal(true)}
+        />
+      )}
+
       {showQueue && (
         <OrderQueue
           orders={currentQrOrders}
@@ -2644,6 +3090,7 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
           onPrintThreePly={handlePrintThreePlyBluetooth}
           autoPrintThreePly={autoPrintThreePly}
           onToggleAutoPrintThreePly={handleToggleAutoPrintThreePly}
+          onKirimFaktur={(orderId) => void bukaFaktur(orderId)}
         />
       )}
 
@@ -2793,17 +3240,42 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
               )}
               {printerState === "connected" && <p className="text-[10px] font-bold text-[#15803d]">Printer terhubung dan aktivitas cetak tercatat.</p>}
 
+              {/*
+                Faktur ke WhatsApp pelanggan: layar ini menampilkan QR, kasir
+                memindainya dengan HP yang memegang WhatsApp toko, lalu menekan
+                kirim sendiri. Mesin kasir biasanya tablet atau laptop yang tidak
+                memegang WhatsApp toko; QR-nya yang memindahkan fakturnya.
+              */}
+              <button
+                type="button"
+                onClick={() => void bukaFaktur(completedOrder.orderId)}
+                disabled={memuatFaktur}
+                className={`w-full flex items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-black transition-colors disabled:opacity-60 ${
+                  isMochiPos
+                    ? "bg-[#0b3d2e] text-[#c8f53a] hover:bg-[#124a39]"
+                    : "btn-tactile border-2 border-[#232331] bg-[#25D366] text-white shadow-ink-xs"
+                }`}
+              >
+                <MessageSquare size={14} />
+                <span>{memuatFaktur ? "Menyiapkan faktur..." : "Kirim faktur ke WhatsApp"}</span>
+              </button>
+
+              {/*
+                Tombol ini dulu bernama "Kirim Struk Digital WhatsApp", padahal
+                yang dibukanya halaman struk di peramban — tidak ada yang
+                terkirim ke mana pun. Dinamai sesuai yang benar-benar terjadi.
+              */}
               <Link
                 href={`/receipt/${completedOrder.orderId}`}
                 target="_blank"
                 className={`w-full flex items-center justify-center gap-2 rounded-xl py-2.5 text-xs font-bold transition-colors ${
                   isMochiPos
                     ? "border border-[#ccd9d3] bg-[#edf8f3] text-[#0b3d2e] hover:bg-[#e0f1e8]"
-                    : "btn-tactile border border-[#16a34a] bg-[#dcfce7] text-[#16a34a]"
+                    : "btn-tactile border border-[#16a34a] bg-[#dcfce7] text-[#15803d]"
                 }`}
               >
                 <Share2 size={14} />
-                <span>Kirim Struk Digital WhatsApp</span>
+                <span>Buka struk digital</span>
               </Link>
             </div>
 
@@ -2819,6 +3291,11 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
 
           </div>
         </div>
+      )}
+
+      {/* MODAL: FAKTUR WHATSAPP */}
+      {faktur && (
+        <PosInvoiceQrModal faktur={faktur} onClose={() => setFaktur(null)} />
       )}
 
       {/* MODAL: SHIFT MANAGEMENT */}

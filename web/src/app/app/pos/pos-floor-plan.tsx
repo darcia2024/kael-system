@@ -17,6 +17,7 @@ import {
   Sparkles,
   Search,
   LayoutGrid,
+  Receipt,
 } from "lucide-react";
 import type { MenuItem, Order, OrderItem, TableSessionSummary } from "@/lib/types";
 import { formatRupiah, formatBusinessDateTime } from "@/lib/formatters";
@@ -28,6 +29,8 @@ import {
 } from "@/lib/actions";
 import { normalizeTableKey, tableDisplayName } from "@/lib/table-key";
 import PosReplaceRefundModal from "./pos-replace-refund-modal";
+import PosSplitBillModal, { type ItemBagiTagihan } from "./pos-split-bill-modal";
+import PosCancelItemModal from "./pos-cancel-item-modal";
 
 type Antrean = Order & { items: OrderItem[] };
 
@@ -45,26 +48,22 @@ export interface TableSummary {
   hasUnpaid: boolean;
 }
 
-const PRESET_TABLES = [
-  { no: "01", name: "Meja 01" },
-  { no: "02", name: "Meja 02" },
-  { no: "03", name: "Meja 03" },
-  { no: "04", name: "Meja 04" },
-  { no: "05", name: "Meja 05" },
-  { no: "06", name: "Meja 06" },
-  { no: "07", name: "Meja 07" },
-  { no: "08", name: "Meja 08" },
-  { no: "09", name: "Meja 09" },
-  { no: "10", name: "Meja 10" },
-  { no: "VIP", name: "Meja VIP" },
-  { no: "Lesehan 1", name: "Lesehan 1" },
-  { no: "Lesehan 2", name: "Lesehan 2" },
-  { no: "Lesehan 3", name: "Lesehan 3" },
-  { no: "Lesehan 4", name: "Lesehan 4" },
-  { no: "Outdoor 1", name: "Outdoor 1" },
-  { no: "Outdoor 2", name: "Outdoor 2" },
-  { no: "Bar", name: "Bar Counter" },
-];
+/**
+ * Jumlah meja yang tampil di denah.
+ *
+ * Mochi punya 24 meja. Angka inilah yang dipakai, bukan daftar meja karangan
+ * (VIP, Lesehan, Outdoor, Bar) yang sempat ada di sini — daftar itu tebakan,
+ * dan meja yang tidak pernah ada di lapangan cuma bikin kasir ragu saat memilih.
+ *
+ * Meja di luar daftar ini tetap muncul sendiri kalau ada pesanan yang memakai
+ * namanya, jadi menambah meja dadakan tidak perlu menunggu perubahan kode.
+ */
+const JUMLAH_MEJA = 24;
+
+const PRESET_TABLES = Array.from({ length: JUMLAH_MEJA }, (_, i) => {
+  const no = String(i + 1).padStart(2, "0");
+  return { no, name: `Meja ${no}` };
+});
 
 function getElapsedMinutes(isoString: string | null): string {
   if (!isoString) return "";
@@ -84,6 +83,8 @@ export default function PosFloorPlan({
   isMochi = true,
   onAddItemsToTable,
   onPrintCombinedTableBill,
+  onSettleTable,
+  onPrintSplitBill,
   onRefresh,
 }: {
   orders: Antrean[];
@@ -95,7 +96,22 @@ export default function PosFloorPlan({
   menuItems: MenuItem[];
   isMochi?: boolean;
   onAddItemsToTable: (tableNo: string) => void;
-  onPrintCombinedTableBill?: (table: TableSummary) => void;
+  onPrintCombinedTableBill?: (
+    table: TableSummary,
+    bagian: "dapur" | "kasir" | "pelanggan" | "semua",
+  ) => void;
+  /**
+   * Tamu selesai makan dan membayar seluruh tagihan mejanya.
+   * Kosong berarti toko ini menerima uangnya di depan, bukan di akhir.
+   */
+  onSettleTable?: (table: TableSummary) => void;
+  /** Mencetak SEBAGIAN tagihan meja, untuk tamu rombongan yang minta struk sendiri-sendiri. */
+  onPrintSplitBill?: (
+    table: TableSummary,
+    items: ItemBagiTagihan[],
+    totalBagian: number,
+    bagianKe: number,
+  ) => Promise<void> | void;
   onRefresh?: () => void;
 }) {
   const [selectedTableNo, setSelectedTableNo] = useState<string | null>(null);
@@ -107,6 +123,15 @@ export default function PosFloorPlan({
   const [modalItem, setModalItem] = useState<OrderItem | null>(null);
   const [showAdjustModal, setShowAdjustModal] = useState(false);
   const [busyAction, setBusyAction] = useState<string | null>(null);
+  const [showSplitBill, setShowSplitBill] = useState(false);
+  const [itemDibatalkan, setItemDibatalkan] = useState<{
+    orderId: string;
+    orderNo: string;
+    itemId: string;
+    nama: string;
+    qty: number;
+    subtotal: number;
+  } | null>(null);
 
   /**
    * Pesanan yang masih milik kunjungan berjalan.
@@ -651,6 +676,33 @@ export default function PosFloorPlan({
                               >
                                 <span>⚠️ Ganti / Refund</span>
                               </button>
+
+                              {/*
+                                Membatalkan cuma ditawarkan selama notanya belum
+                                dibayar. Sesudah uangnya masuk, mengurangi
+                                tagihan tanpa mengembalikan uangnya berarti
+                                selisih kas tanpa catatan — dan untuk itu yang
+                                benar adalah refund, yang punya jejaknya sendiri.
+                              */}
+                              {order.payment_status === "pending" && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setItemDibatalkan({
+                                      orderId: order.id,
+                                      orderNo: order.order_no,
+                                      itemId: item.id,
+                                      nama: item.name_snapshot,
+                                      qty: item.qty,
+                                      subtotal: Number(item.subtotal),
+                                    })
+                                  }
+                                  className="flex items-center gap-1 rounded-lg border border-rose-300 bg-rose-50 px-2 py-1 text-[10px] font-bold text-rose-800 hover:bg-rose-100"
+                                  title="Tamu batal memesan menu ini"
+                                >
+                                  <span>Batalkan</span>
+                                </button>
+                              )}
                             </div>
                           </li>
                         ))}
@@ -684,6 +736,22 @@ export default function PosFloorPlan({
             {/* Bottom Actions Drawer */}
             {activeSelectedTable.orders.length > 0 && (
               <div className="sticky bottom-0 bg-[#f8faf9] p-3.5 border-t border-[#d8e3de] space-y-2">
+                {/*
+                  Tombol paling menentukan di alur bayar-di-akhir, jadi ditaruh
+                  paling atas dan paling besar. Ini satu-satunya titik tempat
+                  uang benar-benar berpindah.
+                */}
+                {onSettleTable && activeSelectedTable.hasUnpaid && (
+                  <button
+                    type="button"
+                    onClick={() => onSettleTable(activeSelectedTable)}
+                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#c8f53a] py-3 text-sm font-black text-[#073829] shadow-md transition-all hover:bg-[#d9ff57] active:scale-[0.99]"
+                  >
+                    <CreditCard size={16} />
+                    <span>Terima Pembayaran · {formatRupiah(activeSelectedTable.totalBill)}</span>
+                  </button>
+                )}
+
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
@@ -700,14 +768,62 @@ export default function PosFloorPlan({
                   {onPrintCombinedTableBill && (
                     <button
                       type="button"
-                      onClick={() => onPrintCombinedTableBill(activeSelectedTable)}
+                      onClick={() => onPrintCombinedTableBill(activeSelectedTable, "pelanggan")}
                       className="flex items-center justify-center gap-1.5 rounded-xl bg-[#c8f53a] hover:bg-[#d9ff57] text-[#073829] py-2.5 px-3 text-xs font-black shadow-xs transition-all"
                     >
                       <Printer size={14} />
-                      <span>🖨️ Cetak Total Tagihan Meja</span>
+                      <span>🖨️ Cetak Tagihan · Pelanggan</span>
                     </button>
                   )}
                 </div>
+
+                {/*
+                  Rangkapnya dipilih, bukan langsung keluar tiga-tiganya.
+                  Tiap lembar dicetak sebagai struk sendiri dengan logo sendiri,
+                  lalu dipotong printer — kasir tidak perlu menggunting di garis
+                  sobek di depan tamunya. Yang paling sering dipakai (lembar
+                  pelanggan) sudah jadi tombol besar di atas; dua sisanya di sini.
+                */}
+                {onPrintCombinedTableBill && (
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {([
+                      { kunci: "dapur", label: "Dapur" },
+                      { kunci: "kasir", label: "Kasir" },
+                      { kunci: "semua", label: "Ketiganya" },
+                    ] as const).map((r) => (
+                      <button
+                        key={r.kunci}
+                        type="button"
+                        onClick={() => onPrintCombinedTableBill(activeSelectedTable, r.kunci)}
+                        title={
+                          r.kunci === "semua"
+                            ? "Cetak ketiga rangkap, satu per satu"
+                            : `Cetak rangkap ${r.label} saja`
+                        }
+                        className="flex flex-col items-center justify-center gap-1 rounded-xl border border-emerald-800/30 bg-white py-2.5 text-[11px] font-bold text-[#0b3d2e] transition-all hover:bg-[#edf8f3]"
+                      >
+                        {r.kunci === "dapur" ? <ChefHat size={13} /> : <Printer size={13} />}
+                        <span>{r.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {/*
+                  Rombongan yang minta struk sendiri-sendiri. Tanpa ini, kasir
+                  cuma punya satu lembar untuk seluruh meja, dan enam orang
+                  menghitung patungannya manual di atas meja.
+                */}
+                {onPrintSplitBill && activeSelectedTable.itemCount > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowSplitBill(true)}
+                    className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-emerald-800/30 bg-white py-2.5 text-xs font-black text-[#0b3d2e] transition-all hover:bg-[#edf8f3]"
+                  >
+                    <Receipt size={14} />
+                    <span>🧾 Bagi Tagihan · Struk per Menu</span>
+                  </button>
+                )}
 
                 {/*
                   Menutup meja adalah keputusan tersendiri, bukan efek samping
@@ -768,6 +884,50 @@ export default function PosFloorPlan({
           onSuccess={() => {
             if (onRefresh) onRefresh();
           }}
+        />
+      )}
+
+      {itemDibatalkan && (
+        <PosCancelItemModal
+          orderId={itemDibatalkan.orderId}
+          orderNo={itemDibatalkan.orderNo}
+          itemId={itemDibatalkan.itemId}
+          namaMenu={itemDibatalkan.nama}
+          qty={itemDibatalkan.qty}
+          subtotal={itemDibatalkan.subtotal}
+          isMochi={isMochi}
+          onClose={() => setItemDibatalkan(null)}
+          onSelesai={(notaIkutBatal) => {
+            setItemDibatalkan(null);
+            // Nota yang seluruh menunya batal ikut hilang dari layar, jadi
+            // popup mejanya ditutup supaya tidak menampilkan nota yang sudah
+            // tidak ada.
+            if (notaIkutBatal) setSelectedTableNo(null);
+            if (onRefresh) onRefresh();
+          }}
+        />
+      )}
+
+      {showSplitBill && activeSelectedTable && onPrintSplitBill && (
+        <PosSplitBillModal
+          namaMeja={activeSelectedTable.displayName}
+          totalMeja={activeSelectedTable.totalBill}
+          isMochi={isMochi}
+          onClose={() => setShowSplitBill(false)}
+          items={activeSelectedTable.orders.flatMap((ord) =>
+            ord.items.map((it) => ({
+              id: it.id,
+              nama: it.name_snapshot,
+              qty: it.qty,
+              harga: Number(it.price_snapshot),
+              subtotal: Number(it.subtotal),
+              catatan: it.note,
+              orderNo: ord.order_no,
+            })),
+          )}
+          onCetak={(itemTerpilih, totalBagian, bagianKe) =>
+            onPrintSplitBill(activeSelectedTable, itemTerpilih, totalBagian, bagianKe)
+          }
         />
       )}
     </div>

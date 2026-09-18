@@ -78,6 +78,29 @@ export interface Business {
   refund_max_per_transaction: number;
   refund_daily_limit_per_cashier: number;
   /**
+   * Cara toko ini memakai menu digitalnya.
+   *
+   *   pesan_bayar    tamu memesan dan membayar sendiri dari HP
+   *   lihat_panggil  menu cuma untuk dilihat; tamu menekan tombol panggil,
+   *                  pelayan datang memastikan menunya tersedia, lalu
+   *                  menginputnya di kasir. Semua pembayaran di akhir.
+   *
+   * Dua-duanya didukung karena KAEL punya banyak penyewa: yang cocok untuk
+   * gerai cepat saji justru memperlambat kafe, dan sebaliknya.
+   */
+  qr_menu_mode: "pesan_bayar" | "lihat_panggil";
+  /**
+   * Kapan uangnya diterima kasir.
+   *
+   *   di_depan  uang diterima saat pesanan dicatat
+   *   di_akhir  pesanan dicatat belum lunas, dan seluruh tagihan meja
+   *             diselesaikan sekali saat tamunya pulang
+   *
+   * Cuma berlaku untuk makan di tempat. Bungkus dan antar selalu dibayar saat
+   * itu juga — tidak ada meja yang menahan tamunya sampai selesai.
+   */
+  pos_payment_timing: "di_depan" | "di_akhir";
+  /**
    * Tenant peragaan yang disiapkan tim KAEL atas nama calon pembeli, bukan
    * pelanggan yang membayar. Hanya baris seperti ini yang boleh disentuh
    * skrip pembersih.
@@ -413,6 +436,33 @@ export interface PointLedger {
  * yang harus dipikirkan pemilik warung. Yang di sini isinya — hal-hal yang
  * cuma dia yang tahu.
  */
+/**
+ * Faktur WhatsApp satu pesanan, dirakit server dari database.
+ *
+ * Bentuk ini yang menyeberang ke layar kasir. Nomor penerimanya hanya ada di
+ * sini, untuk satu pesanan, dan hanya saat kasir memilih mengirim — tidak
+ * pernah di hasil pencarian member.
+ */
+export interface FakturPesanan {
+  orderId: string;
+  namaToko: string;
+  orderNo: string;
+  items: { nama: string; qty: number; harga: number }[];
+  subtotal: number;
+  diskon: number;
+  pajak: number;
+  serviceCharge: number;
+  ongkir: number;
+  total: number;
+  caraBayar: string;
+  penerima: {
+    nomor: string | null;
+    nama: string | null;
+    /** Hanya untuk pesanan antar. */
+    alamat: string | null;
+  };
+}
+
 export interface MemberCardSettings {
   business_id: string;
   headline: string | null;
@@ -588,6 +638,23 @@ export interface OrderItem {
   qty: number;
   subtotal: number;
   note?: string;
+  /**
+   * Menu yang dibatalkan tamu sebelum notanya dibayar.
+   *
+   * Barisnya sengaja tidak dihapus. Kasir yang bisa menghapus baris dari nota
+   * belum lunas bisa memakainya menyembunyikan uang yang sudah diterima, dan
+   * lacinya tetap akan cocok. Yang dibatalkan hilang dari tagihan, struk,
+   * tiket dapur, stok, dan laporan penjualan — tapi jejaknya tetap ada.
+   */
+  cancelled_at?: string | null;
+  cancelled_by?: string | null;
+  cancel_reason?: string | null;
+  /** Nasib makanannya: yang sempat dibuat memakan bahan, yang belum tidak. */
+  cancel_disposition?:
+    | "belum_dibuat"
+    | "sudah_dibuat_dibuang"
+    | "sudah_dibuat_disajikan"
+    | null;
 }
 
 /** Bagaimana selisih harga diselesaikan saat item pesanan diganti. */
@@ -780,6 +847,18 @@ export interface TableSession {
   closed_at: string | null;
   closed_by: string | null;
   note: string | null;
+  /**
+   * Pembayaran satu kunjungan, bukan per nota.
+   *
+   * Satu meja bisa memesan empat kali lalu membayar sekali saat pulang, jadi
+   * uang yang diterima memang milik kunjungannya. Kolom ini untuk struk dan
+   * penelusuran — rekonsiliasi laci tetap menjumlahkan `orders.total`.
+   */
+  dibayar_dengan: "cash" | "qris" | "transfer" | null;
+  tunai_diterima: number | null;
+  kembalian: number | null;
+  dibayar_pada: string | null;
+  dibayar_oleh: string | null;
 }
 
 /** Sesi meja beserta ringkasan tagihannya, untuk denah meja kasir. */

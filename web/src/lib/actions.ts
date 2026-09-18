@@ -1846,6 +1846,27 @@ export async function createOrderAction(input: {
   }
 
   const business = await db.getBusiness(businessId);
+
+  /**
+   * Di alur panggil-pelayan, makan di tempat WAJIB punya nomor meja.
+   *
+   * Seluruh alur itu bertumpu pada mejanya: pesanannya menempel ke kunjungan
+   * meja, tagihannya menumpuk di sana, dan uangnya baru diterima di akhir.
+   * Pesanan dine-in tanpa nomor meja tidak menempel ke mana pun — mejanya tidak
+   * terbaca terisi, tagihannya tidak ikut terhitung saat tamunya membayar, dan
+   * yang tersisa cuma satu nota melayang yang tidak ada yang mengaku memilikinya.
+   *
+   * Dibatasi ke alur ini saja. Warung yang memang tidak bernomor meja tetap
+   * boleh mencatat dine-in tanpa meja seperti sebelumnya.
+   */
+  if (
+    business?.qr_menu_mode === "lihat_panggil" &&
+    input.service_type === "dine_in" &&
+    !input.table_no?.trim()
+  ) {
+    return fail("Isi dulu nomor mejanya. Tanpa itu, tagihannya tidak menempel ke meja mana pun dan hilang saat tamunya membayar.");
+  }
+
   const taxRate = Number(business?.pos_tax_rate ?? 0);
   const serviceRate = Number(business?.pos_service_charge_rate ?? 0);
   const rawDiscount = Number(input.discount ?? 0);
@@ -1878,8 +1899,22 @@ export async function createOrderAction(input: {
     serviceRate,
   );
   const totalDue = totals.total + deliveryFee;
+  /**
+   * Bayar di akhir: notanya dicatat BELUM LUNAS.
+   *
+   * Tamu kafe memesan berkali-kali sepanjang dua jam lalu membayar sekali saat
+   * pulang. Menandai notanya lunas saat dicatat berarti kasir menyatakan uang
+   * yang belum dia pegang sudah masuk — dan kalau tamunya keburu pergi, tidak
+   * ada apa pun di sistem yang menunjukkan ada yang belum dibayar.
+   *
+   * Hanya berlaku untuk makan di tempat. Bungkus dan antar tetap dibayar saat
+   * itu juga: tidak ada meja yang menahan tamunya sampai selesai.
+   */
+  const bayarDiAkhir =
+    business?.pos_payment_timing === "di_akhir" && input.service_type === "dine_in";
+
   const shift = await db.getActiveShift(businessId);
-  if (input.payment_method === "cash") {
+  if (input.payment_method === "cash" && !bayarDiAkhir) {
     if (!shift)
       return fail("Buka shift kasir sebelum menerima pembayaran tunai.");
     const cashGiven = Number(input.cash_given ?? 0);
@@ -1913,8 +1948,9 @@ export async function createOrderAction(input: {
        * transaksi atas sesuatu yang belum dia lihat. Keduanya menunggu
        * konfirmasi lewat confirmPaymentAction.
        */
-      status: input.payment_method === "cash" ? "paid" : "open",
-      payment_status: input.payment_method === "cash" ? "paid" : "pending",
+      status: !bayarDiAkhir && input.payment_method === "cash" ? "paid" : "open",
+      payment_status:
+        !bayarDiAkhir && input.payment_method === "cash" ? "paid" : "pending",
       /**
        * SELALU masuk antrean dapur, bahkan yang tunai dan lunas seketika.
        *
@@ -1960,6 +1996,69 @@ export async function createOrderAction(input: {
 }
 
 /** Pesanan dari QR meja. Terbuka, karena pelanggan tidak punya akun. */
+// ===========================================================================
+// Panggilan meja
+// ===========================================================================
+
+/**
+ * Tamu memanggil pelayan dari halaman menu digital.
+ *
+ * Aksi ini TERBUKA tanpa login — yang menekannya orang yang sedang duduk di
+ * meja itu, dan meminta mereka membuat akun demi memanggil pelayan jelas
+ * mengalahkan tujuannya.
+ *
+ * Yang dijaga karena itu bukan siapa yang memanggil, melainkan seberapa banyak:
+ * satu meja cuma boleh punya satu panggilan menunggu, dan batas itu dipegang
+ * indeks unik di basis data, bukan tombol yang dinonaktifkan di layar.
+ */
+export async function panggilPelayanAction(
+  businessId: string,
+  tableNo: string,
+  jenis: "siap_memesan" | "tambah_pesanan" | "minta_bill" | "bantuan" = "siap_memesan",
+): Promise<
+  ActionResult<{ sudahAda: boolean; menungguSejak?: string; jedaDetik: number }>
+> {
+  if (!businessId || !tableNo?.trim()) return fail("Meja tidak dikenali.");
+
+  const business = await db.getBusiness(businessId);
+  if (!business) return fail("Toko tidak ditemukan.");
+
+  const locked = await moduleLock(businessId, "pos", "write");
+  if (locked) return fail(locked);
+
+  const hasil = await db.createTableCall(businessId, tableNo, jenis);
+  if (!hasil.ok) return fail("Nomor meja tidak dikenali.");
+
+  revalidatePath("/app/pos");
+  return done({
+    sudahAda: Boolean(hasil.sudahAda),
+    menungguSejak: hasil.menungguSejak,
+    jedaDetik: hasil.jedaDetik ?? 0,
+  });
+}
+
+/** Daftar panggilan yang belum didatangi, untuk layar kasir. */
+export async function getTableCallsAction(): Promise<
+  ActionResult<{ calls: Awaited<ReturnType<typeof db.getOpenTableCalls>> }>
+> {
+  const akses = await denganAkses(() => requirePermission("pos"));
+  if (!akses.ok) return fail(akses.error);
+  return done({ calls: await db.getOpenTableCalls(akses.sesi.businessId) });
+}
+
+/** Pelayan menyatakan mejanya sudah didatangi. */
+export async function resolveTableCallAction(callId: string): Promise<ActionResult<null>> {
+  const akses = await denganAkses(() => requirePermission("pos"));
+  if (!akses.ok) return fail(akses.error);
+  const { businessId, userId } = akses.sesi;
+
+  const ok = await db.resolveTableCall(callId, businessId, userId);
+  if (!ok) return fail("Panggilan ini sudah ditutup orang lain.");
+
+  revalidatePath("/app/pos");
+  return done(null);
+}
+
 export async function createQrOrderAction(
   businessId: string,
   tableNo: string,
@@ -2141,6 +2240,111 @@ export async function confirmPaymentAction(
   return done({ orderNo: order.order_no });
 }
 
+/**
+ * Tamu selesai makan dan membayar seluruh tagihan mejanya sekaligus.
+ *
+ * Ini jalur uang utama di alur "bayar di akhir", dan urutannya disengaja:
+ *
+ *   1. Semua nota kunjungan ditandai lunas dalam SATU transaksi database.
+ *      Kalau sebagian saja yang berhasil, mejanya jadi setengah terbayar
+ *      sementara tamunya sudah pergi — dan tidak ada yang bisa memastikan
+ *      berapa yang sebenarnya diterima.
+ *
+ *   2. Poin member dan potong stok menyusul SESUDAH uangnya tercatat masuk.
+ *      Keduanya boleh gagal tanpa membatalkan pembayaran: uang yang sudah
+ *      diterima tidak boleh hilang dari catatan gara-gara perhitungan poin
+ *      bermasalah. Yang tertunda masuk antrean sinkronisasi owner.
+ */
+export async function settleTableSessionAction(
+  sessionId: string,
+  method: "cash" | "qris" | "transfer",
+  cashGiven?: number | null,
+  customerId?: string | null,
+): Promise<
+  ActionResult<{
+    orderIds: string[];
+    orderNos: string[];
+    total: number;
+    cashGiven: number | null;
+    change: number | null;
+  }>
+> {
+  const akses = await denganAkses(() => requirePermission("pos"));
+  if (!akses.ok) return fail(akses.error);
+  const { businessId, userId } = akses.sesi;
+
+  const locked = await moduleLock(businessId, "pos", "write");
+  if (locked) return fail(locked);
+
+  const hasil = await db.settleTableSession(sessionId, businessId, userId, {
+    method,
+    cashGiven,
+    customerId,
+  });
+  if (!hasil.ok || !hasil.data) {
+    return fail(hasil.error ?? "Pembayaran meja gagal diproses.");
+  }
+
+  /**
+   * POIN DIHITUNG SEKALI DARI TOTAL YANG BENAR-BENAR DIBAYAR.
+   *
+   * Ini bukan kerapian, ini selisih poin yang dirasakan tamunya. Tagihan satu
+   * meja terpecah jadi beberapa nota — empat kali pesan Rp 25.000 misalnya —
+   * dan poin yang dihitung per nota membulatkan ke bawah EMPAT KALI:
+   *
+   *     per nota   floor(25.000/10.000) x 4  =  8 poin
+   *     per bayar  floor(100.000/10.000)     =  10 poin
+   *
+   * Dan kalau tokonya memasang minimum belanja, tiap notanya bisa jatuh di
+   * bawah minimum itu sendiri-sendiri — tamu yang menghabiskan Rp 100.000
+   * pulang tanpa satu poin pun, tanpa pernah tahu kenapa.
+   *
+   * Yang dibayar tamu satu kali, jadi yang dihitung juga satu kali.
+   */
+  if (customerId) {
+    await db.earnPointsFromPurchase(
+      businessId,
+      customerId,
+      hasil.data.total,
+      userId,
+      hasil.data.orderIds[0],
+    );
+  }
+
+  for (const orderId of hasil.data.orderIds) {
+    await db.syncPaidOrder(orderId, businessId, userId, { lewatiPoin: true });
+  }
+
+  await db.recordAuditEvent({
+    businessId,
+    actorUserId: userId,
+    action: "pos.table_settled",
+    entityType: "table_session",
+    entityId: sessionId,
+    metadata: {
+      orderNos: hasil.data.orderNos,
+      total: hasil.data.total,
+      method,
+      cashGiven: hasil.data.cashGiven,
+      change: hasil.data.change,
+      customerId: customerId ?? null,
+    },
+  });
+
+  revalidatePath("/app/pos");
+  revalidatePath("/app/pos/reports");
+  revalidatePath("/app/pos/station");
+  revalidatePath("/app/finance/reports");
+
+  return done({
+    orderIds: hasil.data.orderIds,
+    orderNos: hasil.data.orderNos,
+    total: hasil.data.total,
+    cashGiven: hasil.data.cashGiven,
+    change: hasil.data.change,
+  });
+}
+
 /** Uangnya tidak pernah masuk. Pesanan ditutup, bukan dibiarkan menggantung. */
 export async function retryOrderSyncAction(): Promise<ActionResult<null>> {
   const { businessId, userId } = await requireOwner();
@@ -2168,6 +2372,62 @@ export async function markPaymentFailedAction(
     );
   revalidatePath("/app/pos");
   return done(null);
+}
+
+/**
+ * Tamu membatalkan SATU menu sebelum notanya dibayar.
+ *
+ * Kasir yang boleh melakukannya, bukan cuma owner: yang berhadapan dengan tamu
+ * yang berubah pikiran adalah kasir, dan pembatalan yang harus menunggu owner
+ * berarti tamunya menunggu — atau kasir mencari jalan di luar sistem, dan yang
+ * di luar sistem tidak meninggalkan catatan sama sekali.
+ *
+ * Yang menjaga bukan siapa yang boleh menekan, melainkan jejaknya: tiap
+ * pembatalan menyimpan alasannya, nasib makanannya, dan siapa yang melakukannya.
+ */
+export async function cancelOrderItemAction(
+  orderId: string,
+  orderItemId: string,
+  reason: string,
+  disposition: "belum_dibuat" | "sudah_dibuat_dibuang" | "sudah_dibuat_disajikan" = "belum_dibuat",
+): Promise<ActionResult<{ totalBaru: number; notaIkutBatal: boolean }>> {
+  const akses = await denganAkses(() => requirePermission("pos"));
+  if (!akses.ok) return fail(akses.error);
+  const { businessId, userId } = akses.sesi;
+
+  const locked = await moduleLock(businessId, "pos", "write");
+  if (locked) return fail(locked);
+
+  const hasil = await db.cancelOrderItem(orderId, orderItemId, businessId, userId, {
+    reason,
+    disposition,
+  });
+  if (!hasil.ok) return fail(hasil.error ?? "Menu gagal dibatalkan.");
+
+  await db.recordAuditEvent({
+    businessId,
+    actorUserId: userId,
+    action: "pos.order_item_cancelled",
+    entityType: "order",
+    entityId: orderId,
+    metadata: {
+      orderItemId,
+      reason: reason.trim(),
+      disposition,
+      totalBaru: hasil.totalBaru,
+      notaIkutBatal: hasil.notaIkutBatal,
+    },
+  });
+
+  revalidatePath("/app/pos");
+  revalidatePath("/app/pos/station");
+  revalidatePath("/app/pos/kitchen");
+  revalidatePath("/app/pos/reports");
+
+  return done({
+    totalBaru: hasil.totalBaru ?? 0,
+    notaIkutBatal: Boolean(hasil.notaIkutBatal),
+  });
 }
 
 export async function cancelOrderAction(
@@ -2938,6 +3198,54 @@ export async function deleteCategoryAction(
   revalidatePath("/app/pos");
   revalidatePath("/app/pos/menu");
   return done(null);
+}
+
+/**
+ * Bahan faktur WhatsApp satu pesanan, diminta saat kasir benar-benar mau
+ * mengirimnya.
+ *
+ * Sengaja lewat panggilan tersendiri, bukan dibawa di hasil pencarian member.
+ * Pencarian itu mengembalikan sampai dua puluh orang sekaligus dan sengaja
+ * cuma membawa nomor yang disamarkan; kalau nomor lengkap ikut di sana, setiap
+ * ketikan di kolom cari mengirim nomor WhatsApp puluhan pelanggan ke layar
+ * kasir. Di sini yang keluar cuma satu nomor, untuk satu pesanan, pada saat
+ * kasir memilih untuk mengirim.
+ */
+export async function getOrderInvoiceAction(orderId: string): Promise<ActionResult<import("./types").FakturPesanan>> {
+  const { businessId } = await requirePermission("pos");
+  if (!UUID_RE.test(orderId)) return fail("Pesanan tidak dikenali.");
+  const faktur = await db.getOrderInvoice(orderId, businessId);
+  if (!faktur) return fail("Pesanan tidak ditemukan.");
+  return done(faktur);
+}
+
+/**
+ * Tautan pendek untuk QR faktur.
+ *
+ * QR tidak lagi membawa isi fakturnya — hanya kaels.site/f/<token>. Isinya
+ * dirakit server saat token itu dibuka dari HP kasir. Dengan begitu QR-nya
+ * tetap kecil dan mudah dipindai berapa pun panjang pesanannya.
+ *
+ * Nomornya divalidasi ulang di sini. Yang memanggil tidak harus layar KAEL,
+ * dan nomor yang tersimpan akan dipakai membangun tautan wa.me — nilai
+ * sembarangan di situ bisa membelokkan kasir ke percakapan yang salah.
+ */
+export async function buatTautanFakturAction(
+  orderId: string,
+  nomor: string,
+): Promise<ActionResult<{ url: string; berlakuMenit: number }>> {
+  const { businessId, userId } = await requirePermission("pos");
+  if (!UUID_RE.test(orderId)) return fail("Pesanan tidak dikenali.");
+  if (!isValidIndonesianPhoneNumber(nomor)) {
+    return fail("Nomor WhatsApp tidak valid. Contoh: 081234567890");
+  }
+  const bersih = normalizePhoneNumber(nomor);
+  if (!bersih) return fail("Nomor WhatsApp tidak valid.");
+
+  const token = await db.createInvoiceLink(businessId, orderId, bersih, userId);
+  if (!token) return fail("Pesanan tidak ditemukan.");
+
+  return done({ url: `${site.url}/f/${token}`, berlakuMenit: db.INVOICE_LINK_MINUTES });
 }
 
 export async function setMenuAvailabilityAction(

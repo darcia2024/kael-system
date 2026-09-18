@@ -8,6 +8,7 @@ import PosChargeSetup from "./pos-charge-setup";
 import RefundLimitSetup from "./refund-limit-setup";
 import DeliveryContactSetup from "./delivery-contact-setup";
 import NotifikasiSetup from "./notifikasi-setup";
+import QrMenuModeSetup from "./qr-menu-mode-setup";
 import { BusinessMark } from "@/components/business-mark";
 import type { Business } from "@/lib/types";
 import type { ModuleStatus } from "@/lib/licensing";
@@ -38,6 +39,8 @@ export default function SettingsClient({
   storeCode,
   qris,
   posCharges,
+  qrMenuMode,
+  paymentTiming,
   refundLimits,
   modules,
   business,
@@ -51,6 +54,8 @@ export default function SettingsClient({
     merchantCity: string | null;
     nmid: string | null;
   };
+  qrMenuMode: "pesan_bayar" | "lihat_panggil";
+  paymentTiming: "di_depan" | "di_akhir";
   posCharges: { taxRate: number; serviceChargeRate: number };
   refundLimits: { maxPerTransaction: number; dailyLimitPerCashier: number };
   modules: ModuleRow[];
@@ -150,6 +155,21 @@ export default function SettingsClient({
             <div><h2 className="font-extrabold text-base text-[#0b3d2e]">Brand, White Label & WhatsApp</h2><p className="mt-1 font-mono text-[11px] text-[#527867]">Nama aplikasi, domain tenant, dan nomor pengirim WhatsApp per usaha.</p></div>
             <Link href="/app/settings/brand" className="rounded-xl bg-[#0b3d2e] hover:bg-[#0e4837] px-3.5 py-2 font-mono text-xs font-bold text-[#c8f53a] shadow-xs transition-colors">Atur Brand</Link>
           </div>
+        </section>
+
+        {/* --- ALUR PEMESANAN --- */}
+        <section className="rounded-3xl border border-[#d8e3de] bg-white p-6 shadow-[0_4px_20px_rgba(11,61,46,0.04)] space-y-4">
+          <div className="flex items-center gap-2 border-b border-[#d8e3de] pb-4">
+            <QrCode size={20} className="text-[#167052]" />
+            <div>
+              <h2 className="font-extrabold text-base text-[#0b3d2e]">Alur Pemesanan Tamu</h2>
+              <p className="font-mono text-[11px] text-[#527867]">
+                Menentukan siapa yang mengetik pesanan dan kapan uangnya diterima
+              </p>
+            </div>
+          </div>
+
+          <QrMenuModeSetup mode={qrMenuMode} timing={paymentTiming} />
         </section>
 
         <section className="rounded-3xl border border-[#d8e3de] bg-white p-6 shadow-[0_4px_20px_rgba(11,61,46,0.04)] space-y-4">

@@ -137,6 +137,38 @@ export async function alertNewIncomingOrder(options: {
 }
 
 /**
+ * Bel dan panggilan suara saat tamu menekan "panggil pelayan" dari meja.
+ *
+ * Kalimatnya sengaja menyebut nomor mejanya di depan, bukan di belakang:
+ * kasir yang sedang melayani antrean cuma menangkap sepotong kalimat, dan yang
+ * harus tertangkap lebih dulu adalah MEJA MANA — bukan bahwa ada panggilan.
+ */
+export async function alertTableCall(options: {
+  tableNo: string;
+  withVoice?: boolean;
+}) {
+  /**
+   * Dibunyikan DUA kali, bukan sekali.
+   *
+   * Sekali bunyi gampang tertelan suara kafe yang ramai, atau lewat begitu saja
+   * saat kasir sedang menunduk menghitung uang. Yang kedua yang menangkapnya —
+   * dan sesudah itu berhenti, karena bunyi yang terus-menerus justru membuat
+   * orang belajar mengabaikannya.
+   */
+  for (let ke = 0; ke < 2; ke++) {
+    await playCafeChime(0.6);
+
+    if (options.withVoice) {
+      await playVoiceAnnouncement(`Meja ${options.tableNo} sudah siap memesan.`);
+    }
+
+    // Jeda pendek di antara keduanya supaya terdengar sebagai dua panggilan,
+    // bukan satu bunyi panjang yang menggema.
+    if (ke === 0) await new Promise((r) => setTimeout(r, 600));
+  }
+}
+
+/**
  * Payload biner ESC/POS untuk membunyikan alarm fisik / kitchen buzzer printer
  * yang terhubung ke port RJ11 atau internal buzzer printer thermal.
  */

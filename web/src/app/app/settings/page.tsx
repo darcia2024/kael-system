@@ -65,6 +65,8 @@ export default async function SettingsPage() {
         merchantCity: business?.qris_merchant_city ?? null,
         nmid: business?.qris_nmid ?? null,
       }}
+      qrMenuMode={business?.qr_menu_mode === "lihat_panggil" ? "lihat_panggil" : "pesan_bayar"}
+      paymentTiming={business?.pos_payment_timing === "di_akhir" ? "di_akhir" : "di_depan"}
       posCharges={{
         taxRate: Number(business?.pos_tax_rate ?? 0),
         serviceChargeRate: Number(business?.pos_service_charge_rate ?? 0),
