@@ -5185,6 +5185,58 @@ export const db = {
     };
   },
 
+  /**
+   * Kasir mengisi ongkir pesanan antar yang sudah masuk.
+   *
+   * Ongkir tidak bisa diketahui pelanggan saat memesan dari kartunya — tokonya
+   * yang tahu jarak dan tarif kurirnya. Jadi pesanan antar masuk dengan ongkir
+   * nol, dan kasir mengisinya sebelum mengirim faktur.
+   *
+   * Totalnya digeser dengan selisih, bukan dihitung ulang dari subtotal. Nota
+   * bisa sudah berubah sejak masuk (item dibatalkan, diskon), dan yang paling
+   * tahu total terkininya adalah kolom total itu sendiri. Postgres membaca
+   * semua ekspresi SET dari baris LAMA, jadi `total - delivery_fee` di sini
+   * memakai ongkir yang sebelumnya.
+   *
+   * Hanya selama belum dibayar. Mengubah ongkir pesanan yang sudah lunas
+   * berarti mengubah angka yang sudah diterima kasir dan masuk laporan laci.
+   */
+  async setDeliveryFee(
+    orderId: string, businessId: string, fee: number,
+  ): Promise<{ total: number; deliveryFee: number } | null> {
+    const row = one<{ total: number; delivery_fee: number }>(await sql`
+      UPDATE orders
+      SET total = total - delivery_fee + ${fee}, delivery_fee = ${fee}
+      WHERE id = ${orderId} AND business_id = ${businessId}
+        AND service_type = 'delivery' AND payment_status = 'pending'
+      RETURNING total, delivery_fee
+    `);
+    return row ? { total: num(row.total), deliveryFee: num(row.delivery_fee) } : null;
+  },
+
+  /**
+   * Pesanan antar member yang masih menunggu, untuk membatasi banjir pesanan.
+   *
+   * Kartu member terbuka tanpa login — yang menjaganya cuma token. Tanpa batas,
+   * satu token yang bocor cukup untuk memenuhi antrean kasir dengan pesanan
+   * palsu atas nama member itu.
+   */
+  async countPendingMemberDeliveries(businessId: string, customerId: string): Promise<number> {
+    const [row] = await sql`
+      SELECT count(*)::int AS n FROM orders
+      WHERE business_id = ${businessId} AND customer_id = ${customerId}
+        AND service_type = 'delivery' AND payment_status = 'pending'
+        AND created_at > NOW() - INTERVAL '1 day'
+    `;
+    return num(row?.n);
+  },
+
+  /** Toko ini menerima pesanan antar? Tanpa baris setelan berarti ya. */
+  async isDeliveryEnabled(businessId: string): Promise<boolean> {
+    const [row] = await sql`SELECT delivery_enabled FROM ordering_settings WHERE business_id = ${businessId}`;
+    return row ? Boolean(row.delivery_enabled) : true;
+  },
+
   /** Berapa lama tautan QR faktur berlaku. Cukup untuk dipindai, tidak lebih. */
   INVOICE_LINK_MINUTES: 15,
 

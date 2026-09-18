@@ -3230,6 +3230,146 @@ export async function getOrderInvoiceAction(orderId: string): Promise<ActionResu
  * dan nomor yang tersimpan akan dipakai membangun tautan wa.me — nilai
  * sembarangan di situ bisa membelokkan kasir ke percakapan yang salah.
  */
+/** Batas pesanan antar yang boleh menunggu sekaligus untuk satu member. */
+const BATAS_ANTAR_MENUNGGU = 3;
+
+/**
+ * Pesanan antar dari kartu member.
+ *
+ * Sebelum ini "pesan delivery" di kartu member cuma membuka WhatsApp dengan
+ * templat kosong — pelanggan mengetik sendiri menu dan alamatnya di chat, lalu
+ * kasir menyalinnya ulang ke layar kasir satu per satu. Sekarang pesanannya
+ * masuk ke antrean kasir sebagai pesanan sungguhan.
+ *
+ * Yang dikirim peramban cuma token kartu, id menu, jumlah, alamat, dan catatan.
+ * Siapa membernya, berapa harganya, dan berapa pajaknya dibaca server:
+ *   - member dari token, bukan customer_id yang dikirim klien — kalau klien
+ *     boleh menyebut customer_id-nya sendiri, siapa pun bisa memesan atas nama
+ *     member lain dan poin belanjanya jatuh ke orang yang salah;
+ *   - harga dari database, bukan dari keranjang di HP;
+ *   - pajak dan service dengan tarif yang sama persis dengan kasir.
+ *
+ * Ongkir masuk sebagai nol. Pelanggan tidak bisa tahu ongkirnya — tokonya yang
+ * tahu jarak dan tarif kurir. Kasir mengisinya di antrean lewat
+ * setDeliveryFeeAction, lalu mengirim faktur berisi total plus ongkir.
+ */
+export async function createMemberDeliveryOrderAction(input: {
+  token: string;
+  items: { menu_item_id: string; qty: number; note?: string }[];
+  alamat: string;
+  catatan?: string;
+  caraBayar: "cash" | "transfer";
+}): Promise<ActionResult<{ orderNo: string; subtotal: number }>> {
+  const customer = input.token ? await db.getCustomerByToken(input.token) : null;
+  if (!customer) return fail("Kartu member tidak dikenali.");
+  const businessId = customer.business_id;
+
+  // Alasannya tidak disebutkan ke pelanggan: dia tidak perlu tahu tokonya
+  // telat memperpanjang langganan.
+  if (await moduleLock(businessId, "pos", "write")) {
+    return fail("Pesan antar sedang tidak tersedia. Silakan hubungi tokonya langsung.");
+  }
+  if (!(await db.isDeliveryEnabled(businessId))) {
+    return fail("Toko ini sedang tidak menerima pesanan antar.");
+  }
+
+  const alamat = input.alamat?.trim() ?? "";
+  if (alamat.length < 10) return fail("Tulis alamat pengantarannya lebih lengkap.");
+  if (alamat.length > 300) return fail("Alamat terlalu panjang, maksimal 300 karakter.");
+  const catatan = input.catatan?.trim().slice(0, 200) || undefined;
+  if (input.caraBayar !== "cash" && input.caraBayar !== "transfer") {
+    return fail("Cara bayar tidak dikenal.");
+  }
+
+  if (!input.items?.length) return fail("Keranjang masih kosong.");
+  if (input.items.length > 30) return fail("Terlalu banyak jenis menu dalam satu pesanan.");
+
+  if ((await db.countPendingMemberDeliveries(businessId, customer.id)) >= BATAS_ANTAR_MENUNGGU) {
+    return fail(
+      "Masih ada pesanan antarmu yang menunggu dikonfirmasi toko. Tunggu kabar dari kasir dulu, ya.",
+    );
+  }
+
+  const menu = await db.getMenuItems(businessId);
+  const byId = new Map(menu.map((m) => [m.id, m]));
+  const lines = [];
+  for (const line of input.items) {
+    const item = byId.get(line.menu_item_id);
+    if (!item || !item.is_available) return fail("Ada menu yang sudah tidak tersedia.");
+    const qty = Math.floor(Number(line.qty));
+    if (!Number.isFinite(qty) || qty < 1 || qty > 99) return fail("Jumlah item tidak wajar.");
+    lines.push({
+      menu_item_id: item.id,
+      name: item.name,
+      price: Number(item.price),
+      qty,
+      note: line.note?.trim().slice(0, 120) || undefined,
+    });
+  }
+
+  const business = await db.getBusiness(businessId);
+  const totals = calculateCartTotals(
+    lines.map((l) => ({ price: l.price, qty: l.qty })),
+    0,
+    Number(business?.pos_tax_rate ?? 0),
+    Number(business?.pos_service_charge_rate ?? 0),
+  );
+
+  const ordering = await db.checkOrderingAvailability(businessId, totals.total);
+  if (!ordering.available) return fail(ordering.error);
+
+  const owner = (await db.getUsers(businessId)).find((u) => u.role === "owner");
+  if (!owner) return fail("Toko belum siap menerima pesanan.");
+
+  const { order } = await db.createOrder(
+    businessId,
+    {
+      channel: "qr",
+      service_type: "delivery",
+      status: "open",
+      payment_status: "pending",
+      fulfillment_status: "pending",
+      customer_id: customer.id,
+      customer_name: customer.name,
+      delivery: {
+        name: customer.name?.trim() || "Member",
+        phone: customer.phone,
+        address: alamat,
+        fee: 0,
+        note: catatan,
+      },
+      tax: totals.tax,
+      service_charge: totals.serviceCharge,
+      payment_method: input.caraBayar,
+      created_by: owner.id,
+    },
+    lines,
+  );
+
+  revalidatePath("/app/pos");
+  return done({ orderNo: order.order_no, subtotal: totals.total });
+}
+
+/** Kasir mengisi ongkir pesanan antar sebelum mengirim fakturnya. */
+export async function setDeliveryFeeAction(
+  orderId: string,
+  fee: number,
+): Promise<ActionResult<{ total: number; deliveryFee: number }>> {
+  const { businessId } = await requirePermission("pos");
+  if (!UUID_RE.test(orderId)) return fail("Pesanan tidak dikenali.");
+  const ongkir = Math.round(Number(fee));
+  if (!Number.isFinite(ongkir) || ongkir < 0) return fail("Ongkir tidak valid.");
+  // Batas kewajaran. Ongkir di atas ini hampir pasti salah ketik satu nol.
+  if (ongkir > 1_000_000) return fail("Ongkir terlalu besar. Periksa lagi angkanya.");
+
+  const hasil = await db.setDeliveryFee(orderId, businessId, ongkir);
+  if (!hasil) {
+    return fail("Ongkir cuma bisa diubah untuk pesanan antar yang belum dibayar.");
+  }
+  revalidatePath("/app/pos");
+  return done(hasil);
+}
+
 export async function buatTautanFakturAction(
   orderId: string,
   nomor: string,

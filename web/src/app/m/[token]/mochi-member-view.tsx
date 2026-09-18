@@ -31,6 +31,8 @@ import {
   AlertCircle,
   Coffee,
   Plus,
+  Minus,
+  ShoppingBag,
   Search,
   Lock,
 } from "lucide-react";
@@ -42,6 +44,7 @@ import { formatRupiah, formatBusinessDate, formatBusinessDateTime } from "@/lib/
 import QrCodeComponent from "@/components/qr-code";
 import { updateMarketingPreferenceAction, updateCustomerBirthdayAction } from "@/lib/actions";
 import { siteHost } from "@/lib/site";
+import MemberDeliveryCart from "./member-delivery-cart";
 
 export default function MochiMemberView({
   customer,
@@ -87,6 +90,12 @@ export default function MochiMemberView({
   const [menuSearchQuery, setMenuSearchQuery] = useState("");
   const [selectedMenuCategory, setSelectedMenuCategory] = useState<string>("all");
   const [selectedMenuDetail, setSelectedMenuDetail] = useState<MenuItem | null>(null);
+
+  // Keranjang pesan antar: id menu -> jumlah. Hidup di sini, bukan di
+  // komponen keranjang, karena yang mengisinya modal detail menu.
+  const [keranjang, setKeranjang] = useState<Record<string, number>>({});
+  const [keranjangTerbuka, setKeranjangTerbuka] = useState(false);
+  const [jumlahTambah, setJumlahTambah] = useState(1);
 
   // Balance visibility toggle
   const [hideBalance, setHideBalance] = useState(false);
@@ -150,32 +159,6 @@ export default function MochiMemberView({
   // Selected card preview tab (default to current tier)
   const [selectedCardTier, setSelectedCardTier] = useState<"reguler" | "perak" | "emas">(userCurrentTierKey);
 
-  /**
-   * Tautan pesan delivery ke WhatsApp toko.
-   *
-   * Pesannya sudah memuat nama dan nomor member beserta tautan kartunya, supaya
-   * kasir tidak perlu menanyakan ulang siapa yang memesan — dan poin belanjanya
-   * bisa langsung ditempelkan ke member yang benar.
-   */
-  const pesanDelivery = useMemo(() => {
-    const nomorToko = cardSettings?.whatsapp?.trim();
-    if (!nomorToko || !customer || !business) return null;
-    const isi =
-      `Halo ${business.name}! Saya mau pesan delivery.
-
-` +
-      `Nama: ${customer.name ?? "-"}
-` +
-      `Member: https://${siteHost}/m/${customer.token}
-
-` +
-      `Pesanan saya:
-- 
-
-Alamat pengantaran:
-`;
-    return `https://wa.me/${nomorToko}?text=${encodeURIComponent(isi)}`;
-  }, [cardSettings, customer, business]);
 
   if (!customer || !business || !program) return null;
 
@@ -449,28 +432,33 @@ Alamat pengantaran:
           <>
             {/* Quick Action Grid */}
             {/*
-              PESAN DELIVERY
+              PESAN ANTAR
 
-              Yang MENGIRIM pesannya pelanggan, ke nomor toko — arahnya sengaja
-              begitu. Nama dan nomor member sudah ikut di dalam pesannya, jadi
-              tokonya langsung tahu siapa yang memesan dan bisa menempelkan
-              transaksinya ke member itu tanpa bertanya dua kali.
+              Dulu tombol ini membuka WhatsApp dengan templat kosong, dan
+              pelanggan mengetik sendiri menu serta alamatnya di chat. Sekarang
+              pesanannya dipilih dari menu, masuk keranjang, lalu terkirim ke
+              antrean kasir lengkap dengan alamat. Kasir yang menentukan ongkir
+              dan mengirim totalnya balik lewat WhatsApp.
 
-              Tanpa nomor toko tombolnya tidak digambar sama sekali. wa.me tanpa
-              nomor membuka pemilih kontak, dan pelanggan yang mengirim pesanan
-              ke orang acak lebih buruk daripada tidak ada tombolnya.
+              Keranjang kosong: tombolnya membawa ke daftar menu, karena di
+              situlah pesanan dimulai. Keranjang terisi: langsung membuka
+              keranjangnya.
             */}
-            {pesanDelivery && (
-              <a
-                href={pesanDelivery}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="mb-4 flex items-center justify-center gap-2 rounded-2xl bg-[#0b3d2e] py-3.5 text-sm font-black text-white shadow-md active:scale-[0.98] transition-transform"
-              >
-                <MessageCircle size={17} strokeWidth={2.4} />
-                <span>Pesan Delivery via WhatsApp</span>
-              </a>
-            )}
+            <button
+              type="button"
+              onClick={() => {
+                if (Object.keys(keranjang).length) {
+                  setKeranjangTerbuka(true);
+                } else {
+                  setActiveNavTab("menu");
+                  safeScroll(0);
+                }
+              }}
+              className="mb-4 flex w-full items-center justify-center gap-2 rounded-2xl bg-[#0b3d2e] py-3.5 text-sm font-black text-white shadow-md active:scale-[0.98] transition-transform"
+            >
+              <ShoppingBag size={17} strokeWidth={2.4} />
+              <span>Pesan Antar</span>
+            </button>
 
             <section aria-label="Menu Cepat" className="grid grid-cols-4 gap-2 text-center pb-5">
               <button
@@ -1822,6 +1810,15 @@ Alamat pengantaran:
         </div>
       )}
 
+      <MemberDeliveryCart
+        token={customer.token}
+        menuItems={menuItems}
+        keranjang={keranjang}
+        setKeranjang={setKeranjang}
+        terbuka={keranjangTerbuka}
+        setTerbuka={setKeranjangTerbuka}
+      />
+
       {/* =================================================================== */}
       {/* MODAL 5: DETAIL MENU & PESAN DELIVERY / DI KASIR                   */}
       {/* =================================================================== */}
@@ -1881,40 +1878,61 @@ Alamat pengantaran:
               </p>
             </div>
 
-            {/* Hubungi Nomor Mochi untuk Pesan Delivery */}
-            <div className="rounded-2xl border border-emerald-200/90 p-3.5 bg-gradient-to-br from-[#f2f8f5] to-white space-y-2.5 shadow-2xs">
-              <div className="flex items-center justify-between text-[#1c2d26]">
-                <div className="flex items-center gap-1.5 text-xs font-black">
-                  <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-[#0b3d2e] text-[#c8f53a]">
-                    <MessageCircle size={13} />
-                  </div>
-                  <span>Pesan Delivery via WhatsApp</span>
-                </div>
-                <span className="rounded-full bg-emerald-100 text-emerald-800 px-2 py-0.5 text-[9.5px] font-bold">
-                  Antar Langsung
-                </span>
-              </div>
-              <p className="text-[11px] text-[#556b62] leading-relaxed">
-                Mau pesan menu ini diantar langsung ke rumah atau kantor? Hubungi WhatsApp resmi <strong className="text-[#0b3d2e]">{business.name || "Mochi Cafe & Resto"}</strong>:
-              </p>
-              {(() => {
-                const rawPhone = business.phone || cardSettings?.whatsapp || "081234567890";
-                const cleanWaPhone = String(rawPhone).replace(/\D/g, "").replace(/^0/, "62");
-                const waDeliveryMsg = `Halo ${business.name || "Mochi Cafe & Resto"}, saya member (${customer.name} - ${customer.phone}). Saya ingin pesan delivery menu *${selectedMenuDetail.name}* (${formatRupiah(selectedMenuDetail.price)}). Mohon info ongkir dan ketersediaannya ya. Terima kasih!`;
-                const waDeliveryLink = `https://wa.me/${cleanWaPhone}?text=${encodeURIComponent(waDeliveryMsg)}`;
+            {/*
+              Tambah ke pesanan antar.
 
-                return (
-                  <a
-                    href={waDeliveryLink}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#0b3d2e] py-2.5 px-3 text-xs font-black text-[#c8f53a] hover:bg-[#124634] shadow-xs active:scale-95 transition-all"
+              Blok ini dulu membuka WhatsApp untuk SATU menu saja, dan nomor
+              tujuannya jatuh ke "081234567890" kalau toko belum mengisi nomor —
+              pesanan pelanggan beserta nama dan nomor HP-nya terkirim ke nomor
+              karangan yang bisa jadi milik orang asing. Sekarang menunya masuk
+              keranjang, dan pesanannya terkirim ke antrean kasir sendiri.
+            */}
+            <div className="space-y-2.5 rounded-2xl border border-emerald-200/90 bg-gradient-to-br from-[#f2f8f5] to-white p-3.5 shadow-2xs">
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1.5 text-xs font-black text-[#1c2d26]">
+                  <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-[#0b3d2e] text-[#c8f53a]">
+                    <ShoppingBag size={13} />
+                  </span>
+                  Pesan antar
+                </span>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setJumlahTambah((n) => Math.max(1, n - 1))}
+                    aria-label="Kurangi jumlah"
+                    className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#d8e3de] text-[#355247]"
                   >
-                    <MessageCircle size={15} />
-                    <span>Hubungi WhatsApp Mochi ({rawPhone})</span>
-                  </a>
-                );
-              })()}
+                    <Minus size={13} />
+                  </button>
+                  <span className="w-6 text-center font-mono text-sm font-black">{jumlahTambah}</span>
+                  <button
+                    type="button"
+                    onClick={() => setJumlahTambah((n) => Math.min(99, n + 1))}
+                    aria-label="Tambah jumlah"
+                    className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#d8e3de] text-[#355247]"
+                  >
+                    <Plus size={13} />
+                  </button>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  const id = selectedMenuDetail.id;
+                  setKeranjang({ ...keranjang, [id]: Math.min(99, (keranjang[id] ?? 0) + jumlahTambah) });
+                  setJumlahTambah(1);
+                  setSelectedMenuDetail(null);
+                }}
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#0b3d2e] px-3 py-2.5 text-xs font-black text-[#c8f53a] shadow-xs transition-all hover:bg-[#124634] active:scale-95"
+              >
+                <Plus size={15} />
+                <span>Tambah ke pesanan antar · {formatRupiah(selectedMenuDetail.price * jumlahTambah)}</span>
+              </button>
+              {keranjang[selectedMenuDetail.id] ? (
+                <p className="text-center text-[10.5px] font-bold text-[#167052]">
+                  Sudah ada {keranjang[selectedMenuDetail.id]} di keranjang
+                </p>
+              ) : null}
             </div>
 
             <div className="flex items-center gap-2 pt-1">

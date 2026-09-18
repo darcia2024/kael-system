@@ -22,6 +22,7 @@ import {
   markPaymentFailedAction,
   cancelOrderAction,
   setFulfillmentAction,
+  setDeliveryFeeAction,
 } from "@/lib/actions";
 import {
   serviceTypeLabel,
@@ -33,6 +34,94 @@ import type { Order, OrderItem, MenuItem } from "@/lib/types";
 import PosReplaceRefundModal from "./pos-replace-refund-modal";
 
 type Antrean = Order & { items: OrderItem[] };
+
+/**
+ * Blok pesanan antar di kartu antrean: ke mana dikirim, dan berapa ongkirnya.
+ *
+ * Pesanan antar dari kartu member masuk dengan ongkir nol — pelanggan tidak
+ * bisa tahu ongkirnya, tokonya yang tahu. Di sinilah kasir mengisinya, sebelum
+ * menekan Faktur untuk mengirim total plus ongkir ke WhatsApp pelanggan.
+ *
+ * Ongkir cuma bisa diubah selama belum dibayar. Sesudah lunas, angkanya sudah
+ * diterima kasir dan masuk ke hitungan laci; mengubahnya berarti mengubah uang
+ * yang sudah diterima. Server menolaknya juga, bukan cuma layar ini.
+ */
+function OngkirAntar({
+  order,
+  isMochi,
+  onTersimpan,
+}: {
+  order: Antrean;
+  isMochi?: boolean;
+  onTersimpan: (total: number, deliveryFee: number) => void;
+}) {
+  const sudahAda = Number(order.delivery_fee) || 0;
+  const [ongkir, setOngkir] = useState(sudahAda ? String(sudahAda) : "");
+  const [simpan, setSimpan] = useState(false);
+  const [galat, setGalat] = useState<string | null>(null);
+  const bisaUbah = order.payment_status === "pending";
+  const angka = Number(ongkir.replace(/[^\d]/g, "")) || 0;
+  const berubah = angka !== sudahAda;
+
+  const kirim = async () => {
+    setGalat(null);
+    setSimpan(true);
+    const res = await setDeliveryFeeAction(order.id, angka);
+    setSimpan(false);
+    if (!res.ok) {
+      setGalat(res.error);
+      return;
+    }
+    onTersimpan(res.data.total, res.data.deliveryFee);
+  };
+
+  return (
+    <div className={`space-y-2 rounded-xl p-3 font-mono text-[11px] ${
+      isMochi ? "border border-[#cfe3d8] bg-[#f4f9f6]" : "border border-[#dedee8] bg-[#fcfcfe]"
+    }`}>
+      <div>
+        <p className="font-black text-[#0b3d2e]">Antar ke {order.delivery_name || "pelanggan"}</p>
+        {order.delivery_address && (
+          <p className="mt-0.5 font-sans text-[12px] leading-relaxed text-[#2f4b3f]">{order.delivery_address}</p>
+        )}
+        {order.delivery_note && (
+          <p className="mt-0.5 font-sans text-[11px] italic text-[#527867]">Catatan: {order.delivery_note}</p>
+        )}
+      </div>
+
+      {bisaUbah ? (
+        <div className="space-y-1.5">
+          <div className="flex items-center gap-1.5">
+            <span className="shrink-0 font-bold text-[#0b3d2e]">Ongkir Rp</span>
+            <input
+              value={ongkir}
+              onChange={(e) => setOngkir(e.target.value)}
+              inputMode="numeric"
+              placeholder="0"
+              className="h-9 min-w-0 flex-1 rounded-lg border border-[#d8e3de] bg-white px-2 text-sm font-black text-[#0b3d2e] focus:border-[#167052] focus:outline-none"
+            />
+            <button
+              type="button"
+              onClick={() => void kirim()}
+              disabled={simpan || !berubah}
+              className="h-9 shrink-0 rounded-lg bg-[#0b3d2e] px-3 text-[11px] font-black text-[#c8f53a] disabled:opacity-40"
+            >
+              {simpan ? "..." : "Simpan"}
+            </button>
+          </div>
+          {!sudahAda && (
+            <p className="font-sans text-[10.5px] leading-relaxed text-amber-800">
+              Isi ongkir dulu, baru kirim faktur — supaya total yang diterima pelanggan sudah termasuk ongkir.
+            </p>
+          )}
+          {galat && <p className="font-sans text-[10.5px] font-bold text-[#b4400f]">{galat}</p>}
+        </div>
+      ) : (
+        <p className="font-bold text-[#0b3d2e]">Ongkir {formatRupiah(sudahAda)}</p>
+      )}
+    </div>
+  );
+}
 
 /**
  * Antrean pesanan swalayan di layar kasir.
@@ -351,6 +440,20 @@ export default function OrderQueue({
                     </li>
                   ))}
                 </ul>
+
+                {o.service_type === "delivery" && (
+                  <OngkirAntar
+                    order={o}
+                    isMochi={isMochi}
+                    onTersimpan={(total, deliveryFee) => {
+                      const updated = localOrders.map((x) =>
+                        x.id === o.id ? { ...x, total, delivery_fee: deliveryFee } : x,
+                      );
+                      setLocalOrders(updated);
+                      if (onOrdersChange) onOrdersChange(updated);
+                    }}
+                  />
+                )}
 
                 {menungguBayar ? (
                   <div className={`space-y-2 border-t pt-2.5 ${isMochi ? "border-[#e0ebe5]" : "border-[#dedee8]"}`}>

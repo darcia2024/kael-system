@@ -787,6 +787,31 @@ export default function PosClient({
     setMejaDibayar(null);
     setAttachedCustomer(null);
 
+    /**
+     * Nota yang BARUSAN dilunasi, menurut server — bukan semua nota di meja.
+     * Kalau sebagian nota meja sudah dibayar lebih dulu, mencetak semuanya
+     * berarti struk memuat menu yang tidak termasuk dalam uang yang baru saja
+     * diterima, dan barisnya tidak akan pernah cocok dengan totalnya.
+     */
+    const dilunasi = table.orders.filter((o) => res.data.orderIds.includes(o.id));
+    const sumber = dilunasi.length ? dilunasi : table.orders;
+    const jumlah = (f: (o: (typeof sumber)[number]) => number) =>
+      sumber.reduce((s, o) => s + (Number(f(o)) || 0), 0);
+
+    /**
+     * Rincian dijumlahkan dari nota-notanya, lalu dicocokkan dengan total dari
+     * server. Kalau tidak cocok — misalnya ada nota yang berubah sejak denah
+     * dimuat — rinciannya dilepas dan yang tercetak cuma totalnya. Struk yang
+     * barisnya tidak menjumlah ke totalnya sendiri lebih merugikan daripada
+     * struk yang kurang rinci: tamu yang menghitungnya ulang akan bertanya.
+     */
+    const subtotalMeja = jumlah((o) => o.subtotal);
+    const diskonMeja = jumlah((o) => o.discount);
+    const pajakMeja = jumlah((o) => o.tax);
+    const serviceMeja = jumlah((o) => o.service_charge);
+    const rincianCocok =
+      Math.abs(subtotalMeja - diskonMeja + pajakMeja + serviceMeja - res.data.total) <= 1;
+
     // Struk pelanggan langsung keluar; rangkap lain tinggal ditekan dari popup.
     await handlePrintThreePlyBluetooth(
       {
@@ -794,7 +819,7 @@ export default function PosClient({
         table_no: table.tableNo,
         service_type: "dine_in",
         created_at: new Date().toISOString(),
-        items: table.orders.flatMap((ord) =>
+        items: sumber.flatMap((ord) =>
           ord.items.map((i) => ({
             name_snapshot: i.name_snapshot,
             qty: i.qty,
@@ -806,6 +831,17 @@ export default function PosClient({
         total: res.data.total,
         payment_method: metode,
         customer_name: attachedCustomer?.name ?? null,
+        subtotal: rincianCocok ? subtotalMeja : res.data.total,
+        discount: rincianCocok ? diskonMeja : 0,
+        tax: rincianCocok ? pajakMeja : 0,
+        service_charge: rincianCocok ? serviceMeja : 0,
+        /**
+         * Uang yang diserahkan tamu dan kembaliannya, dari SERVER. Kasir sudah
+         * melihat kembaliannya di layar sebelum menekan tombol; struknya harus
+         * memuat angka yang sama, dan yang menyimpan angka resminya server.
+         */
+        cash_given: res.data.cashGiven,
+        cash_change: res.data.change,
       },
       "pelanggan",
       undefined,
@@ -1060,6 +1096,20 @@ export default function PosClient({
           total: completed.total,
           payment_method: completed.paymentMethod,
           customer_name: completed.customerName,
+          /*
+           * Rincian uang dikirim eksplisit dari `completed`. Sebelumnya cetak
+           * otomatis ini mengandalkan fungsi cetak membaca completedOrder, tapi
+           * ia dipanggil dari setTimeout dengan closure render SEBELUMNYA — yang
+           * terbaca completedOrder lama. Struk otomatis bisa mencetak tunai dan
+           * kembalian transaksi sebelumnya, atau tidak sama sekali.
+           */
+          subtotal: completed.subtotal,
+          discount: completed.discount,
+          tax: completed.tax,
+          service_charge: completed.serviceCharge,
+          delivery_fee: completed.deliveryFee,
+          cash_given: completed.cashGiven ?? null,
+          cash_change: completed.paymentMethod === "cash" ? completed.change : null,
         });
       }, 250);
     }
@@ -1388,6 +1438,19 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
     total: number | string;
     payment_method: string;
     customer_name?: string | null;
+    /**
+     * Rincian uang pesanan INI. Kalau customOrder diberikan, semua angka di
+     * struk diambil dari sini dan tidak pernah dari completedOrder — lihat
+     * catatan di badan fungsinya.
+     */
+    subtotal?: number;
+    discount?: number;
+    tax?: number;
+    service_charge?: number;
+    delivery_fee?: number;
+    /** Uang tunai yang diserahkan tamu, dan kembaliannya. */
+    cash_given?: number | null;
+    cash_change?: number | null;
   },
   /**
    * Rangkap mana yang dicetak.
@@ -1429,6 +1492,48 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
     const activeCashier = activeCashiers.find((staff) => staff.id === selectedStaffId)?.name || activeCashiers[0]?.name || (completedOrder?.cashierName || "Kasir");
     const numTotal = Number(orderData.total) || 0;
 
+    /**
+     * Angka uang di struk diambil dari pesanan yang DICETAK, bukan dari
+     * completedOrder.
+     *
+     * Versi sebelumnya selalu membaca subtotal, pajak, service, tunai, dan
+     * kembalian dari completedOrder — state transaksi kasir biasa — walaupun
+     * yang dicetak pesanan lain yang dikirim lewat customOrder. Akibatnya dua:
+     *   - Struk tutup meja tidak pernah memuat uang yang diterima dan
+     *     kembaliannya, karena completedOrder kosong saat meja dibayar. Di toko
+     *     yang bayar di akhir, itu berarti SEMUA struk makan di tempat.
+     *   - Kalau completedOrder masih memegang transaksi sebelumnya, struk
+     *     pesanan berikutnya mencetak angka transaksi itu. Tunai dan kembalian
+     *     orang lain di struk tamu yang salah.
+     */
+    /*
+     * Angka dipaksa jadi number. Antrean meneruskan baris pesanan mentah dari
+     * database, dan driver Postgres mengembalikan kolom uang sebagai string —
+     * "82000" yang dijumlahkan dengan angka menjadi sambungan teks, bukan
+     * penjumlahan.
+     */
+    const angka = (v: unknown): number | undefined =>
+      v === null || v === undefined || v === "" ? undefined : Number(v);
+    const rincian = customOrder
+      ? {
+          subtotal: angka(customOrder.subtotal) ?? numTotal,
+          discount: angka(customOrder.discount) ?? 0,
+          tax: angka(customOrder.tax) ?? 0,
+          serviceCharge: angka(customOrder.service_charge) ?? 0,
+          deliveryFee: angka(customOrder.delivery_fee) ?? 0,
+          cashGiven: angka(customOrder.cash_given),
+          cashChange: angka(customOrder.cash_change),
+        }
+      : {
+          subtotal: completedOrder ? completedOrder.subtotal : numTotal,
+          discount: completedOrder ? completedOrder.discount : 0,
+          tax: completedOrder ? completedOrder.tax : 0,
+          serviceCharge: completedOrder ? completedOrder.serviceCharge : 0,
+          deliveryFee: completedOrder ? completedOrder.deliveryFee : 0,
+          cashGiven: completedOrder?.cashGiven,
+          cashChange: completedOrder?.change,
+        };
+
     const receiptText = generateThreePlyReceiptText({
       businessName: business?.name || "Mochi Cafe n Resto",
       businessAddress: business?.address || "",
@@ -1445,15 +1550,15 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
         price: Number(i.unit_price_snapshot) || Math.round(Number(i.subtotal) / Math.max(1, i.qty)) || 0,
         note: i.note || undefined,
       })),
-      subtotal: completedOrder ? completedOrder.subtotal : numTotal,
-      discount: completedOrder ? completedOrder.discount : 0,
-      tax: completedOrder ? completedOrder.tax : 0,
-      serviceCharge: completedOrder ? completedOrder.serviceCharge : 0,
-      deliveryFee: completedOrder ? completedOrder.deliveryFee : 0,
+      subtotal: rincian.subtotal,
+      discount: rincian.discount,
+      tax: rincian.tax,
+      serviceCharge: rincian.serviceCharge,
+      deliveryFee: rincian.deliveryFee,
       total: numTotal,
       paymentMethod: orderData.payment_method || "tunai",
-      cashGiven: completedOrder?.cashGiven,
-      cashChange: completedOrder?.change,
+      cashGiven: rincian.cashGiven,
+      cashChange: rincian.cashChange,
       customerName: orderData.customer_name,
       bagian,
       bagiTagihan,
