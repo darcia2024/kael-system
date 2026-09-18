@@ -45,7 +45,7 @@ import { formatBusinessDateTime, formatRupiah } from "@/lib/formatters";
 import { PAYMENT_STATUS_LABEL, serviceTypeLabel } from "@/lib/pos-engine";
 import { retryOrderSyncAction, deleteFeedbackAction } from "@/lib/actions";
 import ClearTestDataModal from "../clear-test-data-modal";
-import { Trash2 } from "lucide-react";
+import { Trash2, MoreHorizontal } from "lucide-react";
 import TableQrModal from "../table-qr-modal";
 import { isMochiBusiness } from "@/lib/mochi-brand";
 import { BusinessMark } from "@/components/business-mark";
@@ -142,6 +142,15 @@ export default function OwnerDashboardClient({
   const [feedbackFilter, setFeedbackFilter] = useState<"all" | "complaints" | "positive">("all");
   const [showReportsModal, setShowReportsModal] = useState(false);
   const [showClearModal, setShowClearModal] = useState(false);
+
+  /*
+   * Tiga keadaan yang cuma dipakai di layar HP. Di layar lebar semuanya tampil
+   * berdampingan seperti sebelumnya; di HP, menumpuk semuanya membuat dasbor
+   * ini hampir tujuh layar panjangnya.
+   */
+  const [menuAksiHp, setMenuAksiHp] = useState(false);
+  const [tabMenuHp, setTabMenuHp] = useState<"laku" | "kurang">("laku");
+  const [feedLengkapHp, setFeedLengkapHp] = useState(false);
 
   const reasonMap = useMemo(() => {
     const map = new Map<string, string>();
@@ -312,13 +321,14 @@ export default function OwnerDashboardClient({
                     isMochi ? "text-white" : "text-[#232331]"
                   }`}
                 >
-                  Dashboard Owner Utama
+                  <span className="sm:hidden">Dashboard</span>
+                  <span className="hidden sm:inline">Dashboard Owner Utama</span>
                 </h1>
                 <span
                   className={
                     isMochi
-                      ? "shrink-0 rounded-full bg-[#c8f53a] px-2 py-0.5 font-mono text-[9px] font-black text-[#073829] shadow-xs"
-                      : "shrink-0 rounded-md border border-[#16a34a] bg-[#dcfce7] px-1.5 py-0.5 font-mono text-[9px] font-bold text-[#15803d]"
+                      ? "hidden shrink-0 rounded-full bg-[#c8f53a] px-2 py-0.5 font-mono text-[9px] font-black text-[#073829] shadow-xs sm:inline"
+                      : "hidden shrink-0 rounded-md border border-[#16a34a] bg-[#dcfce7] px-1.5 py-0.5 font-mono text-[9px] font-bold text-[#15803d] sm:inline"
                   }
                 >
                   LIVE
@@ -331,12 +341,119 @@ export default function OwnerDashboardClient({
                     : "truncate font-mono text-[10px] text-[#7b7b8e]"
                 }
               >
-                Pusat Kendali Bisnis · {business?.name ?? "Mochi Cafe n Resto"} · tersinkron {latestSync}
+                <span className="sm:hidden">tersinkron {latestSync}</span>
+                <span className="hidden sm:inline">
+                  Pusat Kendali Bisnis · {business?.name ?? "Mochi Cafe n Resto"} · tersinkron {latestSync}
+                </span>
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-1.5 sm:gap-2">
+          {/*
+            Di bawah 1280px: satu baris saja — muat ulang, buka kasir, dan menu
+            "lainnya". Grup tombol lengkap di bawahnya butuh sekitar 640px: di HP
+            375px judul dasbor terhimpit sampai lebarnya nol dan tombol paling
+            kanan terpotong di luar layar, di tablet 768px judulnya tinggal
+            "Das…", dan di 1024px teks tombolnya terlipat jadi dua baris.
+          */}
+          <div className="relative flex shrink-0 items-center gap-1.5 xl:hidden">
+            <button
+              type="button"
+              onClick={refresh}
+              aria-label="Muat ulang data"
+              className={
+                isMochi
+                  ? "flex h-9 w-9 items-center justify-center rounded-xl border border-emerald-700/50 bg-[#144f3d] text-white"
+                  : "flex h-9 w-9 items-center justify-center rounded-xl border border-[#232331] bg-white"
+              }
+            >
+              {refreshing ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}
+            </button>
+            <Link
+              href="/app/pos"
+              aria-label="Buka kasir"
+              className={
+                isMochi
+                  ? "flex h-9 items-center gap-1 rounded-xl bg-[#c8f53a] px-2.5 font-mono text-[11px] font-black text-[#073829]"
+                  : "flex h-9 items-center gap-1 rounded-xl border-2 border-[#232331] bg-[#d9ff57] px-2.5 font-mono text-[11px] font-black"
+              }
+            >
+              <ShoppingBag size={14} />
+              <span>Kasir</span>
+            </Link>
+            <button
+              type="button"
+              onClick={() => setMenuAksiHp((v) => !v)}
+              aria-label="Aksi lainnya"
+              aria-expanded={menuAksiHp}
+              className={
+                isMochi
+                  ? "flex h-9 w-9 items-center justify-center rounded-xl border border-emerald-700/50 bg-[#144f3d] text-white"
+                  : "flex h-9 w-9 items-center justify-center rounded-xl border border-[#232331] bg-white"
+              }
+            >
+              <MoreHorizontal size={17} />
+            </button>
+
+            {menuAksiHp && (
+              <>
+                {/* Ketuk di luar menu untuk menutupnya. */}
+                <button
+                  type="button"
+                  aria-label="Tutup menu"
+                  onClick={() => setMenuAksiHp(false)}
+                  className="fixed inset-0 z-40 cursor-default"
+                />
+                <div className="absolute right-0 top-11 z-50 w-56 overflow-hidden rounded-2xl border border-[#d8e3de] bg-white py-1 text-[#1c2d26] shadow-xl">
+                  {[
+                    { label: "Pilihan laporan", icon: FileText, aksi: () => setShowReportsModal(true) },
+                    { label: "Cetak QR meja", icon: QrCode, aksi: () => setShowTableQrModal(true) },
+                    { label: "Kelola menu", icon: UtensilsCrossed, href: "/app/pos/menu" },
+                  ].map((a) =>
+                    a.href ? (
+                      <Link
+                        key={a.label}
+                        href={a.href}
+                        className="flex items-center gap-2.5 px-3.5 py-2.5 text-[13px] font-bold hover:bg-[#f4f8f6]"
+                      >
+                        <a.icon size={15} className="text-[#167052]" /> {a.label}
+                      </Link>
+                    ) : (
+                      <button
+                        key={a.label}
+                        type="button"
+                        onClick={() => {
+                          setMenuAksiHp(false);
+                          a.aksi?.();
+                        }}
+                        className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left text-[13px] font-bold hover:bg-[#f4f8f6]"
+                      >
+                        <a.icon size={15} className="text-[#167052]" /> {a.label}
+                      </button>
+                    ),
+                  )}
+                  {/*
+                    Aksi yang menghapus data ditaruh terakhir dan dipisah garis.
+                    Di bilah atas tadinya dia tombol merah di tengah deretan, tepat
+                    di bawah jempol.
+                  */}
+                  <div className="my-1 border-t border-[#eef3f0]" />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMenuAksiHp(false);
+                      setShowClearModal(true);
+                    }}
+                    className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left text-[13px] font-bold text-rose-700 hover:bg-rose-50"
+                  >
+                    <Trash2 size={15} /> Hapus data testing
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+
+          <div className="hidden items-center gap-2 xl:flex">
             <button
               type="button"
               onClick={refresh}
@@ -361,8 +478,7 @@ export default function OwnerDashboardClient({
               title="Buka Pilihan Laporan Lengkap"
             >
               <FileText size={14} className={isMochi ? "text-[#c8f53a]" : "text-[#7958d8]"} />
-              <span className="hidden sm:inline">Pilihan Laporan ▾</span>
-              <span className="sm:hidden">Laporan ▾</span>
+              <span>Pilihan Laporan ▾</span>
             </button>
             <button
               type="button"
@@ -375,7 +491,7 @@ export default function OwnerDashboardClient({
               title="Generator & Cetak QR Meja"
             >
               <QrCode size={14} />
-              <span className="hidden sm:inline">Cetak QR Meja</span>
+              <span>Cetak QR Meja</span>
             </button>
             <button
               type="button"
@@ -388,8 +504,7 @@ export default function OwnerDashboardClient({
               title="Pembersihan data transaksi & ulasan testing"
             >
               <Trash2 size={13} />
-              <span className="hidden sm:inline">Hapus Data Testing</span>
-              <span className="sm:hidden">Hapus Test</span>
+              <span>Hapus Data Testing</span>
             </button>
             <Link
               href="/app/pos/menu"
@@ -401,8 +516,7 @@ export default function OwnerDashboardClient({
               title="Pengaturan & Kelola Daftar Menu"
             >
               <UtensilsCrossed size={14} className={isMochi ? "text-[#c8f53a]" : "text-[#7958d8]"} />
-              <span className="hidden sm:inline">Kelola Menu</span>
-              <span className="sm:hidden">Menu</span>
+              <span>Kelola Menu</span>
             </Link>
             <Link
               href="/app/pos"
@@ -413,23 +527,23 @@ export default function OwnerDashboardClient({
               }
             >
               <ShoppingBag size={14} />
-              <span className="hidden sm:inline">Buka Kasir</span>
+              <span>Buka Kasir</span>
             </Link>
           </div>
         </div>
       </header>
 
       {/* Main Content */}
-      <main className="mx-auto w-full max-w-7xl space-y-4 p-3 sm:space-y-6 sm:p-6">
+      <main className="mx-auto w-full max-w-7xl space-y-3 p-3 sm:space-y-6 sm:p-6">
         {/* PUSAT PILIHAN LAPORAN OWNER (EXECUTIVE QUICK SWITCHER) */}
         <section
           className={
             isMochi
-              ? "rounded-3xl border border-[#d8e3de] bg-white p-4 sm:p-5 shadow-[0_4px_20px_rgba(11,61,46,0.04)]"
-              : "border-2 border-[#232331] bg-white p-4 shadow-ink-md"
+              ? "rounded-3xl border border-[#d8e3de] bg-white p-3 sm:p-5 shadow-[0_4px_20px_rgba(11,61,46,0.04)]"
+              : "border-2 border-[#232331] bg-white p-3 shadow-ink-md sm:p-4"
           }
         >
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3.5 border-b border-[#edf4f0]">
+          <div className="flex flex-row items-center justify-between gap-2 pb-2.5 sm:pb-3.5 border-b border-[#edf4f0]">
             <div>
               <div className="flex items-center gap-2">
                 <span
@@ -444,17 +558,18 @@ export default function OwnerDashboardClient({
                     isMochi ? "text-[#0b3d2e]" : "text-[#232331]"
                   }`}
                 >
-                  Pusat Laporan &amp; Analitik Toko
+                  <span className="sm:hidden">Laporan</span>
+                  <span className="hidden sm:inline">Pusat Laporan &amp; Analitik Toko</span>
                 </h2>
                 <span
-                  className={`rounded-full px-2 py-0.2 font-mono text-[9px] font-bold ${
+                  className={`hidden rounded-full px-2 py-0.2 font-mono text-[9px] font-bold sm:inline ${
                     isMochi ? "bg-[#edf8f3] text-[#167052]" : "bg-[#f5f3ff] text-[#6d4cc4]"
                   }`}
                 >
                   NAVIGASI CEPAT
                 </span>
               </div>
-              <p className={`text-[11px] mt-0.5 ${isMochi ? "text-[#637970]" : "text-[#7b7b8e]"}`}>
+              <p className={`hidden text-[11px] mt-0.5 sm:block ${isMochi ? "text-[#637970]" : "text-[#7b7b8e]"}`}>
                 Pilih laporan yang ingin dipantau dengan satu klik:
               </p>
             </div>
@@ -462,22 +577,28 @@ export default function OwnerDashboardClient({
             <button
               type="button"
               onClick={() => setShowReportsModal(true)}
-              className={`self-start sm:self-auto inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 font-mono text-[11px] font-bold transition-all ${
+              className={`inline-flex shrink-0 items-center gap-1.5 rounded-xl px-2.5 py-1.5 font-mono text-[11px] font-bold transition-all sm:px-3 ${
                 isMochi
                   ? "bg-[#edf8f3] text-[#0b3d2e] hover:bg-[#e0f2ea] border border-emerald-300"
                   : "bg-[#f7f6fc] text-[#232331] hover:bg-[#ecebf1] border border-[#dedee8]"
               }`}
             >
-              <span>Katalog Semua Laporan ▾</span>
+              <span className="sm:hidden">Semua ▾</span>
+              <span className="hidden sm:inline">Katalog Semua Laporan ▾</span>
               <ChevronRight size={13} />
             </button>
           </div>
 
           {/* Quick Switcher Cards / Pills */}
-          <div className="mt-3.5 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 sm:gap-2.5">
+          {/*
+            Di HP: satu baris yang digeser, bukan tiga baris ubin dua kolom. Enam
+            tujuan yang sama tetap ada; bedanya cuma tidak lagi mendorong angka
+            omzet ke layar kedua.
+          */}
+          <div className="-mx-3 mt-2.5 flex snap-x gap-2 overflow-x-auto px-3 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:mx-0 sm:mt-3.5 sm:grid sm:grid-cols-3 sm:gap-2.5 sm:overflow-visible sm:px-0 sm:pb-0 lg:grid-cols-6">
             {/* 1. Ringkasan Utama (Current) */}
             <div
-              className={`p-3 rounded-2xl border transition-all ${
+              className={`w-[132px] shrink-0 snap-start p-2.5 sm:w-auto sm:p-3 rounded-2xl border transition-all ${
                 isMochi
                   ? "border-emerald-600 bg-gradient-to-br from-[#0b3d2e] to-[#124d3b] text-white shadow-sm"
                   : "border-2 border-[#232331] bg-[#232331] text-white shadow-ink-xs"
@@ -490,13 +611,13 @@ export default function OwnerDashboardClient({
                 <CheckCircle2 size={12} className="text-[#c8f53a]" />
               </div>
               <p className="mt-1 font-bold text-xs sm:text-sm">Ringkasan Hari Ini</p>
-              <p className="text-[10px] text-emerald-200/80 line-clamp-1">Omzet, jam ramai, menu</p>
+              <p className="hidden text-[10px] text-emerald-200/80 line-clamp-1 sm:block">Omzet, jam ramai, menu</p>
             </div>
 
             {/* 2. Laporan Penjualan & Profit */}
             <Link
               href="/app/pos/reports"
-              className={`group p-3 rounded-2xl border transition-all ${
+              className={`group w-[132px] shrink-0 snap-start p-2.5 sm:w-auto sm:p-3 rounded-2xl border transition-all ${
                 isMochi
                   ? "border-[#d8e3de] bg-[#fbfdfc] hover:border-emerald-400 hover:bg-[#f4faf6]"
                   : "border border-[#dedee8] bg-[#fcfcfe] hover:border-[#232331]"
@@ -511,13 +632,13 @@ export default function OwnerDashboardClient({
               <p className={`mt-1 font-bold text-xs sm:text-sm ${isMochi ? "text-[#0b3d2e]" : "text-[#232331]"}`}>
                 Penjualan Kasir
               </p>
-              <p className="text-[10px] text-[#7b7b8e] line-clamp-1">Laba kotor, shift, audit</p>
+              <p className="hidden text-[10px] text-[#7b7b8e] line-clamp-1 sm:block">Laba kotor, shift, audit</p>
             </Link>
 
             {/* 3. Laporan Loyalty & Member */}
             <Link
               href="/app/loyalty/analytics"
-              className={`group p-3 rounded-2xl border transition-all ${
+              className={`group w-[132px] shrink-0 snap-start p-2.5 sm:w-auto sm:p-3 rounded-2xl border transition-all ${
                 isMochi
                   ? "border-[#d8e3de] bg-[#fbfdfc] hover:border-emerald-400 hover:bg-[#f4faf6]"
                   : "border border-[#dedee8] bg-[#fcfcfe] hover:border-[#232331]"
@@ -532,13 +653,13 @@ export default function OwnerDashboardClient({
               <p className={`mt-1 font-bold text-xs sm:text-sm ${isMochi ? "text-[#0b3d2e]" : "text-[#232331]"}`}>
                 Loyalty &amp; Member
               </p>
-              <p className="text-[10px] text-[#7b7b8e] line-clamp-1">Pertumbuhan &amp; repeat</p>
+              <p className="hidden text-[10px] text-[#7b7b8e] line-clamp-1 sm:block">Pertumbuhan &amp; repeat</p>
             </Link>
 
             {/* 4. Laporan Review & Kepuasan */}
             <Link
               href="/app/review/reports"
-              className={`group p-3 rounded-2xl border transition-all ${
+              className={`group w-[132px] shrink-0 snap-start p-2.5 sm:w-auto sm:p-3 rounded-2xl border transition-all ${
                 isMochi
                   ? "border-[#d8e3de] bg-[#fbfdfc] hover:border-emerald-400 hover:bg-[#f4faf6]"
                   : "border border-[#dedee8] bg-[#fcfcfe] hover:border-[#232331]"
@@ -553,13 +674,13 @@ export default function OwnerDashboardClient({
               <p className={`mt-1 font-bold text-xs sm:text-sm ${isMochi ? "text-[#0b3d2e]" : "text-[#232331]"}`}>
                 Review Pelanggan
               </p>
-              <p className="text-[10px] text-[#7b7b8e] line-clamp-1">Google &amp; keluhan privat</p>
+              <p className="hidden text-[10px] text-[#7b7b8e] line-clamp-1 sm:block">Google &amp; keluhan privat</p>
             </Link>
 
             {/* 5. Laporan Keuangan */}
             <Link
               href="/app/finance/reports"
-              className={`group p-3 rounded-2xl border transition-all ${
+              className={`group w-[132px] shrink-0 snap-start p-2.5 sm:w-auto sm:p-3 rounded-2xl border transition-all ${
                 isMochi
                   ? "border-[#d8e3de] bg-[#fbfdfc] hover:border-emerald-400 hover:bg-[#f4faf6]"
                   : "border border-[#dedee8] bg-[#fcfcfe] hover:border-[#232331]"
@@ -574,13 +695,13 @@ export default function OwnerDashboardClient({
               <p className={`mt-1 font-bold text-xs sm:text-sm ${isMochi ? "text-[#0b3d2e]" : "text-[#232331]"}`}>
                 Keuangan &amp; Kas
               </p>
-              <p className="text-[10px] text-[#7b7b8e] line-clamp-1">Laba rugi &amp; arus kas</p>
+              <p className="hidden text-[10px] text-[#7b7b8e] line-clamp-1 sm:block">Laba rugi &amp; arus kas</p>
             </Link>
 
             {/* 6. Laporan SDM / Absensi */}
             <Link
               href="/app/hr/attendance"
-              className={`group p-3 rounded-2xl border transition-all ${
+              className={`group w-[132px] shrink-0 snap-start p-2.5 sm:w-auto sm:p-3 rounded-2xl border transition-all ${
                 isMochi
                   ? "border-[#d8e3de] bg-[#fbfdfc] hover:border-emerald-400 hover:bg-[#f4faf6]"
                   : "border border-[#dedee8] bg-[#fcfcfe] hover:border-[#232331]"
@@ -595,7 +716,7 @@ export default function OwnerDashboardClient({
               <p className={`mt-1 font-bold text-xs sm:text-sm ${isMochi ? "text-[#0b3d2e]" : "text-[#232331]"}`}>
                 Absensi Staf
               </p>
-              <p className="text-[10px] text-[#7b7b8e] line-clamp-1">Kehadiran kasir &amp; tim</p>
+              <p className="hidden text-[10px] text-[#7b7b8e] line-clamp-1 sm:block">Kehadiran kasir &amp; tim</p>
             </Link>
           </div>
         </section>
@@ -704,13 +825,13 @@ export default function OwnerDashboardClient({
         </section>
 
         {/* Irama Penjualan & Cara Bayar */}
-        <section className="grid gap-4 lg:grid-cols-[1.45fr_0.9fr]">
+        <section className="grid gap-3 sm:gap-4 lg:grid-cols-[1.45fr_0.9fr]">
           {/* Irama Penjualan Hari Ini */}
           <div
             className={
               isMochi
-                ? "rounded-3xl border border-[#d8e3de] bg-white p-5 shadow-[0_4px_20px_rgba(11,61,46,0.04)] sm:p-6"
-                : "border-2 border-[#232331] bg-white p-4 shadow-ink-md sm:p-5"
+                ? "rounded-3xl border border-[#d8e3de] bg-white p-3.5 shadow-[0_4px_20px_rgba(11,61,46,0.04)] sm:p-6"
+                : "border-2 border-[#232331] bg-white p-3 shadow-ink-md sm:p-5"
             }
           >
             <div
@@ -726,7 +847,7 @@ export default function OwnerDashboardClient({
                 >
                   Irama penjualan hari ini
                 </h2>
-                <p className={`mt-0.5 text-[11px] ${isMochi ? "text-[#637970]" : "text-[#7b7b8e]"}`}>
+                <p className={`mt-0.5 hidden text-[11px] sm:block ${isMochi ? "text-[#637970]" : "text-[#7b7b8e]"}`}>
                   Jam ramai terlihat dari transaksi kasir yang sudah lunas.
                 </p>
               </div>
@@ -742,7 +863,7 @@ export default function OwnerDashboardClient({
             </div>
 
             {dashboard.hourlySales.length ? (
-              <div className="mt-5 flex h-40 items-end gap-1.5 sm:h-52 sm:gap-2">
+              <div className="mt-3 flex h-32 items-end gap-1 sm:mt-5 sm:h-52 sm:gap-2">
                 {dashboard.hourlySales.map((slot) => (
                   <div key={slot.hour} className="flex min-w-0 flex-1 flex-col items-center gap-1.5">
                     <div className="group relative flex w-full flex-1 items-end">
@@ -777,8 +898,8 @@ export default function OwnerDashboardClient({
           <div
             className={
               isMochi
-                ? "rounded-3xl border border-[#d8e3de] bg-white p-5 shadow-[0_4px_20px_rgba(11,61,46,0.04)] sm:p-6"
-                : "border-2 border-[#232331] bg-white p-4 shadow-ink-md sm:p-5"
+                ? "rounded-3xl border border-[#d8e3de] bg-white p-3.5 shadow-[0_4px_20px_rgba(11,61,46,0.04)] sm:p-6"
+                : "border-2 border-[#232331] bg-white p-3 shadow-ink-md sm:p-5"
             }
           >
             <div
@@ -793,11 +914,11 @@ export default function OwnerDashboardClient({
               >
                 Cara pelanggan bayar
               </h2>
-              <p className={`mt-0.5 text-[11px] ${isMochi ? "text-[#637970]" : "text-[#7b7b8e]"}`}>
+              <p className={`mt-0.5 hidden text-[11px] sm:block ${isMochi ? "text-[#637970]" : "text-[#7b7b8e]"}`}>
                 Masuk otomatis dari transaksi POS.
               </p>
             </div>
-            <div className="mt-3.5 space-y-3.5">
+            <div className="mt-2.5 space-y-2.5 sm:mt-3.5 sm:space-y-3.5">
               {paymentRows.map(({ label, value, icon: Icon, color, barColor }) => (
                 <div key={label}>
                   <div className="flex items-center justify-between gap-2 text-xs">
@@ -835,17 +956,17 @@ export default function OwnerDashboardClient({
         <section
           className={
             isMochi
-              ? "rounded-3xl border border-[#d8e3de] bg-white p-5 shadow-[0_4px_20px_rgba(11,61,46,0.04)] sm:p-6"
-              : "border-2 border-[#232331] bg-white p-4 shadow-ink-md sm:p-5"
+              ? "rounded-3xl border border-[#d8e3de] bg-white p-3.5 shadow-[0_4px_20px_rgba(11,61,46,0.04)] sm:p-6"
+              : "border-2 border-[#232331] bg-white p-3 shadow-ink-md sm:p-5"
           }
         >
           <div
-            className={`flex flex-col gap-3 pb-4 sm:flex-row sm:items-center sm:justify-between ${
+            className={`flex flex-col gap-2.5 pb-3 sm:gap-3 sm:pb-4 sm:flex-row sm:items-center sm:justify-between ${
               isMochi ? "border-b border-[#e5ece8]" : "border-b border-[#dedee8]"
             }`}
           >
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <span
                   className={`flex h-7 w-7 items-center justify-center rounded-xl ${
                     isMochi ? "bg-[#edf8f3] text-[#167052]" : "bg-[#f0edff] text-[#6d4cc4]"
@@ -858,7 +979,8 @@ export default function OwnerDashboardClient({
                     isMochi ? "text-[#0b3d2e]" : "text-[#232331]"
                   }`}
                 >
-                  Analisis Performa Menu Kasir
+                  <span className="sm:hidden">Performa menu</span>
+                  <span className="hidden sm:inline">Analisis Performa Menu Kasir</span>
                 </h2>
                 <span
                   className={`rounded-full px-2.5 py-0.5 font-mono text-[10px] font-bold ${
@@ -879,17 +1001,18 @@ export default function OwnerDashboardClient({
                   title="Buka Pengaturan Menu"
                 >
                   <UtensilsCrossed size={11} />
-                  <span>+ Kelola / Tambah Menu</span>
+                  <span className="sm:hidden">Kelola</span>
+                  <span className="hidden sm:inline">+ Kelola / Tambah Menu</span>
                 </Link>
               </div>
-              <p className={`mt-1 text-xs ${isMochi ? "text-[#637970]" : "text-[#7b7b8e]"}`}>
+              <p className={`mt-1 hidden text-xs sm:block ${isMochi ? "text-[#637970]" : "text-[#7b7b8e]"}`}>
                 Perbandingan menu paling laku (Best Seller) dan menu kurang laku (Slow Moving) dari transaksi kasir lunas.
               </p>
             </div>
 
             {/* Timeframe Switcher */}
             <div
-              className={`inline-flex self-start rounded-xl p-1 sm:self-auto ${
+              className={`flex w-full rounded-xl p-1 sm:inline-flex sm:w-auto sm:self-auto ${
                 isMochi
                   ? "border border-[#d8e3de] bg-[#edf4f0]"
                   : "border-2 border-[#232331] bg-[#ecebf1]"
@@ -898,7 +1021,7 @@ export default function OwnerDashboardClient({
               <button
                 type="button"
                 onClick={() => setMenuPeriod("today")}
-                className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-all ${
+                className={`flex-1 rounded-lg px-2 py-1.5 text-xs font-bold transition-all sm:flex-none sm:px-3 ${
                   menuPeriod === "today"
                     ? isMochi
                       ? "bg-[#0b3d2e] text-[#c8f53a] shadow-xs"
@@ -913,7 +1036,7 @@ export default function OwnerDashboardClient({
               <button
                 type="button"
                 onClick={() => setMenuPeriod("weekly")}
-                className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-all ${
+                className={`flex-1 rounded-lg px-2 py-1.5 text-xs font-bold transition-all sm:flex-none sm:px-3 ${
                   menuPeriod === "weekly"
                     ? isMochi
                       ? "bg-[#0b3d2e] text-[#c8f53a] shadow-xs"
@@ -923,12 +1046,13 @@ export default function OwnerDashboardClient({
                     : "text-[#7b7b8e] hover:text-[#232331]"
                 }`}
               >
-                7 Hari (Mingguan)
+                <span className="sm:hidden">7 hari</span>
+                <span className="hidden sm:inline">7 Hari (Mingguan)</span>
               </button>
               <button
                 type="button"
                 onClick={() => setMenuPeriod("monthly")}
-                className={`rounded-lg px-3 py-1.5 text-xs font-bold transition-all ${
+                className={`flex-1 rounded-lg px-2 py-1.5 text-xs font-bold transition-all sm:flex-none sm:px-3 ${
                   menuPeriod === "monthly"
                     ? isMochi
                       ? "bg-[#0b3d2e] text-[#c8f53a] shadow-xs"
@@ -938,15 +1062,49 @@ export default function OwnerDashboardClient({
                     : "text-[#7b7b8e] hover:text-[#232331]"
                 }`}
               >
-                30 Hari (Bulanan)
+                <span className="sm:hidden">30 hari</span>
+                <span className="hidden sm:inline">30 Hari (Bulanan)</span>
               </button>
             </div>
           </div>
 
-          <div className="mt-5 grid gap-4 lg:grid-cols-2">
+          {/*
+            Di bawah lebar lg kedua daftar ditumpuk, dan masing-masing bisa
+            delapan baris — enam belas baris sebelum pembaca sampai ke review.
+            Dijadikan tab: yang dilihat satu per satu, isinya tetap sama.
+          */}
+          <div
+            className={`mt-3 flex rounded-xl p-1 lg:hidden ${
+              isMochi ? "bg-[#edf4f0]" : "border border-[#dedee8] bg-[#f7f6fc]"
+            }`}
+          >
+            {([
+              { k: "laku", label: `🏆 Paling laku (${currentBestSellers.length})` },
+              { k: "kurang", label: `🐢 Kurang laku (${currentSlowMovers.length})` },
+            ] as const).map((t) => (
+              <button
+                key={t.k}
+                type="button"
+                onClick={() => setTabMenuHp(t.k)}
+                className={`flex-1 rounded-lg py-1.5 text-[11px] font-black transition-colors ${
+                  tabMenuHp === t.k
+                    ? isMochi
+                      ? "bg-white text-[#0b3d2e] shadow-xs"
+                      : "bg-white text-[#232331] shadow-ink-xs"
+                    : isMochi
+                      ? "text-[#52665e]"
+                      : "text-[#5c5c70]"
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="mt-3 grid gap-4 lg:mt-5 lg:grid-cols-2">
             {/* Kolom Menu Paling Laku */}
             <div
-              className={`rounded-2xl p-4 sm:p-5 ${
+              className={`${tabMenuHp === "laku" ? "" : "hidden"} rounded-2xl p-3 sm:p-5 lg:block ${
                 isMochi
                   ? "border border-emerald-200/90 bg-[#f7fcf9]"
                   : "border border-[#bbf7d0] bg-[#f0fdf4]/60"
@@ -1094,7 +1252,7 @@ export default function OwnerDashboardClient({
 
             {/* Kolom Menu Kurang Laku */}
             <div
-              className={`rounded-2xl p-4 sm:p-5 ${
+              className={`${tabMenuHp === "kurang" ? "" : "hidden"} rounded-2xl p-3 sm:p-5 lg:block ${
                 isMochi
                   ? "border border-amber-200/90 bg-[#fffdfa]"
                   : "border border-[#fed7aa] bg-[#fffaf5]"
@@ -1206,7 +1364,7 @@ export default function OwnerDashboardClient({
 
           {/* Strategic Insight Box */}
           <div
-            className={`mt-4 flex items-start gap-3 rounded-2xl p-4 ${
+            className={`mt-4 hidden items-start gap-3 rounded-2xl p-4 sm:flex ${
               isMochi
                 ? "border border-dashed border-emerald-300 bg-[#edf8f3]"
                 : "border border-dashed border-[#ddd9ff] bg-[#fbfaff]"
@@ -1238,26 +1396,27 @@ export default function OwnerDashboardClient({
         <section id="laporan-review"
           className={
             isMochi
-              ? "rounded-3xl border border-[#d8e3de] bg-white p-5 shadow-[0_4px_20px_rgba(11,61,46,0.04)] sm:p-6"
-              : "border-2 border-[#232331] bg-white p-4 shadow-ink-md sm:p-5"
+              ? "rounded-3xl border border-[#d8e3de] bg-white p-3.5 shadow-[0_4px_20px_rgba(11,61,46,0.04)] sm:p-6"
+              : "border-2 border-[#232331] bg-white p-3 shadow-ink-md sm:p-5"
           }
         >
           <div
-            className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 ${
+            className={`flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 sm:gap-3 sm:pb-4 ${
               isMochi ? "border-b border-[#e5ece8]" : "border-b border-[#dedee8]"
             }`}
           >
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <h2
                   className={`text-sm font-black sm:text-base ${
                     isMochi ? "text-[#0b3d2e]" : "text-[#232331]"
                   }`}
                 >
-                  Laporan Review &amp; Kepuasan Pelanggan
+                  <span className="sm:hidden">Review pelanggan</span>
+                  <span className="hidden sm:inline">Laporan Review &amp; Kepuasan Pelanggan</span>
                 </h2>
                 <span
-                  className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 font-mono text-[9px] font-black ${
+                  className={`hidden items-center gap-1 rounded-full px-2.5 py-0.5 font-mono text-[9px] font-black sm:inline-flex ${
                     isMochi
                       ? "bg-[#c8f53a] text-[#073829]"
                       : "bg-[#dcfce7] text-[#15803d]"
@@ -1266,7 +1425,7 @@ export default function OwnerDashboardClient({
                   <ShieldCheck size={12} /> SMART ROUTING AKTIF
                 </span>
               </div>
-              <p className={`mt-1 text-[11px] leading-relaxed max-w-2xl ${isMochi ? "text-[#637970]" : "text-[#7b7b8e]"}`}>
+              <p className={`mt-1 hidden text-[11px] leading-relaxed max-w-2xl sm:block ${isMochi ? "text-[#637970]" : "text-[#7b7b8e]"}`}>
                 ⭐ <strong>Bintang 4–5:</strong> Otomatis dialihkan ke Google Review untuk mendongkrak reputasi publik toko.{" "}
                 🔒 <strong>Bintang 1–3:</strong> Disaring privat ke dashboard ini agar komplain pelanggan cepat tertangani tanpa merusak rating publik.
               </p>
@@ -1278,16 +1437,23 @@ export default function OwnerDashboardClient({
                   isMochi ? "text-[#167052] hover:text-[#0b3d2e]" : "text-[#6d4cc4]"
                 }`}
               >
-                Buka Halaman Khusus &amp; Filter <ChevronRight size={13} />
+                <span className="sm:hidden">Lihat halaman review</span>
+                <span className="hidden sm:inline">Buka Halaman Khusus &amp; Filter</span>
+                <ChevronRight size={13} />
               </Link>
             </div>
           </div>
 
           {/* Review KPI Cards */}
-          <div className="mt-4 grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+          {/*
+            Tiga kolom juga di HP. Sebelumnya ditumpuk satu kolom, jadi tiga
+            angka pendek menghabiskan tinggi hampir satu layar. Di HP labelnya
+            dipendekkan dan kalimat keterangannya disembunyikan; angkanya sama.
+          */}
+          <div className="mt-3 grid grid-cols-3 gap-2 sm:mt-4 sm:gap-2.5">
             {/* Card 1: Rata-rata Rating */}
             <div
-              className={`p-3.5 sm:p-4 ${
+              className={`p-2.5 sm:p-4 ${
                 isMochi
                   ? "rounded-2xl border border-[#e0ebe5] bg-[#fbfdfc]"
                   : "border border-[#dedee8] bg-[#fcfcfe]"
@@ -1295,15 +1461,16 @@ export default function OwnerDashboardClient({
             >
               <div className="flex items-center justify-between">
                 <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-[#7b7b8e]">
-                  Skor Kepuasan
+                  <span className="sm:hidden">Skor</span>
+                  <span className="hidden sm:inline">Skor Kepuasan</span>
                 </span>
-                <span className="flex items-center gap-1 text-amber-500">
+                <span className="hidden items-center gap-1 text-amber-500 sm:flex">
                   <Star size={14} className="fill-amber-400 text-amber-400" />
                 </span>
               </div>
-              <div className="mt-2 flex items-baseline gap-2">
+              <div className="mt-1 flex flex-wrap items-baseline gap-x-1 sm:mt-2 sm:gap-2">
                 <span
-                  className={`font-mono text-2xl font-black ${
+                  className={`font-mono text-xl font-black sm:text-2xl ${
                     isMochi ? "text-[#0b3d2e]" : "text-[#232331]"
                   }`}
                 >
@@ -1311,14 +1478,14 @@ export default function OwnerDashboardClient({
                 </span>
                 <span className="font-mono text-xs text-[#7b7b8e]">/ 5.0</span>
               </div>
-              <p className="mt-1 text-[10.5px] text-[#637970]">
+              <p className="mt-1 hidden text-[10.5px] text-[#637970] sm:block">
                 Total <strong>{feedbackSummary?.total ?? 0}</strong> penilaian masuk
               </p>
             </div>
 
             {/* Card 2: Ulasan Positif Bintang 4-5 (Direct Google) */}
             <div
-              className={`p-3.5 sm:p-4 ${
+              className={`p-2.5 sm:p-4 ${
                 isMochi
                   ? "rounded-2xl border border-emerald-200 bg-[#edf8f3]"
                   : "border border-[#86efac] bg-[#f0fdf4]"
@@ -1326,24 +1493,25 @@ export default function OwnerDashboardClient({
             >
               <div className="flex items-center justify-between">
                 <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-emerald-800">
-                  Direct ke Google Review (⭐ 4–5)
+                  <span className="sm:hidden">⭐ 4–5</span>
+                  <span className="hidden sm:inline">Direct ke Google Review (⭐ 4–5)</span>
                 </span>
-                <Sparkles size={15} className="text-emerald-600" />
+                <Sparkles size={15} className="hidden text-emerald-600 sm:block" />
               </div>
-              <div className="mt-2 flex items-baseline gap-2">
-                <span className="font-mono text-2xl font-black text-emerald-900">
+              <div className="mt-1 flex flex-wrap items-baseline gap-x-1 sm:mt-2 sm:gap-2">
+                <span className="font-mono text-xl font-black sm:text-2xl text-emerald-900">
                   {Math.max(0, (feedbackSummary?.total ?? 0) - (feedbackSummary?.lowCount ?? 0))}
                 </span>
                 <span className="font-mono text-xs text-emerald-700">ulasan</span>
               </div>
-              <p className="mt-1 text-[10.5px] text-emerald-800 font-medium">
+              <p className="mt-1 hidden text-[10.5px] text-emerald-800 font-medium sm:block">
                 ✓ Otomatis dialihkan ke Google Review
               </p>
             </div>
 
             {/* Card 3: Keluhan Privat Bintang 1-3 (Dilindungi di Dashboard) */}
             <div
-              className={`p-3.5 sm:p-4 ${
+              className={`p-2.5 sm:p-4 ${
                 (feedbackSummary?.lowCount ?? 0) > 0
                   ? isMochi
                     ? "rounded-2xl border border-amber-300 bg-amber-50/90"
@@ -1355,13 +1523,14 @@ export default function OwnerDashboardClient({
             >
               <div className="flex items-center justify-between">
                 <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-amber-900">
-                  Masukan Privat (⭐ 1–3)
+                  <span className="sm:hidden">⭐ 1–3</span>
+                  <span className="hidden sm:inline">Masukan Privat (⭐ 1–3)</span>
                 </span>
-                <ShieldCheck size={15} className="text-amber-600" />
+                <ShieldCheck size={15} className="hidden text-amber-600 sm:block" />
               </div>
-              <div className="mt-2 flex items-baseline gap-2">
+              <div className="mt-1 flex flex-wrap items-baseline gap-x-1 sm:mt-2 sm:gap-2">
                 <span
-                  className={`font-mono text-2xl font-black ${
+                  className={`font-mono text-xl font-black sm:text-2xl ${
                     (feedbackSummary?.lowCount ?? 0) > 0 ? "text-amber-900" : isMochi ? "text-[#0b3d2e]" : "text-[#232331]"
                   }`}
                 >
@@ -1369,7 +1538,7 @@ export default function OwnerDashboardClient({
                 </span>
                 <span className="font-mono text-xs text-amber-700">keluhan</span>
               </div>
-              <p className="mt-1 text-[10.5px] text-amber-800 font-medium">
+              <p className="mt-1 hidden text-[10.5px] text-amber-800 font-medium sm:block">
                 🔒 Terlindungi di dashboard (tidak bocor ke Google)
               </p>
             </div>
@@ -1447,13 +1616,20 @@ export default function OwnerDashboardClient({
             </div>
 
             {filteredFeedback.length > 0 ? (
-              <div className="space-y-2.5 max-h-[420px] overflow-y-auto pr-1">
-                {filteredFeedback.map((item) => {
+              <div className="space-y-2.5 sm:max-h-[420px] sm:overflow-y-auto sm:pr-1">
+                {/*
+                  Area gulir bersarang cuma di layar lebar. Di HP, kotak setinggi
+                  420px yang menggulir sendiri di dalam halaman yang juga
+                  menggulir membuat jempol "terjebak": geser di sini menggulir
+                  daftarnya, bukan halamannya. Sebagai gantinya tiga teratas
+                  tampil dulu, sisanya di balik tombol.
+                */}
+                {filteredFeedback.map((item, idx) => {
                   const isLow = item.rating <= 3;
                   return (
                     <div
                       key={item.id}
-                      className={`p-3.5 sm:p-4 rounded-2xl border transition-colors ${
+                      className={`${idx >= 3 && !feedLengkapHp ? "hidden sm:block" : ""} p-3 sm:p-4 rounded-2xl border transition-colors ${
                         isLow
                           ? isMochi
                             ? "border-amber-200/90 bg-[#fffdf9]"
@@ -1463,7 +1639,7 @@ export default function OwnerDashboardClient({
                           : "border-[#dedee8] bg-[#fcfcfe]"
                       }`}
                     >
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div className="flex flex-row items-start justify-between gap-2 sm:items-center">
                         <div className="flex items-center gap-2 flex-wrap">
                                                   <div className="flex items-center gap-2">
                           <button
@@ -1503,11 +1679,15 @@ export default function OwnerDashboardClient({
                           {/* Routing Badge */}
                           {isLow ? (
                             <span className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-100 px-2 py-0.5 font-mono text-[9px] font-bold text-amber-900">
-                              <ShieldCheck size={11} /> Keluhan Privat (Hanya Owner)
+                              <ShieldCheck size={11} />
+                              <span className="sm:hidden">Privat</span>
+                              <span className="hidden sm:inline">Keluhan Privat (Hanya Owner)</span>
                             </span>
                           ) : (
                             <span className="inline-flex items-center gap-1 rounded-full border border-emerald-300 bg-emerald-100 px-2 py-0.5 font-mono text-[9px] font-bold text-emerald-900">
-                              <ExternalLink size={11} /> Auto Direct Google Review
+                              <ExternalLink size={11} />
+                              <span className="sm:hidden">Google</span>
+                              <span className="hidden sm:inline">Auto Direct Google Review</span>
                             </span>
                           )}
 
@@ -1518,26 +1698,27 @@ export default function OwnerDashboardClient({
                           )}
                         </div>
 
-                        <span className="font-mono text-[10px] text-[#7b7b8e]">
+                        <span className="shrink-0 text-right font-mono text-[10px] text-[#5c5c70]">
                           {formatBusinessDateTime(item.created_at)}
                         </span>
                       </div>
 
                       {/* Comment text */}
                       {item.comment ? (
-                        <div className="mt-2.5 rounded-xl border border-[#eceeed] bg-white p-3 text-xs text-[#232331] leading-relaxed">
+                        <div className="mt-1.5 text-xs text-[#232331] leading-relaxed sm:mt-2.5 sm:rounded-xl sm:border sm:border-[#eceeed] sm:bg-white sm:p-3">
                           <p className="italic font-medium">"{item.comment}"</p>
                         </div>
                       ) : (
-                        <p className="mt-1.5 text-[11px] text-[#7b7b8e] italic">
+                        <p className="mt-1.5 hidden text-[11px] text-[#7b7b8e] italic sm:block">
                           (Tanpa komentar tambahan)
                         </p>
                       )}
 
                       {/* Origin & Metadata */}
-                      <div className="mt-2.5 flex items-center gap-3 text-[10px] text-[#637970] font-mono flex-wrap">
+                      <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-[#52665e] font-mono sm:mt-2.5 sm:gap-3">
                         <span>
-                          Pelanggan: <strong>{item.customer_name || "Pelanggan Tanpa Nama"}</strong>
+                          <span className="hidden sm:inline">Pelanggan: </span>
+                          <strong>{item.customer_name || "Pelanggan Tanpa Nama"}</strong>
                         </span>
                         {item.card_label && (
                           <span>
@@ -1553,6 +1734,19 @@ export default function OwnerDashboardClient({
                     </div>
                   );
                 })}
+                {filteredFeedback.length > 3 && !feedLengkapHp && (
+                  <button
+                    type="button"
+                    onClick={() => setFeedLengkapHp(true)}
+                    className={`w-full rounded-xl border py-2 text-[11px] font-black sm:hidden ${
+                      isMochi
+                        ? "border-[#d8e3de] bg-[#fbfdfc] text-[#167052]"
+                        : "border-[#dedee8] bg-[#fcfcfe] text-[#6d4cc4]"
+                    }`}
+                  >
+                    Lihat {filteredFeedback.length - 3} masukan lainnya
+                  </button>
+                )}
               </div>
             ) : (
               <div
@@ -1579,8 +1773,8 @@ export default function OwnerDashboardClient({
         <section
           className={
             isMochi
-              ? "rounded-3xl border border-[#d8e3de] bg-white p-5 shadow-[0_4px_20px_rgba(11,61,46,0.04)] sm:p-6"
-              : "border-2 border-[#232331] bg-white p-4 shadow-ink-md sm:p-5"
+              ? "rounded-3xl border border-[#d8e3de] bg-white p-3.5 shadow-[0_4px_20px_rgba(11,61,46,0.04)] sm:p-6"
+              : "border-2 border-[#232331] bg-white p-3 shadow-ink-md sm:p-5"
           }
         >
           <div
@@ -1607,7 +1801,7 @@ export default function OwnerDashboardClient({
                   <Crown size={12} /> 30 HARI TERAKHIR
                 </span>
               </div>
-              <p className={`mt-0.5 text-[11px] ${isMochi ? "text-[#637970]" : "text-[#7b7b8e]"}`}>
+              <p className={`mt-0.5 hidden text-[11px] sm:block ${isMochi ? "text-[#637970]" : "text-[#7b7b8e]"}`}>
                 Pantau pertumbuhan member aktif, repeat visit, dan omzet belanja pelanggan setia.
               </p>
             </div>
@@ -1626,7 +1820,7 @@ export default function OwnerDashboardClient({
           </div>
 
           {/* Loyalty KPI Grid */}
-          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="mt-3 grid grid-cols-2 gap-2 sm:mt-4 sm:gap-3 sm:grid-cols-4">
             {/* Card 1: Member Aktif */}
             <div
               className={`p-3.5 sm:p-4 ${
@@ -1648,7 +1842,7 @@ export default function OwnerDashboardClient({
               >
                 {loyaltySummary?.activeMembers ?? 0}
               </p>
-              <p className="mt-0.5 text-[10px] text-[#7b7b8e]">
+              <p className="mt-0.5 hidden text-[10px] text-[#7b7b8e] sm:block">
                 {loyaltySummary?.activeMembersPrior !== undefined
                   ? `Periode lalu: ${loyaltySummary.activeMembersPrior} orang`
                   : "Transaksi dalam 30 hari"}
@@ -1672,7 +1866,7 @@ export default function OwnerDashboardClient({
               <p className="mt-2 font-mono text-xl font-black sm:text-2xl text-emerald-700">
                 {loyaltySummary?.repeatCustomers ?? 0}
               </p>
-              <p className="mt-0.5 text-[10px] text-[#7b7b8e]">
+              <p className="mt-0.5 hidden text-[10px] text-[#7b7b8e] sm:block">
                 Belanja &ge; 2 kali di toko
               </p>
             </div>
@@ -1698,7 +1892,7 @@ export default function OwnerDashboardClient({
               >
                 {formatRupiah(loyaltySummary?.revenue ?? 0)}
               </p>
-              <p className="mt-0.5 text-[10px] text-[#7b7b8e]">
+              <p className="mt-0.5 hidden text-[10px] text-[#7b7b8e] sm:block">
                 Kontribusi 30 hari terakhir
               </p>
             </div>
@@ -1724,7 +1918,7 @@ export default function OwnerDashboardClient({
               >
                 {loyaltySummary?.returningMembers ?? 0}
               </p>
-              <p className="mt-0.5 text-[10px] text-[#7b7b8e]">
+              <p className="mt-0.5 hidden text-[10px] text-[#7b7b8e] sm:block">
                 Member lama yang aktif lagi
               </p>
             </div>
@@ -1766,13 +1960,13 @@ export default function OwnerDashboardClient({
         </section>
 
         {/* Shift & Transaksi Terbaru */}
-        <section className="grid gap-4 lg:grid-cols-[0.9fr_1.45fr]">
+        <section className="grid gap-3 sm:gap-4 lg:grid-cols-[0.9fr_1.45fr]">
           {/* Shift & Laci Tunai */}
           <div
             className={
               isMochi
-                ? "rounded-3xl border border-[#d8e3de] bg-white p-5 shadow-[0_4px_20px_rgba(11,61,46,0.04)] sm:p-6"
-                : "border-2 border-[#232331] bg-white p-4 shadow-ink-md sm:p-5"
+                ? "rounded-3xl border border-[#d8e3de] bg-white p-3.5 shadow-[0_4px_20px_rgba(11,61,46,0.04)] sm:p-6"
+                : "border-2 border-[#232331] bg-white p-3 shadow-ink-md sm:p-5"
             }
           >
             <div
@@ -1788,7 +1982,7 @@ export default function OwnerDashboardClient({
                 >
                   Shift & laci tunai
                 </h2>
-                <p className={`mt-0.5 text-[11px] ${isMochi ? "text-[#637970]" : "text-[#7b7b8e]"}`}>
+                <p className={`mt-0.5 hidden text-[11px] sm:block ${isMochi ? "text-[#637970]" : "text-[#7b7b8e]"}`}>
                   Pantau shift yang masih berjalan.
                 </p>
               </div>
@@ -1861,8 +2055,8 @@ export default function OwnerDashboardClient({
           <div
             className={
               isMochi
-                ? "rounded-3xl border border-[#d8e3de] bg-white p-5 shadow-[0_4px_20px_rgba(11,61,46,0.04)] sm:p-6"
-                : "border-2 border-[#232331] bg-white p-4 shadow-ink-md sm:p-5"
+                ? "rounded-3xl border border-[#d8e3de] bg-white p-3.5 shadow-[0_4px_20px_rgba(11,61,46,0.04)] sm:p-6"
+                : "border-2 border-[#232331] bg-white p-3 shadow-ink-md sm:p-5"
             }
           >
             <div
@@ -1970,8 +2164,8 @@ export default function OwnerDashboardClient({
         <section
           className={
             isMochi
-              ? "rounded-3xl border border-[#d8e3de] bg-white p-5 shadow-[0_4px_20px_rgba(11,61,46,0.04)] sm:p-6"
-              : "border-2 border-[#232331] bg-white p-4 shadow-ink-md sm:p-5"
+              ? "rounded-3xl border border-[#d8e3de] bg-white p-3.5 shadow-[0_4px_20px_rgba(11,61,46,0.04)] sm:p-6"
+              : "border-2 border-[#232331] bg-white p-3 shadow-ink-md sm:p-5"
           }
         >
           <div
@@ -1987,7 +2181,7 @@ export default function OwnerDashboardClient({
               >
                 Kontribusi kasir hari ini
               </h2>
-              <p className={`mt-0.5 text-[11px] ${isMochi ? "text-[#637970]" : "text-[#7b7b8e]"}`}>
+              <p className={`mt-0.5 hidden text-[11px] sm:block ${isMochi ? "text-[#637970]" : "text-[#7b7b8e]"}`}>
                 Berdasarkan transaksi yang dicatat di POS.
               </p>
             </div>
