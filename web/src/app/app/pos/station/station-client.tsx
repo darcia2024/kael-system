@@ -13,7 +13,8 @@ import { ambilPrinter, kirimKePrinter, alasanGagalCetak } from "@/lib/thermal-pr
 type StationOrder = Order & { items: OrderItem[] };
 type Stage = "cashier" | "kitchen";
 
-const kitchenSteps: Record<string, { next: "preparing" | "ready" | "completed"; label: string }> = {
+const kitchenSteps: Record<string, { next: "accepted" | "preparing" | "ready" | "completed"; label: string }> = {
+  pending: { next: "preparing", label: "Mulai buat" },
   accepted: { next: "preparing", label: "Mulai buat" },
   preparing: { next: "ready", label: "Sudah siap" },
   ready: { next: "completed", label: "Sudah diambil" },
@@ -175,7 +176,7 @@ export default function OrderStationClient({
 
   const visibleOrders = mode === "cashier"
     ? orders
-    : orders.filter((order) => ["accepted", "preparing", "ready"].includes(order.fulfillment_status));
+    : orders.filter((order) => ["pending", "accepted", "preparing", "ready"].includes(order.fulfillment_status));
   const newOrders = visibleOrders.filter((order) => order.payment_status === "pending").length;
 
   if (isMochiStation) {
@@ -454,24 +455,52 @@ export default function OrderStationClient({
                             <Check size={16} strokeWidth={2.6} />
                             <span>Konfirmasi Pembayaran Lunas</span>
                           </button>
-                        ) : order.claimed_by && order.claimed_by !== currentUserId ? (
-                          <div className="rounded-xl bg-[#edf1ef] py-2.5 px-3 text-center text-xs font-bold text-[#718078]">
-                            Sedang dipegang oleh {order.claimed_by_name ?? "staf lain"}.
-                          </div>
-                        ) : order.claimed_by === currentUserId ? (
-                          <div className="rounded-xl bg-[#edf8f3] border border-[#167052]/30 py-2.5 px-3 text-center text-xs font-black text-[#167052] flex items-center justify-center gap-1.5">
-                            <Check size={15} strokeWidth={2.6} />
-                            <span>Kamu memegang pesanan ini</span>
-                          </div>
                         ) : (
-                          <button
-                            type="button"
-                            disabled={isPending}
-                            onClick={() => run(() => claimOrderAction(order.id))}
-                            className="w-full rounded-xl bg-[#0b3d2e] hover:bg-[#124d3a] text-white py-2.5 text-xs font-black shadow-sm flex items-center justify-center gap-2 active:scale-98 transition-all disabled:opacity-50"
-                          >
-                            <span>Ambil Pesanan Ini</span>
-                          </button>
+                          <div className="space-y-2">
+                            {order.claimed_by && order.claimed_by !== currentUserId ? (
+                              <div className="rounded-xl bg-[#edf1ef] py-2 px-3 text-center text-xs font-bold text-[#718078]">
+                                Sedang dipegang oleh {order.claimed_by_name ?? "staf lain"}.
+                              </div>
+                            ) : order.claimed_by === currentUserId ? (
+                              <div className="rounded-xl bg-[#edf8f3] border border-[#167052]/30 py-2 px-3 text-center text-xs font-black text-[#167052] flex items-center justify-center gap-1.5">
+                                <Check size={15} strokeWidth={2.6} />
+                                <span>Kamu memegang pesanan ini</span>
+                              </div>
+                            ) : null}
+
+                            <div className="flex gap-2">
+                              <button
+                                type="button"
+                                disabled={isPending}
+                                onClick={() => run(() => setFulfillmentAction(order.id, "completed"))}
+                                className="flex-1 rounded-xl bg-[#0b3d2e] hover:bg-[#124d3a] text-white py-2.5 text-xs font-black shadow-sm flex items-center justify-center gap-1.5 active:scale-98 transition-all disabled:opacity-50"
+                              >
+                                <Check size={15} strokeWidth={2.6} />
+                                <span>✓ Selesai &amp; Diserahkan</span>
+                              </button>
+
+                              {!order.claimed_by && (
+                                <button
+                                  type="button"
+                                  disabled={isPending}
+                                  onClick={() => run(() => claimOrderAction(order.id))}
+                                  className="rounded-xl border border-[#d8e3de] bg-white hover:bg-[#edf8f3] text-[#0b3d2e] px-3 py-2.5 text-xs font-black transition-colors shadow-xs"
+                                  title="Tandai dipegang saya"
+                                >
+                                  Pegang
+                                </button>
+                              )}
+
+                              <button
+                                type="button"
+                                onClick={() => void printKitchenTicket(order)}
+                                className="rounded-xl border border-[#d8e3de] bg-white hover:bg-[#edf8f3] text-[#0b3d2e] px-3 flex items-center justify-center transition-colors shadow-xs"
+                                title="Cetak Tiket Dapur Thermal"
+                              >
+                                <Printer size={16} />
+                              </button>
+                            </div>
+                          </div>
                         )
                       ) : step ? (
                         <div className="flex gap-2">
@@ -534,7 +563,7 @@ export default function OrderStationClient({
           return <article key={order.id} className={`mochi-panel border-2 p-4 shadow-ink-sm ${pendingPayment ? "border-[#d97706] bg-[#fffaf0]" : "border-[#232331] bg-white"}`}>
             <div className="flex items-start justify-between gap-3 border-b-2 border-[#dedee8] pb-3"><div><p className="font-mono text-xl font-black">#{order.order_no}</p><p className="font-mono text-[11px] text-[#777587]">{serviceTypeLabel(order.service_type, order.table_no)} · {timeSince(order.created_at)}</p></div><div className="text-right"><p className="font-black">{formatRupiah(Number(order.total))}</p><p className="font-mono text-[10px] font-bold uppercase text-[#7958d8]">{pendingPayment ? "Menunggu bayar" : order.fulfillment_status}</p></div></div>
             <ul className="my-3 space-y-1.5 font-mono text-xs">{order.items.map((item) => <li key={item.id} className="flex justify-between gap-3"><span>{item.qty}x {item.name_snapshot}{item.note ? <span className="block pl-5 text-[10px] text-[#777587]">Catatan: {item.note}</span> : null}</span><span>{formatRupiah(Number(item.subtotal))}</span></li>)}</ul>
-            <div className="border-t-2 border-[#dedee8] pt-3">{mode === "cashier" ? pendingPayment ? <button type="button" disabled={isPending} onClick={() => run(() => confirmPaymentAction(order.id))} className="btn-tactile w-full rounded-lg border-2 border-[#232331] bg-[#d9ff57] px-3 py-2.5 font-mono text-xs font-black shadow-ink-xs disabled:opacity-50">Pembayaran sudah masuk</button> : order.claimed_by && order.claimed_by !== currentUserId ? <p className="font-mono text-xs font-bold text-[#7958d8]">Sedang dipegang {order.claimed_by_name ?? "staf lain"}.</p> : order.claimed_by === currentUserId ? <p className="flex items-center gap-1.5 font-mono text-xs font-bold text-[#15803d]"><Check size={14} /> Kamu pegang pesanan ini</p> : <button type="button" disabled={isPending} onClick={() => run(() => claimOrderAction(order.id))} className="btn-tactile w-full rounded-lg border-2 border-[#232331] bg-white px-3 py-2.5 font-mono text-xs font-black shadow-ink-xs disabled:opacity-50">Ambil pesanan ini</button> : step ? <div className="flex gap-2"><button type="button" disabled={isPending} onClick={() => run(() => setFulfillmentAction(order.id, step.next))} className="btn-tactile flex-1 rounded-lg border-2 border-[#232331] bg-[#d9ff57] px-3 py-2.5 font-mono text-xs font-black shadow-ink-xs disabled:opacity-50">{step.label}</button><button type="button" onClick={() => void printKitchenTicket(order)} className="btn-tactile rounded-lg border-2 border-[#232331] bg-white px-3 py-2.5 shadow-ink-xs" title="Cetak Tiket Dapur"><Printer size={15} /></button></div> : null}</div>
+            <div className="border-t-2 border-[#dedee8] pt-3">{mode === "cashier" ? pendingPayment ? <button type="button" disabled={isPending} onClick={() => run(() => confirmPaymentAction(order.id))} className="btn-tactile w-full rounded-lg border-2 border-[#232331] bg-[#d9ff57] px-3 py-2.5 font-mono text-xs font-black shadow-ink-xs disabled:opacity-50">Pembayaran sudah masuk</button> : <div className="space-y-2">{order.claimed_by && order.claimed_by !== currentUserId ? <p className="font-mono text-xs font-bold text-[#7958d8]">Sedang dipegang {order.claimed_by_name ?? "staf lain"}.</p> : order.claimed_by === currentUserId ? <p className="flex items-center gap-1.5 font-mono text-xs font-bold text-[#15803d]"><Check size={14} /> Kamu pegang pesanan ini</p> : null}<div className="flex gap-2"><button type="button" disabled={isPending} onClick={() => run(() => setFulfillmentAction(order.id, "completed"))} className="btn-tactile flex-1 rounded-lg border-2 border-[#232331] bg-[#d9ff57] px-3 py-2.5 font-mono text-xs font-black shadow-ink-xs disabled:opacity-50">✓ Selesai &amp; Diserahkan</button>{!order.claimed_by && <button type="button" disabled={isPending} onClick={() => run(() => claimOrderAction(order.id))} className="btn-tactile rounded-lg border-2 border-[#232331] bg-white px-3 py-2.5 font-mono text-xs font-black shadow-ink-xs disabled:opacity-50">Pegang</button>}<button type="button" onClick={() => void printKitchenTicket(order)} className="btn-tactile rounded-lg border-2 border-[#232331] bg-white px-3 py-2.5 shadow-ink-xs" title="Cetak Tiket Dapur"><Printer size={15} /></button></div></div> : step ? <div className="flex gap-2"><button type="button" disabled={isPending} onClick={() => run(() => setFulfillmentAction(order.id, step.next))} className="btn-tactile flex-1 rounded-lg border-2 border-[#232331] bg-[#d9ff57] px-3 py-2.5 font-mono text-xs font-black shadow-ink-xs disabled:opacity-50">{step.label}</button><button type="button" onClick={() => void printKitchenTicket(order)} className="btn-tactile rounded-lg border-2 border-[#232331] bg-white px-3 py-2.5 shadow-ink-xs" title="Cetak Tiket Dapur"><Printer size={15} /></button></div> : null}</div>
           </article>;
         })}</div>}
       </section>
