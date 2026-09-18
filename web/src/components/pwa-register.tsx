@@ -43,12 +43,19 @@ export function usePwaInstall() {
 
   const triggerInstall = async () => {
     if (!deferredPrompt) return false;
+    /**
+     * Satu event hanya boleh memanggil prompt() sekali. Dulu event yang
+     * DITOLAK tetap disimpan: tombol pasangnya tetap tampil, tapi ketukan
+     * berikutnya gagal diam-diam. Chrome memberi event baru di kunjungan
+     * berikutnya.
+     */
+    const event = deferredPrompt;
+    deferredPrompt = null;
+    notify();
     try {
-      await deferredPrompt.prompt();
-      const choice = await deferredPrompt.userChoice;
+      await event.prompt();
+      const choice = await event.userChoice;
       if (choice.outcome === "accepted") {
-        deferredPrompt = null;
-        notify();
         setIsInstalled(true);
         return true;
       }

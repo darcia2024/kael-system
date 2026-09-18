@@ -4,11 +4,13 @@ import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 import { guardModulePage } from "@/lib/licensing";
 import { mochiThemeClass } from "@/lib/mochi-theme";
+import { ownerAppMetadata } from "@/lib/owner-app";
 import OwnerDashboardClient from "./owner-dashboard-client";
 
 export const metadata: Metadata = {
   title: "Dashboard Owner POS",
   robots: { index: false, follow: false },
+  ...ownerAppMetadata,
 };
 
 export const dynamic = "force-dynamic";

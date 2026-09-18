@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { db } from "@/lib/db";
 
 import { getModuleViews, guardOwnerPage } from "@/lib/licensing";
+import { ownerAppMetadata } from "@/lib/owner-app";
 import {
   MODULE_CATALOG,
   modulesForBusinessType,
@@ -27,6 +28,7 @@ import PortalClient, { type PortalModule } from "./portal-client";
 export const metadata: Metadata = {
   title: "Beranda Bisnis",
   robots: { index: false, follow: false },
+  ...ownerAppMetadata,
 };
 
 /**

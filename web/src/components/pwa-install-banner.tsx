@@ -1,9 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Download, X, Share, PlusSquare, Sparkles, Smartphone } from "lucide-react";
+import { Download, X, Sparkles, Smartphone } from "lucide-react";
 import { usePwaInstall } from "@/components/pwa-register";
+import { usePasangAplikasi } from "@/components/pasang-aplikasi";
 
+/**
+ * Banner pasang aplikasi di halaman owner. Yang terpasang KAEL Owner, karena
+ * setiap halaman yang memakai banner ini menautkan /owner.webmanifest
+ * (lib/owner-app.ts) — sebelumnya yang terpasang KAEL POS, dan aplikasinya
+ * terbuka di layar kasir.
+ */
 export default function PwaInstallBanner({
   isMochi = true,
   className = "",
@@ -14,7 +21,8 @@ export default function PwaInstallBanner({
   const { isInstallable, isInstalled, triggerInstall } = usePwaInstall();
   const [dismissed, setDismissed] = useState(true);
   const [isIos, setIsIos] = useState(false);
-  const [showIosGuide, setShowIosGuide] = useState(false);
+  // Panduan iPhone yang sama dengan tombol pasang di menu dan beranda.
+  const { pasang: bukaPanduan, lembar } = usePasangAplikasi();
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -56,7 +64,7 @@ export default function PwaInstallBanner({
         <div className="flex items-start gap-3.5 min-w-0">
           <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/10 p-1 border border-white/20 shadow-inner overflow-hidden">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/icon-192.png" alt="KAEL App Icon" className="h-full w-full object-cover rounded-xl" />
+            <img src="/owner/icon-192.png" alt="Ikon KAEL Owner" className="h-full w-full object-cover rounded-xl" />
           </div>
 
           <div className="min-w-0">
@@ -67,7 +75,7 @@ export default function PwaInstallBanner({
               <span className="text-[11px] font-mono text-emerald-200/80">Layar Penuh &amp; Cepat</span>
             </div>
             <h3 className="mt-1 text-sm sm:text-base font-black text-white leading-snug">
-              Pasang KAEL di Layar Utama HP
+              Pasang KAEL Owner di Layar Utama HP
             </h3>
             <p className="mt-0.5 text-xs text-emerald-100/80 leading-relaxed line-clamp-2 sm:line-clamp-none">
               Akses instan seperti aplikasi native tanpa perlu ketik alamat web, layar penuh tanpa bar browser.
@@ -104,11 +112,11 @@ export default function PwaInstallBanner({
         {isIos && (
           <button
             type="button"
-            onClick={() => setShowIosGuide(!showIosGuide)}
+            onClick={bukaPanduan}
             className="flex-1 sm:flex-initial inline-flex items-center justify-center gap-2 rounded-xl bg-white/15 hover:bg-white/25 border border-white/20 px-4 py-2.5 text-xs font-bold text-white transition-all cursor-pointer"
           >
             <Smartphone size={15} />
-            <span>{showIosGuide ? "Tutup Panduan iPhone" : "Cara Pasang di iPhone / iPad"}</span>
+            <span>Cara Pasang di iPhone / iPad</span>
           </button>
         )}
 
@@ -121,20 +129,7 @@ export default function PwaInstallBanner({
         </button>
       </div>
 
-      {/* iOS Safari Step-by-Step Guide */}
-      {isIos && showIosGuide && (
-        <div className="mt-3 rounded-2xl bg-white/10 border border-white/15 p-3.5 text-xs space-y-2 animate-in fade-in-50">
-          <p className="font-bold text-white flex items-center gap-1.5">
-            <Share size={14} className="text-[#c8f53a]" />
-            Langkah Pasang di Safari iPhone / iPad:
-          </p>
-          <ol className="list-decimal list-inside space-y-1 text-emerald-100/90 text-[11.5px] leading-relaxed">
-            <li>Ketuk ikon <strong>Bagikan / Share</strong> (<Share size={12} className="inline mx-0.5" /> di bilah bawah Safari).</li>
-            <li>Gulir ke bawah dan pilih menu <strong>&quot;Tambah ke Layar Utama&quot;</strong> (<PlusSquare size={12} className="inline mx-0.5" /> <em>Add to Home Screen</em>).</li>
-            <li>Ketuk <strong>&quot;Tambah&quot;</strong> di pojok kanan atas. Ikon aplikasi akan muncul di layar HP Anda!</li>
-          </ol>
-        </div>
-      )}
+      {lembar}
     </aside>
   );
 }

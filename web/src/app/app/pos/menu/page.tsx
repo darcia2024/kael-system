@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { db } from "@/lib/db";
 import { guardOwnerPage } from "@/lib/licensing";
 import { mochiThemeClass } from "@/lib/mochi-theme";
+import { ownerAppMetadata } from "@/lib/owner-app";
 import MenuClient from "./menu-client";
 
 /**
@@ -18,6 +19,8 @@ import MenuClient from "./menu-client";
 export const metadata: Metadata = {
   title: "Kelola Menu",
   robots: { index: false, follow: false },
+  // Halaman ini menampilkan banner pasang aplikasi; yang dipasang harus KAEL Owner.
+  ...ownerAppMetadata,
 };
 
 export default async function MenuPage() {

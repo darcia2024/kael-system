@@ -575,200 +575,231 @@ export default function OwnerDashboardClient({
         <section
           className={
             isMochi
-              ? "rounded-3xl border border-[#d8e3de] bg-white p-3 sm:p-5 shadow-[0_4px_20px_rgba(11,61,46,0.04)]"
-              : "border-2 border-[#232331] bg-white p-3 shadow-ink-md sm:p-4"
+              ? "rounded-3xl border border-[#d8e3de] bg-white p-4 sm:p-5 shadow-[0_4px_24px_rgba(11,61,46,0.04)]"
+              : "rounded-2xl border-2 border-[#232331] bg-white p-4 shadow-ink-md sm:p-5"
           }
         >
-          <div className="flex flex-row items-center justify-between gap-2 pb-2.5 sm:pb-3.5 border-b border-[#edf4f0]">
-            <div>
-              <div className="flex items-center gap-2">
-                <span
-                  className={`flex h-6 w-6 items-center justify-center rounded-lg ${
-                    isMochi ? "bg-[#c8f53a] text-[#073829]" : "bg-[#232331] text-white"
-                  }`}
-                >
-                  <BarChart3 size={13} />
-                </span>
-                <h2
-                  className={`text-xs sm:text-sm font-black uppercase tracking-wider ${
-                    isMochi ? "text-[#0b3d2e]" : "text-[#232331]"
-                  }`}
-                >
-                  <span className="sm:hidden">Laporan</span>
-                  <span className="hidden sm:inline">Pusat Laporan &amp; Analitik Toko</span>
-                </h2>
-                <span
-                  className={`hidden rounded-full px-2 py-0.2 font-mono text-[9px] font-bold sm:inline ${
-                    isMochi ? "bg-[#edf8f3] text-[#167052]" : "bg-[#f5f3ff] text-[#6d4cc4]"
-                  }`}
-                >
-                  NAVIGASI CEPAT
-                </span>
+          {/* Header */}
+          <div className="flex items-center justify-between gap-3 pb-3 sm:pb-4 border-b border-[#edf4f0]">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <span
+                className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl ${
+                  isMochi ? "bg-[#c8f53a] text-[#073829] shadow-xs" : "bg-[#232331] text-white"
+                }`}
+              >
+                <BarChart3 size={16} />
+              </span>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <h2
+                    className={`text-sm sm:text-base font-black tracking-tight truncate ${
+                      isMochi ? "text-[#0b3d2e]" : "text-[#232331]"
+                    }`}
+                  >
+                    Pusat Laporan &amp; Analisis
+                  </h2>
+                  <span
+                    className={`hidden rounded-full px-2 py-0.5 font-mono text-[9px] font-extrabold sm:inline-flex ${
+                      isMochi ? "bg-[#edf8f3] text-[#167052]" : "bg-[#f5f3ff] text-[#6d4cc4]"
+                    }`}
+                  >
+                    NAVIGASI CEPAT
+                  </span>
+                </div>
+                <p className={`text-[11px] truncate ${isMochi ? "text-[#5b7a6e]" : "text-[#7b7b8e]"}`}>
+                  Pilih modul laporan untuk evaluasi performa toko
+                </p>
               </div>
-              <p className={`hidden text-[11px] mt-0.5 sm:block ${isMochi ? "text-[#637970]" : "text-[#7b7b8e]"}`}>
-                Pilih laporan yang ingin dipantau dengan satu klik:
-              </p>
             </div>
 
             <button
               type="button"
               onClick={() => setShowReportsModal(true)}
-              className={`inline-flex shrink-0 items-center gap-1.5 rounded-xl px-2.5 py-1.5 font-mono text-[11px] font-bold transition-all sm:px-3 ${
+              className={`inline-flex shrink-0 items-center gap-1.5 rounded-xl px-3 py-2 font-mono text-xs font-bold transition-all shadow-xs active:scale-95 ${
                 isMochi
                   ? "bg-[#edf8f3] text-[#0b3d2e] hover:bg-[#e0f2ea] border border-emerald-300"
                   : "bg-[#f7f6fc] text-[#232331] hover:bg-[#ecebf1] border border-[#dedee8]"
               }`}
             >
-              <span className="sm:hidden">Semua ▾</span>
-              <span className="hidden sm:inline">Katalog Semua Laporan ▾</span>
-              <ChevronRight size={13} />
+              <span>Semua Laporan</span>
+              <ChevronRight size={14} className={isMochi ? "text-[#167052]" : "text-[#7b7b8e]"} />
             </button>
           </div>
 
-          {/* Quick Switcher Cards / Pills */}
-          <div className="-mx-3 mt-2.5 flex snap-x gap-2 overflow-x-auto px-3 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:mx-0 sm:mt-3.5 sm:grid sm:grid-cols-3 sm:gap-2.5 sm:overflow-visible sm:px-0 sm:pb-0 lg:grid-cols-7">
+          {/* Quick Switcher Cards Carousel / Grid */}
+          <div className="-mx-4 sm:mx-0 mt-3.5 sm:mt-4 flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:grid sm:grid-cols-3 sm:gap-3 sm:overflow-visible sm:px-0 sm:pb-0 lg:grid-cols-7">
             {/* 1. Ringkasan Utama (Current) */}
             <div
-              className={`w-[132px] shrink-0 snap-start p-2.5 sm:w-auto sm:p-3 rounded-2xl border transition-all ${
+              className={`w-[172px] sm:w-auto shrink-0 snap-start p-3.5 sm:p-4 rounded-2xl border transition-all flex flex-col justify-between ${
                 isMochi
-                  ? "border-emerald-600 bg-gradient-to-br from-[#0b3d2e] to-[#124d3b] text-white shadow-sm"
+                  ? "border-emerald-600 bg-gradient-to-br from-[#0b3d2e] via-[#0f4635] to-[#144f3d] text-white shadow-md ring-2 ring-[#c8f53a]/20"
                   : "border-2 border-[#232331] bg-[#232331] text-white shadow-ink-xs"
               }`}
             >
-              <div className="flex items-center justify-between">
-                <span className="font-mono text-[9px] font-black uppercase tracking-wider text-[#c8f53a]">
+              <div className="flex items-center justify-between gap-1">
+                <span className="font-mono text-[10px] font-black uppercase tracking-wider text-[#c8f53a]">
                   AKTIF SAAT INI
                 </span>
-                <CheckCircle2 size={12} className="text-[#c8f53a]" />
+                <CheckCircle2 size={13} className="text-[#c8f53a] shrink-0" />
               </div>
-              <p className="mt-1 font-bold text-xs sm:text-sm">Ringkasan Hari Ini</p>
-              <p className="hidden text-[10px] text-emerald-200/80 line-clamp-1 sm:block">Omzet, jam ramai, menu</p>
+              <div className="mt-2.5">
+                <p className="font-black text-sm text-white tracking-tight leading-snug">
+                  Ringkasan Hari Ini
+                </p>
+                <p className="text-[11px] text-emerald-200/80 truncate mt-0.5">
+                  Omzet &amp; jam ramai
+                </p>
+              </div>
             </div>
 
             {/* 2. Kelola Menu Kafe */}
             <Link
               href="/app/pos/menu"
-              className={`group w-[132px] shrink-0 snap-start p-2.5 sm:w-auto sm:p-3 rounded-2xl border transition-all ${
+              className={`group w-[172px] sm:w-auto shrink-0 snap-start p-3.5 sm:p-4 rounded-2xl border transition-all flex flex-col justify-between shadow-xs hover:shadow-md ${
                 isMochi
-                  ? "border-emerald-300 bg-[#edf8f3] hover:border-emerald-400 hover:bg-[#e2f3ea]"
+                  ? "border-emerald-200 bg-[#edf8f3] hover:border-emerald-400 hover:bg-[#e4f5ec]"
                   : "border border-[#dedee8] bg-[#fcfcfe] hover:border-[#232331]"
               }`}
             >
-              <div className="flex items-center justify-between">
-                <span className="font-mono text-[9px] font-black uppercase tracking-wider text-[#167052]">
+              <div className="flex items-center justify-between gap-1">
+                <span className="font-mono text-[10px] font-black uppercase tracking-wider text-[#167052]">
                   PRODUK &amp; HARGA
                 </span>
-                <ChevronRight size={12} className="text-[#167052] group-hover:translate-x-0.5 transition-transform" />
+                <ChevronRight size={13} className="text-[#167052] group-hover:translate-x-0.5 transition-transform shrink-0" />
               </div>
-              <p className={`mt-1 font-black text-xs sm:text-sm ${isMochi ? "text-[#0b3d2e]" : "text-[#232331]"}`}>
-                Kelola Menu
-              </p>
-              <p className="hidden text-[10px] text-[#167052] line-clamp-1 sm:block">Tambah, harga &amp; foto</p>
+              <div className="mt-2.5">
+                <p className={`font-black text-sm tracking-tight leading-snug ${isMochi ? "text-[#0b3d2e]" : "text-[#232331]"}`}>
+                  Kelola Menu
+                </p>
+                <p className={`text-[11px] truncate mt-0.5 ${isMochi ? "text-[#167052]" : "text-[#7b7b8e]"}`}>
+                  Harga, stok &amp; foto
+                </p>
+              </div>
             </Link>
 
             {/* 3. Laporan Penjualan & Profit */}
             <Link
               href="/app/pos/reports"
-              className={`group w-[132px] shrink-0 snap-start p-2.5 sm:w-auto sm:p-3 rounded-2xl border transition-all ${
+              className={`group w-[172px] sm:w-auto shrink-0 snap-start p-3.5 sm:p-4 rounded-2xl border transition-all flex flex-col justify-between shadow-xs hover:shadow-md ${
                 isMochi
-                  ? "border-[#d8e3de] bg-[#fbfdfc] hover:border-emerald-400 hover:bg-[#f4faf6]"
+                  ? "border-[#d8e3de] bg-[#fbfdfc] hover:border-emerald-400 hover:bg-[#f3faf6]"
                   : "border border-[#dedee8] bg-[#fcfcfe] hover:border-[#232331]"
               }`}
             >
-              <div className="flex items-center justify-between">
-                <span className="font-mono text-[9px] font-bold uppercase tracking-wider text-[#637970]">
+              <div className="flex items-center justify-between gap-1">
+                <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-[#527867]">
                   HPP &amp; PROFIT
                 </span>
-                <ChevronRight size={12} className="text-[#7b7b8e] group-hover:translate-x-0.5 transition-transform" />
+                <ChevronRight size={13} className="text-[#7b7b8e] group-hover:translate-x-0.5 transition-transform shrink-0" />
               </div>
-              <p className={`mt-1 font-bold text-xs sm:text-sm ${isMochi ? "text-[#0b3d2e]" : "text-[#232331]"}`}>
-                Penjualan Kasir
-              </p>
-              <p className="hidden text-[10px] text-[#7b7b8e] line-clamp-1 sm:block">Laba kotor, shift, audit</p>
+              <div className="mt-2.5">
+                <p className={`font-black text-sm tracking-tight leading-snug ${isMochi ? "text-[#0b3d2e]" : "text-[#232331]"}`}>
+                  Penjualan Kasir
+                </p>
+                <p className="text-[11px] text-[#7b7b8e] truncate mt-0.5">
+                  Laba riil &amp; tutup shift
+                </p>
+              </div>
             </Link>
 
             {/* 4. Laporan Loyalty & Member */}
             <Link
               href="/app/loyalty/analytics"
-              className={`group w-[132px] shrink-0 snap-start p-2.5 sm:w-auto sm:p-3 rounded-2xl border transition-all ${
+              className={`group w-[172px] sm:w-auto shrink-0 snap-start p-3.5 sm:p-4 rounded-2xl border transition-all flex flex-col justify-between shadow-xs hover:shadow-md ${
                 isMochi
-                  ? "border-[#d8e3de] bg-[#fbfdfc] hover:border-emerald-400 hover:bg-[#f4faf6]"
+                  ? "border-[#d8e3de] bg-[#fbfdfc] hover:border-emerald-400 hover:bg-[#f3faf6]"
                   : "border border-[#dedee8] bg-[#fcfcfe] hover:border-[#232331]"
               }`}
             >
-              <div className="flex items-center justify-between">
-                <span className="font-mono text-[9px] font-bold uppercase tracking-wider text-[#637970]">
+              <div className="flex items-center justify-between gap-1">
+                <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-[#527867]">
                   RETENSI 30H
                 </span>
-                <ChevronRight size={12} className="text-[#7b7b8e] group-hover:translate-x-0.5 transition-transform" />
+                <ChevronRight size={13} className="text-[#7b7b8e] group-hover:translate-x-0.5 transition-transform shrink-0" />
               </div>
-              <p className={`mt-1 font-bold text-xs sm:text-sm ${isMochi ? "text-[#0b3d2e]" : "text-[#232331]"}`}>
-                Loyalty &amp; Member
-              </p>
-              <p className="hidden text-[10px] text-[#7b7b8e] line-clamp-1 sm:block">Pertumbuhan &amp; repeat</p>
+              <div className="mt-2.5">
+                <p className={`font-black text-sm tracking-tight leading-snug ${isMochi ? "text-[#0b3d2e]" : "text-[#232331]"}`}>
+                  Loyalty Member
+                </p>
+                <p className="text-[11px] text-[#7b7b8e] truncate mt-0.5">
+                  Pertumbuhan &amp; repeat
+                </p>
+              </div>
             </Link>
 
             {/* 5. Laporan Review & Kepuasan */}
             <Link
               href="/app/review/reports"
-              className={`group w-[132px] shrink-0 snap-start p-2.5 sm:w-auto sm:p-3 rounded-2xl border transition-all ${
+              className={`group w-[172px] sm:w-auto shrink-0 snap-start p-3.5 sm:p-4 rounded-2xl border transition-all flex flex-col justify-between shadow-xs hover:shadow-md ${
                 isMochi
-                  ? "border-[#d8e3de] bg-[#fbfdfc] hover:border-emerald-400 hover:bg-[#f4faf6]"
+                  ? "border-[#d8e3de] bg-[#fbfdfc] hover:border-emerald-400 hover:bg-[#f3faf6]"
                   : "border border-[#dedee8] bg-[#fcfcfe] hover:border-[#232331]"
               }`}
             >
-              <div className="flex items-center justify-between">
-                <span className="font-mono text-[9px] font-bold uppercase tracking-wider text-[#637970]">
+              <div className="flex items-center justify-between gap-1">
+                <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-[#527867]">
                   SMART SHIELD
                 </span>
-                <ChevronRight size={12} className="text-[#7b7b8e] group-hover:translate-x-0.5 transition-transform" />
+                <ChevronRight size={13} className="text-[#7b7b8e] group-hover:translate-x-0.5 transition-transform shrink-0" />
               </div>
-              <p className={`mt-1 font-bold text-xs sm:text-sm ${isMochi ? "text-[#0b3d2e]" : "text-[#232331]"}`}>
-                Review Pelanggan
-              </p>
-              <p className="hidden text-[10px] text-[#7b7b8e] line-clamp-1 sm:block">Google &amp; keluhan privat</p>
+              <div className="mt-2.5">
+                <p className={`font-black text-sm tracking-tight leading-snug ${isMochi ? "text-[#0b3d2e]" : "text-[#232331]"}`}>
+                  Review Pelanggan
+                </p>
+                <p className="text-[11px] text-[#7b7b8e] truncate mt-0.5">
+                  Rating ⭐ &amp; keluhan
+                </p>
+              </div>
             </Link>
 
             {/* 6. Laporan Keuangan */}
             <Link
               href="/app/finance/reports"
-              className={`group w-[132px] shrink-0 snap-start p-2.5 sm:w-auto sm:p-3 rounded-2xl border transition-all ${
+              className={`group w-[172px] sm:w-auto shrink-0 snap-start p-3.5 sm:p-4 rounded-2xl border transition-all flex flex-col justify-between shadow-xs hover:shadow-md ${
                 isMochi
-                  ? "border-[#d8e3de] bg-[#fbfdfc] hover:border-emerald-400 hover:bg-[#f4faf6]"
+                  ? "border-[#d8e3de] bg-[#fbfdfc] hover:border-emerald-400 hover:bg-[#f3faf6]"
                   : "border border-[#dedee8] bg-[#fcfcfe] hover:border-[#232331]"
               }`}
             >
-              <div className="flex items-center justify-between">
-                <span className="font-mono text-[9px] font-bold uppercase tracking-wider text-[#637970]">
+              <div className="flex items-center justify-between gap-1">
+                <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-[#527867]">
                   FINANCE
                 </span>
-                <ChevronRight size={12} className="text-[#7b7b8e] group-hover:translate-x-0.5 transition-transform" />
+                <ChevronRight size={13} className="text-[#7b7b8e] group-hover:translate-x-0.5 transition-transform shrink-0" />
               </div>
-              <p className={`mt-1 font-bold text-xs sm:text-sm ${isMochi ? "text-[#0b3d2e]" : "text-[#232331]"}`}>
-                Keuangan &amp; Kas
-              </p>
-              <p className="hidden text-[10px] text-[#7b7b8e] line-clamp-1 sm:block">Laba rugi &amp; arus kas</p>
+              <div className="mt-2.5">
+                <p className={`font-black text-sm tracking-tight leading-snug ${isMochi ? "text-[#0b3d2e]" : "text-[#232331]"}`}>
+                  Keuangan &amp; Kas
+                </p>
+                <p className="text-[11px] text-[#7b7b8e] truncate mt-0.5">
+                  Laba rugi &amp; arus kas
+                </p>
+              </div>
             </Link>
 
             {/* 7. Laporan SDM / Absensi */}
             <Link
               href="/app/hr/attendance"
-              className={`group w-[132px] shrink-0 snap-start p-2.5 sm:w-auto sm:p-3 rounded-2xl border transition-all ${
+              className={`group w-[172px] sm:w-auto shrink-0 snap-start p-3.5 sm:p-4 rounded-2xl border transition-all flex flex-col justify-between shadow-xs hover:shadow-md ${
                 isMochi
-                  ? "border-[#d8e3de] bg-[#fbfdfc] hover:border-emerald-400 hover:bg-[#f4faf6]"
+                  ? "border-[#d8e3de] bg-[#fbfdfc] hover:border-emerald-400 hover:bg-[#f3faf6]"
                   : "border border-[#dedee8] bg-[#fcfcfe] hover:border-[#232331]"
               }`}
             >
-              <div className="flex items-center justify-between">
-                <span className="font-mono text-[9px] font-bold uppercase tracking-wider text-[#637970]">
+              <div className="flex items-center justify-between gap-1">
+                <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-[#527867]">
                   SDM &amp; SHIFT
                 </span>
-                <ChevronRight size={12} className="text-[#7b7b8e] group-hover:translate-x-0.5 transition-transform" />
+                <ChevronRight size={13} className="text-[#7b7b8e] group-hover:translate-x-0.5 transition-transform shrink-0" />
               </div>
-              <p className={`mt-1 font-bold text-xs sm:text-sm ${isMochi ? "text-[#0b3d2e]" : "text-[#232331]"}`}>
-                Absensi Staf
-              </p>
-              <p className="hidden text-[10px] text-[#7b7b8e] line-clamp-1 sm:block">Kehadiran kasir &amp; tim</p>
+              <div className="mt-2.5">
+                <p className={`font-black text-sm tracking-tight leading-snug ${isMochi ? "text-[#0b3d2e]" : "text-[#232331]"}`}>
+                  Absensi Staf
+                </p>
+                <p className="text-[11px] text-[#7b7b8e] truncate mt-0.5">
+                  Kehadiran kasir &amp; tim
+                </p>
+              </div>
             </Link>
           </div>
         </section>
