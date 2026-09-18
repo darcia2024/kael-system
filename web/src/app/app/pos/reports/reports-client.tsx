@@ -191,9 +191,9 @@ export default function PosOwnerReportsPage({
             : "mochi-header border-b-2 border-[#232331] bg-white/95"
         }`}
       >
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-2">
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-2 sm:gap-3">
 
-          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
             <Link
               href="/app/pos/owner"
               className={
@@ -211,11 +211,11 @@ export default function PosOwnerReportsPage({
                 name={business?.name}
                 logoUrl={business?.logo_url}
                 brandColor={business?.brand_color}
-                className="h-9 w-9 shrink-0 rounded-full border border-emerald-400/40 shadow-xs"
+                className="h-8 w-8 sm:h-9 sm:w-9 shrink-0 rounded-full border border-emerald-400/40 shadow-xs"
               />
             )}
 
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5 sm:gap-2">
                 <h1
                   className={`font-black text-xs sm:text-base truncate ${
@@ -227,8 +227,8 @@ export default function PosOwnerReportsPage({
                 <span
                   className={
                     isMochi
-                      ? "rounded-full bg-[#c8f53a] px-2 py-0.5 font-mono text-[9px] font-black text-[#073829] shadow-xs shrink-0"
-                      : "rounded-md bg-[#dcfce7] px-1.5 py-0.2 font-mono text-[8.5px] sm:text-[9px] font-bold text-[#16a34a] border border-[#16a34a] shrink-0"
+                      ? "hidden md:inline-flex rounded-full bg-[#c8f53a] px-2 py-0.5 font-mono text-[9px] font-black text-[#073829] shadow-xs shrink-0"
+                      : "hidden md:inline-flex rounded-md bg-[#dcfce7] px-1.5 py-0.2 font-mono text-[8.5px] sm:text-[9px] font-bold text-[#16a34a] border border-[#16a34a] shrink-0"
                   }
                 >
                   Finance Terintegrasi
@@ -244,33 +244,33 @@ export default function PosOwnerReportsPage({
             </div>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            {/* Tombol Hapus Data Testing */}
             <button
               type="button"
               onClick={() => setShowClearModal(true)}
               className={
                 isMochi
-                  ? "flex items-center gap-1.5 rounded-xl border border-rose-400/40 bg-rose-600/90 hover:bg-rose-700 px-3 py-2 font-mono text-xs font-bold text-white shadow-sm transition-all active:scale-95 shrink-0"
-                  : "btn-tactile flex items-center gap-1 rounded-xl border-2 border-rose-600 bg-rose-50 text-rose-700 hover:bg-rose-100 px-3 py-1.5 font-mono text-xs font-bold shadow-ink-xs shrink-0"
+                  ? "flex items-center justify-center h-9 w-9 sm:w-auto sm:px-3 sm:py-2 gap-1.5 rounded-xl border border-rose-400/40 bg-rose-600/90 hover:bg-rose-700 font-mono text-xs font-bold text-white shadow-sm transition-all active:scale-95 shrink-0"
+                  : "btn-tactile flex items-center justify-center h-9 w-9 sm:w-auto sm:px-3 sm:py-1.5 gap-1 rounded-xl border-2 border-rose-600 bg-rose-50 text-rose-700 hover:bg-rose-100 font-mono text-xs font-bold shadow-ink-xs shrink-0"
               }
               title="Pembersihan data transaksi & ulasan testing"
             >
-              <Trash2 size={13} />
+              <Trash2 size={14} />
               <span className="hidden sm:inline">Hapus Data Testing</span>
-              <span className="sm:hidden">Hapus Test</span>
             </button>
 
+            {/* Tombol Dashboard Owner (Desktop only, di HP sudah ada tombol kembali di kiri) */}
             <Link
               href="/app/pos/owner"
               className={
                 isMochi
-                  ? "flex items-center gap-1.5 rounded-xl bg-[#c8f53a] hover:bg-[#d9ff57] px-3.5 py-2 font-mono text-xs font-black text-[#073829] shadow-sm transition-all active:scale-95 shrink-0"
-                  : "btn-tactile flex items-center gap-1 rounded-xl border-2 border-[#232331] bg-[#d9ff57] px-3.5 py-1.5 font-mono text-xs font-black text-[#232331] shadow-ink-xs shrink-0"
+                  ? "hidden sm:flex items-center gap-1.5 rounded-xl bg-[#c8f53a] hover:bg-[#d9ff57] px-3.5 py-2 font-mono text-xs font-black text-[#073829] shadow-sm transition-all active:scale-95 shrink-0"
+                  : "btn-tactile hidden sm:flex items-center gap-1 rounded-xl border-2 border-[#232331] bg-[#d9ff57] px-3.5 py-1.5 font-mono text-xs font-black text-[#232331] shadow-ink-xs shrink-0"
               }
             >
               <LayoutDashboard size={14} />
-              <span className="hidden sm:inline">Dashboard Owner Utama</span>
-              <span className="sm:hidden">Dashboard</span>
+              <span>Dashboard Owner Utama</span>
             </Link>
           </div>
         </div>
