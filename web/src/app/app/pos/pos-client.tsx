@@ -126,6 +126,7 @@ import { alertNewIncomingOrder, alertTableCall, buildPrinterBuzzerPayload } from
 
 function getPosCategoryIcon(categoryName: string): LucideIcon {
   const normalized = categoryName.toLowerCase();
+  if (normalized.includes("kids") || normalized.includes("anak")) return Sparkles;
   if (normalized.includes("coffee") || normalized.includes("kopi")) return Coffee;
   if (normalized.includes("mie") || normalized.includes("sup") || normalized.includes("berkuah")) return Soup;
   if (normalized.includes("cemilan") || normalized.includes("snack") || normalized.includes("tambahan")) return Package;
