@@ -819,6 +819,8 @@ export interface Order {
   inventory_applied_at?: string | null;
   loyalty_applied_at?: string | null;
   sync_error?: string | null;
+  /** Daftar item pesanan jika diambil bersamaan */
+  items?: OrderItem[];
 }
 
 /** Alasan refund sebagai daftar tertutup, supaya bisa diringkas jadi laporan. */

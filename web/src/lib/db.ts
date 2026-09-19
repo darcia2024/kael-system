@@ -5023,7 +5023,7 @@ export const db = {
   },
 
   async getOrders(businessId: string, limit = 50): Promise<Order[]> {
-    return (await sql`
+    const orders = (await sql`
       SELECT o.*, COALESCE(r.refund_total, 0) AS refund_total
       FROM orders o
       LEFT JOIN (
@@ -5032,6 +5032,42 @@ export const db = {
       WHERE o.business_id = ${businessId}
       ORDER BY o.created_at DESC LIMIT ${limit}
     `) as unknown as Order[];
+
+    if (!orders.length) return [];
+
+    const orderIds = orders.map((o) => o.id);
+    const allItems = (await sql`
+      SELECT * FROM order_items
+      WHERE order_id = ANY(${orderIds})
+      ORDER BY id ASC
+    `) as unknown as OrderItem[];
+
+    const itemsByOrder = new Map<string, OrderItem[]>();
+    for (const item of allItems) {
+      const list = itemsByOrder.get(item.order_id) || [];
+      list.push({
+        ...item,
+        price_snapshot: num(item.price_snapshot),
+        cost_snapshot: item.cost_snapshot != null ? num(item.cost_snapshot) : null,
+        qty: num(item.qty),
+        subtotal: num(item.subtotal),
+      });
+      itemsByOrder.set(item.order_id, list);
+    }
+
+    return orders.map((o) => ({
+      ...o,
+      subtotal: num(o.subtotal),
+      discount: num(o.discount),
+      tax: num(o.tax),
+      service_charge: num(o.service_charge),
+      delivery_fee: num(o.delivery_fee),
+      total: num(o.total),
+      refund_total: num(o.refund_total),
+      cash_given: o.cash_given != null ? num(o.cash_given) : null,
+      cash_change: o.cash_change != null ? num(o.cash_change) : null,
+      items: itemsByOrder.get(o.id) || [],
+    }));
   },
 
   /**

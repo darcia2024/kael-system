@@ -22,7 +22,9 @@ import {
   MessageSquare,
   LayoutDashboard,
   QrCode,
+  Eye,
 } from "lucide-react";
+import OrderDetailModal from "./order-detail-modal";
 import type { Business, Order, ShiftReport, FeedbackSummary, FeedbackRow, RefundReasonCode } from "@/lib/types";
 import { FEEDBACK_REASONS, REFUND_REASONS } from "@/lib/types";
 import { refundOrderAction, deleteOrderAction, deleteFeedbackAction, deleteShiftAction } from "@/lib/actions";
@@ -98,6 +100,9 @@ export default function PosOwnerReportsPage({
 }) {
   const router = useRouter();
   const isMochi = isMochiBusiness(business);
+
+  // Selected Order for Order Detail Pop-up Modal
+  const [selectedOrderDetail, setSelectedOrderDetail] = useState<Order | null>(null);
 
   // Refund Modal State
   const [refundingOrderId, setRefundingOrderId] = useState<string | null>(null);
@@ -594,9 +599,20 @@ export default function PosOwnerReportsPage({
               </thead>
               <tbody className="divide-y divide-[#dedee8]">
                 {orders.map((ord) => (
-                  <tr key={ord.id} className={isMochi ? "hover:bg-[#f7fcf9] transition-colors" : "hover:bg-[#fcfcfe]"}>
+                  <tr
+                    key={ord.id}
+                    onClick={() => setSelectedOrderDetail(ord)}
+                    className={`${
+                      isMochi ? "hover:bg-[#f7fcf9]" : "hover:bg-[#fcfcfe]"
+                    } cursor-pointer transition-colors group`}
+                  >
                     <td className="py-3 px-3 font-black text-sm text-[#232331]">
-                      {ord.order_no}
+                      <div className="flex items-center gap-1.5">
+                        <span className="group-hover:text-[#167052] transition-colors font-mono">#{ord.order_no}</span>
+                        <span className="hidden sm:inline-block opacity-0 group-hover:opacity-100 transition-opacity text-[10px] text-[#167052] font-sans font-medium">
+                          (lihat rincian)
+                        </span>
+                      </div>
                     </td>
                     <td className="py-3 px-3 text-[#7b7b8e] text-[11px]">
                       {formatBusinessDateTime(ord.created_at)}
@@ -623,11 +639,27 @@ export default function PosOwnerReportsPage({
                         {(ord.refund_total ?? 0) > 0 ? `REFUND ${formatRupiah(ord.refund_total ?? 0)}` : ord.status.toUpperCase()}
                       </span>
                     </td>
-                    <td className="py-3 px-3 text-right space-x-1.5 whitespace-nowrap">
+                    <td
+                      className="py-3 px-3 text-right space-x-1.5 whitespace-nowrap"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => setSelectedOrderDetail(ord)}
+                        className={
+                          isMochi
+                            ? "rounded-xl border border-emerald-300 bg-[#edf8f3] hover:bg-[#d8f0e5] px-2.5 py-1 text-[11px] font-mono font-bold text-[#167052] transition-all inline-flex items-center gap-1 shadow-xs active:scale-95"
+                            : "btn-tactile rounded-lg border border-[#7958d8] bg-[#f0edff] px-2 py-1 text-[10.5px] font-bold text-[#7958d8] inline-flex items-center gap-1"
+                        }
+                        title="Lihat Pop-up Rincian Pesanan"
+                      >
+                        <Eye size={12} />
+                        <span>Detail</span>
+                      </button>
                       <Link
                         href={`/receipt/${ord.id}`}
                         target="_blank"
-                        className={isMochi ? "rounded-xl border border-[#ccd9d3] bg-[#edf8f3] hover:bg-[#e0f1e8] px-3 py-1 text-[11px] font-mono font-bold text-[#167052] transition-colors" : "btn-tactile rounded-lg border border-[#7958d8] bg-[#f0edff] px-2.5 py-1 text-[10.5px] font-bold text-[#7958d8]"}
+                        className={isMochi ? "rounded-xl border border-[#ccd9d3] bg-white hover:bg-[#edf8f3] px-2.5 py-1 text-[11px] font-mono font-bold text-[#167052] transition-colors inline-block" : "btn-tactile rounded-lg border border-[#7958d8] bg-[#f0edff] px-2.5 py-1 text-[10.5px] font-bold text-[#7958d8]"}
                       >
                         Struk
                       </Link>
@@ -635,7 +667,7 @@ export default function PosOwnerReportsPage({
                         <button
                           type="button"
                           onClick={() => handleOpenRefund(ord)}
-                          className={isMochi ? "rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 px-3 py-1 text-[11px] font-mono font-bold text-rose-700 transition-colors" : "btn-tactile rounded-lg border border-[#ef4444] bg-[#feebee] px-2 py-1 text-[10.5px] font-bold text-[#ef4444]"}
+                          className={isMochi ? "rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 px-2.5 py-1 text-[11px] font-mono font-bold text-rose-700 transition-colors" : "btn-tactile rounded-lg border border-[#ef4444] bg-[#feebee] px-2 py-1 text-[10.5px] font-bold text-[#ef4444]"}
                         >
                           Refund
                         </button>
@@ -1128,6 +1160,18 @@ export default function PosOwnerReportsPage({
           </div>
         </div>
       )}
+
+      {/* POP-UP DETAIL / RINCIAN PESANAN LENGKAP */}
+      <OrderDetailModal
+        order={selectedOrderDetail}
+        isOpen={selectedOrderDetail !== null}
+        onClose={() => setSelectedOrderDetail(null)}
+        onOpenRefund={(ord) => {
+          setSelectedOrderDetail(null);
+          handleOpenRefund(ord);
+        }}
+        isMochi={isMochi}
+      />
 
       {/* Pembersih Data Testing Modal */}
       <ClearTestDataModal
