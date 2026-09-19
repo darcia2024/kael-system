@@ -574,17 +574,153 @@ export default function PosOwnerReportsPage({
         </div>
 
         {/* SECTION 2: RECENT ORDERS & OWNER REFUND */}
-        <div className={isMochi ? "rounded-2xl sm:rounded-3xl border border-[#d8e3de] bg-white p-4 sm:p-6 shadow-sm space-y-4" : "rounded-2xl sm:rounded-3xl border sm:border-2 border-[#232331] bg-white p-4 sm:p-6 shadow-ink-md space-y-4"}>
-          <div className="border-b border-[#dedee8] pb-3">
-            <h3 className={isMochi ? "font-black text-sm sm:text-base text-[#0b3d2e]" : "font-extrabold text-sm sm:text-base text-[#232331]"}>
-              Riwayat Transaksi &amp; Pengembalian Dana (Refund)
-            </h3>
-            <p className={isMochi ? "text-[11px] sm:text-xs text-[#526159]" : "text-[11px] sm:text-xs text-[#7b7b8e]"}>
-              Transaksi bersifat immutable. Pembatalan/refund wajib disetujui owner dan dicatat terpisah.
-            </p>
+        <div className={isMochi ? "rounded-2xl sm:rounded-3xl border border-[#d8e3de] bg-white p-3.5 sm:p-6 shadow-sm space-y-4" : "rounded-2xl sm:rounded-3xl border sm:border-2 border-[#232331] bg-white p-3.5 sm:p-6 shadow-ink-md space-y-4"}>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#dedee8] pb-3">
+            <div>
+              <h3 className={isMochi ? "font-black text-sm sm:text-base text-[#0b3d2e]" : "font-extrabold text-sm sm:text-base text-[#232331]"}>
+                Riwayat Transaksi &amp; Pengembalian Dana (Refund)
+              </h3>
+              <p className={isMochi ? "text-[11px] sm:text-xs text-[#526159]" : "text-[11px] sm:text-xs text-[#7b7b8e]"}>
+                Transaksi bersifat immutable. Ketuk pesanan untuk membuka pop-up rincian menu &amp; rincian tagihan instan.
+              </p>
+            </div>
+            <span className={isMochi ? "inline-flex items-center gap-1 rounded-full bg-[#edf8f3] px-2.5 py-1 font-mono text-[10px] font-black text-[#167052] self-start sm:self-auto border border-emerald-200" : "inline-flex items-center gap-1 rounded-full bg-[#f0edff] px-2.5 py-1 font-mono text-[10px] font-black text-[#7958d8] self-start sm:self-auto"}>
+              {orders.length} Transaksi Tercatat
+            </span>
           </div>
 
-          <div className="overflow-x-auto">
+          {/* VIEW 1: MOBILE COMPACT CARDS (Mobile-First, No Horizontal Scrolling) */}
+          <div className="block md:hidden space-y-2.5">
+            {orders.length === 0 ? (
+              <p className="text-center py-6 text-xs text-[#7b7b8e] font-mono">Belum ada riwayat transaksi.</p>
+            ) : (
+              orders.map((ord) => {
+                const hasRefund = (ord.refund_total ?? 0) > 0;
+                const netTotal = Math.max(0, Number(ord.total) - Number(ord.refund_total ?? 0));
+                const itemsCount = ord.items?.length ?? 0;
+
+                return (
+                  <div
+                    key={ord.id}
+                    onClick={() => setSelectedOrderDetail(ord)}
+                    className={
+                      isMochi
+                        ? "rounded-2xl border border-[#d8e3de] bg-[#fbfdfc] hover:bg-[#f0f7f3] p-3 space-y-2.5 transition-all shadow-xs active:scale-[0.99] cursor-pointer"
+                        : "rounded-2xl border-2 border-[#232331] bg-white p-3 space-y-2.5 shadow-ink-xs active:scale-[0.99] cursor-pointer"
+                    }
+                  >
+                    {/* Header: Order No, Payment Method, Date & Status Badge */}
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-mono text-sm font-black text-[#0b3d2e]">
+                            #{ord.order_no}
+                          </span>
+                          <span className="text-[9.5px] uppercase font-mono font-bold px-1.5 py-0.2 rounded bg-[#edf8f3] text-[#167052] border border-emerald-200">
+                            {ord.payment_method}
+                          </span>
+                        </div>
+                        <p className="text-[10px] font-mono text-[#637970] mt-0.5">
+                          {formatBusinessDateTime(ord.created_at)}
+                        </p>
+                      </div>
+
+                      <span className={`inline-flex items-center gap-1 font-mono font-black text-[9px] px-2 py-0.5 rounded-full border shrink-0 ${
+                        hasRefund
+                          ? "bg-rose-50 text-rose-700 border-rose-300"
+                          : ord.status === "paid"
+                          ? "bg-emerald-50 text-[#167052] border-emerald-300"
+                          : "bg-amber-50 text-amber-900 border-amber-300"
+                      }`}>
+                        {hasRefund ? `REFUND ${formatRupiah(ord.refund_total ?? 0)}` : ord.status.toUpperCase()}
+                      </span>
+                    </div>
+
+                    {/* Middle: Service Type & Total */}
+                    <div className="flex items-end justify-between border-t border-b border-[#edf2ef] py-1.5">
+                      <div>
+                        <span className="text-[11px] font-bold text-[#7958d8] block">
+                          {serviceTypeLabel(ord.service_type, ord.table_no)}
+                        </span>
+                        {(ord.customer_name || ord.delivery_name) && (
+                          <span className="text-[10px] text-[#526159] block truncate max-w-[150px]">
+                            {ord.customer_name || ord.delivery_name}
+                          </span>
+                        )}
+                        {itemsCount > 0 && (
+                          <span className="text-[9.5px] text-[#167052] font-mono font-bold block mt-0.5">
+                            📦 {itemsCount} menu · tap untuk rincian ➔
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-right font-mono">
+                        <span className="text-[9px] text-[#637970] block uppercase font-bold">Total Riil</span>
+                        <span className="text-sm font-black text-[#167052]">
+                          {formatRupiah(netTotal)}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Action Bar */}
+                    <div
+                      className="flex items-center justify-between gap-1.5 pt-0.5 font-mono"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => setSelectedOrderDetail(ord)}
+                        className={
+                          isMochi
+                            ? "flex-1 rounded-xl border border-emerald-300 bg-[#edf8f3] hover:bg-[#d8f0e5] py-1.5 px-2 text-[10.5px] font-bold text-[#0b3d2e] inline-flex items-center justify-center gap-1 shadow-xs active:scale-95 transition-all"
+                            : "flex-1 rounded-xl border border-[#232331] bg-[#f0edff] py-1.5 px-2 text-[10.5px] font-bold text-[#232331] inline-flex items-center justify-center gap-1 active:scale-95"
+                        }
+                      >
+                        <Eye size={12} />
+                        <span>Rincian</span>
+                      </button>
+
+                      <Link
+                        href={`/receipt/${ord.id}`}
+                        target="_blank"
+                        className={
+                          isMochi
+                            ? "flex-1 rounded-xl border border-[#ccd9d3] bg-white hover:bg-[#f8faf9] py-1.5 px-2 text-[10.5px] font-bold text-[#526159] inline-flex items-center justify-center gap-1 shadow-xs active:scale-95 transition-all"
+                            : "flex-1 rounded-xl border border-[#232331] bg-white py-1.5 px-2 text-[10.5px] font-bold text-[#232331] inline-flex items-center justify-center gap-1 active:scale-95"
+                        }
+                      >
+                        <Receipt size={12} />
+                        <span>Struk</span>
+                      </Link>
+
+                      {ord.status === "paid" && Number(ord.refund_total ?? 0) < Number(ord.total) && (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenRefund(ord)}
+                          className="rounded-xl border border-rose-300 bg-rose-50 hover:bg-rose-100 py-1.5 px-2.5 text-[10.5px] font-bold text-rose-700 inline-flex items-center justify-center gap-1 active:scale-95 transition-all"
+                        >
+                          <RotateCcw size={11} />
+                          <span>Refund</span>
+                        </button>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteOrder(ord.id, ord.order_no)}
+                        disabled={deletingId === ord.id}
+                        className="rounded-xl border border-rose-200 bg-rose-50/70 hover:bg-rose-100 py-1.5 px-2 text-[10.5px] font-bold text-rose-700 inline-flex items-center justify-center disabled:opacity-50 active:scale-95 transition-all"
+                        title="Hapus data testing"
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          {/* VIEW 2: DESKTOP / TABLET DATA TABLE */}
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-left font-mono text-xs">
               <thead>
                 <tr className={isMochi ? "border-b border-[#d8e3de] bg-[#edf8f3] text-[#167052] text-[10px] uppercase font-extrabold" : "border-b border-[#dedee8] text-[#7b7b8e] text-[10px] uppercase"}>
@@ -609,7 +745,7 @@ export default function PosOwnerReportsPage({
                     <td className="py-3 px-3 font-black text-sm text-[#232331]">
                       <div className="flex items-center gap-1.5">
                         <span className="group-hover:text-[#167052] transition-colors font-mono">#{ord.order_no}</span>
-                        <span className="hidden sm:inline-block opacity-0 group-hover:opacity-100 transition-opacity text-[10px] text-[#167052] font-sans font-medium">
+                        <span className="opacity-0 group-hover:opacity-100 transition-opacity text-[10px] text-[#167052] font-sans font-medium">
                           (lihat rincian)
                         </span>
                       </div>
