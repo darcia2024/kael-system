@@ -102,6 +102,7 @@ import { formatRupiah, formatBusinessDateTime } from "@/lib/formatters";
 import QrisPayment from "./qris-payment";
 import OrderQueue from "./order-queue";
 import PosFloorPlan, { TableSummary } from "./pos-floor-plan";
+import { normalizeTableKey } from "@/lib/table-key";
 import type { ItemBagiTagihan } from "./pos-split-bill-modal";
 import PosSettleTableModal, { type MetodeBayar } from "./pos-settle-table-modal";
 import PosInvoiceQrModal from "./pos-invoice-qr-modal";
@@ -685,16 +686,32 @@ export default function PosClient({
   }, [menuItems, activeCategory, menuSearchQuery]);
 
 
-  // Hitung jumlah meja aktif
+  // Hitung jumlah meja aktif (sinkron dengan PosFloorPlan / Denah Meja)
   const activeTablesCount = useMemo(() => {
-    const tableKeys = new Set(
-      currentQrOrders
-        .filter((o) => o.status !== "cancelled" && o.payment_status !== "failed" && o.fulfillment_status !== "completed")
-        .map((o) => o.table_no?.trim().toLowerCase())
-        .filter(Boolean)
-    );
-    return tableKeys.size;
-  }, [currentQrOrders]);
+    const sessionIds = new Set((tableSessions || []).map((s) => s.id));
+    const activeTableKeys = new Set<string>();
+
+    // 1. Meja dengan sesi kunjungan yang masih aktif
+    (tableSessions || []).forEach((s) => {
+      const k = normalizeTableKey(s.table_no);
+      if (k) activeTableKeys.add(k);
+    });
+
+    // 2. Pesanan aktif (jika ada pesanan aktif di luar sesi yang sudah tertutup)
+    currentQrOrders.forEach((o) => {
+      if (o.status === "cancelled" || o.payment_status === "failed") return;
+      const isActive = o.table_session_id
+        ? sessionIds.has(o.table_session_id)
+        : o.fulfillment_status !== "completed" && o.fulfillment_status !== "cancelled";
+
+      if (isActive && o.table_no) {
+        const k = normalizeTableKey(o.table_no);
+        if (k) activeTableKeys.add(k);
+      }
+    });
+
+    return activeTableKeys.size;
+  }, [tableSessions, currentQrOrders]);
 
   // Handle Tambah Pesanan ke Meja
   const handleAddItemsToTable = (tableNo: string) => {
