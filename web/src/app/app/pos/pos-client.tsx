@@ -46,6 +46,10 @@ import {
   Bell,
   Volume2,
   VolumeX,
+  Banknote,
+  ArrowDownCircle,
+  ArrowUpCircle,
+  Info,
   type LucideIcon,
 } from "lucide-react";
 import type { 
@@ -55,6 +59,7 @@ import type {
   User, 
   CustomerDirectoryEntry,
   Shift,
+  ShiftCashMovement,
   Order,
   OrderItem,
   LoyaltyProgram,
@@ -65,6 +70,9 @@ import {
   createOrderAction,
   openShiftAction,
   closeShiftAction,
+  recordShiftCashMovementAction,
+  getActiveShiftCashSummaryAction,
+  getShiftCashMovementsAction,
   updateOrderStatusAction,
   searchCustomersAction,
   lookupMemberAction,
@@ -336,6 +344,29 @@ export default function PosClient({
   const [showMemberScannerModal, setShowMemberScannerModal] = useState(false);
   const [shiftOpeningCashInput, setShiftOpeningCashInput] = useState<number>(100000);
   const [shiftClosingCashInput, setShiftClosingCashInput] = useState<number>(0);
+
+  // Cash Movement (Uang Keluar / Masuk Laci)
+  const [showCashMovementModal, setShowCashMovementModal] = useState(false);
+  const [cashMovementType, setCashMovementType] = useState<"cash_out" | "cash_in">("cash_out");
+  const [cashMovementAmount, setCashMovementAmount] = useState<number | "">("");
+  const [cashMovementCategory, setCashMovementCategory] = useState<string>("Bahan Baku/Dapur");
+  const [cashMovementNote, setCashMovementNote] = useState<string>("");
+  const [isSubmittingCashMovement, setIsSubmittingCashMovement] = useState(false);
+
+  // Active Shift Live Cash Breakdown for Reconciliation
+  const [activeShiftSummary, setActiveShiftSummary] = useState<{
+    openingCash: number;
+    cashSales: number;
+    cashOrdersCount: number;
+    nonCashSales: number;
+    nonCashOrdersCount: number;
+    cashRefunds: number;
+    cashOut: number;
+    cashIn: number;
+    expectedCash: number;
+    movements: ShiftCashMovement[];
+  } | null>(null);
+  const [loadingShiftSummary, setLoadingShiftSummary] = useState(false);
 
   // Live QR Orders & Bell Notification States
   const [currentQrOrders, setCurrentQrOrders] = useState(pendingQrOrders);
@@ -1119,8 +1150,29 @@ export default function PosClient({
   // Accept incoming QR order
 
   // ---------------------------------------------------------------------------
-  // SHIFT MANAGEMENT
+  // SHIFT & CASH MOVEMENT MANAGEMENT
   // ---------------------------------------------------------------------------
+  const loadActiveShiftSummary = async () => {
+    if (!activeShift?.id) return;
+    setLoadingShiftSummary(true);
+    try {
+      const res = await getActiveShiftCashSummaryAction(activeShift.id);
+      if (res.ok) {
+        setActiveShiftSummary(res.data);
+      }
+    } catch {
+      // ignore
+    } finally {
+      setLoadingShiftSummary(false);
+    }
+  };
+
+  useEffect(() => {
+    if (showShiftModal && activeShift) {
+      loadActiveShiftSummary();
+    }
+  }, [showShiftModal, activeShift?.id]);
+
   const handleOpenShift = async (e: React.FormEvent) => {
     e.preventDefault();
     const res = await openShiftAction(shiftOpeningCashInput, "Shift Kasir");
@@ -1144,11 +1196,55 @@ export default function PosClient({
     }
 
     setShowShiftModal(false);
+    setActiveShiftSummary(null);
+    setShiftClosingCashInput(0);
     refreshAll();
     const variance = res.data.variance;
     alert(
       `Shift selesai ditutup!\n` +
       `Selisih Laci: ${formatRupiah(variance)} (${variance === 0 ? "PAS ✓" : variance > 0 ? "LEBIH" : "KURANG"})`
+    );
+  };
+
+  const handleRecordCashMovement = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeShift) {
+      alert("Shift kasir belum dibuka.");
+      return;
+    }
+    const numAmount = Number(cashMovementAmount);
+    if (!numAmount || numAmount <= 0) {
+      alert("Nominal uang harus lebih dari Rp 0.");
+      return;
+    }
+    if (!cashMovementNote.trim()) {
+      alert("Keterangan pengeluaran atau pemasukan wajib diisi.");
+      return;
+    }
+
+    setIsSubmittingCashMovement(true);
+    const res = await recordShiftCashMovementAction({
+      shiftId: activeShift.id,
+      type: cashMovementType,
+      amount: numAmount,
+      category: cashMovementCategory,
+      note: cashMovementNote.trim(),
+    });
+    setIsSubmittingCashMovement(false);
+
+    if (!res.ok) {
+      alert(res.error);
+      return;
+    }
+
+    setShowCashMovementModal(false);
+    setCashMovementAmount("");
+    setCashMovementNote("");
+    // Reload active shift summary if shift modal or summary is needed
+    await loadActiveShiftSummary();
+    refreshAll();
+    alert(
+      `${cashMovementType === "cash_out" ? "💸 Kas Keluar" : "📥 Kas Masuk"} sebesar ${formatRupiah(numAmount)} berhasil dicatat!`
     );
   };
 
@@ -2183,6 +2279,25 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
               <Receipt size={15} />
               <span>Riwayat</span>
             </Link>
+
+            {activeShift && (
+              <button
+                type="button"
+                onClick={() => {
+                  setCashMovementType("cash_out");
+                  setShowCashMovementModal(true);
+                }}
+                className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-bold transition-all shadow-xs ${
+                  isMochiPos
+                    ? "bg-amber-400 text-[#073829] hover:bg-amber-300 font-extrabold"
+                    : "bg-amber-100 border border-amber-300 text-amber-900 hover:bg-amber-200"
+                }`}
+                title="Catat uang keluar dari laci kasir (belanja bahan dapur, es, galon, dll)"
+              >
+                <Banknote size={15} />
+                <span>Kas Keluar</span>
+              </button>
+            )}
             {isInstallable && !isInstalled && (
               <button
                 type="button"
@@ -2434,11 +2549,37 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
               <span className="absolute -right-0.5 -top-0.5 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#ea580c] px-1 text-[9px] font-extrabold text-white">{currentQrOrders.length}</span>
             </button>
           )}
-          <button type="button" onClick={() => setShowShiftModal(true)} aria-label={activeShift ? "Tutup shift" : "Buka shift"} title={activeShift ? "Tutup shift" : "Buka shift"} className={`mt-auto flex h-11 w-11 items-center justify-center rounded-xl border transition-all ${
-            activeShift
-              ? (isMochiPos ? "border-[#c8f53a]/50 bg-[#0b3d2e] text-[#c8f53a]" : "border-[#b8cec2] bg-[#e5f3ec] text-[#176047]")
-              : "border-[#e3b5af] bg-[#fff0ed] text-[#a83d33]"
-          }`}>
+          {activeShift && (
+            <button
+              type="button"
+              onClick={() => {
+                setCashMovementType("cash_out");
+                setShowCashMovementModal(true);
+              }}
+              aria-label="Catat Kas Keluar / Masuk Laci"
+              title="Catat Kas Keluar / Masuk Laci"
+              className={`mt-auto flex h-11 w-11 items-center justify-center rounded-xl border transition-all ${
+                isMochiPos
+                  ? "border-amber-400/50 bg-amber-400/20 text-amber-300 hover:bg-amber-400/30"
+                  : "border-amber-400 bg-amber-50 text-amber-800 hover:bg-amber-100"
+              }`}
+            >
+              <Banknote size={19} aria-hidden="true" />
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => setShowShiftModal(true)}
+            aria-label={activeShift ? "Tutup shift" : "Buka shift"}
+            title={activeShift ? "Tutup shift" : "Buka shift"}
+            className={`${activeShift ? "" : "mt-auto"} flex h-11 w-11 items-center justify-center rounded-xl border transition-all ${
+              activeShift
+                ? isMochiPos
+                  ? "border-[#c8f53a]/50 bg-[#0b3d2e] text-[#c8f53a]"
+                  : "border-[#b8cec2] bg-[#e5f3ec] text-[#176047]"
+                : "border-[#e3b5af] bg-[#fff0ed] text-[#a83d33]"
+            }`}
+          >
             <Clock size={19} aria-hidden="true" />
           </button>
         </nav>
@@ -3433,39 +3574,178 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
             </div>
 
             {activeShift ? (
-              <form onSubmit={handleCloseShift} className="space-y-3 font-sans">
-                <div className={`rounded-xl p-3 space-y-1 font-mono text-xs ${
-                  isMochiPos ? "bg-[#edf8f3] border border-[#ccd9d3]" : "bg-[#f0edff]"
+              <form onSubmit={handleCloseShift} className="space-y-4 font-sans">
+                {/* Petunjuk Kasir Penting */}
+                <div className={`p-3 rounded-2xl flex items-start gap-2.5 text-xs ${
+                  isMochiPos ? "bg-[#e1f5eb] text-[#0b3d2e] border border-emerald-700/20" : "bg-amber-50 text-amber-900 border border-amber-200"
                 }`}>
-                  <div className="flex justify-between">
-                    <span className="text-[#7b7b8e]">Waktu Buka:</span>
-                    <span>{formatBusinessDateTime(activeShift.opened_at)}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-[#7b7b8e]">Modal Awal:</span>
-                    <span className="font-bold">{formatRupiah(Number(activeShift.opening_cash))}</span>
+                  <Info size={18} className="shrink-0 mt-0.5 text-emerald-700" />
+                  <div className="leading-relaxed">
+                    <p className="font-extrabold text-[12px]">Penting Sebelum Menghitung Laci:</p>
+                    <p className="text-[11px] text-emerald-800">
+                      Masukkan <strong>TOTAL seluruh uang fisik tunai</strong> yang saat ini ada di dalam laci kasir. <strong>Jangan pisahkan modal awal</strong> sebelum dihitung.
+                    </p>
                   </div>
                 </div>
 
-                <div className="space-y-1 font-mono">
-                  <label className={`block font-bold ${isMochiPos ? "text-[#0b3d2e]" : "text-[#232331]"}`}>
-                    Hitung Uang Fisik di Laci Kasir (Rp):
-                  </label>
+                {/* Rincian Arus Kas Shift Ini */}
+                <div className={`rounded-2xl p-3.5 space-y-2 font-mono text-xs border ${
+                  isMochiPos ? "bg-[#edf8f3] border-[#ccd9d3]" : "bg-[#f8f8fc] border-[#e0e0ea]"
+                }`}>
+                  <div className="flex items-center justify-between border-b border-black/5 pb-2">
+                    <span className="font-bold text-[#0b3d2e] font-sans">📊 Rincian Arus Kas Laci</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCashMovementType("cash_out");
+                        setShowCashMovementModal(true);
+                      }}
+                      className="text-[10px] font-bold text-amber-900 bg-amber-200/80 hover:bg-amber-300 px-2 py-0.5 rounded-lg transition-colors flex items-center gap-1"
+                    >
+                      <Plus size={11} />
+                      <span>Catat Kas Keluar</span>
+                    </button>
+                  </div>
+
+                  {loadingShiftSummary ? (
+                    <div className="py-4 text-center text-xs text-[#7b7b8e] animate-pulse">
+                      Memuat rekonsiliasi kas shift...
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex justify-between items-center text-[11px]">
+                        <span className="text-[#556960]">Modal Awal:</span>
+                        <span className="font-bold">{formatRupiah(Number(activeShift.opening_cash))}</span>
+                      </div>
+                      <div className="flex justify-between items-center text-[11px]">
+                        <span className="text-[#556960]">
+                          (+) Penjualan Tunai ({activeShiftSummary?.cashOrdersCount ?? 0} nota):
+                        </span>
+                        <span className="font-bold text-emerald-700">
+                          +{formatRupiah(activeShiftSummary?.cashSales ?? 0)}
+                        </span>
+                      </div>
+                      {(activeShiftSummary?.cashRefunds ?? 0) > 0 && (
+                        <div className="flex justify-between items-center text-[11px]">
+                          <span className="text-[#556960]">(-) Refund Tunai:</span>
+                          <span className="font-bold text-rose-700">
+                            -{formatRupiah(activeShiftSummary?.cashRefunds ?? 0)}
+                          </span>
+                        </div>
+                      )}
+                      <div className="flex justify-between items-center text-[11px]">
+                        <span className="text-[#556960]">
+                          (-) Kas Keluar Laci ({activeShiftSummary?.movements.filter(m => m.type === "cash_out").length ?? 0} kali):
+                        </span>
+                        <span className={`font-bold ${(activeShiftSummary?.cashOut ?? 0) > 0 ? "text-rose-700" : "text-gray-500"}`}>
+                          -{(activeShiftSummary?.cashOut ?? 0) > 0 ? formatRupiah(activeShiftSummary?.cashOut ?? 0) : "Rp 0"}
+                        </span>
+                      </div>
+                      {(activeShiftSummary?.cashIn ?? 0) > 0 && (
+                        <div className="flex justify-between items-center text-[11px]">
+                          <span className="text-[#556960]">(+) Kas Masuk Tambahan:</span>
+                          <span className="font-bold text-blue-700">
+                            +{formatRupiah(activeShiftSummary?.cashIn ?? 0)}
+                          </span>
+                        </div>
+                      )}
+
+                      {/* Movements details if any */}
+                      {activeShiftSummary && activeShiftSummary.movements.length > 0 && (
+                        <div className="pt-1.5 border-t border-black/5 space-y-1">
+                          <p className="text-[10px] font-sans font-bold text-[#556960]">Catatan Kas Keluar/Masuk:</p>
+                          <div className="max-h-24 overflow-y-auto space-y-1 pr-1">
+                            {activeShiftSummary.movements.map((m) => (
+                              <div key={m.id} className="text-[10px] flex justify-between bg-white/70 p-1.5 rounded-lg border border-black/5">
+                                <span className="truncate max-w-[200px]" title={m.note}>
+                                  {m.type === "cash_out" ? "🔴" : "🟢"} [{m.category}] {m.note}
+                                </span>
+                                <span className="font-bold shrink-0">
+                                  {m.type === "cash_out" ? "-" : "+"}{formatRupiah(Number(m.amount))}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="flex justify-between items-center pt-2 border-t border-black/10 text-xs font-black">
+                        <span className="text-[#0b3d2e]">Target Fisik Laci (Seharusnya):</span>
+                        <span className="text-[#0b3d2e] text-sm">
+                          {formatRupiah(activeShiftSummary?.expectedCash ?? Number(activeShift.opening_cash))}
+                        </span>
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                {/* Input Uang Fisik Laci */}
+                <div className="space-y-1.5 font-mono">
+                  <div className="flex items-center justify-between">
+                    <label className={`block font-bold text-xs ${isMochiPos ? "text-[#0b3d2e]" : "text-[#232331]"}`}>
+                      Hitung Uang Fisik di Laci Kasir (Rp):
+                    </label>
+                    {activeShiftSummary && (
+                      <button
+                        type="button"
+                        onClick={() => setShiftClosingCashInput(activeShiftSummary.expectedCash)}
+                        className="text-[10px] text-emerald-800 bg-emerald-100 hover:bg-emerald-200 px-2 py-0.5 rounded-md font-bold transition-colors"
+                      >
+                        Isi Target ({formatRupiah(activeShiftSummary.expectedCash)})
+                      </button>
+                    )}
+                  </div>
                   <input
                     type="number"
                     required
                     min={0}
                     step={1}
-                    value={shiftClosingCashInput}
+                    value={shiftClosingCashInput || ""}
                     onChange={(e) => setShiftClosingCashInput(Number(e.target.value))}
+                    placeholder="Masukkan total uang fisik di laci"
                     className={`w-full rounded-xl border-2 p-2.5 text-base font-black ${
                       isMochiPos ? "border-[#0b3d2e] text-[#0b3d2e]" : "border-[#232331] text-[#232331]"
                     }`}
                     autoFocus
                   />
-                  <span className="text-[10px] text-[#7b7b8e] block">
-                    Sistem otomatis mencocokkan dengan rekaman penjualan kasir.
-                  </span>
+
+                  {/* Realtime Live Variance Preview */}
+                  {shiftClosingCashInput > 0 && activeShiftSummary && (() => {
+                    const variance = shiftClosingCashInput - activeShiftSummary.expectedCash;
+                    if (variance === 0) {
+                      return (
+                        <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-300 text-emerald-900 flex items-center gap-2 text-xs font-sans">
+                          <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
+                          <div>
+                            <span className="font-black">PAS (Rp 0) ✓</span>
+                            <p className="text-[10.5px] text-emerald-700">Jumlah uang fisik di laci cocok sempurna dengan perhitungan sistem.</p>
+                          </div>
+                        </div>
+                      );
+                    }
+                    if (variance < 0) {
+                      return (
+                        <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-300 text-rose-900 flex items-center gap-2 text-xs font-sans">
+                          <AlertCircle size={16} className="text-rose-600 shrink-0" />
+                          <div>
+                            <span className="font-black">KURANG {formatRupiah(Math.abs(variance))}</span>
+                            <p className="text-[10.5px] text-rose-700">
+                              Fisik laci lebih sedikit dari target. Pastikan uang modal awal dihitung dan periksa apakah ada nota belanja dapur/kas keluar yang belum dicatat.
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    }
+                    return (
+                      <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 flex items-center gap-2 text-xs font-sans">
+                        <Info size={16} className="text-amber-600 shrink-0" />
+                        <div>
+                          <span className="font-black">LEBIH +{formatRupiah(variance)}</span>
+                          <p className="text-[10.5px] text-amber-700">Uang fisik laci melebihi target hitungan sistem.</p>
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 <div className="flex justify-end gap-2 pt-2 font-mono">
@@ -3532,6 +3812,193 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
               </form>
             )}
 
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: CATAT KAS KELUAR / KAS MASUK LACI */}
+      {showCashMovementModal && activeShift && (
+        <div className={`fixed inset-0 z-55 flex items-center justify-center p-4 backdrop-blur-xs ${
+          isMochiPos ? "bg-[#07281e]/60" : "bg-[#232331]/60"
+        }`}>
+          <div className={`w-full max-w-md rounded-3xl bg-white p-5 sm:p-6 space-y-4 animate-in zoom-in-95 font-mono text-xs ${
+            isMochiPos ? "border border-[#d8e3de] shadow-2xl" : "border-2 border-[#232331] shadow-ink-lg"
+          }`}>
+            <div className={`flex items-center justify-between border-b pb-3 ${
+              isMochiPos ? "border-[#e0ebe5]" : "border-[#dedee8]"
+            }`}>
+              <div className="flex items-center gap-2">
+                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-amber-100 text-amber-800">
+                  <Banknote size={18} />
+                </div>
+                <div>
+                  <h3 className={`font-extrabold text-base font-sans ${
+                    isMochiPos ? "text-[#0b3d2e]" : "text-[#232331]"
+                  }`}>
+                    Catat Uang Keluar / Masuk Laci
+                  </h3>
+                  <p className="text-[11px] text-[#7b7b8e] font-sans">
+                    Shift aktif: {staffList.find(s => s.id === activeShift.opened_by)?.name ?? "Kasir"}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowCashMovementModal(false)}
+                className={`font-bold p-1 transition-colors ${
+                  isMochiPos ? "text-[#7b8882] hover:text-[#0b3d2e]" : "text-[#7b7b8e] hover:text-[#232331]"
+                }`}
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleRecordCashMovement} className="space-y-3.5 font-sans">
+              {/* Tipe: Kas Keluar vs Kas Masuk */}
+              <div className="grid grid-cols-2 gap-2 p-1 rounded-xl bg-[#f0f4f2]">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCashMovementType("cash_out");
+                    setCashMovementCategory("Bahan Baku/Dapur");
+                  }}
+                  className={`flex items-center justify-center gap-1.5 py-2 rounded-lg font-bold text-xs transition-all ${
+                    cashMovementType === "cash_out"
+                      ? "bg-rose-600 text-white shadow-xs"
+                      : "text-[#556960] hover:text-[#0b3d2e]"
+                  }`}
+                >
+                  <ArrowDownCircle size={15} />
+                  <span>Kas Keluar (Pengeluaran)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCashMovementType("cash_in");
+                    setCashMovementCategory("Modal Tambahan");
+                  }}
+                  className={`flex items-center justify-center gap-1.5 py-2 rounded-lg font-bold text-xs transition-all ${
+                    cashMovementType === "cash_in"
+                      ? "bg-emerald-700 text-white shadow-xs"
+                      : "text-[#556960] hover:text-[#0b3d2e]"
+                  }`}
+                >
+                  <ArrowUpCircle size={15} />
+                  <span>Kas Masuk (Tambahan)</span>
+                </button>
+              </div>
+
+              {/* Kategori Pengeluaran */}
+              <div className="space-y-1">
+                <label className="block text-xs font-bold text-[#3d5248]">
+                  Kategori {cashMovementType === "cash_out" ? "Pengeluaran" : "Pemasukan"}:
+                </label>
+                <div className="flex flex-wrap gap-1.5">
+                  {(cashMovementType === "cash_out"
+                    ? [
+                        "Bahan Baku/Dapur",
+                        "Es Batu/Gas/Galon",
+                        "Operasional Toko",
+                        "Kasbon Karyawan",
+                        "Lainnya",
+                      ]
+                    : ["Modal Tambahan", "Penerimaan Lain", "Lainnya"]
+                  ).map((cat) => (
+                    <button
+                      key={cat}
+                      type="button"
+                      onClick={() => setCashMovementCategory(cat)}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
+                        cashMovementCategory === cat
+                          ? isMochiPos
+                            ? "bg-[#0b3d2e] text-[#c8f53a]"
+                            : "bg-[#232331] text-white"
+                          : "bg-[#f0f4f2] text-[#556960] hover:bg-[#e2ebe6]"
+                      }`}
+                    >
+                      {cat}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Nominal */}
+              <div className="space-y-1">
+                <label className="block text-xs font-bold text-[#3d5248]">
+                  Nominal Uang (Rp):
+                </label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 font-mono font-bold text-sm text-[#7b8882]">
+                    Rp
+                  </span>
+                  <input
+                    type="number"
+                    required
+                    min={1}
+                    step={1}
+                    value={cashMovementAmount}
+                    onChange={(e) => setCashMovementAmount(e.target.value ? Number(e.target.value) : "")}
+                    placeholder="Contoh: 158000"
+                    className="w-full rounded-xl border border-[#ccd9d3] pl-10 pr-3 py-2 text-base font-mono font-bold outline-none focus:border-[#167052] focus:ring-2 focus:ring-[#167052]/20"
+                    autoFocus
+                  />
+                </div>
+                {/* Quick nominal buttons */}
+                <div className="flex flex-wrap gap-1 pt-1 font-mono text-[11px]">
+                  {[10000, 20000, 50000, 100000, 150000].map((val) => (
+                    <button
+                      key={val}
+                      type="button"
+                      onClick={() => setCashMovementAmount(val)}
+                      className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 hover:bg-slate-200 font-bold"
+                    >
+                      +{formatRupiah(val)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Keterangan / Catatan */}
+              <div className="space-y-1">
+                <label className="block text-xs font-bold text-[#3d5248]">
+                  Keterangan Belanja / Pengeluaran:
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={cashMovementNote}
+                  onChange={(e) => setCashMovementNote(e.target.value)}
+                  placeholder={
+                    cashMovementType === "cash_out"
+                      ? "Contoh: Beli es batu 2 karung & sayur pasar"
+                      : "Contoh: Tambahan uang kembalian dari brankas"
+                  }
+                  className="w-full rounded-xl border border-[#ccd9d3] px-3 py-2 text-xs outline-none focus:border-[#167052] focus:ring-2 focus:ring-[#167052]/20"
+                />
+              </div>
+
+              {/* Tombol Aksi */}
+              <div className="flex justify-end gap-2 pt-2 font-mono">
+                <button
+                  type="button"
+                  onClick={() => setShowCashMovementModal(false)}
+                  className="rounded-xl border border-[#dedee8] bg-white px-3 py-2 font-bold text-[#7b7b8e]"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingCashMovement}
+                  className={`rounded-xl px-5 py-2 font-black text-white disabled:opacity-50 transition-all ${
+                    cashMovementType === "cash_out"
+                      ? "bg-rose-600 hover:bg-rose-700 shadow-xs"
+                      : "bg-[#167052] hover:bg-[#0f4d38] shadow-xs"
+                  }`}
+                >
+                  {isSubmittingCashMovement ? "Menyimpan..." : "Simpan Catatan ✓"}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

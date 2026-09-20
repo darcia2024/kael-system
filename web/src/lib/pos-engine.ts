@@ -76,13 +76,21 @@ export function calculateCashChange(total: number, cashGiven: number): {
 export function calculateShiftReconciliation(
   openingCash: number,
   cashSalesTotal: number,
-  physicalClosingCash: number
+  physicalClosingCash: number,
+  cashOutTotal = 0,
+  cashInTotal = 0,
 ): {
   expectedCash: number;
   variance: number;
   status: "balanced" | "surplus" | "shortage";
 } {
-  const expectedCash = Math.max(0, openingCash) + Math.max(0, cashSalesTotal);
+  const expectedCash = Math.max(
+    0,
+    Math.max(0, openingCash) +
+      Math.max(0, cashSalesTotal) -
+      Math.max(0, cashOutTotal) +
+      Math.max(0, cashInTotal),
+  );
   const variance = physicalClosingCash - expectedCash;
 
   let status: "balanced" | "surplus" | "shortage" = "balanced";

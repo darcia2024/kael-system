@@ -998,11 +998,11 @@ export default function PosOwnerReportsPage({
                   <th className="py-2.5 px-3 text-right">Dilayani</th>
                   <th className="py-2.5 px-3">Penjualan</th>
                   <th className="py-2.5 px-3">Modal Awal</th>
+                  <th className="py-2.5 px-3 text-right">Kas Keluar</th>
                   <th className="py-2.5 px-3">Waktu Tutup</th>
-                  <th className="py-2.5 px-3">Uang Sistem</th>
+                  <th className="py-2.5 px-3">Target Laci</th>
                   <th className="py-2.5 px-3">Uang Fisik Laci</th>
                   <th className="py-2.5 px-3 text-right">Selisih (Variance)</th>
-                  <th className="py-2.5 px-3 text-right">Aksi</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#dedee8]">
@@ -1018,12 +1018,15 @@ export default function PosOwnerReportsPage({
                       {sh.orders_count} orang
                     </td>
                     {/* Termasuk QRIS dan transfer; yang dibandingkan dengan laci
-                        cuma bagian tunai, dan itu ada di kolom Uang Sistem. */}
+                        cuma bagian tunai, dan itu ada di kolom Target Laci. */}
                     <td className="py-3 px-3 font-bold text-[#15803d]">
                       {formatRupiah(sh.total_sales)}
                     </td>
                     <td className="py-3 px-3 font-bold">
                       {formatRupiah(sh.opening_cash)}
+                    </td>
+                    <td className="py-3 px-3 text-right font-bold text-rose-600">
+                      {Number(sh.cash_out || 0) > 0 ? `-${formatRupiah(Number(sh.cash_out))}` : "-"}
                     </td>
                     <td className="py-3 px-3 text-[11px] text-[#7b7b8e]">
                       {sh.closed_at ? formatBusinessDateTime(sh.closed_at) : "Sedang Berjalan..."}

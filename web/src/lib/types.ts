@@ -647,6 +647,19 @@ export interface Shift {
   notes: string | null;
 }
 
+export interface ShiftCashMovement {
+  id: string;
+  business_id: string;
+  shift_id: string;
+  type: "cash_out" | "cash_in";
+  amount: number;
+  category: string;
+  note: string;
+  created_by: string | null;
+  created_at: string;
+  staff_name?: string | null;
+}
+
 export interface OrderItem {
   id: string;
   order_id: string;
@@ -731,6 +744,8 @@ export interface ShiftReport extends Shift {
   orders_count: number;
   cash_sales: number;
   total_sales: number;
+  cash_out: number;
+  cash_in: number;
 }
 
 export interface Order {

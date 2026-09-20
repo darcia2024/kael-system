@@ -52,7 +52,14 @@ const shift2 = calculateShiftReconciliation(100000, 350000, 440000);
 if (shift2.variance !== -10000 || shift2.status !== "shortage") {
   throw new Error("Shift shortage test failed");
 }
-console.log("✓ TEST 3 PASSED: Rekonsiliasi selisih kas laci shift (variance).");
+
+// Dengan Kas Keluar (Beli es batu/gas 50.000):
+// Expected = 100.000 + 350.000 - 50.000 = 400.000. Fisik 400.000 -> balanced!
+const shift3 = calculateShiftReconciliation(100000, 350000, 400000, 50000);
+if (shift3.expectedCash !== 400000 || shift3.variance !== 0 || shift3.status !== "balanced") {
+  throw new Error("Shift cash-out test failed");
+}
+console.log("✓ TEST 3 PASSED: Rekonsiliasi selisih kas laci shift (variance) & kas keluar.");
 
 // 4. 58mm Monospace Receipt Formatter
 const receiptText = generateEscPosReceiptText({

@@ -18,6 +18,7 @@ import type {
   MenuItem,
   Category,
   DeletableTestData,
+  ShiftCashMovement,
 } from "./types";
 import {
   FEEDBACK_REASONS,
@@ -1785,6 +1786,49 @@ export async function closeShiftAction(
   if (!shift) return fail("Shift tidak ditemukan atau sudah ditutup.");
   revalidatePath("/app/pos");
   return done({ variance: Number(shift.variance ?? 0) });
+}
+
+export async function recordShiftCashMovementAction(input: {
+  shiftId: string;
+  type: "cash_out" | "cash_in";
+  amount: number;
+  category: string;
+  note: string;
+}): Promise<ActionResult<ShiftCashMovement>> {
+  const { businessId, userId } = await requirePermission("pos");
+  const locked = await moduleLock(businessId, "pos", "write");
+  if (locked) return fail(locked);
+  if (!input.shiftId) return fail("Shift tidak ditemukan.");
+  if (!input.amount || input.amount <= 0) return fail("Nominal uang harus lebih besar dari Rp 0.");
+  if (!input.note?.trim()) return fail("Keterangan wajib diisi.");
+
+  const movement = await db.createShiftCashMovement(businessId, input.shiftId, userId, {
+    type: input.type,
+    amount: Math.round(Number(input.amount)),
+    category: input.category || (input.type === "cash_out" ? "Operasional" : "Kas Masuk"),
+    note: input.note.trim(),
+  });
+
+  revalidatePath("/app/pos");
+  return done(movement);
+}
+
+export async function getActiveShiftCashSummaryAction(
+  shiftId: string,
+): Promise<ActionResult<Awaited<ReturnType<typeof db.getActiveShiftCashSummary>>>> {
+  const { businessId } = await requirePermission("pos");
+  if (!shiftId) return fail("Shift tidak valid.");
+  const summary = await db.getActiveShiftCashSummary(businessId, shiftId);
+  return done(summary);
+}
+
+export async function getShiftCashMovementsAction(
+  shiftId: string,
+): Promise<ActionResult<ShiftCashMovement[]>> {
+  const { businessId } = await requirePermission("pos");
+  if (!shiftId) return fail("Shift tidak valid.");
+  const movements = await db.getShiftCashMovements(businessId, shiftId);
+  return done(movements);
 }
 
 export async function createOrderAction(input: {

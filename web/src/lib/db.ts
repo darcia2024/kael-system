@@ -68,6 +68,7 @@ import type {
   MenuItem,
   Shift,
   ShiftReport,
+  ShiftCashMovement,
   Order,
   OrderItem,
   Refund,
@@ -4205,7 +4206,9 @@ export const db = {
         COALESCE(NULLIF(TRIM(u.name), ''), 'Kasir') AS staff_name,
         COALESCE(o.orders_count, 0)::int AS orders_count,
         COALESCE(o.cash_sales, 0) - COALESCE(r.cash_refunds, 0) AS cash_sales,
-        COALESCE(o.total_sales, 0) - COALESCE(r.total_refunds, 0) AS total_sales
+        COALESCE(o.total_sales, 0) - COALESCE(r.total_refunds, 0) AS total_sales,
+        COALESCE(cm.cash_out, 0)::bigint AS cash_out,
+        COALESCE(cm.cash_in, 0)::bigint AS cash_in
       FROM shifts s
       LEFT JOIN users u ON u.id = s.opened_by
       LEFT JOIN (
@@ -4229,6 +4232,14 @@ export const db = {
         WHERE ord.business_id = ${businessId} AND rf.shift_id IS NOT NULL
         GROUP BY rf.shift_id
       ) r ON r.shift_id = s.id
+      LEFT JOIN (
+        SELECT shift_id,
+          COALESCE(SUM(amount) FILTER (WHERE type = 'cash_out'), 0) AS cash_out,
+          COALESCE(SUM(amount) FILTER (WHERE type = 'cash_in'), 0) AS cash_in
+        FROM shift_cash_movements
+        WHERE business_id = ${businessId}
+        GROUP BY shift_id
+      ) cm ON cm.shift_id = s.id
       WHERE s.business_id = ${businessId}
       ORDER BY s.opened_at DESC LIMIT 60
     `) as unknown as ShiftReport[];
@@ -4317,12 +4328,18 @@ export const db = {
           COALESCE((SELECT SUM(o.total) FROM orders o WHERE o.business_id = ${businessId}
             AND o.shift_id = ${shiftId} AND o.payment_method = 'cash' AND o.status = 'paid'), 0) AS cash_sales,
           COALESCE((SELECT SUM(r.amount) FROM refunds r JOIN orders o ON o.id = r.order_id
-            WHERE o.business_id = ${businessId} AND r.shift_id = ${shiftId} AND o.payment_method = 'cash'), 0) AS cash_refunds
+            WHERE o.business_id = ${businessId} AND r.shift_id = ${shiftId} AND o.payment_method = 'cash'), 0) AS cash_refunds,
+          COALESCE((SELECT SUM(m.amount) FROM shift_cash_movements m
+            WHERE m.business_id = ${businessId} AND m.shift_id = ${shiftId} AND m.type = 'cash_out'), 0) AS cash_out,
+          COALESCE((SELECT SUM(m.amount) FROM shift_cash_movements m
+            WHERE m.business_id = ${businessId} AND m.shift_id = ${shiftId} AND m.type = 'cash_in'), 0) AS cash_in
       `;
       const recon = calculateShiftReconciliation(
         num(shift.opening_cash),
         num(cash[0]?.cash_sales) - num(cash[0]?.cash_refunds),
         physicalClosingCash,
+        num(cash[0]?.cash_out),
+        num(cash[0]?.cash_in),
       );
 
       return one<Shift>(
@@ -4337,6 +4354,117 @@ export const db = {
       `,
       );
     });
+  },
+
+  /**
+   * Mencatat pengeluaran kas kecil (uang keluar laci) atau kas masuk tambahan
+   * selama shift aktif.
+   */
+  async createShiftCashMovement(
+    businessId: string,
+    shiftId: string,
+    userId: string,
+    data: {
+      type: "cash_out" | "cash_in";
+      amount: number;
+      category: string;
+      note: string;
+    },
+  ): Promise<ShiftCashMovement> {
+    const [row] = await sql`
+      INSERT INTO shift_cash_movements (
+        business_id, shift_id, type, amount, category, note, created_by
+      ) VALUES (
+        ${businessId}, ${shiftId}, ${data.type}, ${data.amount}, ${data.category}, ${data.note}, ${userId}
+      )
+      RETURNING *
+    `;
+    return row as unknown as ShiftCashMovement;
+  },
+
+  async getShiftCashMovements(
+    businessId: string,
+    shiftId: string,
+  ): Promise<ShiftCashMovement[]> {
+    return (await sql`
+      SELECT cm.*, COALESCE(NULLIF(TRIM(u.name), ''), 'Kasir') as staff_name
+      FROM shift_cash_movements cm
+      LEFT JOIN users u ON u.id = cm.created_by
+      WHERE cm.business_id = ${businessId} AND cm.shift_id = ${shiftId}
+      ORDER BY cm.created_at ASC
+    `) as unknown as ShiftCashMovement[];
+  },
+
+  /**
+   * Ringkasan arus kas laci shift berjalan untuk rekonsiliasi transparan.
+   */
+  async getActiveShiftCashSummary(
+    businessId: string,
+    shiftId: string,
+  ): Promise<{
+    openingCash: number;
+    cashSales: number;
+    cashOrdersCount: number;
+    nonCashSales: number;
+    nonCashOrdersCount: number;
+    cashRefunds: number;
+    cashOut: number;
+    cashIn: number;
+    expectedCash: number;
+    movements: ShiftCashMovement[];
+  }> {
+    const shift = one<Shift>(
+      await sql`SELECT * FROM shifts WHERE id = ${shiftId} AND business_id = ${businessId}`,
+    );
+    const openingCash = num(shift?.opening_cash);
+
+    const sales = await sql`
+      SELECT
+        COALESCE(SUM(total) FILTER (WHERE payment_method = 'cash'), 0) AS cash_sales,
+        COALESCE(COUNT(*) FILTER (WHERE payment_method = 'cash'), 0)::int AS cash_orders_count,
+        COALESCE(SUM(total) FILTER (WHERE payment_method <> 'cash'), 0) AS non_cash_sales,
+        COALESCE(COUNT(*) FILTER (WHERE payment_method <> 'cash'), 0)::int AS non_cash_orders_count
+      FROM orders
+      WHERE business_id = ${businessId} AND shift_id = ${shiftId} AND status = 'paid'
+    `;
+
+    const refunds = await sql`
+      SELECT COALESCE(SUM(rf.amount) FILTER (WHERE rf.method = 'cash'), 0) AS cash_refunds
+      FROM refunds rf
+      JOIN orders o ON o.id = rf.order_id
+      WHERE o.business_id = ${businessId} AND rf.shift_id = ${shiftId}
+    `;
+
+    const movements = await this.getShiftCashMovements(businessId, shiftId);
+    let cashOut = 0;
+    let cashIn = 0;
+    for (const m of movements) {
+      if (m.type === "cash_out") cashOut += Number(m.amount);
+      if (m.type === "cash_in") cashIn += Number(m.amount);
+    }
+
+    const cashSales = num(sales[0]?.cash_sales);
+    const cashRefunds = num(refunds[0]?.cash_refunds);
+    const recon = calculateShiftReconciliation(
+      openingCash,
+      cashSales - cashRefunds,
+      0,
+      cashOut,
+      cashIn,
+    );
+
+    return {
+      openingCash,
+      cashSales,
+      cashOrdersCount: Number(sales[0]?.cash_orders_count ?? 0),
+      nonCashSales: num(sales[0]?.non_cash_sales),
+      nonCashOrdersCount: Number(sales[0]?.non_cash_orders_count ?? 0),
+      cashRefunds,
+      cashOut,
+      cashIn,
+      expectedCash: recon.expectedCash,
+      movements,
+    };
   },
 
   /**
