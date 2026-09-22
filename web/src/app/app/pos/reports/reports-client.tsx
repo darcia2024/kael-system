@@ -27,6 +27,7 @@ import {
   Plus,
   X,
   AlertCircle,
+  Calendar,
 } from "lucide-react";
 import OrderDetailModal from "./order-detail-modal";
 import type { Business, Order, ShiftReport, FeedbackSummary, FeedbackRow, RefundReasonCode } from "@/lib/types";
@@ -180,6 +181,127 @@ export default function PosOwnerReportsPage({
 
   const [showClearModal, setShowClearModal] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  // Filter Periode & Paginasi Riwayat Transaksi (Hari Ini, 7 Hari, Bulan Ini, Semua)
+  type OrderPeriodFilter = "today" | "week" | "month" | "all";
+  const [orderPeriod, setOrderPeriod] = useState<OrderPeriodFilter>("today");
+  const [orderSearch, setOrderSearch] = useState("");
+  const [orderPage, setOrderPage] = useState(1);
+  const [orderPageSize, setOrderPageSize] = useState(10);
+
+  const handlePeriodChange = (period: OrderPeriodFilter) => {
+    setOrderPeriod(period);
+    setOrderPage(1);
+  };
+
+  const orderStats = useMemo(() => {
+    const now = new Date();
+    const todayStr = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Jakarta",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(now);
+
+    let todayCount = 0;
+    let todayRevenue = 0;
+    let weekCount = 0;
+    let weekRevenue = 0;
+    let monthCount = 0;
+    let monthRevenue = 0;
+    let allCount = orders.length;
+    let allRevenue = 0;
+
+    orders.forEach((o) => {
+      const net = Math.max(0, Number(o.total) - Number(o.refund_total ?? 0));
+      allRevenue += net;
+
+      const oDate = new Date(o.created_at);
+      const oDateStr = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Jakarta",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).format(oDate);
+
+      const diffDays = (now.getTime() - oDate.getTime()) / (1000 * 3600 * 24);
+
+      if (oDateStr === todayStr) {
+        todayCount++;
+        todayRevenue += net;
+      }
+      if (diffDays <= 7) {
+        weekCount++;
+        weekRevenue += net;
+      }
+      if (diffDays <= 30) {
+        monthCount++;
+        monthRevenue += net;
+      }
+    });
+
+    return {
+      today: { count: todayCount, revenue: todayRevenue },
+      week: { count: weekCount, revenue: weekRevenue },
+      month: { count: monthCount, revenue: monthRevenue },
+      all: { count: allCount, revenue: allRevenue },
+    };
+  }, [orders]);
+
+  const filteredOrders = useMemo(() => {
+    const now = new Date();
+    const todayStr = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Jakarta",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(now);
+
+    return orders.filter((o) => {
+      if (orderPeriod !== "all") {
+        const oDate = new Date(o.created_at);
+        if (orderPeriod === "today") {
+          const oDateStr = new Intl.DateTimeFormat("en-CA", {
+            timeZone: "Asia/Jakarta",
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+          }).format(oDate);
+          if (oDateStr !== todayStr) return false;
+        } else if (orderPeriod === "week") {
+          const diffDays = (now.getTime() - oDate.getTime()) / (1000 * 3600 * 24);
+          if (diffDays > 7) return false;
+        } else if (orderPeriod === "month") {
+          const diffDays = (now.getTime() - oDate.getTime()) / (1000 * 3600 * 24);
+          if (diffDays > 30) return false;
+        }
+      }
+
+      if (orderSearch.trim()) {
+        const q = orderSearch.trim().toLowerCase();
+        const matchNo = o.order_no.toLowerCase().includes(q);
+        const matchTable = (o.table_no ?? "").toLowerCase().includes(q);
+        const matchCustomer = (o.customer_name ?? "").toLowerCase().includes(q);
+        const matchDelivery = (o.delivery_name ?? "").toLowerCase().includes(q);
+        const matchMethod = o.payment_method.toLowerCase().includes(q);
+        if (!matchNo && !matchTable && !matchCustomer && !matchDelivery && !matchMethod) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }, [orders, orderPeriod, orderSearch]);
+
+  const totalFilteredRevenue = useMemo(() => {
+    return filteredOrders.reduce((sum, o) => sum + Math.max(0, Number(o.total) - Number(o.refund_total ?? 0)), 0);
+  }, [filteredOrders]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredOrders.length / orderPageSize));
+  const paginatedOrders = useMemo(() => {
+    const startIndex = (orderPage - 1) * orderPageSize;
+    return filteredOrders.slice(startIndex, startIndex + orderPageSize);
+  }, [filteredOrders, orderPage, orderPageSize]);
 
   const handleDeleteOrder = async (orderId: string, orderNo: string) => {
     if (!window.confirm(`Hapus transaksi #${orderNo} (data testing)? Transaksi akan dihapus permanen dari laporan.`)) return;
@@ -638,12 +760,115 @@ export default function PosOwnerReportsPage({
             </span>
           </div>
 
+          {/* FILTER PERIODE & PENCARIAN TRANSAKSI */}
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-[#f8faf9] p-3 rounded-2xl border border-[#e2ece6]">
+            {/* Tabs: Hari Ini / 7 Hari / Bulan Ini / Semua */}
+            <div className="flex flex-wrap items-center gap-1.5 font-mono text-xs">
+              <button
+                type="button"
+                onClick={() => handlePeriodChange("today")}
+                className={`px-3 py-1.5 rounded-xl font-bold transition-all flex items-center gap-1.5 ${
+                  orderPeriod === "today"
+                    ? isMochi
+                      ? "bg-[#0b3d2e] text-[#c8f53a] shadow-xs"
+                      : "bg-[#232331] text-white shadow-xs"
+                    : "bg-white text-[#526159] hover:bg-[#edf4f0] border border-[#d8e3de]"
+                }`}
+              >
+                <Calendar size={13} />
+                <span>Hari Ini</span>
+                <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-black/10">
+                  {orderStats.today.count}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handlePeriodChange("week")}
+                className={`px-3 py-1.5 rounded-xl font-bold transition-all flex items-center gap-1.5 ${
+                  orderPeriod === "week"
+                    ? isMochi
+                      ? "bg-[#0b3d2e] text-[#c8f53a] shadow-xs"
+                      : "bg-[#232331] text-white shadow-xs"
+                    : "bg-white text-[#526159] hover:bg-[#edf4f0] border border-[#d8e3de]"
+                }`}
+              >
+                <span>7 Hari</span>
+                <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-black/10">
+                  {orderStats.week.count}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handlePeriodChange("month")}
+                className={`px-3 py-1.5 rounded-xl font-bold transition-all flex items-center gap-1.5 ${
+                  orderPeriod === "month"
+                    ? isMochi
+                      ? "bg-[#0b3d2e] text-[#c8f53a] shadow-xs"
+                      : "bg-[#232331] text-white shadow-xs"
+                    : "bg-white text-[#526159] hover:bg-[#edf4f0] border border-[#d8e3de]"
+                }`}
+              >
+                <span>Bulan Ini</span>
+                <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-black/10">
+                  {orderStats.month.count}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handlePeriodChange("all")}
+                className={`px-3 py-1.5 rounded-xl font-bold transition-all flex items-center gap-1.5 ${
+                  orderPeriod === "all"
+                    ? isMochi
+                      ? "bg-[#0b3d2e] text-[#c8f53a] shadow-xs"
+                      : "bg-[#232331] text-white shadow-xs"
+                    : "bg-white text-[#526159] hover:bg-[#edf4f0] border border-[#d8e3de]"
+                }`}
+              >
+                <span>Semua</span>
+                <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-black/10">
+                  {orderStats.all.count}
+                </span>
+              </button>
+            </div>
+
+            {/* Search and Summary */}
+            <div className="flex items-center gap-2 flex-1 md:justify-end">
+              <div className="relative flex-1 max-w-xs">
+                <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[#7b8a82]" />
+                <input
+                  type="search"
+                  value={orderSearch}
+                  onChange={(e) => {
+                    setOrderSearch(e.target.value);
+                    setOrderPage(1);
+                  }}
+                  placeholder="Cari order / meja / nama..."
+                  className="w-full rounded-xl border border-[#ccd9d3] bg-white pl-8 pr-3 py-1.5 text-xs text-[#0b3d2e] outline-none focus:border-[#167052] font-mono"
+                />
+              </div>
+              <span className="text-[11px] font-mono font-bold text-[#167052] bg-[#edf8f3] px-2.5 py-1.5 rounded-xl border border-emerald-200 shrink-0">
+                {formatRupiah(totalFilteredRevenue)}
+              </span>
+            </div>
+          </div>
+
           {/* VIEW 1: MOBILE COMPACT CARDS (Mobile-First, No Horizontal Scrolling) */}
           <div className="block md:hidden space-y-2.5">
-            {orders.length === 0 ? (
-              <p className="text-center py-6 text-xs text-[#7b7b8e] font-mono">Belum ada riwayat transaksi.</p>
+            {filteredOrders.length === 0 ? (
+              <div className="text-center py-8 text-xs text-[#7b7b8e] font-mono space-y-2">
+                <p>Tidak ada transaksi pada periode ini.</p>
+                {orderPeriod !== "all" && (
+                  <button
+                    type="button"
+                    onClick={() => handlePeriodChange("all")}
+                    className="text-xs text-[#167052] font-bold underline"
+                  >
+                    Tampilkan Semua Transaksi
+                  </button>
+                )}
+              </div>
             ) : (
-              orders.map((ord) => {
+              paginatedOrders.map((ord) => {
                 const hasRefund = (ord.refund_total ?? 0) > 0;
                 const netTotal = Math.max(0, Number(ord.total) - Number(ord.refund_total ?? 0));
                 const itemsCount = ord.items?.length ?? 0;
@@ -783,96 +1008,160 @@ export default function PosOwnerReportsPage({
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#dedee8]">
-                {orders.map((ord) => (
-                  <tr
-                    key={ord.id}
-                    onClick={() => setSelectedOrderDetail(ord)}
-                    className={`${
-                      isMochi ? "hover:bg-[#f7fcf9]" : "hover:bg-[#fcfcfe]"
-                    } cursor-pointer transition-colors group`}
-                  >
-                    <td className="py-3 px-3 font-black text-sm text-[#232331]">
-                      <div className="flex items-center gap-1.5">
-                        <span className="group-hover:text-[#167052] transition-colors font-mono">#{ord.order_no}</span>
-                        <span className="opacity-0 group-hover:opacity-100 transition-opacity text-[10px] text-[#167052] font-sans font-medium">
-                          (lihat rincian)
-                        </span>
-                      </div>
-                    </td>
-                    <td className="py-3 px-3 text-[#7b7b8e] text-[11px]">
-                      {formatBusinessDateTime(ord.created_at)}
-                    </td>
-                    <td className="py-3 px-3 font-bold text-[#7958d8]">
-                      {serviceTypeLabel(ord.service_type, ord.table_no)}
-                    </td>
-                    <td className="py-3 px-3 font-black text-sm text-[#16a34a]">
-                      {formatRupiah(Math.max(0, Number(ord.total) - Number(ord.refund_total ?? 0)))}
-                    </td>
-                    <td className="py-3 px-3 uppercase font-bold text-[#7b7b8e]">
-                      {ord.payment_method}
-                    </td>
-                    <td className="py-3 px-3">
-                      <span className={`inline-flex items-center gap-1 font-bold text-[10px] px-2 py-0.5 rounded-full border ${
-                        (ord.refund_total ?? 0) > 0
-                          ? "bg-[#feebee] text-[#ef4444] border-[#ef4444]"
-                          : ord.status === "paid"
-                          ? "bg-[#dcfce7] text-[#16a34a] border-[#16a34a]"
-                          : ord.status === "refunded"
-                          ? "bg-[#feebee] text-[#ef4444] border-[#ef4444]"
-                          : "bg-[#fef3c7] text-[#d97706] border-[#d97706]"
-                      }`}>
-                        {(ord.refund_total ?? 0) > 0 ? `REFUND ${formatRupiah(ord.refund_total ?? 0)}` : ord.status.toUpperCase()}
-                      </span>
-                    </td>
-                    <td
-                      className="py-3 px-3 text-right space-x-1.5 whitespace-nowrap"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <button
-                        type="button"
-                        onClick={() => setSelectedOrderDetail(ord)}
-                        className={
-                          isMochi
-                            ? "rounded-xl border border-emerald-300 bg-[#edf8f3] hover:bg-[#d8f0e5] px-2.5 py-1 text-[11px] font-mono font-bold text-[#167052] transition-all inline-flex items-center gap-1 shadow-xs active:scale-95"
-                            : "btn-tactile rounded-lg border border-[#7958d8] bg-[#f0edff] px-2 py-1 text-[10.5px] font-bold text-[#7958d8] inline-flex items-center gap-1"
-                        }
-                        title="Lihat Pop-up Rincian Pesanan"
-                      >
-                        <Eye size={12} />
-                        <span>Detail</span>
-                      </button>
-                      <Link
-                        href={`/receipt/${ord.id}`}
-                        target="_blank"
-                        className={isMochi ? "rounded-xl border border-[#ccd9d3] bg-white hover:bg-[#edf8f3] px-2.5 py-1 text-[11px] font-mono font-bold text-[#167052] transition-colors inline-block" : "btn-tactile rounded-lg border border-[#7958d8] bg-[#f0edff] px-2.5 py-1 text-[10.5px] font-bold text-[#7958d8]"}
-                      >
-                        Struk
-                      </Link>
-                      {ord.status === "paid" && Number(ord.refund_total ?? 0) < Number(ord.total) && (
-                        <button
-                          type="button"
-                          onClick={() => handleOpenRefund(ord)}
-                          className={isMochi ? "rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 px-2.5 py-1 text-[11px] font-mono font-bold text-rose-700 transition-colors" : "btn-tactile rounded-lg border border-[#ef4444] bg-[#feebee] px-2 py-1 text-[10.5px] font-bold text-[#ef4444]"}
-                        >
-                          Refund
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteOrder(ord.id, ord.order_no)}
-                        disabled={deletingId === ord.id}
-                        className="rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 px-2 py-1 text-[11px] font-mono font-bold text-rose-700 transition-colors inline-flex items-center gap-0.5 disabled:opacity-50"
-                        title="Hapus transaksi (data testing)"
-                      >
-                        <Trash2 size={11} />
-                        <span>Hapus</span>
-                      </button>
+                {filteredOrders.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="py-8 text-center text-[#7b7b8e] font-mono">
+                      Tidak ada transaksi pada periode ini.
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  paginatedOrders.map((ord) => (
+                    <tr
+                      key={ord.id}
+                      onClick={() => setSelectedOrderDetail(ord)}
+                      className={`${
+                        isMochi ? "hover:bg-[#f7fcf9]" : "hover:bg-[#fcfcfe]"
+                      } cursor-pointer transition-colors group`}
+                    >
+                      <td className="py-3 px-3 font-black text-sm text-[#232331]">
+                        <div className="flex items-center gap-1.5">
+                          <span className="group-hover:text-[#167052] transition-colors font-mono">#{ord.order_no}</span>
+                          <span className="opacity-0 group-hover:opacity-100 transition-opacity text-[10px] text-[#167052] font-sans font-medium">
+                            (lihat rincian)
+                          </span>
+                        </div>
+                      </td>
+                      <td className="py-3 px-3 text-[#7b7b8e] text-[11px]">
+                        {formatBusinessDateTime(ord.created_at)}
+                      </td>
+                      <td className="py-3 px-3 font-bold text-[#7958d8]">
+                        {serviceTypeLabel(ord.service_type, ord.table_no)}
+                      </td>
+                      <td className="py-3 px-3 font-black text-sm text-[#16a34a]">
+                        {formatRupiah(Math.max(0, Number(ord.total) - Number(ord.refund_total ?? 0)))}
+                      </td>
+                      <td className="py-3 px-3 uppercase font-bold text-[#7b7b8e]">
+                        {ord.payment_method}
+                      </td>
+                      <td className="py-3 px-3">
+                        <span className={`inline-flex items-center gap-1 font-bold text-[10px] px-2 py-0.5 rounded-full border ${
+                          (ord.refund_total ?? 0) > 0
+                            ? "bg-[#feebee] text-[#ef4444] border-[#ef4444]"
+                            : ord.status === "paid"
+                            ? "bg-[#dcfce7] text-[#16a34a] border-[#16a34a]"
+                            : ord.status === "refunded"
+                            ? "bg-[#feebee] text-[#ef4444] border-[#ef4444]"
+                            : "bg-[#fef3c7] text-[#d97706] border-[#d97706]"
+                        }`}>
+                          {(ord.refund_total ?? 0) > 0 ? `REFUND ${formatRupiah(ord.refund_total ?? 0)}` : ord.status.toUpperCase()}
+                        </span>
+                      </td>
+                      <td
+                        className="py-3 px-3 text-right space-x-1.5 whitespace-nowrap"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => setSelectedOrderDetail(ord)}
+                          className={
+                            isMochi
+                              ? "rounded-xl border border-emerald-300 bg-[#edf8f3] hover:bg-[#d8f0e5] px-2.5 py-1 text-[11px] font-mono font-bold text-[#167052] transition-all inline-flex items-center gap-1 shadow-xs active:scale-95"
+                              : "btn-tactile rounded-lg border border-[#7958d8] bg-[#f0edff] px-2 py-1 text-[10.5px] font-bold text-[#7958d8] inline-flex items-center gap-1"
+                          }
+                          title="Lihat Pop-up Rincian Pesanan"
+                        >
+                          <Eye size={12} />
+                          <span>Detail</span>
+                        </button>
+                        <Link
+                          href={`/receipt/${ord.id}`}
+                          target="_blank"
+                          className={isMochi ? "rounded-xl border border-[#ccd9d3] bg-white hover:bg-[#edf8f3] px-2.5 py-1 text-[11px] font-mono font-bold text-[#167052] transition-colors inline-block" : "btn-tactile rounded-lg border border-[#7958d8] bg-[#f0edff] px-2.5 py-1 text-[10.5px] font-bold text-[#7958d8]"}
+                        >
+                          Struk
+                        </Link>
+                        {ord.status === "paid" && Number(ord.refund_total ?? 0) < Number(ord.total) && (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenRefund(ord)}
+                            className={isMochi ? "rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 px-2.5 py-1 text-[11px] font-mono font-bold text-rose-700 transition-colors" : "btn-tactile rounded-lg border border-[#ef4444] bg-[#feebee] px-2 py-1 text-[10.5px] font-bold text-[#ef4444]"}
+                          >
+                            Refund
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteOrder(ord.id, ord.order_no)}
+                          disabled={deletingId === ord.id}
+                          className="rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 px-2 py-1 text-[11px] font-mono font-bold text-rose-700 transition-colors inline-flex items-center gap-0.5 disabled:opacity-50"
+                          title="Hapus transaksi (data testing)"
+                        >
+                          <Trash2 size={11} />
+                          <span>Hapus</span>
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
+
+          {/* CONTROLS PAGINASI & UKURAN HALAMAN */}
+          {filteredOrders.length > 0 && (
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-[#edf2ef] font-mono text-xs">
+              <div className="flex items-center gap-2 text-[#637970] text-[11px]">
+                <span>
+                  Menampilkan {(orderPage - 1) * orderPageSize + 1}–{Math.min(orderPage * orderPageSize, filteredOrders.length)} dari {filteredOrders.length} transaksi
+                </span>
+                <span className="text-gray-300">|</span>
+                <div className="flex items-center gap-1">
+                  <span>Per hal:</span>
+                  {[10, 25, 50].map((sz) => (
+                    <button
+                      key={sz}
+                      type="button"
+                      onClick={() => {
+                        setOrderPageSize(sz);
+                        setOrderPage(1);
+                      }}
+                      className={`px-2 py-0.5 rounded-lg text-[10.5px] font-bold transition-colors ${
+                        orderPageSize === sz
+                          ? "bg-[#0b3d2e] text-[#c8f53a]"
+                          : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                      }`}
+                    >
+                      {sz}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {totalPages > 1 && (
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    disabled={orderPage <= 1}
+                    onClick={() => setOrderPage((p) => Math.max(1, p - 1))}
+                    className="px-3 py-1 rounded-xl border border-[#ccd9d3] bg-white font-bold text-[#0b3d2e] hover:bg-[#edf8f3] disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-xs"
+                  >
+                    ← Sebelumnya
+                  </button>
+                  <span className="px-2 font-bold text-[#0b3d2e] text-xs">
+                    {orderPage} / {totalPages}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={orderPage >= totalPages}
+                    onClick={() => setOrderPage((p) => Math.min(totalPages, p + 1))}
+                    className="px-3 py-1 rounded-xl border border-[#ccd9d3] bg-white font-bold text-[#0b3d2e] hover:bg-[#edf8f3] disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-xs"
+                  >
+                    Selanjutnya →
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/*

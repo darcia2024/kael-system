@@ -24,7 +24,7 @@ export default async function PosReportsPage() {
   const [business, reports, orders, shifts, feedbackSummary, recentFeedback, polaRefund, menuViewStats] = await Promise.all([
     db.getBusiness(session.businessId),
     db.getPosReports(session.businessId),
-    db.getOrders(session.businessId, 100),
+    db.getOrders(session.businessId, 500),
     db.getShifts(session.businessId),
     db.getFeedbackSummary(session.businessId),
     db.getRecentFeedback(session.businessId),
