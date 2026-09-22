@@ -31,7 +31,7 @@ export default async function RiwayatPenjualanPage() {
 
   const [business, riwayat, menuItems] = await Promise.all([
     db.getBusiness(session.businessId),
-    db.getCashierSalesHistory(session.businessId, { hari: 7 }),
+    db.getCashierSalesHistory(session.businessId, { hari: 30, limit: 300 }),
     db.getMenuItems(session.businessId),
   ]);
 
