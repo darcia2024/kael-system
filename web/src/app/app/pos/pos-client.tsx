@@ -219,6 +219,7 @@ export default function PosClient({
 
   /** Alasan diskon yang benar-benar tersimpan bersama transaksinya. */
   const DISCOUNT_REASON_LABEL: Record<string, string> = {
+    tanpa_nasi: "Tanpa nasi / penyesuaian porsi",
     keringanan_owner: "Keringanan saudara atau relasi owner",
     komplain_pelayanan: "Komplain pelayanan atau keterlambatan",
     promo_khusus: "Promo khusus atau voucher event",
@@ -2002,7 +2003,7 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
               }}
               className="font-bold text-[#167052] hover:underline flex items-center gap-1"
             >
-              <span>🏷️ {discountNominal > 0 ? `Diskon (${discountReasonKey.replace(/_/g, " ")})` : "+ Tambah Diskon / Keringanan"}</span>
+              <span>🏷️ {discountNominal > 0 ? `Potongan: ${formatRupiah(discountNominal)} (${DISCOUNT_REASON_LABEL[discountReasonKey] || discountReasonKey.replace(/_/g, " ")})` : "+ Ubah Harga / Potongan / Diskon"}</span>
             </button>
             {cartTotals.discount > 0 && (
               <span className="text-[#b34539] font-bold font-mono">
@@ -4174,7 +4175,7 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
           <div className="w-full max-w-md rounded-3xl bg-white p-5 sm:p-6 space-y-4 animate-in zoom-in-95 font-mono text-xs border border-[#d8e3de] shadow-2xl">
             <div className="flex items-center justify-between border-b border-[#e0ebe5] pb-3">
               <h3 className="font-black text-base font-sans text-[#0b3d2e]">
-                Diskon & Keringanan Khusus
+                Ubah Harga / Potongan / Diskon
               </h3>
               <button
                 type="button"
@@ -4193,10 +4194,51 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
                 </div>
               </div>
 
+              {/* Potongan Cepat Tanpa Nasi / Penyesuaian Porsi */}
+              <div className="space-y-1.5 font-mono">
+                <span className="text-[11px] font-bold text-[#0b3d2e] block">
+                  ⚡ Potongan Cepat (Tanpa Nasi):
+                </span>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDiscountNominal(5000);
+                      setDiscountReasonKey("tanpa_nasi");
+                      setDiscountReasonCustom("Tanpa nasi (-5.000)");
+                    }}
+                    className={`rounded-xl border p-2 text-left font-sans text-xs font-bold transition-all flex items-center justify-between ${
+                      discountNominal === 5000 && discountReasonKey === "tanpa_nasi"
+                        ? "border-emerald-600 bg-emerald-600 text-white shadow-sm"
+                        : "border-emerald-300 bg-emerald-50 text-emerald-950 hover:bg-emerald-100"
+                    }`}
+                  >
+                    <span>🍚 Tanpa Nasi (1x)</span>
+                    <span className="font-mono font-black">-5.000</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDiscountNominal(10000);
+                      setDiscountReasonKey("tanpa_nasi");
+                      setDiscountReasonCustom("2x Tanpa nasi (-10.000)");
+                    }}
+                    className={`rounded-xl border p-2 text-left font-sans text-xs font-bold transition-all flex items-center justify-between ${
+                      discountNominal === 10000 && discountReasonKey === "tanpa_nasi"
+                        ? "border-emerald-600 bg-emerald-600 text-white shadow-sm"
+                        : "border-emerald-300 bg-emerald-50 text-emerald-950 hover:bg-emerald-100"
+                    }`}
+                  >
+                    <span>🍚 Tanpa Nasi (2x)</span>
+                    <span className="font-mono font-black">-10.000</span>
+                  </button>
+                </div>
+              </div>
+
               {/* Pilihan: Input Nominal Diskon atau Target Tagihan Akhir */}
               <div className="space-y-1 font-mono">
                 <label className="block font-bold text-[#0b3d2e]">
-                  Nominal Diskon yang Diberikan (Rp):
+                  Nominal Potongan / Diskon (Rp):
                 </label>
                 <input
                   type="number"
@@ -4206,7 +4248,7 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
                   value={discountNominal}
                   onChange={(e) => setDiscountNominal(Math.max(0, Number(e.target.value)))}
                   className="w-full rounded-xl border-2 border-[#0b3d2e] p-2.5 text-base font-black text-[#0b3d2e]"
-                  placeholder="Contoh: 35000"
+                  placeholder="Contoh: 5000"
                 />
               </div>
 
@@ -4249,13 +4291,14 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
               {/* Alasan Wajib Dipilih */}
               <div className="space-y-1 font-mono">
                 <label className="block font-bold text-[#0b3d2e]">
-                  Alasan Diskon (Wajib Dicatat untuk Audit Owner):
+                  Alasan Potongan / Diskon (Wajib Dicatat untuk Audit Owner):
                 </label>
                 <select
                   value={discountReasonKey}
                   onChange={(e) => setDiscountReasonKey(e.target.value)}
                   className="w-full rounded-xl border-2 border-[#ccd9d3] p-2 text-xs font-bold text-[#0b3d2e] bg-white"
                 >
+                  <option value="tanpa_nasi">🍚 Tanpa Nasi / Penyesuaian Porsi</option>
                   <option value="keringanan_owner">🤝 Keringanan Saudara / Relasi Owner</option>
                   <option value="komplain_pelayanan">⏳ Komplain Pelayanan / Keterlambatan</option>
                   <option value="promo_khusus">🎉 Promo Khusus / Voucher Event</option>
