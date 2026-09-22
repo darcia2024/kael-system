@@ -1810,6 +1810,8 @@ export async function recordShiftCashMovementAction(input: {
   });
 
   revalidatePath("/app/pos");
+  revalidatePath("/app/pos/reports");
+  revalidatePath("/app/pos/owner");
   return done(movement);
 }
 

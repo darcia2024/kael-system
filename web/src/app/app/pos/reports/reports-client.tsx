@@ -23,11 +23,15 @@ import {
   LayoutDashboard,
   QrCode,
   Eye,
+  Banknote,
+  Plus,
+  X,
+  AlertCircle,
 } from "lucide-react";
 import OrderDetailModal from "./order-detail-modal";
 import type { Business, Order, ShiftReport, FeedbackSummary, FeedbackRow, RefundReasonCode } from "@/lib/types";
 import { FEEDBACK_REASONS, REFUND_REASONS } from "@/lib/types";
-import { refundOrderAction, deleteOrderAction, deleteFeedbackAction, deleteShiftAction } from "@/lib/actions";
+import { refundOrderAction, deleteOrderAction, deleteFeedbackAction, deleteShiftAction, recordShiftCashMovementAction } from "@/lib/actions";
 import ClearTestDataModal from "../clear-test-data-modal";
 import { Trash2 } from "lucide-react";
 import { serviceTypeLabel } from "@/lib/pos-engine";
@@ -118,6 +122,51 @@ export default function PosOwnerReportsPage({
    */
   const [refundCategory, setRefundCategory] = useState<RefundReasonCode>("salah_input");
   const [refundMethod, setRefundMethod] = useState<"cash" | "qris" | "transfer">("cash");
+
+  // Retroactive Shift Expense Modal (Catat Pengeluaran untuk Shift)
+  const [modalShiftExpense, setModalShiftExpense] = useState<{
+    shiftId: string;
+    staffName: string;
+    openedAt: string;
+    currentVariance: number;
+    amount: number | "";
+    category: string;
+    note: string;
+  } | null>(null);
+  const [isSubmittingExpense, setIsSubmittingExpense] = useState(false);
+
+  const handleRecordShiftExpense = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!modalShiftExpense) return;
+    const numAmount = Number(modalShiftExpense.amount);
+    if (!numAmount || numAmount <= 0) {
+      alert("Masukkan nominal pengeluaran kas yang valid.");
+      return;
+    }
+    if (!modalShiftExpense.note.trim()) {
+      alert("Catatan pengeluaran wajib diisi.");
+      return;
+    }
+
+    setIsSubmittingExpense(true);
+    const res = await recordShiftCashMovementAction({
+      shiftId: modalShiftExpense.shiftId,
+      type: "cash_out",
+      amount: numAmount,
+      category: modalShiftExpense.category || "Bahan Baku/Dapur",
+      note: modalShiftExpense.note.trim(),
+    });
+    setIsSubmittingExpense(false);
+
+    if (!res.ok) {
+      alert(`Gagal mencatat pengeluaran: ${res.error}`);
+      return;
+    }
+
+    setModalShiftExpense(null);
+    router.refresh();
+    alert(`Pengeluaran sebesar ${formatRupiah(numAmount)} berhasil dicatat! Laci shift berhasil direkonsiliasi ulang.`);
+  };
 
   // Data ditarik ulang dari server, bukan disusun ulang di klien.
   const refreshAll = () => router.refresh();
@@ -1003,6 +1052,7 @@ export default function PosOwnerReportsPage({
                   <th className="py-2.5 px-3">Target Laci</th>
                   <th className="py-2.5 px-3">Uang Fisik Laci</th>
                   <th className="py-2.5 px-3 text-right">Selisih (Variance)</th>
+                  <th className="py-2.5 px-3 text-center">Aksi</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#dedee8]">
@@ -1044,6 +1094,33 @@ export default function PosOwnerReportsPage({
                         </span>
                       ) : (
                         <span className="text-[#d97706] font-bold text-[10px]">SHIFT AKTIF</span>
+                      )}
+                    </td>
+                    <td className="py-3 px-3 text-center whitespace-nowrap">
+                      {sh.closed_at ? (
+                        <button
+                          type="button"
+                          onClick={() => setModalShiftExpense({
+                            shiftId: sh.id,
+                            staffName: sh.staff_name,
+                            openedAt: sh.opened_at,
+                            currentVariance: sh.variance ?? 0,
+                            amount: sh.variance && sh.variance < 0 ? Math.abs(sh.variance) : "",
+                            category: "Bahan Baku/Dapur",
+                            note: "Belanja bahan dapur & operasional kasir",
+                          })}
+                          className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-xl font-mono text-[11px] font-bold transition-all shadow-xs ${
+                            sh.variance && sh.variance < 0
+                              ? "bg-amber-400 hover:bg-amber-300 text-amber-950 font-black"
+                              : "bg-[#edf8f3] hover:bg-[#dbeee4] text-[#167052] border border-[#ccd9d3]"
+                          }`}
+                          title="Catat pengeluaran kas / belanja dapur untuk shift ini"
+                        >
+                          <Plus size={12} />
+                          <span>{sh.variance && sh.variance < 0 ? "Catat Kas Keluar" : "+ Kas Keluar"}</span>
+                        </button>
+                      ) : (
+                        <span className="text-[10px] text-[#7b8a82] font-mono">Shift Aktif</span>
                       )}
                     </td>
                   </tr>
@@ -1321,6 +1398,119 @@ export default function PosOwnerReportsPage({
         }}
         isMochi={isMochi}
       />
+
+      {/* MODAL CATAT PENGELUARAN / KAS KELUAR SHIFT */}
+      {modalShiftExpense && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs font-sans">
+          <div className="w-full max-w-md rounded-3xl bg-white p-5 sm:p-6 space-y-4 shadow-2xl border border-[#d8e3de] animate-in zoom-in-95">
+            <div className="flex items-center justify-between border-b border-[#eef2f0] pb-3">
+              <div>
+                <h3 className="font-black text-base text-[#0b3d2e] flex items-center gap-2">
+                  <Banknote size={18} className="text-amber-600" />
+                  Catat Kas Keluar / Belanja
+                </h3>
+                <p className="text-[11px] text-[#556960] mt-0.5">
+                  Shift: {modalShiftExpense.staffName} · {formatBusinessDateTime(modalShiftExpense.openedAt)}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setModalShiftExpense(null)}
+                className="rounded-xl p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {modalShiftExpense.currentVariance < 0 && (
+              <div className="p-3 rounded-2xl bg-amber-50 border border-amber-300 text-xs text-amber-950 flex items-start gap-2">
+                <AlertCircle size={16} className="text-amber-700 shrink-0 mt-0.5" />
+                <div className="leading-relaxed">
+                  <p className="font-bold">Selisih saat ini: {formatRupiah(modalShiftExpense.currentVariance)}</p>
+                  <p className="text-[11px] text-amber-800">
+                    Jika selisih minus ini disebabkan oleh uang laci yang dipakai belanja bahan dapur / es / galon yang lupa diinput kasir, masukkan nominalnya di bawah ini untuk menyeimbangkan laci.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            <form onSubmit={handleRecordShiftExpense} className="space-y-3.5">
+              <div>
+                <label className="block text-xs font-black text-[#0b3d2e] mb-1">
+                  Nominal Pengeluaran Kas (Rp):
+                </label>
+                <input
+                  type="number"
+                  required
+                  min={1}
+                  step={1}
+                  value={modalShiftExpense.amount}
+                  onChange={(e) => setModalShiftExpense({
+                    ...modalShiftExpense,
+                    amount: e.target.value ? Number(e.target.value) : "",
+                  })}
+                  placeholder="Contoh: 488000"
+                  className="w-full rounded-xl border-2 border-[#ccd9d3] focus:border-[#167052] bg-white p-2.5 text-sm font-black text-[#0b3d2e] outline-none font-mono"
+                  autoFocus
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-[#0b3d2e] mb-1">
+                  Kategori Pengeluaran:
+                </label>
+                <div className="flex flex-wrap gap-1.5">
+                  {["Bahan Baku/Dapur", "Es Batu/Galon", "Operasional Toko", "Kembalian/Lainnya"].map((cat) => (
+                    <button
+                      key={cat}
+                      type="button"
+                      onClick={() => setModalShiftExpense({ ...modalShiftExpense, category: cat })}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-colors ${
+                        modalShiftExpense.category === cat
+                          ? "bg-[#0b3d2e] text-[#c8f53a]"
+                          : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                      }`}
+                    >
+                      {cat}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-[#0b3d2e] mb-1">
+                  Keterangan / Rincian Belanja:
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={modalShiftExpense.note}
+                  onChange={(e) => setModalShiftExpense({ ...modalShiftExpense, note: e.target.value })}
+                  placeholder="Misal: Belanja pasar pagi, es batu kristal"
+                  className="w-full rounded-xl border border-[#ccd9d3] focus:border-[#167052] bg-white p-2.5 text-xs text-gray-800 outline-none"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-[#eef2f0] font-mono text-xs">
+                <button
+                  type="button"
+                  onClick={() => setModalShiftExpense(null)}
+                  className="rounded-xl border border-gray-300 bg-white px-3 py-2 font-bold text-gray-700 hover:bg-gray-50"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingExpense}
+                  className="rounded-xl bg-amber-400 hover:bg-amber-300 px-4 py-2 font-black text-amber-950 shadow-xs transition-all disabled:opacity-50"
+                >
+                  {isSubmittingExpense ? "Menyimpan..." : "Simpan & Rekonsiliasi"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Footer */}
       <footer className={`border-t py-4 text-center text-xs font-mono transition-colors ${

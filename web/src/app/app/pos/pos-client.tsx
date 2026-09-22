@@ -354,6 +354,11 @@ export default function PosClient({
   const [cashMovementNote, setCashMovementNote] = useState<string>("");
   const [isSubmittingCashMovement, setIsSubmittingCashMovement] = useState(false);
 
+  // Quick Expense on Close Shift
+  const [closingShiftCashOut, setClosingShiftCashOut] = useState<number | "">("");
+  const [closingShiftCashOutCategory, setClosingShiftCashOutCategory] = useState<string>("Bahan Baku/Dapur");
+  const [closingShiftCashOutNote, setClosingShiftCashOutNote] = useState<string>("");
+
   // Active Shift Live Cash Breakdown for Reconciliation
   const [activeShiftSummary, setActiveShiftSummary] = useState<{
     openingCash: number;
@@ -1206,6 +1211,22 @@ export default function PosClient({
     e.preventDefault();
     if (!activeShift) return;
 
+    // Jika kasir mencatat pengeluaran/belanja saat tutup shift, simpan terlebih dahulu
+    const cashOutVal = Number(closingShiftCashOut);
+    if (cashOutVal > 0) {
+      const recordRes = await recordShiftCashMovementAction({
+        shiftId: activeShift.id,
+        type: "cash_out",
+        amount: cashOutVal,
+        category: closingShiftCashOutCategory || "Bahan Baku/Dapur",
+        note: closingShiftCashOutNote.trim() || "Pengeluaran belanja kasir saat tutup shift",
+      });
+      if (!recordRes.ok) {
+        alert(`Gagal mencatat pengeluaran: ${recordRes.error}`);
+        return;
+      }
+    }
+
     const res = await closeShiftAction(activeShift.id, shiftClosingCashInput, "Tutup Shift");
     if (!res.ok) {
       alert(res.error);
@@ -1215,6 +1236,8 @@ export default function PosClient({
     setShowShiftModal(false);
     setActiveShiftSummary(null);
     setShiftClosingCashInput(0);
+    setClosingShiftCashOut("");
+    setClosingShiftCashOutNote("");
     refreshAll();
     const variance = res.data.variance;
     alert(
@@ -2194,6 +2217,24 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
             >
               <Clock size={17} aria-hidden="true" />
             </button>
+            {activeShift && (
+              <button
+                type="button"
+                onClick={() => {
+                  setCashMovementType("cash_out");
+                  setShowCashMovementModal(true);
+                }}
+                className={`flex items-center gap-1.5 rounded-xl px-2.5 sm:px-3 h-10 sm:h-11 text-xs font-black transition-all shadow-xs shrink-0 ${
+                  isMochiPos
+                    ? "bg-amber-400 text-[#073829] hover:bg-amber-300 font-extrabold active:scale-95"
+                    : "bg-amber-500 text-white hover:bg-amber-600 active:scale-95"
+                }`}
+                title="Catat uang keluar dari laci kasir (belanja dapur, es batu, galon, dll)"
+              >
+                <Banknote size={16} />
+                <span>Kas Keluar</span>
+              </button>
+            )}
             <button
               type="button"
               aria-label="QR Pendaftaran Member"
@@ -3686,84 +3727,153 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
                         </div>
                       )}
 
-                      <div className="flex justify-between items-center pt-2 border-t border-black/10 text-xs font-black">
-                        <span className="text-[#0b3d2e]">Target Fisik Laci (Seharusnya):</span>
-                        <span className="text-[#0b3d2e] text-sm">
-                          {formatRupiah(activeShiftSummary?.expectedCash ?? Number(activeShift.opening_cash))}
-                        </span>
-                      </div>
+                      {(() => {
+                        const baseExpected = activeShiftSummary?.expectedCash ?? Number(activeShift.opening_cash);
+                        const currentExpense = Number(closingShiftCashOut || 0);
+                        const effectiveTarget = Math.max(0, baseExpected - currentExpense);
+                        return (
+                          <div className="flex justify-between items-center pt-2 border-t border-black/10 text-xs font-black">
+                            <span className="text-[#0b3d2e]">Target Fisik Laci (Seharusnya):</span>
+                            <span className="text-[#0b3d2e] text-sm">
+                              {formatRupiah(effectiveTarget)}
+                              {currentExpense > 0 && (
+                                <span className="text-[10px] text-rose-600 font-normal ml-1.5 font-mono">
+                                  (dipotong pengeluaran -{formatRupiah(currentExpense)})
+                                </span>
+                              )}
+                            </span>
+                          </div>
+                        );
+                      })()}
                     </>
                   )}
                 </div>
 
-                {/* Input Uang Fisik Laci */}
-                <div className="space-y-1.5 font-mono">
+                {/* Input Pengeluaran Kas / Belanja Laci Hari Ini */}
+                <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-300 space-y-2.5 font-sans">
                   <div className="flex items-center justify-between">
-                    <label className={`block font-bold text-xs ${isMochiPos ? "text-[#0b3d2e]" : "text-[#232331]"}`}>
-                      Hitung Uang Fisik di Laci Kasir (Rp):
-                    </label>
-                    {activeShiftSummary && (
-                      <button
-                        type="button"
-                        onClick={() => setShiftClosingCashInput(activeShiftSummary.expectedCash)}
-                        className="text-[10px] text-emerald-800 bg-emerald-100 hover:bg-emerald-200 px-2 py-0.5 rounded-md font-bold transition-colors"
-                      >
-                        Isi Target ({formatRupiah(activeShiftSummary.expectedCash)})
-                      </button>
+                    <span className="font-black text-xs text-amber-950 flex items-center gap-1.5">
+                      <Banknote size={15} className="text-amber-700" />
+                      Ada Pengeluaran Kas / Belanja Laci Hari Ini? (Opsional)
+                    </span>
+                    {Number(closingShiftCashOut) > 0 && (
+                      <span className="text-[11px] font-black text-rose-700 bg-rose-100 px-2 py-0.5 rounded-lg border border-rose-200">
+                        -{formatRupiah(Number(closingShiftCashOut))}
+                      </span>
                     )}
                   </div>
-                  <input
-                    type="number"
-                    required
-                    min={0}
-                    step={1}
-                    value={shiftClosingCashInput || ""}
-                    onChange={(e) => setShiftClosingCashInput(Number(e.target.value))}
-                    placeholder="Masukkan total uang fisik di laci"
-                    className={`w-full rounded-xl border-2 p-2.5 text-base font-black ${
-                      isMochiPos ? "border-[#0b3d2e] text-[#0b3d2e]" : "border-[#232331] text-[#232331]"
-                    }`}
-                    autoFocus
-                  />
-
-                  {/* Realtime Live Variance Preview */}
-                  {shiftClosingCashInput > 0 && activeShiftSummary && (() => {
-                    const variance = shiftClosingCashInput - activeShiftSummary.expectedCash;
-                    if (variance === 0) {
-                      return (
-                        <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-300 text-emerald-900 flex items-center gap-2 text-xs font-sans">
-                          <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
-                          <div>
-                            <span className="font-black">PAS (Rp 0) ✓</span>
-                            <p className="text-[10.5px] text-emerald-700">Jumlah uang fisik di laci cocok sempurna dengan perhitungan sistem.</p>
-                          </div>
-                        </div>
-                      );
-                    }
-                    if (variance < 0) {
-                      return (
-                        <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-300 text-rose-900 flex items-center gap-2 text-xs font-sans">
-                          <AlertCircle size={16} className="text-rose-600 shrink-0" />
-                          <div>
-                            <span className="font-black">KURANG {formatRupiah(Math.abs(variance))}</span>
-                            <p className="text-[10.5px] text-rose-700">
-                              Fisik laci lebih sedikit dari target. Pastikan uang modal awal dihitung dan periksa apakah ada nota belanja dapur/kas keluar yang belum dicatat.
-                            </p>
-                          </div>
-                        </div>
-                      );
-                    }
-                    return (
-                      <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 flex items-center gap-2 text-xs font-sans">
-                        <Info size={16} className="text-amber-600 shrink-0" />
-                        <div>
-                          <span className="font-black">LEBIH +{formatRupiah(variance)}</span>
-                          <p className="text-[10.5px] text-amber-700">Uang fisik laci melebihi target hitungan sistem.</p>
-                        </div>
-                      </div>
-                    );
-                  })()}
+                  <p className="text-[11px] text-amber-900 leading-relaxed">
+                    Jika ada uang kasir yang dipakai belanja (bahan dapur, es batu, galon air, belanja pasar, dll), masukkan di sini agar <strong>Target Laci otomatis dikurangi</strong> dan selisih tidak minus.
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    <div>
+                      <label className="block text-[10.5px] font-bold text-amber-950 mb-1">
+                        Nominal Belanja/Pengeluaran (Rp):
+                      </label>
+                      <input
+                        type="number"
+                        min={0}
+                        step={1}
+                        value={closingShiftCashOut}
+                        onChange={(e) => setClosingShiftCashOut(e.target.value ? Number(e.target.value) : "")}
+                        placeholder="Contoh: 488000"
+                        className="w-full rounded-xl border border-amber-300 bg-white p-2.5 text-xs font-black text-amber-950 outline-none focus:ring-2 focus:ring-amber-500 placeholder:text-amber-400 font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10.5px] font-bold text-amber-950 mb-1">
+                        Keperluan / Catatan Belanja:
+                      </label>
+                      <input
+                        type="text"
+                        value={closingShiftCashOutNote}
+                        onChange={(e) => setClosingShiftCashOutNote(e.target.value)}
+                        placeholder="Contoh: Belanja dapur, es, galon"
+                        className="w-full rounded-xl border border-amber-300 bg-white p-2.5 text-xs text-amber-950 outline-none focus:ring-2 focus:ring-amber-500 placeholder:text-amber-400"
+                      />
+                    </div>
+                  </div>
                 </div>
+
+                {/* Input Uang Fisik Laci */}
+                {(() => {
+                  const baseExpected = activeShiftSummary?.expectedCash ?? Number(activeShift.opening_cash);
+                  const currentExpense = Number(closingShiftCashOut || 0);
+                  const effectiveTarget = Math.max(0, baseExpected - currentExpense);
+
+                  return (
+                    <div className="space-y-1.5 font-mono">
+                      <div className="flex items-center justify-between">
+                        <label className={`block font-bold text-xs ${isMochiPos ? "text-[#0b3d2e]" : "text-[#232331]"}`}>
+                          Hitung Uang Fisik di Laci Kasir (Rp):
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => setShiftClosingCashInput(effectiveTarget)}
+                          className="text-[10px] text-emerald-800 bg-emerald-100 hover:bg-emerald-200 px-2 py-0.5 rounded-md font-bold transition-colors"
+                        >
+                          Isi Target ({formatRupiah(effectiveTarget)})
+                        </button>
+                      </div>
+                      <input
+                        type="number"
+                        required
+                        min={0}
+                        step={1}
+                        value={shiftClosingCashInput || ""}
+                        onChange={(e) => setShiftClosingCashInput(Number(e.target.value))}
+                        placeholder="Masukkan total uang fisik di laci"
+                        className={`w-full rounded-xl border-2 p-2.5 text-base font-black ${
+                          isMochiPos ? "border-[#0b3d2e] text-[#0b3d2e]" : "border-[#232331] text-[#232331]"
+                        }`}
+                        autoFocus
+                      />
+
+                      {/* Realtime Live Variance Preview */}
+                      {shiftClosingCashInput > 0 && (() => {
+                        const variance = shiftClosingCashInput - effectiveTarget;
+                        if (variance === 0) {
+                          return (
+                            <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-300 text-emerald-900 flex items-center gap-2 text-xs font-sans">
+                              <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
+                              <div>
+                                <span className="font-black">PAS (Rp 0) ✓</span>
+                                <p className="text-[10.5px] text-emerald-700">
+                                  Jumlah uang fisik di laci cocok sempurna dengan perhitungan sistem.
+                                  {currentExpense > 0 && ` (Pengeluaran kas ${formatRupiah(currentExpense)} otomatis dicatat).`}
+                                </p>
+                              </div>
+                            </div>
+                          );
+                        }
+                        if (variance < 0) {
+                          return (
+                            <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-300 text-rose-900 flex items-center gap-2 text-xs font-sans">
+                              <AlertCircle size={16} className="text-rose-600 shrink-0" />
+                              <div>
+                                <span className="font-black">KURANG {formatRupiah(Math.abs(variance))}</span>
+                                <p className="text-[10.5px] text-rose-700">
+                                  Fisik laci lebih sedikit dari target. Pastikan uang modal awal dihitung dan periksa apakah ada nota belanja dapur/kas keluar yang belum dimasukkan di atas.
+                                </p>
+                              </div>
+                            </div>
+                          );
+                        }
+                        return (
+                          <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-300 text-amber-900 flex items-center gap-2 text-xs font-sans">
+                            <Info size={16} className="text-amber-600 shrink-0" />
+                            <div>
+                              <span className="font-black">LEBIH +{formatRupiah(variance)}</span>
+                              <p className="text-[10.5px] text-amber-800">
+                                Fisik laci lebih banyak dari target sistem.
+                              </p>
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  );
+                })()}
 
                 <div className="flex justify-end gap-2 pt-2 font-mono">
                   <button

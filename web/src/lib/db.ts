@@ -4379,6 +4379,38 @@ export const db = {
       )
       RETURNING *
     `;
+
+    // Jika shift ini sudah berstatus tutup, hitung ulang expected_cash dan variance secara otomatis
+    const [closedShift] = await sql`
+      SELECT * FROM shifts WHERE id = ${shiftId} AND business_id = ${businessId} AND closed_at IS NOT NULL
+    `;
+    if (closedShift) {
+      const cash = await sql`
+        SELECT
+          COALESCE((SELECT SUM(o.total) FROM orders o WHERE o.business_id = ${businessId}
+            AND o.shift_id = ${shiftId} AND o.payment_method = 'cash' AND o.status = 'paid'), 0) AS cash_sales,
+          COALESCE((SELECT SUM(r.amount) FROM refunds r JOIN orders o ON o.id = r.order_id
+            WHERE o.business_id = ${businessId} AND r.shift_id = ${shiftId} AND o.payment_method = 'cash'), 0) AS cash_refunds,
+          COALESCE((SELECT SUM(m.amount) FROM shift_cash_movements m
+            WHERE m.business_id = ${businessId} AND m.shift_id = ${shiftId} AND m.type = 'cash_out'), 0) AS cash_out,
+          COALESCE((SELECT SUM(m.amount) FROM shift_cash_movements m
+            WHERE m.business_id = ${businessId} AND m.shift_id = ${shiftId} AND m.type = 'cash_in'), 0) AS cash_in
+      `;
+      const recon = calculateShiftReconciliation(
+        Number(closedShift.opening_cash),
+        Number(cash[0]?.cash_sales) - Number(cash[0]?.cash_refunds),
+        Number(closedShift.closing_cash ?? 0),
+        Number(cash[0]?.cash_out),
+        Number(cash[0]?.cash_in),
+      );
+      await sql`
+        UPDATE shifts
+        SET expected_cash = ${recon.expectedCash},
+            variance = ${recon.variance}
+        WHERE id = ${shiftId} AND business_id = ${businessId}
+      `;
+    }
+
     return row as unknown as ShiftCashMovement;
   },
 
