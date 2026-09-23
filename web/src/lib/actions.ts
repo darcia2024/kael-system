@@ -1833,6 +1833,24 @@ export async function getShiftCashMovementsAction(
   return done(movements);
 }
 
+export async function deleteShiftCashMovementAction(
+  shiftId: string,
+  movementId: string,
+): Promise<ActionResult<{ success: boolean }>> {
+  const { businessId } = await requirePermission("pos");
+  const locked = await moduleLock(businessId, "pos", "write");
+  if (locked) return fail(locked);
+  if (!shiftId || !movementId) return fail("Parameter tidak valid.");
+
+  const ok = await db.deleteShiftCashMovement(businessId, shiftId, movementId);
+  if (!ok) return fail("Data kas keluar/masuk tidak ditemukan.");
+
+  revalidatePath("/app/pos");
+  revalidatePath("/app/pos/reports");
+  revalidatePath("/app/pos/owner");
+  return done({ success: true });
+}
+
 export async function createOrderAction(input: {
   service_type: "dine_in" | "takeaway" | "delivery";
   table_no?: string | null;

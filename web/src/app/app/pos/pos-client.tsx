@@ -71,6 +71,7 @@ import {
   openShiftAction,
   closeShiftAction,
   recordShiftCashMovementAction,
+  deleteShiftCashMovementAction,
   getActiveShiftCashSummaryAction,
   getShiftCashMovementsAction,
   updateOrderStatusAction,
@@ -1215,6 +1216,13 @@ export default function PosClient({
     // Jika kasir mencatat pengeluaran/belanja saat tutup shift, simpan terlebih dahulu
     const cashOutVal = Number(closingShiftCashOut);
     if (cashOutVal > 0) {
+      if (cashOutVal < 1000) {
+        const proceed = window.confirm(
+          `⚠️ Perhatian: Nominal belanja kasir yang Anda masukkan hanya Rp ${cashOutVal.toLocaleString("id-ID")} (bukan ribuan).\n\nApakah benar Rp ${cashOutVal.toLocaleString("id-ID")}, atau maksudnya Rp ${(cashOutVal * 1000).toLocaleString("id-ID")}?\n\nKlik OK jika benar Rp ${cashOutVal.toLocaleString("id-ID")}, atau BATAL untuk memperbaiki.`
+        );
+        if (!proceed) return;
+      }
+
       const recordRes = await recordShiftCashMovementAction({
         shiftId: activeShift.id,
         type: "cash_out",
@@ -1258,6 +1266,12 @@ export default function PosClient({
       alert("Nominal uang harus lebih dari Rp 0.");
       return;
     }
+    if (numAmount < 1000) {
+      const proceed = window.confirm(
+        `⚠️ Perhatian: Nominal yang Anda masukkan hanya Rp ${numAmount.toLocaleString("id-ID")} (bukan ribuan).\n\nApakah benar Rp ${numAmount.toLocaleString("id-ID")}, atau maksudnya Rp ${(numAmount * 1000).toLocaleString("id-ID")}?\n\nKlik OK jika benar Rp ${numAmount.toLocaleString("id-ID")}, atau BATAL untuk memperbaiki.`
+      );
+      if (!proceed) return;
+    }
     if (!cashMovementNote.trim()) {
       alert("Keterangan pengeluaran atau pemasukan wajib diisi.");
       return;
@@ -1287,6 +1301,22 @@ export default function PosClient({
     alert(
       `${cashMovementType === "cash_out" ? "💸 Kas Keluar" : "📥 Kas Masuk"} sebesar ${formatRupiah(numAmount)} berhasil dicatat!`
     );
+  };
+
+  const handleDeleteCashMovement = async (movementId: string, label: string) => {
+    if (!activeShift) return;
+    const ok = window.confirm(
+      `Hapus catatan kas ini?\n\n"${label}"\n\nData akan dihapus dan target laci akan dihitung ulang secara otomatis.`
+    );
+    if (!ok) return;
+
+    const res = await deleteShiftCashMovementAction(activeShift.id, movementId);
+    if (!res.ok) {
+      alert(res.error || "Gagal menghapus catatan kas.");
+      return;
+    }
+    await loadActiveShiftSummary();
+    refreshAll();
   };
 
   // Web Bluetooth Thermal ESC/POS Trigger.
@@ -3711,17 +3741,30 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
 
                       {/* Movements details if any */}
                       {activeShiftSummary && activeShiftSummary.movements.length > 0 && (
-                        <div className="pt-1.5 border-t border-black/5 space-y-1">
-                          <p className="text-[10px] font-sans font-bold text-[#556960]">Catatan Kas Keluar/Masuk:</p>
-                          <div className="max-h-24 overflow-y-auto space-y-1 pr-1">
+                        <div className="pt-1.5 border-t border-black/5 space-y-1.5">
+                          <div className="flex items-center justify-between">
+                            <p className="text-[10px] font-sans font-bold text-[#556960]">Catatan Kas Keluar/Masuk:</p>
+                            <span className="text-[9px] text-[#718078] font-sans">Salah catat? Klik ikon 🗑️ untuk hapus</span>
+                          </div>
+                          <div className="max-h-28 overflow-y-auto space-y-1 pr-1">
                             {activeShiftSummary.movements.map((m) => (
-                              <div key={m.id} className="text-[10px] flex justify-between bg-white/70 p-1.5 rounded-lg border border-black/5">
-                                <span className="truncate max-w-[200px]" title={m.note}>
+                              <div key={m.id} className="text-[10px] flex items-center justify-between bg-white/80 p-1.5 rounded-lg border border-black/5 hover:border-black/15 transition-all">
+                                <span className="truncate max-w-[190px]" title={m.note}>
                                   {m.type === "cash_out" ? "🔴" : "🟢"} [{m.category}] {m.note}
                                 </span>
-                                <span className="font-bold shrink-0">
-                                  {m.type === "cash_out" ? "-" : "+"}{formatRupiah(Number(m.amount))}
-                                </span>
+                                <div className="flex items-center gap-1.5 shrink-0 ml-2">
+                                  <span className="font-bold">
+                                    {m.type === "cash_out" ? "-" : "+"}{formatRupiah(Number(m.amount))}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => void handleDeleteCashMovement(m.id, `[${m.category}] ${m.note} (${formatRupiah(Number(m.amount))})`)}
+                                    title="Hapus / batalkan catatan kas ini"
+                                    className="text-rose-500 hover:text-rose-700 hover:bg-rose-50 p-1 rounded font-bold transition-colors"
+                                  >
+                                    <Trash2 size={12} />
+                                  </button>
+                                </div>
                               </div>
                             ))}
                           </div>
@@ -3768,18 +3811,47 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
                   </p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                     <div>
-                      <label className="block text-[10.5px] font-bold text-amber-950 mb-1">
-                        Nominal Belanja/Pengeluaran (Rp):
-                      </label>
-                      <input
-                        type="number"
-                        min={0}
-                        step={1}
-                        value={closingShiftCashOut}
-                        onChange={(e) => setClosingShiftCashOut(e.target.value ? Number(e.target.value) : "")}
-                        placeholder="Contoh: 488000"
-                        className="w-full rounded-xl border border-amber-300 bg-white p-2.5 text-xs font-black text-amber-950 outline-none focus:ring-2 focus:ring-amber-500 placeholder:text-amber-400 font-mono"
-                      />
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block text-[10.5px] font-bold text-amber-950">
+                          Nominal Belanja/Pengeluaran (Rp):
+                        </label>
+                        {Number(closingShiftCashOut) > 0 && (
+                          <span className="text-[10px] font-mono font-bold text-emerald-800">
+                            Terbaca: {formatRupiah(Number(closingShiftCashOut))}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex gap-1.5">
+                        <input
+                          type="number"
+                          min={0}
+                          step={1}
+                          value={closingShiftCashOut}
+                          onChange={(e) => setClosingShiftCashOut(e.target.value ? Number(e.target.value) : "")}
+                          placeholder="Contoh: 58000"
+                          className="flex-1 rounded-xl border border-amber-300 bg-white p-2.5 text-xs font-black text-amber-950 outline-none focus:ring-2 focus:ring-amber-500 placeholder:text-amber-400 font-mono"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setClosingShiftCashOut((prev) => (Number(prev) || 0) * 1000)}
+                          className="px-2.5 py-1 rounded-xl bg-amber-200 hover:bg-amber-300 text-amber-900 text-[11px] font-bold shrink-0 transition-colors"
+                          title="Tambah 000 (Ribu)"
+                        >
+                          +000
+                        </button>
+                      </div>
+                      {Number(closingShiftCashOut) > 0 && Number(closingShiftCashOut) < 1000 && (
+                        <div className="mt-1.5 p-2 rounded-xl bg-amber-100/90 border border-amber-400 text-[11px] text-amber-950 flex items-center justify-between gap-1 animate-in fade-in">
+                          <span>⚠️ Terisi <strong>Rp {closingShiftCashOut}</strong> (bukan ribuan).</span>
+                          <button
+                            type="button"
+                            onClick={() => setClosingShiftCashOut(Number(closingShiftCashOut) * 1000)}
+                            className="px-2 py-0.5 bg-amber-800 text-white rounded-md font-bold text-[10px] shrink-0 hover:bg-amber-900"
+                          >
+                            Ubah ke Rp {(Number(closingShiftCashOut) * 1000).toLocaleString("id-ID")}
+                          </button>
+                        </div>
+                      )}
                     </div>
                     <div>
                       <label className="block text-[10.5px] font-bold text-amber-950 mb-1">
@@ -3789,7 +3861,7 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
                         type="text"
                         value={closingShiftCashOutNote}
                         onChange={(e) => setClosingShiftCashOutNote(e.target.value)}
-                        placeholder="Contoh: Belanja dapur, es, galon"
+                        placeholder="Contoh: Belanja dapur, es, rokok"
                         className="w-full rounded-xl border border-amber-300 bg-white p-2.5 text-xs text-amber-950 outline-none focus:ring-2 focus:ring-amber-500 placeholder:text-amber-400"
                       />
                     </div>
@@ -4052,28 +4124,57 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
 
               {/* Nominal */}
               <div className="space-y-1">
-                <label className="block text-xs font-bold text-[#3d5248]">
-                  Nominal Uang (Rp):
-                </label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 font-mono font-bold text-sm text-[#7b8882]">
-                    Rp
-                  </span>
-                  <input
-                    type="number"
-                    required
-                    min={1}
-                    step={1}
-                    value={cashMovementAmount}
-                    onChange={(e) => setCashMovementAmount(e.target.value ? Number(e.target.value) : "")}
-                    placeholder="Contoh: 158000"
-                    className="w-full rounded-xl border border-[#ccd9d3] pl-10 pr-3 py-2 text-base font-mono font-bold outline-none focus:border-[#167052] focus:ring-2 focus:ring-[#167052]/20"
-                    autoFocus
-                  />
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-bold text-[#3d5248]">
+                    Nominal Uang (Rp):
+                  </label>
+                  {Number(cashMovementAmount) > 0 && (
+                    <span className="text-[11px] font-mono font-bold text-emerald-800">
+                      Terbaca: {formatRupiah(Number(cashMovementAmount))}
+                    </span>
+                  )}
                 </div>
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 font-mono font-bold text-sm text-[#7b8882]">
+                      Rp
+                    </span>
+                    <input
+                      type="number"
+                      required
+                      min={1}
+                      step={1}
+                      value={cashMovementAmount}
+                      onChange={(e) => setCashMovementAmount(e.target.value ? Number(e.target.value) : "")}
+                      placeholder="Contoh: 58000"
+                      className="w-full rounded-xl border border-[#ccd9d3] pl-10 pr-3 py-2 text-base font-mono font-bold outline-none focus:border-[#167052] focus:ring-2 focus:ring-[#167052]/20"
+                      autoFocus
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setCashMovementAmount((prev) => (Number(prev) || 0) * 1000)}
+                    className="px-3 py-2 rounded-xl bg-emerald-100 hover:bg-emerald-200 text-emerald-900 font-bold text-xs shrink-0 transition-colors"
+                    title="Tambah 000 (Ribu)"
+                  >
+                    +000 (Ribu)
+                  </button>
+                </div>
+                {Number(cashMovementAmount) > 0 && Number(cashMovementAmount) < 1000 && (
+                  <div className="p-2 rounded-xl bg-amber-100/90 border border-amber-400 text-xs text-amber-950 flex items-center justify-between gap-1 animate-in fade-in">
+                    <span>⚠️ Terisi <strong>Rp {cashMovementAmount}</strong> (bukan ribuan).</span>
+                    <button
+                      type="button"
+                      onClick={() => setCashMovementAmount(Number(cashMovementAmount) * 1000)}
+                      className="px-2.5 py-1 bg-amber-800 text-white rounded-lg font-bold text-xs shrink-0 hover:bg-amber-900"
+                    >
+                      Ubah ke Rp {(Number(cashMovementAmount) * 1000).toLocaleString("id-ID")}
+                    </button>
+                  </div>
+                )}
                 {/* Quick nominal buttons */}
                 <div className="flex flex-wrap gap-1 pt-1 font-mono text-[11px]">
-                  {[10000, 20000, 50000, 100000, 150000].map((val) => (
+                  {[10000, 20000, 50000, 58000, 100000, 150000].map((val) => (
                     <button
                       key={val}
                       type="button"
