@@ -665,6 +665,12 @@ export default function PosClient({
   const checkoutTotal = cartTotals.total + (serviceType === "delivery" ? Math.max(0, kirimOngkir) : 0);
 
   useEffect(() => {
+    if (showPaymentModal) {
+      setCashGivenInput(checkoutTotal);
+    }
+  }, [checkoutTotal, showPaymentModal]);
+
+  useEffect(() => {
     if (!showMobileCart) return;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -2005,7 +2011,7 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
                       </button>
                     </div>
                   </div>
-                  <div className="pt-0.5">
+                  <div className="pt-0.5 space-y-1">
                     <input
                       type="text"
                       value={note}
@@ -2013,6 +2019,23 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
                       placeholder="Catatan menu (e.g. less ice, pedas sedang)..."
                       className="h-8 w-full rounded-lg border border-dashed border-[#ccd9d2] bg-[#f8faf9] px-2.5 text-[11px] text-[#243d32] placeholder:text-[#889a91] outline-hidden focus:border-solid focus:border-[#167052] focus:bg-white focus:ring-1 focus:ring-[#167052]/20 transition-all"
                     />
+                    {item.name.toLowerCase().includes("nasi") && (
+                      <div className="flex items-center gap-1.5 pt-0.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newNote = note ? (note.includes("Tanpa Nasi") ? note : `${note}, Tanpa Nasi`) : "Tanpa Nasi";
+                            handleUpdateNote(item.id, newNote);
+                            setDiscountNominal(Math.min(cartTotals.subtotal, (discountNominal || 0) + 5000));
+                            setDiscountReasonKey("tanpa_nasi");
+                            setDiscountReasonCustom("Tanpa nasi (-5.000)");
+                          }}
+                          className="px-2 py-0.5 rounded-md bg-emerald-100 hover:bg-emerald-200 text-emerald-950 text-[10.5px] font-bold transition-all flex items-center gap-1 border border-emerald-300"
+                        >
+                          <span>🍚 Tanpa Nasi (-5.000)</span>
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </article>
               );
@@ -2025,16 +2048,29 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
         <dl className="space-y-1 text-xs tabular-nums font-mono">
           <div className="flex justify-between text-[#68766f]"><dt>Subtotal</dt><dd>{formatRupiah(cartTotals.subtotal)}</dd></div>
           <div className="flex items-center justify-between text-[11px]">
-            <button
-              type="button"
-              onClick={() => {
-                setTargetFinalBillInput(cartTotals.subtotal);
-                setShowDiscountModal(true);
-              }}
-              className="font-bold text-[#167052] hover:underline flex items-center gap-1"
-            >
-              <span>🏷️ {discountNominal > 0 ? `Potongan: ${formatRupiah(discountNominal)} (${DISCOUNT_REASON_LABEL[discountReasonKey] || discountReasonKey.replace(/_/g, " ")})` : "+ Ubah Harga / Potongan / Diskon"}</span>
-            </button>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <button
+                type="button"
+                onClick={() => {
+                  setTargetFinalBillInput(cartTotals.subtotal);
+                  setShowDiscountModal(true);
+                }}
+                className="font-bold text-[#167052] hover:underline flex items-center gap-1"
+              >
+                <span>🏷️ {discountNominal > 0 ? `Potongan: ${formatRupiah(discountNominal)} (${DISCOUNT_REASON_LABEL[discountReasonKey] || discountReasonKey.replace(/_/g, " ")})` : "+ Ubah Harga / Potongan / Diskon"}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setDiscountNominal(5000);
+                  setDiscountReasonKey("tanpa_nasi");
+                  setDiscountReasonCustom("Tanpa nasi (-5.000)");
+                }}
+                className="px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-900 border border-emerald-300 font-bold text-[10px] hover:bg-emerald-200"
+              >
+                🍚 -5rb (Tanpa Nasi)
+              </button>
+            </div>
             {cartTotals.discount > 0 && (
               <span className="text-[#b34539] font-bold font-mono">
                 -{formatRupiah(cartTotals.discount)}
@@ -3281,6 +3317,82 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
                 )}
               </div>
 
+              {/* Rincian Tagihan & Ubah Harga / Potongan (Tanpa Nasi) di Modal Pembayaran */}
+              <div className={`p-3 rounded-2xl border space-y-2 font-mono text-xs ${
+                isMochiPos ? "border-emerald-300 bg-emerald-50/70" : "border-[#ccd7d1] bg-[#f8faf9]"
+              }`}>
+                <div className="flex justify-between items-center text-[#556960]">
+                  <span>Subtotal Menu ({cartList.reduce((sum, line) => sum + line.qty, 0)} item):</span>
+                  <span className="font-bold text-[#0b3d2e]">{formatRupiah(cartTotals.subtotal)}</span>
+                </div>
+
+                {/* Tombol Cepat Tanpa Nasi & Ubah Harga */}
+                <div className="flex flex-wrap items-center justify-between gap-1.5 pt-1.5 border-t border-emerald-200/80">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDiscountNominal(5000);
+                        setDiscountReasonKey("tanpa_nasi");
+                        setDiscountReasonCustom("Tanpa nasi (-5.000)");
+                      }}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${
+                        discountNominal === 5000 && discountReasonKey === "tanpa_nasi"
+                          ? "bg-emerald-700 text-white shadow-xs"
+                          : "bg-white border border-emerald-300 text-emerald-900 hover:bg-emerald-100"
+                      }`}
+                    >
+                      <span>🍚 Tanpa Nasi (-5rb)</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDiscountNominal(10000);
+                        setDiscountReasonKey("tanpa_nasi");
+                        setDiscountReasonCustom("2x Tanpa nasi (-10.000)");
+                      }}
+                      className={`px-2 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 ${
+                        discountNominal === 10000 && discountReasonKey === "tanpa_nasi"
+                          ? "bg-emerald-700 text-white shadow-xs"
+                          : "bg-white border border-emerald-300 text-emerald-900 hover:bg-emerald-100"
+                      }`}
+                    >
+                      <span>🍚 2x (-10rb)</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTargetFinalBillInput(cartTotals.subtotal);
+                        setShowDiscountModal(true);
+                      }}
+                      className="px-2.5 py-1 rounded-lg text-xs font-bold bg-white border border-emerald-300 text-emerald-900 hover:bg-emerald-100 transition-all"
+                    >
+                      <span>🏷️ {discountNominal > 0 ? `Potongan: ${formatRupiah(discountNominal)}` : "+ Ubah Harga / Potongan"}</span>
+                    </button>
+                  </div>
+
+                  {discountNominal > 0 && (
+                    <span className="text-rose-600 font-bold font-mono text-xs">
+                      -{formatRupiah(discountNominal)}
+                    </span>
+                  )}
+                </div>
+
+                {serviceType === "delivery" && kirimOngkir > 0 && (
+                  <div className="flex justify-between items-center text-[#556960] pt-1.5 border-t border-emerald-200/80">
+                    <span>Ongkir Pengantaran:</span>
+                    <span className="font-bold text-[#0b3d2e]">+{formatRupiah(kirimOngkir)}</span>
+                  </div>
+                )}
+
+                <div className="flex justify-between items-center pt-2 border-t-2 border-emerald-300 font-bold text-sm text-[#0b3d2e]">
+                  <span>Total Tagihan:</span>
+                  <span className="text-base font-black tabular-nums">{formatRupiah(checkoutTotal)}</span>
+                </div>
+              </div>
+
               {/* Payment Method Selector */}
               <div className={`space-y-1 font-mono border-t pt-3 ${isMochiPos ? "border-[#e0ebe5]" : "border-[#dedee8]"}`}>
                 <label className={`block font-bold ${isMochiPos ? "text-[#0b3d2e]" : "text-[#232331]"}`}>Metode Pembayaran:</label>
@@ -4272,7 +4384,7 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
       />
       {/* MODAL: CUSTOM DISCOUNT WITH MANDATORY REASON */}
       {showDiscountModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 backdrop-blur-xs bg-[#07281e]/65">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 backdrop-blur-xs bg-[#07281e]/65">
           <div className="w-full max-w-md rounded-3xl bg-white p-5 sm:p-6 space-y-4 animate-in zoom-in-95 font-mono text-xs border border-[#d8e3de] shadow-2xl">
             <div className="flex items-center justify-between border-b border-[#e0ebe5] pb-3">
               <h3 className="font-black text-base font-sans text-[#0b3d2e]">
