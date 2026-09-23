@@ -14,6 +14,7 @@ import {
   QrCode,
   ReceiptText,
   ShieldCheck,
+  Smartphone,
   X,
 } from "lucide-react";
 import type { Business } from "@/lib/types";
@@ -33,7 +34,7 @@ import {
   setPosSchedulePolicyAction,
 } from "@/lib/actions-operations";
 
-type Staff = { id: string; name: string; role: string };
+type Staff = { id: string; name: string; role: string; attendance_token?: string | null };
 type Schedule = {
   id: string;
   user_id: string;
@@ -656,6 +657,78 @@ export default function HrClient({
               {!data.schedules.length && (
                 <Empty t="Belum ada jadwal shift aktif." />
               )}
+            </div>
+          </Box>
+        </section>
+
+        {/* Section: Personal Staff Attendance Links (No queue, no shared screen) */}
+        <section>
+          <Box
+            title="Tautan Presensi Personal Karyawan (Tanpa Antre)"
+            icon={<Smartphone size={18} />}
+          >
+            <p className="text-xs text-[#527867]">
+              Bagikan tautan presensi personal ini ke WhatsApp masing-masing karyawan. Karyawan langsung membuka presensi atas nama mereka sendiri tanpa harus memilih dari daftar umum toko.
+            </p>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 mt-2">
+              {data.staff
+                .filter((x) => x.role === "staff")
+                .map((staf) => {
+                  const slug =
+                    staf.attendance_token ||
+                    staf.name.toLowerCase().replace(/[^a-z0-9]/g, "");
+                  const personalUrl = `https://kaels.site/absen/${slug}`;
+                  const waText = encodeURIComponent(
+                    `Halo ${staf.name}, ini link absensi resmi kamu di ${
+                      business?.name || "Mochi Cafe"
+                    }:\n${personalUrl}\n\nSimpan atau bookmark di HP kamu untuk absen masuk dan pulang kerja ya!`
+                  );
+
+                  return (
+                    <div
+                      key={staf.id}
+                      className="rounded-2xl border border-[#d8e3de] bg-[#fbfdfc] p-4 flex flex-col justify-between space-y-3 shadow-xs hover:border-emerald-300 transition-all"
+                    >
+                      <div>
+                        <div className="flex items-center justify-between">
+                          <b className="text-[#0b3d2e] font-black text-sm block">
+                            {staf.name}
+                          </b>
+                          <span className="rounded-full bg-[#edf8f3] px-2 py-0.5 font-mono text-[9.5px] font-bold text-[#167052] border border-emerald-200">
+                            Staf Aktif
+                          </span>
+                        </div>
+                        <div className="mt-1 flex items-center gap-1 font-mono text-[11px] text-[#527867] truncate">
+                          <span>kaels.site/absen/{slug}</span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 pt-2 border-t border-[#edf4f0]">
+                        <a
+                          href={`https://wa.me/?text=${waText}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl bg-[#25D366] text-white py-1.5 px-3 font-mono text-xs font-bold hover:brightness-105 active:scale-95 transition-all shadow-xs"
+                          title="Kirim Link ke WhatsApp"
+                        >
+                          <span>Kirim WA</span>
+                        </a>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            await navigator.clipboard.writeText(personalUrl);
+                            setNotice(`✓ Tautan absensi untuk ${staf.name} disalin: ${personalUrl}`);
+                          }}
+                          className="inline-flex items-center justify-center gap-1 rounded-xl border border-[#d8e3de] bg-white py-1.5 px-3 font-mono text-xs font-bold text-[#0b3d2e] hover:bg-[#edf8f3] active:scale-95 transition-all"
+                          title="Salin Tautan"
+                        >
+                          <Copy size={13} />
+                          <span>Salin</span>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
             </div>
           </Box>
         </section>

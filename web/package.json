@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build --webpack",
+    "vercel-build": "next build --webpack",
     "start": "next start",
     "lint": "biome lint src/lib --diagnostic-level=error",
     "lint:full": "biome lint src --diagnostic-level=error",

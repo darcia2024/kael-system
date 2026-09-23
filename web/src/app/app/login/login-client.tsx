@@ -476,9 +476,9 @@ export default function LoginClient({
                 )}
               </div>
 
-              {/* PIN Bubbles Display */}
+              {/* PIN Bubbles Display (Mendukung PIN 4 sampai 6 digit) */}
               <div className="flex justify-center gap-2.5 my-1">
-                {Array.from({ length: 6 }).map((_, i) => {
+                {Array.from({ length: Math.max(4, staffPin.length) }).map((_, i) => {
                   const isFilled = i < staffPin.length;
                   return (
                     <div

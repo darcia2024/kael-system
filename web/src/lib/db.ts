@@ -8416,7 +8416,7 @@ export const db = {
       policy,
       attendanceSummary,
     ] = await Promise.all([
-      sql`SELECT id, name, role FROM users WHERE business_id = ${businessId} AND role IN ('owner', 'staff') AND is_active = TRUE ORDER BY name`,
+      sql`SELECT id, name, role, attendance_token FROM users WHERE business_id = ${businessId} AND role IN ('owner', 'staff') AND is_active = TRUE ORDER BY name`,
       sql`SELECT s.*, u.name AS staff_name FROM staff_work_schedules s JOIN users u ON u.id = s.user_id WHERE s.business_id = ${businessId} AND s.ends_at >= NOW() - INTERVAL '30 days' ORDER BY s.starts_at LIMIT 300`,
       sql`SELECT a.*, u.name AS staff_name FROM attendance_records a JOIN users u ON u.id = a.user_id WHERE a.business_id = ${businessId} ORDER BY a.created_at DESC LIMIT 300`,
       sql`SELECT r.*, u.name AS staff_name FROM leave_requests r JOIN users u ON u.id = r.user_id WHERE r.business_id = ${businessId} ORDER BY r.created_at DESC LIMIT 100`,
@@ -8501,6 +8501,46 @@ export const db = {
     return one<{ id: string; store_code: string; name: string }>(
       await sql`SELECT b.id, b.store_code, b.name FROM attendance_sites s JOIN businesses b ON b.id = s.business_id WHERE s.qr_token::text = ${token} AND s.is_active = TRUE LIMIT 1`,
     );
+  },
+
+  async getStaffByAttendanceSlug(slug: string, storeCode?: string) {
+    const clean = slug.toLowerCase().trim();
+    let user = one<{ id: string; name: string; business_id: string; role: string; is_active: boolean }>(
+      await sql`SELECT id, name, business_id, role, is_active FROM users WHERE attendance_token = ${clean} AND is_active = TRUE LIMIT 1`,
+    );
+    if (user) return user;
+
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(clean)) {
+      user = one(
+        await sql`SELECT id, name, business_id, role, is_active FROM users WHERE id = ${clean} AND is_active = TRUE LIMIT 1`,
+      );
+      if (user) return user;
+    }
+
+    if (storeCode) {
+      user = one(
+        await sql`
+          SELECT u.id, u.name, u.business_id, u.role, u.is_active
+          FROM users u
+          JOIN businesses b ON b.id = u.business_id
+          WHERE b.store_code = ${storeCode.toUpperCase()}
+            AND LOWER(REPLACE(u.name, ' ', '')) = ${clean.replace(/[^a-z0-9]/g, '')}
+            AND u.is_active = TRUE
+          LIMIT 1
+        `,
+      );
+      if (user) return user;
+    }
+
+    const matches = await sql`
+      SELECT id, name, business_id, role, is_active
+      FROM users
+      WHERE LOWER(REPLACE(name, ' ', '')) = ${clean.replace(/[^a-z0-9]/g, '')}
+        AND is_active = TRUE
+      LIMIT 2
+    `;
+    if (matches.length === 1) return matches[0] as { id: string; name: string; business_id: string; role: string; is_active: boolean };
+    return null;
   },
 
 
