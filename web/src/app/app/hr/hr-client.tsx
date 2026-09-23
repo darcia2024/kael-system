@@ -10,6 +10,8 @@ import {
   Copy,
   MapPin,
   Plus,
+  Printer,
+  QrCode,
   ReceiptText,
   ShieldCheck,
   X,
@@ -604,9 +606,19 @@ export default function HrClient({
                         : "Radius " + x.allowed_radius_meters + " meter dari koordinat GPS"}
                     </small>
                   </div>
-                  <button onClick={() => copy(x.qr_token)} className="small">
-                    <Copy size={13} /> Salin Tautan QR
-                  </button>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <Link
+                      href={`/app/hr/print-qr?token=${x.qr_token}`}
+                      target="_blank"
+                      className="small border border-emerald-600/30 bg-[#edf8f3] text-[#167052] font-bold hover:bg-[#dcfce7]"
+                      title="Buka Lembar QR Siap Cetak"
+                    >
+                      <Printer size={13} /> Cetak QR
+                    </Link>
+                    <button onClick={() => copy(x.qr_token)} className="small" title="Salin Tautan Absensi">
+                      <Copy size={13} /> Salin Tautan
+                    </button>
+                  </div>
                 </div>
               ))}
               {!data.sites.length && <Empty t="Belum ada titik absensi." />}

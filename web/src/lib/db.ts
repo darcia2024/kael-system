@@ -8497,6 +8497,13 @@ export const db = {
     );
   },
 
+  async getBusinessBySiteToken(token: string) {
+    return one<{ id: string; store_code: string; name: string }>(
+      await sql`SELECT b.id, b.store_code, b.name FROM attendance_sites s JOIN businesses b ON b.id = s.business_id WHERE s.qr_token::text = ${token} AND s.is_active = TRUE LIMIT 1`,
+    );
+  },
+
+
   async saveStaffSchedule(
     businessId: string,
     data: {

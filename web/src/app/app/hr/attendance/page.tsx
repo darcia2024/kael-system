@@ -10,11 +10,20 @@ export default async function AttendancePage({
 }: {
   searchParams: Promise<{ site?: string; method?: string }>;
 }) {
+  const { site, method } = await searchParams;
   const session = await getSession();
   if (!session?.businessId || !["owner", "staff"].includes(session.role)) {
-    redirect("/app/login?next=/app/hr/attendance");
+    let tokoParam = "";
+    if (site) {
+      const siteBusiness = await db.getBusinessBySiteToken(site);
+      if (siteBusiness?.store_code) {
+        tokoParam = `&toko=${encodeURIComponent(siteBusiness.store_code)}`;
+      }
+    }
+    const nextPath = encodeURIComponent(`/app/hr/attendance${site ? `?site=${site}` : ""}`);
+    redirect(`/app/login?next=${nextPath}${tokoParam}`);
   }
-  const { site, method } = await searchParams;
+
   const business = await db.getBusiness(session.businessId);
 
   return (

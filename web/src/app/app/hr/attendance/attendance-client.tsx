@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -96,6 +96,10 @@ export default function AttendanceClient({
         }),
       { enableHighAccuracy: true, timeout: 15_000, maximumAge: 30_000 }
     );
+
+  useEffect(() => {
+    locate();
+  }, []);
 
   const submit = async (direction: "in" | "out") => {
     if (!selfie || !position) {
