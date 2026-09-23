@@ -627,7 +627,7 @@ export const db = {
    */
   async getUsers(businessId: string): Promise<SafeUser[]> {
     return (await sql`
-      SELECT id, business_id, role, name, email, permissions,
+      SELECT id, business_id, role, name, email, permissions, show_on_pos,
              failed_pin_attempts, locked_until, is_active, created_at,
              (pin_hash IS NOT NULL) AS has_pin,
              (password_hash IS NOT NULL) AS has_password

@@ -140,6 +140,8 @@ export interface User {
   failed_pin_attempts: number;
   locked_until: string | null;
   is_active: boolean;
+  show_on_pos?: boolean;
+  attendance_token?: string | null;
   created_at: string;
 }
 

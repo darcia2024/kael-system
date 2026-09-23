@@ -217,7 +217,7 @@ export async function openStoreByCodeAction(code: string): Promise<{
       logo_url: business.logo_url || null,
     },
     staffList: users
-      .filter((u) => u.role === "staff" && u.is_active)
+      .filter((u) => u.role === "staff" && u.is_active && u.show_on_pos !== false)
       .map((u) => ({ id: u.id, name: u.name })),
   };
 }
