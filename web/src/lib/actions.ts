@@ -1867,7 +1867,7 @@ export async function createOrderAction(input: {
   discount_reason?: string | null;
   cash_given?: number | null;
   customer_id?: string | null;
-  items: { menu_item_id: string; qty: number; note?: string }[];
+  items: { menu_item_id: string; qty: number; note?: string; custom_price?: number }[];
 }): Promise<
   ActionResult<{
     orderId: string;
@@ -1887,9 +1887,8 @@ export async function createOrderAction(input: {
   if (!input.items.length) return fail("Keranjang masih kosong.");
 
   /**
-   * Harga diambil ulang dari database, tidak pernah dari yang dikirim klien.
-   * Kalau harga ikut dari browser, siapa pun yang memanggil action ini bisa
-   * menentukan harganya sendiri.
+   * Harga diambil dari database sebagai harga acuan normal.
+   * Kasir boleh menyesuaikan harga satuan (misal porsi tanpa nasi).
    */
   const menu = await db.getMenuItems(businessId);
   const byId = new Map(menu.map((m) => [m.id, m]));
@@ -1900,10 +1899,13 @@ export async function createOrderAction(input: {
     if (!item) return fail("Ada item yang tidak dikenali di keranjang.");
     if (!item.is_available) return fail(`${item.name} sedang habis.`);
     if (line.qty < 1 || line.qty > 999) return fail("Jumlah item tidak wajar.");
+    const customPrice = line.custom_price !== undefined && line.custom_price !== null && line.custom_price >= 0
+      ? Math.round(Number(line.custom_price))
+      : null;
     items.push({
       menu_item_id: item.id,
       name: item.name,
-      price: Number(item.price),
+      price: customPrice !== null ? customPrice : Number(item.price),
       qty: Math.floor(line.qty),
       note: line.note,
     });

@@ -208,7 +208,7 @@ export default function PosClient({
   const [menuSearchQuery, setMenuSearchQuery] = useState("");
   const [showMobileCart, setShowMobileCart] = useState(false);
   // Cart State
-  const [cart, setCart] = useState<Record<string, { item: MenuItem; qty: number; note: string }>>({});
+  const [cart, setCart] = useState<Record<string, { item: MenuItem; qty: number; note: string; customPrice?: number }>>({});
   const [discountNominal, setDiscountNominal] = useState<number>(0);
   // View Mode: Catalog vs Floor Plan
   const [posViewMode, setPosViewMode] = useState<"catalog" | "floor_plan">("catalog");
@@ -655,7 +655,7 @@ export default function PosClient({
   const cartList = Object.values(cart);
   const cartTotals = useMemo(() => {
     return calculateCartTotals(
-      cartList.map((c) => ({ price: c.item.price, qty: c.qty })),
+      cartList.map((c) => ({ price: c.customPrice ?? c.item.price, qty: c.qty })),
       discountNominal,
       configuredTaxRate,
       configuredServiceRate
@@ -1023,6 +1023,20 @@ export default function PosClient({
     });
   };
 
+  const handleUpdatePrice = (itemId: string, newPrice: number | null) => {
+    setCart((prev) => {
+      const existing = prev[itemId];
+      if (!existing) return prev;
+      return {
+        ...prev,
+        [itemId]: {
+          ...existing,
+          customPrice: newPrice !== null && newPrice >= 0 ? newPrice : undefined,
+        },
+      };
+    });
+  };
+
   const handleClearCart = () => {
     if (confirm("Kosongkan seluruh keranjang kasir?")) {
       setCart({});
@@ -1066,6 +1080,7 @@ export default function PosClient({
       menu_item_id: c.item.id,
       qty: c.qty,
       note: c.note || undefined,
+      custom_price: c.customPrice,
     }));
 
     const res = await createOrderAction({
@@ -1951,9 +1966,9 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
           </div>
         ) : (
           <div className="space-y-2.5">
-            {cartList.map(({ item, qty, note }) => {
+            {cartList.map(({ item, qty, note, customPrice }) => {
               const hasPhoto = item.photo_url && item.photo_url !== PLACEHOLDER_MENU;
-              const unitPrice = Number(item.price);
+              const unitPrice = customPrice !== undefined && customPrice !== null ? customPrice : Number(item.price);
               const lineTotal = unitPrice * qty;
               return (
                 <article
@@ -1973,10 +1988,42 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
                       <h3 className="text-[13px] sm:text-sm font-extrabold leading-snug text-[#20382d]">
                         {item.name}
                       </h3>
-                      <div className="mt-0.5 flex items-center gap-2 text-xs">
-                        <span className="font-mono text-[11px] text-[#6b7b74]">
-                          @{formatRupiah(unitPrice)}
-                        </span>
+                      <div className="mt-1 flex items-center gap-2 text-xs flex-wrap">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const inputStr = window.prompt(
+                              `Ganti harga satuan untuk "${item.name}":\n(Harga awal: ${formatRupiah(Number(item.price))})`,
+                              String(unitPrice)
+                            );
+                            if (inputStr !== null) {
+                              const parsed = Number(inputStr.replace(/[^0-9]/g, ""));
+                              if (!isNaN(parsed) && parsed >= 0) {
+                                handleUpdatePrice(item.id, parsed);
+                              }
+                            }
+                          }}
+                          className="font-mono text-[11px] font-bold text-[#0b3d2e] underline decoration-dotted hover:text-emerald-700 flex items-center gap-1 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200"
+                          title="Klik untuk ganti harga satuan item ini"
+                        >
+                          <span>@{formatRupiah(unitPrice)}</span>
+                          <span className="text-[10px] text-emerald-800 font-sans">✏️ Ganti</span>
+                        </button>
+                        {customPrice !== undefined && customPrice !== Number(item.price) && (
+                          <div className="flex items-center gap-1">
+                            <span className="font-mono text-[10px] text-gray-400 line-through">
+                              {formatRupiah(Number(item.price))}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleUpdatePrice(item.id, null)}
+                              className="text-[10px] font-bold text-rose-600 hover:underline"
+                              title="Kembalikan ke harga asli"
+                            >
+                              (Reset)
+                            </button>
+                          </div>
+                        )}
                         <span className="text-[#9cb0a6]">·</span>
                         <span className={`font-mono text-xs font-black ${isMochiPos ? "text-[#0b3d2e]" : "text-[#9b5332]"}`}>
                           {formatRupiah(lineTotal)}
@@ -2026,11 +2073,13 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
                           onClick={() => {
                             const newNote = note ? (note.includes("Tanpa Nasi") ? note : `${note}, Tanpa Nasi`) : "Tanpa Nasi";
                             handleUpdateNote(item.id, newNote);
-                            setDiscountNominal(Math.min(cartTotals.subtotal, (discountNominal || 0) + 5000));
-                            setDiscountReasonKey("tanpa_nasi");
-                            setDiscountReasonCustom("Tanpa nasi (-5.000)");
+                            handleUpdatePrice(item.id, Math.max(0, Number(item.price) - 5000));
                           }}
-                          className="px-2 py-0.5 rounded-md bg-emerald-100 hover:bg-emerald-200 text-emerald-950 text-[10.5px] font-bold transition-all flex items-center gap-1 border border-emerald-300"
+                          className={`px-2 py-0.5 rounded-md text-[10.5px] font-bold transition-all flex items-center gap-1 border ${
+                            customPrice === Math.max(0, Number(item.price) - 5000)
+                              ? "bg-emerald-700 text-white border-emerald-700 shadow-xs"
+                              : "bg-emerald-100 hover:bg-emerald-200 text-emerald-950 border-emerald-300"
+                          }`}
                         >
                           <span>🍚 Tanpa Nasi (-5.000)</span>
                         </button>
@@ -4417,6 +4466,7 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
                     type="button"
                     onClick={() => {
                       setDiscountNominal(5000);
+                      setTargetFinalBillInput(Math.max(0, cartTotals.subtotal - 5000));
                       setDiscountReasonKey("tanpa_nasi");
                       setDiscountReasonCustom("Tanpa nasi (-5.000)");
                     }}
@@ -4433,6 +4483,7 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
                     type="button"
                     onClick={() => {
                       setDiscountNominal(10000);
+                      setTargetFinalBillInput(Math.max(0, cartTotals.subtotal - 10000));
                       setDiscountReasonKey("tanpa_nasi");
                       setDiscountReasonCustom("2x Tanpa nasi (-10.000)");
                     }}
@@ -4448,10 +4499,62 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
                 </div>
               </div>
 
-              {/* Pilihan: Input Nominal Diskon atau Target Tagihan Akhir */}
+              {/* Edit Total Tagihan Langsung (Bisa diedit harganya langsung!) */}
+              <div className="p-3 rounded-2xl border-2 border-emerald-500 bg-emerald-50/80 font-mono space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-black text-xs text-emerald-950 block">
+                    ✏️ Ganti Total Tagihan Jadi Berapa (Rp)?
+                  </span>
+                  <span className="text-[10px] text-emerald-800 font-bold">
+                    Ketik angka langsung
+                  </span>
+                </div>
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 font-mono font-bold text-sm text-[#7b8882]">
+                      Rp
+                    </span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={cartTotals.subtotal}
+                      step={1}
+                      value={targetFinalBillInput || ""}
+                      onChange={(e) => {
+                        const target = e.target.value ? Number(e.target.value) : 0;
+                        setTargetFinalBillInput(target);
+                        if (target >= 0 && target <= cartTotals.subtotal) {
+                          setDiscountNominal(cartTotals.subtotal - target);
+                        }
+                      }}
+                      placeholder={`Normal: ${cartTotals.subtotal}`}
+                      className="w-full rounded-xl border border-[#ccd9d3] bg-white pl-10 pr-3 py-2 text-base font-black text-[#0b3d2e] outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                  </div>
+                  {targetFinalBillInput > 0 && targetFinalBillInput < cartTotals.subtotal && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDiscountNominal(cartTotals.subtotal - targetFinalBillInput);
+                      }}
+                      className="px-3 py-1 rounded-xl bg-[#0b3d2e] text-[#c8f53a] font-bold text-xs shrink-0"
+                    >
+                      Hitung ✓
+                    </button>
+                  )}
+                </div>
+                {discountNominal > 0 && (
+                  <div className="text-[11px] text-emerald-900 font-bold flex justify-between pt-0.5 border-t border-emerald-200">
+                    <span>Potongan harga terhitung:</span>
+                    <span className="text-rose-600 font-mono">-{formatRupiah(discountNominal)}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Atau Input Manual Nominal Potongan */}
               <div className="space-y-1 font-mono">
-                <label className="block font-bold text-[#0b3d2e]">
-                  Nominal Potongan / Diskon (Rp):
+                <label className="block font-bold text-[#526159] text-[11px]">
+                  Atau Nominal Potongan / Diskon (Rp):
                 </label>
                 <input
                   type="number"
@@ -4459,46 +4562,14 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
                   max={cartTotals.subtotal}
                   step={1}
                   value={discountNominal}
-                  onChange={(e) => setDiscountNominal(Math.max(0, Number(e.target.value)))}
-                  className="w-full rounded-xl border-2 border-[#0b3d2e] p-2.5 text-base font-black text-[#0b3d2e]"
+                  onChange={(e) => {
+                    const d = Math.max(0, Number(e.target.value));
+                    setDiscountNominal(d);
+                    setTargetFinalBillInput(Math.max(0, cartTotals.subtotal - d));
+                  }}
+                  className="w-full rounded-xl border border-[#ccd9d3] p-2 text-xs font-black text-[#0b3d2e]"
                   placeholder="Contoh: 5000"
                 />
-              </div>
-
-              {/* Kalkulator Cepat (Contoh: Total 135k jadi bayar 100k) */}
-              <div className="p-2.5 rounded-xl border border-dashed border-emerald-400 bg-emerald-50/60 font-mono text-[11px] space-y-1.5">
-                <span className="font-bold text-emerald-950 block">
-                  ⚡ Atau Mau Dibulatkan Jadi Berapa?
-                </span>
-                <div className="flex gap-2">
-                  <input
-                    type="number"
-                    min={0}
-                    max={cartTotals.subtotal}
-                    step={1}
-                    value={targetFinalBillInput || ""}
-                    onChange={(e) => {
-                      const target = Number(e.target.value);
-                      setTargetFinalBillInput(target);
-                      if (target > 0 && target < cartTotals.subtotal) {
-                        setDiscountNominal(cartTotals.subtotal - target);
-                      }
-                    }}
-                    placeholder="Misal bayar: 100000"
-                    className="flex-1 rounded-lg border border-[#ccd9d3] px-2 py-1.5 text-xs font-black text-[#0b3d2e]"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (targetFinalBillInput > 0 && targetFinalBillInput < cartTotals.subtotal) {
-                        setDiscountNominal(cartTotals.subtotal - targetFinalBillInput);
-                      }
-                    }}
-                    className="px-3 py-1 rounded-lg bg-[#0b3d2e] text-[#c8f53a] font-bold text-xs"
-                  >
-                    Hitung Diskon
-                  </button>
-                </div>
               </div>
 
               {/* Alasan Wajib Dipilih */}
@@ -4528,7 +4599,7 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
                   type="text"
                   value={discountReasonCustom}
                   onChange={(e) => setDiscountReasonCustom(e.target.value)}
-                  placeholder="Misal: Saudara sepupu owner..."
+                  placeholder="Misal: Tanpa nasi..."
                   className="w-full rounded-xl border border-[#ccd9d3] p-2 text-xs font-bold text-[#0b3d2e]"
                 />
               </div>
@@ -4538,18 +4609,19 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
                   type="button"
                   onClick={() => {
                     setDiscountNominal(0);
+                    setTargetFinalBillInput(cartTotals.subtotal);
                     setShowDiscountModal(false);
                   }}
-                  className="rounded-xl border border-rose-200 bg-rose-50 text-rose-700 px-3 py-2 font-bold"
+                  className="rounded-xl border border-rose-200 bg-rose-50 text-rose-700 px-3 py-2 font-bold text-xs"
                 >
-                  Hapus Diskon
+                  Reset Normal
                 </button>
                 <button
                   type="button"
                   onClick={() => setShowDiscountModal(false)}
-                  className="rounded-xl bg-[#c8f53a] text-[#073829] px-5 py-2 font-black shadow-xs"
+                  className="rounded-xl bg-[#c8f53a] text-[#073829] px-4 py-2 font-black text-xs shadow-xs hover:bg-[#d9ff57]"
                 >
-                  Terapkan Diskon ✓
+                  Simpan Harga: {formatRupiah(Math.max(0, cartTotals.subtotal - discountNominal))} ✓
                 </button>
               </div>
             </div>
