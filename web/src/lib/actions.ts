@@ -19,6 +19,7 @@ import type {
   Category,
   DeletableTestData,
   ShiftCashMovement,
+  ShiftFullDetail,
 } from "./types";
 import {
   FEEDBACK_REASONS,
@@ -1833,6 +1834,16 @@ export async function getShiftCashMovementsAction(
   return done(movements);
 }
 
+export async function getShiftDetailAction(
+  shiftId: string,
+): Promise<ActionResult<ShiftFullDetail>> {
+  const { businessId } = await requirePermission("pos");
+  if (!shiftId) return fail("Shift tidak valid.");
+  const detail = await db.getShiftFullDetail(businessId, shiftId);
+  if (!detail) return fail("Rincian shift tidak ditemukan.");
+  return done(detail);
+}
+
 export async function deleteShiftCashMovementAction(
   shiftId: string,
   movementId: string,
@@ -1879,6 +1890,16 @@ export async function createOrderAction(input: {
     tax: number;
     serviceCharge: number;
     deliveryFee: number;
+    combinedTableData?: {
+      items: { name: string; qty: number; price: number; note?: string }[];
+      subtotal: number;
+      discount: number;
+      tax: number;
+      serviceCharge: number;
+      deliveryFee: number;
+      total: number;
+      ordersCount: number;
+    } | null;
   }>
 > {
   const { businessId, userId } = await requirePermission("pos");
@@ -2047,6 +2068,70 @@ export async function createOrderAction(input: {
     await db.syncPaidOrder(order.id, businessId, userId);
   }
 
+  let combinedTableData: {
+    items: { name: string; qty: number; price: number; note?: string }[];
+    subtotal: number;
+    discount: number;
+    tax: number;
+    serviceCharge: number;
+    deliveryFee: number;
+    total: number;
+    ordersCount: number;
+  } | null = null;
+
+  if (tableSession) {
+    try {
+      const sessionOrders = await db.getTableSessionOrders(businessId, tableSession.id);
+      if (sessionOrders.length > 1) {
+        const itemMap = new Map<string, { name: string; qty: number; price: number; note?: string }>();
+        let cSubtotal = 0;
+        let cDiscount = 0;
+        let cTax = 0;
+        let cService = 0;
+        let cDelivery = 0;
+        let cTotal = 0;
+
+        for (const ord of sessionOrders) {
+          cSubtotal += Number(ord.subtotal) || 0;
+          cDiscount += Number(ord.discount) || 0;
+          cTax += Number(ord.tax) || 0;
+          cService += Number(ord.service_charge) || 0;
+          cDelivery += Number(ord.delivery_fee) || 0;
+          cTotal += Number(ord.total) || 0;
+
+          for (const it of ord.items) {
+            const price = Number(it.price_snapshot) || Math.round(Number(it.subtotal) / Math.max(1, it.qty)) || 0;
+            const key = `${it.name_snapshot}__${price}__${it.note || ""}`;
+            const existing = itemMap.get(key);
+            if (existing) {
+              existing.qty += it.qty;
+            } else {
+              itemMap.set(key, {
+                name: it.name_snapshot,
+                qty: it.qty,
+                price,
+                note: it.note || undefined,
+              });
+            }
+          }
+        }
+
+        combinedTableData = {
+          items: Array.from(itemMap.values()),
+          subtotal: cSubtotal,
+          discount: cDiscount,
+          tax: cTax,
+          serviceCharge: cService,
+          deliveryFee: cDelivery,
+          total: cTotal,
+          ordersCount: sessionOrders.length,
+        };
+      }
+    } catch (err) {
+      console.error("[KAEL] gagal hitung tagihan gabungan meja:", err);
+    }
+  }
+
   revalidatePath("/app/pos");
   return done({
     orderId: order.id,
@@ -2058,6 +2143,7 @@ export async function createOrderAction(input: {
     tax: Number(order.tax),
     serviceCharge: Number(order.service_charge),
     deliveryFee: Number(order.delivery_fee ?? 0),
+    combinedTableData,
   });
 }
 

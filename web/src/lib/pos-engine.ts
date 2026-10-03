@@ -404,6 +404,23 @@ export function generateThreePlyReceiptText(params: {
     /** Total tagihan seluruh meja. */
     totalMeja: number;
   };
+  /**
+   * Data khusus untuk Lembar Pelanggan jika berbeda dari Dapur & Kasir.
+   * Contoh: Pesanan tambahan di meja.
+   * - Dapur & Kasir mencetak item tiket baru saja (Kentang + Kopi).
+   * - Pelanggan mencetak gabungan seluruh pesanan meja (Nasi Goreng + Es Teh + Kentang + Kopi).
+   */
+  pelangganData?: {
+    items: { name: string; qty: number; price: number; note?: string }[];
+    subtotal: number;
+    discount: number;
+    tax: number;
+    serviceCharge: number;
+    deliveryFee?: number;
+    total: number;
+    cashGiven?: number;
+    cashChange?: number;
+  };
 }): string {
   const bagian = params.bagian ?? "semua";
   const semua = bagian === "semua";
@@ -467,10 +484,19 @@ export function generateThreePlyReceiptText(params: {
   // ========================================================
   // RANGKAP 2: COPY KASIR / ARSIP TOKO
   // ========================================================
+  const kData = params.pelangganData;
+  const kItems = kData ? kData.items : params.items;
+  const kTotal = kData ? kData.total : params.total;
+  const kCashGiven = kData?.cashGiven ?? params.cashGiven;
+  const kCashChange = kData?.cashChange ?? params.cashChange;
+
   lines.push(doubleDivider);
   lines.push(center("*** 2. COPY KASIR / ARSIP ***"));
   lines.push(center(params.businessName.toUpperCase()));
   lines.push(doubleDivider);
+  if (kData) {
+    lines.push(center("*** TAGIHAN GABUNGAN MEJA ***"));
+  }
   lines.push(row(`No: #${params.orderNo}`, service));
   lines.push(row(`Kasir: ${params.cashierName.slice(0, 12)}`, jamStruk(params.createdAt, params.timezone)));
   // Arsip kasir justru yang paling butuh tanggal: lembar inilah yang dicocokkan
@@ -481,19 +507,19 @@ export function generateThreePlyReceiptText(params: {
   }
   lines.push(divider);
 
-  params.items.forEach((item) => {
+  kItems.forEach((item) => {
     const itemTotal = (item.price * item.qty).toLocaleString("id-ID");
     lines.push(item.name.slice(0, 32));
     lines.push(row(`  ${item.qty}x @${item.price.toLocaleString("id-ID")}`, `Rp ${itemTotal}`));
   });
 
   lines.push(divider);
-  lines.push(row("TOTAL", `Rp ${params.total.toLocaleString("id-ID")}`));
+  lines.push(row("TOTAL", `Rp ${kTotal.toLocaleString("id-ID")}`));
   lines.push(divider);
   lines.push(row("CARA BAYAR", labelCaraBayar(params.paymentMethod)));
-  if (params.paymentMethod === "cash" && params.cashGiven) {
-    lines.push(row("  Uang diterima", `Rp ${params.cashGiven.toLocaleString("id-ID")}`));
-    lines.push(row("  Kembalian", `Rp ${(params.cashChange || 0).toLocaleString("id-ID")}`));
+  if (params.paymentMethod === "cash" && kCashGiven) {
+    lines.push(row("  Uang diterima", `Rp ${kCashGiven.toLocaleString("id-ID")}`));
+    lines.push(row("  Kembalian", `Rp ${(kCashChange || 0).toLocaleString("id-ID")}`));
   }
   lines.push(doubleDivider);
   lines.push(center("ARSIP KASIR & REKONSILIASI"));
@@ -505,11 +531,25 @@ export function generateThreePlyReceiptText(params: {
   // ========================================================
   // RANGKAP 3: STRUK PELANGGAN (CUSTOMER BILL)
   // ========================================================
+  const pData = params.pelangganData;
+  const pItems = pData ? pData.items : params.items;
+  const pSubtotal = pData ? pData.subtotal : params.subtotal;
+  const pDiscount = pData ? pData.discount : params.discount;
+  const pServiceCharge = pData ? pData.serviceCharge : params.serviceCharge;
+  const pTax = pData ? pData.tax : params.tax;
+  const pDeliveryFee = pData ? pData.deliveryFee : params.deliveryFee;
+  const pTotal = pData ? pData.total : params.total;
+  const pCashGiven = pData?.cashGiven ?? params.cashGiven;
+  const pCashChange = pData?.cashChange ?? params.cashChange;
+
   lines.push(doubleDivider);
   lines.push(center(params.businessName.toUpperCase()));
   if (params.businessAddress) lines.push(center(params.businessAddress.slice(0, 32)));
   if (params.businessPhone) lines.push(center(params.businessPhone));
   lines.push(doubleDivider);
+  if (pData) {
+    lines.push(center("*** TAGIHAN GABUNGAN MEJA ***"));
+  }
   lines.push(row(`No: #${params.orderNo}`, service));
   lines.push(row(`Kasir: ${params.cashierName.slice(0, 12)}`, jamStruk(params.createdAt, params.timezone)));
   // Hari dan tanggal. Struk yang cuma memuat jam tidak bisa dipakai pelanggan
@@ -535,7 +575,7 @@ export function generateThreePlyReceiptText(params: {
 
   lines.push(divider);
 
-  params.items.forEach((item) => {
+  pItems.forEach((item) => {
     const itemTotal = (item.price * item.qty).toLocaleString("id-ID");
     lines.push(item.name.slice(0, 32));
     lines.push(row(`  ${item.qty}x @${item.price.toLocaleString("id-ID")}`, `Rp ${itemTotal}`));
@@ -545,16 +585,16 @@ export function generateThreePlyReceiptText(params: {
   });
 
   lines.push(divider);
-  lines.push(row("Subtotal", `Rp ${params.subtotal.toLocaleString("id-ID")}`));
-  if (params.discount > 0) lines.push(row("Diskon", `-Rp ${params.discount.toLocaleString("id-ID")}`));
-  if (params.serviceCharge > 0) lines.push(row("Service", `Rp ${params.serviceCharge.toLocaleString("id-ID")}`));
-  if (params.tax > 0) lines.push(row("Pajak PB1", `Rp ${params.tax.toLocaleString("id-ID")}`));
-  if (params.deliveryFee && params.deliveryFee > 0) lines.push(row("Ongkir", `Rp ${params.deliveryFee.toLocaleString("id-ID")}`));
+  lines.push(row("Subtotal", `Rp ${pSubtotal.toLocaleString("id-ID")}`));
+  if (pDiscount > 0) lines.push(row("Diskon", `-Rp ${pDiscount.toLocaleString("id-ID")}`));
+  if (pServiceCharge > 0) lines.push(row("Service", `Rp ${pServiceCharge.toLocaleString("id-ID")}`));
+  if (pTax > 0) lines.push(row("Pajak PB1", `Rp ${pTax.toLocaleString("id-ID")}`));
+  if (pDeliveryFee && pDeliveryFee > 0) lines.push(row("Ongkir", `Rp ${pDeliveryFee.toLocaleString("id-ID")}`));
   lines.push(doubleDivider);
   lines.push(
     row(
       params.bagiTagihan ? "BAYAR BAGIAN INI" : "TOTAL BAYAR",
-      `Rp ${params.total.toLocaleString("id-ID")}`,
+      `Rp ${pTotal.toLocaleString("id-ID")}`,
     ),
   );
 
@@ -575,9 +615,9 @@ export function generateThreePlyReceiptText(params: {
    */
   lines.push(row("CARA BAYAR", labelCaraBayar(params.paymentMethod)));
 
-  if (params.paymentMethod === "cash" && params.cashGiven) {
-    lines.push(row("Uang diterima", `Rp ${params.cashGiven.toLocaleString("id-ID")}`));
-    lines.push(row("Kembalian", `Rp ${(params.cashChange || 0).toLocaleString("id-ID")}`));
+  if (params.paymentMethod === "cash" && pCashGiven) {
+    lines.push(row("Uang diterima", `Rp ${pCashGiven.toLocaleString("id-ID")}`));
+    lines.push(row("Kembalian", `Rp ${(pCashChange || 0).toLocaleString("id-ID")}`));
   }
 
   lines.push(doubleDivider);

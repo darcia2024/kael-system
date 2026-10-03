@@ -30,6 +30,7 @@ import {
   Calendar,
 } from "lucide-react";
 import OrderDetailModal from "./order-detail-modal";
+import ShiftDetailModal from "./shift-detail-modal";
 import type { Business, Order, ShiftReport, FeedbackSummary, FeedbackRow, RefundReasonCode } from "@/lib/types";
 import { FEEDBACK_REASONS, REFUND_REASONS } from "@/lib/types";
 import { refundOrderAction, deleteOrderAction, deleteFeedbackAction, deleteShiftAction, recordShiftCashMovementAction } from "@/lib/actions";
@@ -108,6 +109,9 @@ export default function PosOwnerReportsPage({
 
   // Selected Order for Order Detail Pop-up Modal
   const [selectedOrderDetail, setSelectedOrderDetail] = useState<Order | null>(null);
+
+  // Selected Shift for Shift Detail Pop-up Modal
+  const [selectedShiftId, setSelectedShiftId] = useState<string | null>(null);
 
   // Refund Modal State
   const [refundingOrderId, setRefundingOrderId] = useState<string | null>(null);
@@ -435,6 +439,20 @@ export default function PosOwnerReportsPage({
               <Trash2 size={14} />
               <span className="hidden sm:inline">Hapus Data Testing</span>
             </button>
+
+            {/* Tombol Buka Kasir POS */}
+            <Link
+              href="/app/pos"
+              className={
+                isMochi
+                  ? "flex items-center gap-1.5 rounded-xl border border-emerald-600/50 bg-[#144f3d] hover:bg-[#1b634d] px-3 py-2 font-mono text-xs font-bold text-emerald-100 shadow-sm transition-all active:scale-95 shrink-0"
+                  : "btn-tactile flex items-center gap-1 rounded-xl border-2 border-[#232331] bg-white px-3 py-1.5 font-mono text-xs font-bold text-[#232331] shadow-ink-xs shrink-0"
+              }
+              title="Buka Layar Kasir POS"
+            >
+              <Receipt size={14} className={isMochi ? "text-[#c8f53a]" : ""} />
+              <span className="hidden xs:inline">Kasir POS</span>
+            </Link>
 
             {/* Tombol Dashboard Owner (Desktop only, di HP sudah ada tombol kembali di kiri) */}
             <Link
@@ -1348,13 +1366,28 @@ export default function PosOwnerReportsPage({
                 {shifts.map((sh) => (
                   <tr key={sh.id} className={isMochi ? "hover:bg-[#f7fcf9] transition-colors" : "hover:bg-[#fcfcfe]"}>
                     <td className="py-3 px-3 font-sans text-xs font-black text-[#232331]">
-                      {sh.staff_name}
+                      <button
+                        type="button"
+                        onClick={() => setSelectedShiftId(sh.id)}
+                        className="text-left font-black text-[#0b3d2e] hover:text-[#167052] hover:underline flex items-center gap-1.5 group"
+                        title="Klik untuk melihat rincian lengkap shift ini"
+                      >
+                        <span>{sh.staff_name}</span>
+                        <Eye size={12} className="opacity-0 group-hover:opacity-100 transition-opacity text-[#167052]" />
+                      </button>
                     </td>
                     <td className="py-3 px-3 text-[11px]">
                       {formatBusinessDateTime(sh.opened_at)}
                     </td>
                     <td className="py-3 px-3 text-right font-bold">
-                      {sh.orders_count} orang
+                      <button
+                        type="button"
+                        onClick={() => setSelectedShiftId(sh.id)}
+                        className="hover:underline hover:text-[#167052]"
+                        title="Lihat daftar nota transaksi shift ini"
+                      >
+                        {sh.orders_count} orang
+                      </button>
                     </td>
                     {/* Termasuk QRIS dan transfer; yang dibandingkan dengan laci
                         cuma bagian tunai, dan itu ada di kolom Target Laci. */}
@@ -1386,31 +1419,40 @@ export default function PosOwnerReportsPage({
                       )}
                     </td>
                     <td className="py-3 px-3 text-center whitespace-nowrap">
-                      {sh.closed_at ? (
+                      <div className="inline-flex items-center gap-1.5">
                         <button
                           type="button"
-                          onClick={() => setModalShiftExpense({
-                            shiftId: sh.id,
-                            staffName: sh.staff_name,
-                            openedAt: sh.opened_at,
-                            currentVariance: sh.variance ?? 0,
-                            amount: sh.variance && sh.variance < 0 ? Math.abs(sh.variance) : "",
-                            category: "Bahan Baku/Dapur",
-                            note: "Belanja bahan dapur & operasional kasir",
-                          })}
-                          className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-xl font-mono text-[11px] font-bold transition-all shadow-xs ${
-                            sh.variance && sh.variance < 0
-                              ? "bg-amber-400 hover:bg-amber-300 text-amber-950 font-black"
-                              : "bg-[#edf8f3] hover:bg-[#dbeee4] text-[#167052] border border-[#ccd9d3]"
-                          }`}
-                          title="Catat pengeluaran kas / belanja dapur untuk shift ini"
+                          onClick={() => setSelectedShiftId(sh.id)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl font-mono text-[11px] font-black bg-[#0b3d2e] hover:bg-[#155a44] text-[#c8f53a] transition-all shadow-xs"
+                          title="Lihat rincian lengkap: nota, omzet per metode bayar, kas keluar & laci"
                         >
-                          <Plus size={12} />
-                          <span>{sh.variance && sh.variance < 0 ? "Catat Kas Keluar" : "+ Kas Keluar"}</span>
+                          <Eye size={12} />
+                          <span>Rincian</span>
                         </button>
-                      ) : (
-                        <span className="text-[10px] text-[#7b8a82] font-mono">Shift Aktif</span>
-                      )}
+                        {sh.closed_at ? (
+                          <button
+                            type="button"
+                            onClick={() => setModalShiftExpense({
+                              shiftId: sh.id,
+                              staffName: sh.staff_name,
+                              openedAt: sh.opened_at,
+                              currentVariance: sh.variance ?? 0,
+                              amount: sh.variance && sh.variance < 0 ? Math.abs(sh.variance) : "",
+                              category: "Bahan Baku/Dapur",
+                              note: "Belanja bahan dapur & operasional kasir",
+                            })}
+                            className={`inline-flex items-center gap-1 px-2 py-1 rounded-xl font-mono text-[11px] font-bold transition-all shadow-xs ${
+                              sh.variance && sh.variance < 0
+                                ? "bg-amber-400 hover:bg-amber-300 text-amber-950 font-black"
+                                : "bg-[#edf8f3] hover:bg-[#dbeee4] text-[#167052] border border-[#ccd9d3]"
+                            }`}
+                            title="Catat pengeluaran kas / belanja dapur untuk shift ini"
+                          >
+                            <Plus size={11} />
+                            <span>{sh.variance && sh.variance < 0 ? "Kas Keluar" : "+ Kas"}</span>
+                          </button>
+                        ) : null}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -1675,6 +1717,16 @@ export default function PosOwnerReportsPage({
           setSelectedOrderDetail(null);
           handleOpenRefund(ord);
         }}
+        isMochi={isMochi}
+      />
+
+      {/* POP-UP DETAIL / RINCIAN LENGKAP SHIFT */}
+      <ShiftDetailModal
+        shiftId={selectedShiftId}
+        isOpen={selectedShiftId !== null}
+        onClose={() => setSelectedShiftId(null)}
+        onSelectOrder={(ord) => setSelectedOrderDetail(ord)}
+        onRefreshParent={refreshAll}
         isMochi={isMochi}
       />
 

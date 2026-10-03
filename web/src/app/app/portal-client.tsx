@@ -22,6 +22,7 @@ import {
   Lock,
   Star,
   Smartphone,
+  LogOut,
 } from "lucide-react";
 import type { Business, User, SafeUser } from "@/lib/types";
 import type { LicenseState, ModuleStatus } from "@/lib/licensing";
@@ -237,54 +238,60 @@ export default function AppPortalHub({
         isMochi
           ? "bg-[#0b3d2e] border-b border-emerald-800/60 text-white shadow-sm"
           : "bg-white border-b border-[#dedee8]"
-      } px-4 sm:px-8 py-3.5 backdrop-blur-md`}>
-        <div className="mx-auto flex max-w-6xl items-center justify-between">
-          <div className="flex items-center gap-3">
+      } px-3 sm:px-8 py-2.5 sm:py-3.5 backdrop-blur-md`}>
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-3">
+          <div className="flex min-w-0 flex-1 items-center gap-2.5 sm:gap-3">
             <BusinessMark
               name={business?.name}
               logoUrl={business?.logo_url}
               brandColor={business?.brand_color}
-              className="h-10 w-10 rounded-full border border-emerald-400/40 p-0.5 bg-white shadow-xs"
+              className="h-9 w-9 sm:h-10 sm:w-10 shrink-0 rounded-full border border-emerald-400/40 p-0.5 bg-white shadow-xs"
             />
-            <div>
-              <div className="flex items-center gap-2">
-                <span className={`font-black text-sm sm:text-base ${isMochi ? "text-white" : "text-[#232331]"}`}>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5 sm:gap-2">
+                <span className={`font-black text-sm sm:text-base truncate ${isMochi ? "text-white" : "text-[#232331]"}`}>
                   {business?.name || "Mochi Cafe n Resto"}
                 </span>
                 {isMochi && (
-                  <span className="rounded-full bg-[#c8f53a] px-2 py-0.5 font-mono text-[9px] font-black text-[#073829] shadow-xs">
+                  <span className="shrink-0 rounded-full bg-[#c8f53a] px-2 py-0.5 font-mono text-[9px] font-black text-[#073829] shadow-xs">
                     PORTAL
                   </span>
                 )}
               </div>
-              <span className={`text-[11px] font-mono block ${isMochi ? "text-emerald-200/80" : "text-[#7b7b8e]"}`}>
+              <span className={`text-[10px] sm:text-[11px] font-mono block truncate ${isMochi ? "text-emerald-200/80" : "text-[#7b7b8e]"}`}>
                 {business?.category} · Timezone: {business?.timezone} (WIB)
               </span>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             <Link
               href="/app/settings"
-              className={`inline-flex items-center gap-1.5 rounded-xl px-3.5 py-1.5 font-mono text-xs font-bold transition-all ${
+              title="Pengaturan Toko"
+              aria-label="Pengaturan Toko"
+              className={`inline-flex items-center justify-center h-8 sm:h-9 px-2.5 sm:px-3.5 gap-1.5 rounded-xl font-mono text-xs font-bold transition-all ${
                 isMochi
-                  ? "border border-emerald-600/40 bg-white/10 hover:bg-white/15 text-white"
+                  ? "border border-emerald-600/40 bg-white/10 hover:bg-white/15 text-white active:scale-95"
                   : "border border-[#dedee8] bg-[#fcfcfe] text-[#232331] hover:border-[#232331]"
               }`}
             >
-              <Settings size={13} />
+              <Settings size={14} />
               <span className="hidden sm:inline">Pengaturan</span>
             </Link>
             <button
               type="button"
               onClick={() => logout()}
-              className={`rounded-xl px-3.5 py-1.5 font-mono text-xs font-bold transition-all ${
+              title="Ganti Pengguna / Logout"
+              aria-label="Ganti Pengguna / Logout"
+              className={`inline-flex items-center justify-center h-8 sm:h-9 px-2.5 sm:px-3.5 gap-1.5 rounded-xl font-mono text-xs font-bold transition-all ${
                 isMochi
-                  ? "border border-emerald-600/40 bg-white/10 hover:bg-white/15 text-white"
+                  ? "border border-emerald-600/40 bg-white/10 hover:bg-white/15 text-white active:scale-95"
                   : "border border-[#dedee8] bg-[#fcfcfe] text-[#232331] hover:border-[#232331]"
               }`}
             >
-              Ganti Pengguna / Logout
+              <LogOut size={14} />
+              <span className="hidden sm:inline">Ganti Pengguna / Logout</span>
+              <span className="sm:hidden">Logout</span>
             </button>
           </div>
         </div>

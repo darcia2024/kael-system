@@ -3,25 +3,47 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
-  ArrowLeft,
+  AlertCircle,
+  Calendar,
+  CalendarDays,
   Camera,
   CheckCircle2,
+  CheckSquare,
+  ChevronRight,
+  ClipboardCheck,
+  Clock,
   Delete,
+  FileText,
   KeyRound,
   LocateFixed,
   LogIn,
   LogOut,
   MapPin,
+  Receipt,
   RotateCcw,
+  Send,
   ShieldAlert,
   ShieldCheck,
   Sparkles,
+  Square,
   UserCheck,
+  Wallet,
 } from "lucide-react";
-import type { Business } from "@/lib/types";
+import type {
+  Business,
+  StaffAttendanceMonthlySummary,
+  StaffLeaveRequest,
+  StaffPaystub,
+  StaffSopChecklist,
+  StaffSopItem,
+} from "@/lib/types";
 import { BusinessMark } from "@/components/business-mark";
 import { loginStaff } from "@/lib/actions";
-import { recordAttendanceAction } from "@/lib/actions-operations";
+import {
+  recordAttendanceAction,
+  saveStaffSopAction,
+  submitLeaveRequestAction,
+} from "@/lib/actions-operations";
 import { isMochiBusiness } from "@/lib/mochi-brand";
 
 interface StaffInfo {
@@ -62,6 +84,32 @@ function calculateDistanceMeters(
   return Math.round(R * c);
 }
 
+function formatRupiah(num: number): string {
+  return new Intl.NumberFormat("id-ID", {
+    style: "currency",
+    currency: "IDR",
+    minimumFractionDigits: 0,
+  }).format(num);
+}
+
+const DEFAULT_OPENING_SOP: StaffSopItem[] = [
+  { id: "op-1", label: "Bersihkan & tata area kasir, meja makan, dan kursi tamu", checked: false },
+  { id: "op-2", label: "Nyalakan mesin espresso, cek boiler & bilas steam wand", checked: false },
+  { id: "op-3", label: "Cek ketersediaan es batu, susu fresh milk, biji kopi & cup", checked: false },
+  { id: "op-4", label: "Siapkan uang modal kembalian kasir & kertas struk printer", checked: false },
+  { id: "op-5", label: "Nyalakan AC, lampu kafe & putar playlist musik santai", checked: false },
+];
+
+const DEFAULT_CLOSING_SOP: StaffSopItem[] = [
+  { id: "cl-1", label: "Cuci portafilter, backflush mesin & bersihkan steam wand", checked: false },
+  { id: "cl-2", label: "Bersihkan area bar, wash basin sink & buang ampas kopi", checked: false },
+  { id: "cl-3", label: "Hitung uang fisik kas laci kasir & cocokkan rekonsiliasi POS", checked: false },
+  { id: "cl-4", label: "Sapu & pel lantai area dine-in, lalu buang seluruh sampah", checked: false },
+  { id: "cl-5", label: "Matikan seluruh AC, mesin espresso & kunci pintu kafe", checked: false },
+];
+
+type TabType = "presensi" | "sop" | "jam_kerja" | "izin" | "slip_gaji";
+
 export default function PersonalAttendanceClient({
   staff,
   business,
@@ -69,6 +117,10 @@ export default function PersonalAttendanceClient({
   policy,
   initialIsAuthenticated,
   todayAttendance = [],
+  monthlyAttendance,
+  initialSopChecklists = [],
+  initialLeaveRequests = [],
+  initialPaystubs = [],
   themeClassName = "",
 }: {
   staff: StaffInfo;
@@ -77,10 +129,15 @@ export default function PersonalAttendanceClient({
   policy: PolicyInfo;
   initialIsAuthenticated: boolean;
   todayAttendance?: any[];
+  monthlyAttendance?: StaffAttendanceMonthlySummary;
+  initialSopChecklists?: any[];
+  initialLeaveRequests?: any[];
+  initialPaystubs?: any[];
   themeClassName?: string;
 }) {
   const isMochi = isMochiBusiness(business);
   const [isAuthenticated, setIsAuthenticated] = useState(initialIsAuthenticated);
+  const [activeTab, setActiveTab] = useState<TabType>("presensi");
 
   // PIN State
   const [pin, setPin] = useState("");
@@ -97,6 +154,52 @@ export default function PersonalAttendanceClient({
   const [submitting, setSubmitting] = useState(false);
   const [notice, setNotice] = useState<{ tone: "success" | "error"; text: string } | null>(null);
   const [records, setRecords] = useState<any[]>(todayAttendance);
+
+  // SOP State
+  const [sopType, setSopType] = useState<"opening" | "closing">("opening");
+  const [openingItems, setOpeningItems] = useState<StaffSopItem[]>(() => {
+    const existing = initialSopChecklists.find((s) => s.sop_type === "opening");
+    if (existing?.items && Array.isArray(existing.items) && existing.items.length > 0) {
+      return existing.items;
+    }
+    return DEFAULT_OPENING_SOP;
+  });
+  const [closingItems, setClosingItems] = useState<StaffSopItem[]>(() => {
+    const existing = initialSopChecklists.find((s) => s.sop_type === "closing");
+    if (existing?.items && Array.isArray(existing.items) && existing.items.length > 0) {
+      return existing.items;
+    }
+    return DEFAULT_CLOSING_SOP;
+  });
+  const [sopNotes, setSopNotes] = useState<string>(() => {
+    const current = initialSopChecklists.find((s) => s.sop_type === sopType);
+    return current?.notes || "";
+  });
+  const [savingSop, setSavingSop] = useState(false);
+  const [sopSavedMsg, setSopSavedMsg] = useState("");
+
+  // Leave Request State
+  const [leaveRequests, setLeaveRequests] = useState<any[]>(initialLeaveRequests);
+  const [showLeaveForm, setShowLeaveForm] = useState(false);
+  const [leaveType, setLeaveType] = useState<"leave" | "sick" | "permission" | "overtime">("sick");
+  const [startsAt, setStartsAt] = useState("");
+  const [endsAt, setEndsAt] = useState("");
+  const [leaveReason, setLeaveReason] = useState("");
+  const [submittingLeave, setSubmittingLeave] = useState(false);
+  const [leaveNotice, setLeaveNotice] = useState<{ tone: "success" | "error"; text: string } | null>(null);
+
+  // Paystubs State
+  const [paystubs] = useState<any[]>(initialPaystubs);
+
+  // Monthly Attendance State
+  const [monthStats] = useState(
+    monthlyAttendance || {
+      total_days: 0,
+      total_hours: 0,
+      completed_shifts: 0,
+      records: [],
+    }
+  );
 
   // Trigger GPS auto-detect
   const requestLocation = () => {
@@ -137,7 +240,6 @@ export default function PersonalAttendanceClient({
     const next = pin + digit;
     setPin(next);
     setPinError("");
-    // If reached 4 digits, we can verify, or wait for user to press submit
     if (next.length === 4) {
       void verifyPin(next);
     }
@@ -252,7 +354,6 @@ export default function PersonalAttendanceClient({
             ? `✓ Absen Masuk berhasil dicatat pukul ${nowStr} WIB!`
             : `✓ Absen Pulang berhasil dicatat pukul ${nowStr} WIB!`,
       });
-      // Add entry to today record preview
       setRecords((prev) => [
         {
           id: String(Date.now()),
@@ -270,8 +371,96 @@ export default function PersonalAttendanceClient({
     }
   };
 
+  // Toggle SOP item
+  const toggleSopItem = (itemId: string) => {
+    if (sopType === "opening") {
+      setOpeningItems((prev) =>
+        prev.map((item) => (item.id === itemId ? { ...item, checked: !item.checked } : item))
+      );
+    } else {
+      setClosingItems((prev) =>
+        prev.map((item) => (item.id === itemId ? { ...item, checked: !item.checked } : item))
+      );
+    }
+  };
+
+  // Save SOP Checklist
+  const handleSaveSop = async () => {
+    setSavingSop(true);
+    setSopSavedMsg("");
+    const items = sopType === "opening" ? openingItems : closingItems;
+    const res = await saveStaffSopAction({
+      sopType,
+      items,
+      notes: sopNotes,
+    });
+    setSavingSop(false);
+    if (res.ok) {
+      setSopSavedMsg(`✓ Checklist SOP ${sopType === "opening" ? "Opening" : "Closing"} berhasil disimpan!`);
+      setTimeout(() => setSopSavedMsg(""), 4000);
+    } else {
+      setSopSavedMsg("⚠️ Gagal menyimpan SOP. Silakan coba lagi.");
+    }
+  };
+
+  // Submit Leave Request
+  const handleSubmitLeave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!startsAt || !endsAt || leaveReason.trim().length < 5) {
+      setLeaveNotice({
+        tone: "error",
+        text: "Lengkapi tanggal dan alasan pengajuan minimal 5 karakter.",
+      });
+      return;
+    }
+
+    setSubmittingLeave(true);
+    setLeaveNotice(null);
+
+    const res = await submitLeaveRequestAction({
+      leaveType,
+      startsAt: new Date(startsAt).toISOString(),
+      endsAt: new Date(endsAt).toISOString(),
+      reason: leaveReason.trim(),
+    });
+
+    setSubmittingLeave(false);
+
+    if (res.ok) {
+      setLeaveNotice({
+        tone: "success",
+        text: "✓ Pengajuan berhasil dikirim! Menunggu konfirmasi dari Owner.",
+      });
+      setLeaveRequests((prev) => [
+        {
+          id: String(Date.now()),
+          leave_type: leaveType,
+          starts_at: new Date(startsAt).toISOString(),
+          ends_at: new Date(endsAt).toISOString(),
+          reason: leaveReason.trim(),
+          status: "pending",
+          created_at: new Date().toISOString(),
+        },
+        ...prev,
+      ]);
+      setLeaveReason("");
+      setStartsAt("");
+      setEndsAt("");
+      setShowLeaveForm(false);
+    } else {
+      setLeaveNotice({
+        tone: "error",
+        text: res.error || "Gagal mengirim pengajuan. Silakan coba lagi.",
+      });
+    }
+  };
+
   const isWithinRadius =
     gpsDistance !== null && site ? gpsDistance <= site.allowed_radius_meters : true;
+
+  const currentSopItems = sopType === "opening" ? openingItems : closingItems;
+  const completedSopCount = currentSopItems.filter((i) => i.checked).length;
+  const sopProgressPercent = Math.round((completedSopCount / currentSopItems.length) * 100);
 
   return (
     <div
@@ -301,7 +490,7 @@ export default function PersonalAttendanceClient({
                 {business?.name ?? "Mochi Cafe n Resto"}
               </h1>
               <span className="block truncate font-mono text-[10.5px] text-emerald-200/90">
-                Presensi Staf: <strong>{staff.name}</strong>
+                Portal Personal: <strong>{staff.name}</strong>
               </span>
             </div>
           </div>
@@ -319,8 +508,8 @@ export default function PersonalAttendanceClient({
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="mx-auto w-full max-w-md p-4 sm:p-6 my-auto space-y-4">
+      {/* Main Content Body */}
+      <main className="mx-auto w-full max-w-md p-4 sm:p-6 mb-20 space-y-4">
         {!isAuthenticated ? (
           /* ================================================================
              STEP 1: PIN VERIFICATION SCREEN FOR THIS SPECIFIC STAFF
@@ -339,13 +528,13 @@ export default function PersonalAttendanceClient({
               </div>
               <div>
                 <span className="rounded-full bg-[#edf8f3] px-3 py-0.5 font-mono text-[10px] font-black uppercase text-[#167052] border border-emerald-200">
-                  PRESENSI PERSONAL
+                  PORTAL PERSONAL
                 </span>
                 <h2 className="text-xl sm:text-2xl font-black text-[#0b3d2e] mt-1.5 tracking-tight">
                   Halo, {staff.name}! 👋
                 </h2>
                 <p className="text-xs text-[#527867] mt-0.5">
-                  Ketik PIN Anda untuk membuka kamera presensi
+                  Ketik PIN Anda untuk masuk ke portal kerja
                 </p>
               </div>
             </div>
@@ -422,240 +611,810 @@ export default function PersonalAttendanceClient({
               onClick={() => verifyPin(pin)}
               className="w-full flex items-center justify-center gap-2 rounded-2xl bg-[#c8f53a] hover:bg-[#d9ff57] py-3.5 font-mono text-xs font-black text-[#0b3d2e] shadow-sm hover:brightness-105 active:scale-98 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              {pinLoading ? "Memeriksa PIN..." : "Masuk & Lanjut Absen ➔"}
+              {pinLoading ? "Memeriksa PIN..." : "Masuk ke Portal ➔"}
             </button>
           </div>
         ) : (
           /* ================================================================
-             STEP 2: ATTENDANCE SCREEN (SELFIE CAMERA + GPS VALIDATION)
+             STEP 2: AUTHENTICATED STAFF PORTAL WITH 5 DEDICATED TABS
              ================================================================ */
           <div className="space-y-4">
-            {/* Notice Alert */}
-            {notice && (
-              <div
-                role="status"
-                className={`flex items-start gap-2.5 rounded-2xl border p-4 text-xs sm:text-sm font-bold shadow-xs animate-in fade-in-50 ${
-                  notice.tone === "success"
-                    ? "border-emerald-300 bg-[#edf8f3] text-[#0b3d2e]"
-                    : "border-rose-300 bg-rose-50 text-rose-800"
-                }`}
-              >
-                {notice.tone === "success" ? (
-                  <CheckCircle2 size={18} className="shrink-0 mt-0.5 text-[#16a34a]" />
-                ) : (
-                  <ShieldAlert size={18} className="shrink-0 mt-0.5 text-rose-600" />
+            {/* -------------------------------------------------------------
+                TAB 1: PRESENSI (SELFIE & GPS GEOFENCE)
+                ------------------------------------------------------------- */}
+            {activeTab === "presensi" && (
+              <div className="space-y-4">
+                {/* Notice Alert */}
+                {notice && (
+                  <div
+                    role="status"
+                    className={`flex items-start gap-2.5 rounded-2xl border p-4 text-xs sm:text-sm font-bold shadow-xs animate-in fade-in-50 ${
+                      notice.tone === "success"
+                        ? "border-emerald-300 bg-[#edf8f3] text-[#0b3d2e]"
+                        : "border-rose-300 bg-rose-50 text-rose-800"
+                    }`}
+                  >
+                    {notice.tone === "success" ? (
+                      <CheckCircle2 size={18} className="shrink-0 mt-0.5 text-[#16a34a]" />
+                    ) : (
+                      <ShieldAlert size={18} className="shrink-0 mt-0.5 text-rose-600" />
+                    )}
+                    <span className="leading-snug">{notice.text}</span>
+                  </div>
                 )}
-                <span className="leading-snug">{notice.text}</span>
+
+                {/* Attendance Camera Box */}
+                <div
+                  className={`rounded-3xl p-5 sm:p-6 space-y-4 shadow-sm ${
+                    isMochi ? "bg-white border border-[#d8e3de]" : "bg-white border-2 border-[#232331]"
+                  }`}
+                >
+                  <div className="flex items-center justify-between border-b border-[#edf3f0] pb-3">
+                    <div className="flex items-center gap-2">
+                      <Camera size={18} className="text-[#167052]" />
+                      <h3 className="text-sm font-black text-[#0b3d2e]">Foto Selfie Wajah</h3>
+                    </div>
+                    <span
+                      className={`rounded-full px-2.5 py-0.5 font-mono text-[10px] font-bold ${
+                        selfie
+                          ? "border border-emerald-300 bg-[#edf8f3] text-[#167052]"
+                          : "border border-amber-300 bg-amber-50 text-amber-800"
+                      }`}
+                    >
+                      {selfie ? "✓ Foto Siap" : "Wajib Foto"}
+                    </span>
+                  </div>
+
+                  {/* Viewport */}
+                  <div className="aspect-square w-full overflow-hidden rounded-2xl relative bg-[#07281e] flex items-center justify-center border-2 border-[#d8e3de]">
+                    {selfie ? (
+                      <>
+                        <img
+                          src={selfie}
+                          alt="Selfie"
+                          className="h-full w-full object-cover"
+                        />
+                        <div className="absolute top-3 left-3 bg-[#0b3d2e]/90 text-[#c8f53a] font-mono text-[10px] font-extrabold px-3 py-1 rounded-full shadow-sm flex items-center gap-1.5">
+                          <CheckCircle2 size={12} /> FOTO TERVERIFIKASI
+                        </div>
+                        <button
+                          type="button"
+                          onClick={retakeSelfie}
+                          className="absolute top-3 right-3 bg-white text-[#0b3d2e] font-mono text-[10px] font-bold px-3 py-1 rounded-full shadow-md flex items-center gap-1 active:scale-95"
+                        >
+                          <RotateCcw size={11} /> Foto Ulang
+                        </button>
+                      </>
+                    ) : cameraOpen ? (
+                      <>
+                        <video
+                          ref={video}
+                          muted
+                          playsInline
+                          className="h-full w-full object-cover"
+                        />
+                        <div className="absolute top-3 left-3 bg-rose-600 text-white font-mono text-[10px] font-bold px-3 py-1 rounded-full shadow-sm flex items-center gap-1.5 animate-pulse">
+                          <span className="h-2 w-2 rounded-full bg-white" /> KAMERA AKTIF
+                        </div>
+                      </>
+                    ) : (
+                      <div className="flex flex-col items-center justify-center p-6 text-center space-y-3">
+                        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/10 text-emerald-300">
+                          <Camera size={26} />
+                        </div>
+                        <div>
+                          <p className="text-sm font-bold text-white">Kamera Belum Aktif</p>
+                          <p className="mt-1 text-[11px] text-emerald-200/70">
+                            Tekan tombol &quot;Buka Kamera&quot; di bawah untuk selfie
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  <canvas ref={canvas} className="hidden" />
+
+                  {/* Camera Controls */}
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <button
+                      type="button"
+                      onClick={openCamera}
+                      disabled={cameraOpen || Boolean(selfie)}
+                      className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-[#d8e3de] bg-[#f9fbf9] px-3 text-xs sm:text-sm font-bold text-[#0b3d2e] hover:bg-[#edf8f3] disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                    >
+                      <Camera size={16} />
+                      {selfie ? "Foto Terpilih ✓" : "Buka Kamera"}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={captureSelfie}
+                      disabled={!cameraOpen}
+                      className="min-h-12 rounded-2xl bg-[#c8f53a] hover:bg-[#d9ff57] px-3 text-xs sm:text-sm font-black text-[#0b3d2e] shadow-xs active:scale-98 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                    >
+                      Ambil Foto
+                    </button>
+                  </div>
+
+                  {/* GPS Geofence Badge */}
+                  <div className="pt-2 border-t border-[#edf3f0]">
+                    <button
+                      type="button"
+                      onClick={requestLocation}
+                      className={`w-full flex items-center justify-between p-3 rounded-2xl text-xs font-mono font-bold transition-all border ${
+                        position && isWithinRadius
+                          ? "border-emerald-300 bg-[#edf8f3] text-[#0b3d2e]"
+                          : position && !isWithinRadius
+                          ? "border-amber-300 bg-amber-50 text-amber-900"
+                          : "border-[#d8e3de] bg-[#fbfdfc] text-[#527867]"
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 text-left">
+                        <MapPin size={16} className="shrink-0 text-[#167052]" />
+                        <div>
+                          {position ? (
+                            <>
+                              <span className="block font-bold">
+                                {isWithinRadius
+                                  ? "✓ Terverifikasi di Area Mochi Cafe"
+                                  : "⚠️ Di Luar Radius Mochi Cafe"}
+                              </span>
+                              <span className="text-[10px] opacity-80">
+                                {gpsDistance !== null
+                                  ? `Jarak ke toko: ~${gpsDistance} meter (maks: 100m)`
+                                  : "Koordinat GPS terkunci"}
+                              </span>
+                            </>
+                          ) : (
+                            <span>Mendeteksi lokasi GPS toko...</span>
+                          )}
+                        </div>
+                      </div>
+                      <LocateFixed size={14} className="shrink-0 opacity-70" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Attendance Actions: Masuk & Pulang */}
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    disabled={submitting || !selfie || !position}
+                    onClick={() => submitAttendance("in")}
+                    className="flex min-h-14 flex-col items-center justify-center rounded-3xl bg-[#0b3d2e] text-[#c8f53a] p-3 shadow-md hover:bg-[#144f3d] active:scale-98 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                  >
+                    <div className="flex items-center gap-1.5 font-black text-sm sm:text-base">
+                      <LogIn size={16} />
+                      <span>Absen Masuk</span>
+                    </div>
+                    <span className="text-[10px] font-mono text-emerald-200/80 mt-0.5">
+                      Mulai Shift
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={submitting || !selfie || !position}
+                    onClick={() => submitAttendance("out")}
+                    className="flex min-h-14 flex-col items-center justify-center rounded-3xl bg-white border-2 border-rose-600 text-rose-700 p-3 shadow-sm hover:bg-rose-50 active:scale-98 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                  >
+                    <div className="flex items-center gap-1.5 font-black text-sm sm:text-base">
+                      <LogOut size={16} />
+                      <span>Absen Pulang</span>
+                    </div>
+                    <span className="text-[10px] font-mono text-rose-600/80 mt-0.5">
+                      Selesai Shift
+                    </span>
+                  </button>
+                </div>
+
+                {/* Today Records Preview */}
+                {records.length > 0 && (
+                  <div className="rounded-2xl border border-[#d8e3de] bg-white p-4 space-y-2">
+                    <span className="font-mono text-[10px] font-bold text-[#167052] uppercase tracking-wider block">
+                      Riwayat Absensi Hari Ini
+                    </span>
+                    <div className="divide-y divide-[#edf3f0]">
+                      {records.map((rec) => (
+                        <div
+                          key={rec.id}
+                          className="py-2 flex items-center justify-between text-xs"
+                        >
+                          <div>
+                            <span className="font-bold text-[#0b3d2e] block">
+                              Masuk:{" "}
+                              {rec.check_in_at
+                                ? new Date(rec.check_in_at).toLocaleTimeString("id-ID", {
+                                    hour: "2-digit",
+                                    minute: "2-digit",
+                                  }) + " WIB"
+                                : "-"}
+                            </span>
+                            <span className="text-[11px] text-[#527867]">
+                              Pulang:{" "}
+                              {rec.check_out_at
+                                ? new Date(rec.check_out_at).toLocaleTimeString("id-ID", {
+                                    hour: "2-digit",
+                                    minute: "2-digit",
+                                  }) + " WIB"
+                                : "Masih berlangsung"}
+                            </span>
+                          </div>
+                          <span
+                            className={`rounded-full px-2 py-0.5 font-mono text-[9px] font-bold ${
+                              rec.check_out_at
+                                ? "bg-[#edf8f3] text-[#167052]"
+                                : "bg-amber-100 text-amber-800"
+                            }`}
+                          >
+                            {rec.check_out_at ? "Selesai" : "Sedang Kerja"}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
-            {/* Attendance Camera Box */}
-            <div
-              className={`rounded-3xl p-5 sm:p-6 space-y-4 shadow-sm ${
-                isMochi ? "bg-white border border-[#d8e3de]" : "bg-white border-2 border-[#232331]"
-              }`}
-            >
-              <div className="flex items-center justify-between border-b border-[#edf3f0] pb-3">
-                <div className="flex items-center gap-2">
-                  <Camera size={18} className="text-[#167052]" />
-                  <h3 className="text-sm font-black text-[#0b3d2e]">Foto Selfie Wajah</h3>
+            {/* -------------------------------------------------------------
+                TAB 2: SOP KAFE (CHECKLIST OPENING & CLOSING)
+                ------------------------------------------------------------- */}
+            {activeTab === "sop" && (
+              <div className="space-y-4">
+                {/* SOP Toggle Header */}
+                <div className="grid grid-cols-2 gap-2 bg-[#e5eee9] p-1.5 rounded-2xl">
+                  <button
+                    type="button"
+                    onClick={() => setSopType("opening")}
+                    className={`py-2.5 rounded-xl font-mono text-xs font-black transition-all ${
+                      sopType === "opening"
+                        ? "bg-[#0b3d2e] text-[#c8f53a] shadow-xs"
+                        : "text-[#527867] hover:text-[#0b3d2e]"
+                    }`}
+                  >
+                    🌅 SOP OPENING
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSopType("closing")}
+                    className={`py-2.5 rounded-xl font-mono text-xs font-black transition-all ${
+                      sopType === "closing"
+                        ? "bg-[#0b3d2e] text-[#c8f53a] shadow-xs"
+                        : "text-[#527867] hover:text-[#0b3d2e]"
+                    }`}
+                  >
+                    🌙 SOP CLOSING
+                  </button>
                 </div>
-                <span
-                  className={`rounded-full px-2.5 py-0.5 font-mono text-[10px] font-bold ${
-                    selfie
-                      ? "border border-emerald-300 bg-[#edf8f3] text-[#167052]"
-                      : "border border-amber-300 bg-amber-50 text-amber-800"
-                  }`}
-                >
-                  {selfie ? "✓ Foto Siap" : "Wajib Foto"}
-                </span>
-              </div>
 
-              {/* Viewport */}
-              <div className="aspect-square w-full overflow-hidden rounded-2xl relative bg-[#07281e] flex items-center justify-center border-2 border-[#d8e3de]">
-                {selfie ? (
-                  <>
-                    <img
-                      src={selfie}
-                      alt="Selfie"
-                      className="h-full w-full object-cover"
-                    />
-                    <div className="absolute top-3 left-3 bg-[#0b3d2e]/90 text-[#c8f53a] font-mono text-[10px] font-extrabold px-3 py-1 rounded-full shadow-sm flex items-center gap-1.5">
-                      <CheckCircle2 size={12} /> FOTO TERVERIFIKASI
-                    </div>
-                    <button
-                      type="button"
-                      onClick={retakeSelfie}
-                      className="absolute top-3 right-3 bg-white text-[#0b3d2e] font-mono text-[10px] font-bold px-3 py-1 rounded-full shadow-md flex items-center gap-1 active:scale-95"
-                    >
-                      <RotateCcw size={11} /> Foto Ulang
-                    </button>
-                  </>
-                ) : cameraOpen ? (
-                  <>
-                    <video
-                      ref={video}
-                      muted
-                      playsInline
-                      className="h-full w-full object-cover"
-                    />
-                    <div className="absolute top-3 left-3 bg-rose-600 text-white font-mono text-[10px] font-bold px-3 py-1 rounded-full shadow-sm flex items-center gap-1.5 animate-pulse">
-                      <span className="h-2 w-2 rounded-full bg-white" /> KAMERA AKTIF
-                    </div>
-                  </>
-                ) : (
-                  <div className="flex flex-col items-center justify-center p-6 text-center space-y-3">
-                    <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/10 text-emerald-300">
-                      <Camera size={26} />
-                    </div>
+                {/* SOP Card */}
+                <div className="rounded-3xl border border-[#d8e3de] bg-white p-5 space-y-4 shadow-sm">
+                  <div className="flex items-center justify-between border-b border-[#edf3f0] pb-3">
                     <div>
-                      <p className="text-sm font-bold text-white">Kamera Belum Aktif</p>
-                      <p className="mt-1 text-[11px] text-emerald-200/70">
-                        Tekan tombol &quot;Buka Kamera&quot; di bawah untuk selfie
+                      <h3 className="text-sm font-black text-[#0b3d2e]">
+                        {sopType === "opening" ? "Checklist Opening Kafe" : "Checklist Closing Kafe"}
+                      </h3>
+                      <p className="text-[11px] text-[#527867]">
+                        Pastikan seluruh tahapan operasional selesai dijalankan
                       </p>
                     </div>
+                    <span className="font-mono text-xs font-black text-[#167052] bg-[#edf8f3] px-2.5 py-1 rounded-full border border-emerald-200">
+                      {completedSopCount}/{currentSopItems.length} ({sopProgressPercent}%)
+                    </span>
                   </div>
-                )}
-              </div>
-              <canvas ref={canvas} className="hidden" />
 
-              {/* Camera Controls */}
-              <div className="grid grid-cols-2 gap-2.5">
-                <button
-                  type="button"
-                  onClick={openCamera}
-                  disabled={cameraOpen || Boolean(selfie)}
-                  className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-[#d8e3de] bg-[#f9fbf9] px-3 text-xs sm:text-sm font-bold text-[#0b3d2e] hover:bg-[#edf8f3] disabled:opacity-40 disabled:cursor-not-allowed transition-all"
-                >
-                  <Camera size={16} />
-                  {selfie ? "Foto Terpilih ✓" : "Buka Kamera"}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={captureSelfie}
-                  disabled={!cameraOpen}
-                  className="min-h-12 rounded-2xl bg-[#c8f53a] hover:bg-[#d9ff57] px-3 text-xs sm:text-sm font-black text-[#0b3d2e] shadow-xs active:scale-98 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
-                >
-                  Ambil Foto
-                </button>
-              </div>
-
-              {/* GPS Geofence Badge */}
-              <div className="pt-2 border-t border-[#edf3f0]">
-                <button
-                  type="button"
-                  onClick={requestLocation}
-                  className={`w-full flex items-center justify-between p-3 rounded-2xl text-xs font-mono font-bold transition-all border ${
-                    position && isWithinRadius
-                      ? "border-emerald-300 bg-[#edf8f3] text-[#0b3d2e]"
-                      : position && !isWithinRadius
-                      ? "border-amber-300 bg-amber-50 text-amber-900"
-                      : "border-[#d8e3de] bg-[#fbfdfc] text-[#527867]"
-                  }`}
-                >
-                  <div className="flex items-center gap-2 text-left">
-                    <MapPin size={16} className="shrink-0 text-[#167052]" />
-                    <div>
-                      {position ? (
-                        <>
-                          <span className="block font-bold">
-                            {isWithinRadius
-                              ? "✓ Terverifikasi di Area Mochi Cafe"
-                              : "⚠️ Di Luar Radius Mochi Cafe"}
-                          </span>
-                          <span className="text-[10px] opacity-80">
-                            {gpsDistance !== null
-                              ? `Jarak ke toko: ~${gpsDistance} meter (maks: 100m)`
-                              : "Koordinat GPS terkunci"}
-                          </span>
-                        </>
-                      ) : (
-                        <span>Mendeteksi lokasi GPS toko...</span>
-                      )}
-                    </div>
-                  </div>
-                  <LocateFixed size={14} className="shrink-0 opacity-70" />
-                </button>
-              </div>
-            </div>
-
-            {/* Attendance Actions: Masuk & Pulang */}
-            <div className="grid grid-cols-2 gap-3">
-              <button
-                type="button"
-                disabled={submitting || !selfie || !position}
-                onClick={() => submitAttendance("in")}
-                className="flex min-h-14 flex-col items-center justify-center rounded-3xl bg-[#0b3d2e] text-[#c8f53a] p-3 shadow-md hover:bg-[#144f3d] active:scale-98 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
-              >
-                <div className="flex items-center gap-1.5 font-black text-sm sm:text-base">
-                  <LogIn size={16} />
-                  <span>Absen Masuk</span>
-                </div>
-                <span className="text-[10px] font-mono text-emerald-200/80 mt-0.5">
-                  Mulai Shift
-                </span>
-              </button>
-
-              <button
-                type="button"
-                disabled={submitting || !selfie || !position}
-                onClick={() => submitAttendance("out")}
-                className="flex min-h-14 flex-col items-center justify-center rounded-3xl bg-white border-2 border-rose-600 text-rose-700 p-3 shadow-sm hover:bg-rose-50 active:scale-98 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
-              >
-                <div className="flex items-center gap-1.5 font-black text-sm sm:text-base">
-                  <LogOut size={16} />
-                  <span>Absen Pulang</span>
-                </div>
-                <span className="text-[10px] font-mono text-rose-600/80 mt-0.5">
-                  Selesai Shift
-                </span>
-              </button>
-            </div>
-
-            {/* Today Records Preview */}
-            {records.length > 0 && (
-              <div className="rounded-2xl border border-[#d8e3de] bg-white p-4 space-y-2">
-                <span className="font-mono text-[10px] font-bold text-[#167052] uppercase tracking-wider block">
-                  Riwayat Absensi Hari Ini
-                </span>
-                <div className="divide-y divide-[#edf3f0]">
-                  {records.map((rec) => (
+                  {/* Progress Bar */}
+                  <div className="w-full bg-[#f0f5f2] rounded-full h-2 overflow-hidden">
                     <div
-                      key={rec.id}
-                      className="py-2 flex items-center justify-between text-xs"
-                    >
-                      <div>
-                        <span className="font-bold text-[#0b3d2e] block">
-                          Masuk:{" "}
-                          {rec.check_in_at
-                            ? new Date(rec.check_in_at).toLocaleTimeString("id-ID", {
-                                hour: "2-digit",
-                                minute: "2-digit",
-                              }) + " WIB"
-                            : "-"}
-                        </span>
-                        <span className="text-[11px] text-[#527867]">
-                          Pulang:{" "}
-                          {rec.check_out_at
-                            ? new Date(rec.check_out_at).toLocaleTimeString("id-ID", {
-                                hour: "2-digit",
-                                minute: "2-digit",
-                              }) + " WIB"
-                            : "Masih berlangsung"}
-                        </span>
-                      </div>
-                      <span
-                        className={`rounded-full px-2 py-0.5 font-mono text-[9px] font-bold ${
-                          rec.check_out_at
-                            ? "bg-[#edf8f3] text-[#167052]"
-                            : "bg-amber-100 text-amber-800"
+                      className="bg-[#0b3d2e] h-2 rounded-full transition-all duration-300"
+                      style={{ width: `${sopProgressPercent}%` }}
+                    />
+                  </div>
+
+                  {/* Checklist Items */}
+                  <div className="space-y-2.5 pt-1">
+                    {currentSopItems.map((item, index) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => toggleSopItem(item.id)}
+                        className={`w-full flex items-start gap-3 p-3 rounded-2xl text-left border transition-all ${
+                          item.checked
+                            ? "border-emerald-300 bg-[#edf8f3] text-[#0b3d2e]"
+                            : "border-[#d8e3de] bg-[#fbfdfc] text-[#2c4e40] hover:bg-[#f0f5f2]"
                         }`}
                       >
-                        {rec.check_out_at ? "Selesai" : "Sedang Kerja"}
-                      </span>
+                        <div className="mt-0.5 shrink-0">
+                          {item.checked ? (
+                            <CheckSquare size={18} className="text-[#167052]" />
+                          ) : (
+                            <Square size={18} className="text-[#8ba398]" />
+                          )}
+                        </div>
+                        <div className="flex-1 text-xs">
+                          <span className="font-mono text-[10px] text-[#8ba398] block">
+                            Item #{index + 1}
+                          </span>
+                          <span className={`font-bold ${item.checked ? "line-through opacity-85" : ""}`}>
+                            {item.label}
+                          </span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Notes Field */}
+                  <div className="pt-2 border-t border-[#edf3f0] space-y-1.5">
+                    <label className="block text-[11px] font-bold text-[#0b3d2e]">
+                      Catatan Tambahan / Handover (Opsional):
+                    </label>
+                    <textarea
+                      rows={2}
+                      value={sopNotes}
+                      onChange={(e) => setSopNotes(e.target.value)}
+                      placeholder="Contoh: Stok susu sisa 3 karton, mesin grinder sudah disetel..."
+                      className="w-full rounded-xl border border-[#d8e3de] bg-[#fbfdfc] p-2.5 text-xs text-[#0b3d2e] focus:border-emerald-500 focus:outline-none"
+                    />
+                  </div>
+
+                  {/* Status & Save Button */}
+                  {sopSavedMsg && (
+                    <div className="rounded-xl bg-[#edf8f3] p-2.5 text-xs font-bold text-[#167052] border border-emerald-200">
+                      {sopSavedMsg}
                     </div>
-                  ))}
+                  )}
+
+                  <button
+                    type="button"
+                    disabled={savingSop}
+                    onClick={handleSaveSop}
+                    className="w-full flex items-center justify-center gap-2 rounded-2xl bg-[#0b3d2e] text-[#c8f53a] py-3 text-xs font-mono font-black shadow-md hover:bg-[#144f3d] active:scale-98 disabled:opacity-40 transition-all"
+                  >
+                    <ClipboardCheck size={16} />
+                    {savingSop ? "Menyimpan Checklist..." : "Simpan Status SOP ➔"}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* -------------------------------------------------------------
+                TAB 3: JAM KERJA & RIWAYAT (MONTHLY STATS)
+                ------------------------------------------------------------- */}
+            {activeTab === "jam_kerja" && (
+              <div className="space-y-4">
+                {/* 3 Metric Cards */}
+                <div className="grid grid-cols-3 gap-2.5">
+                  <div className="rounded-2xl border border-[#d8e3de] bg-white p-3 text-center shadow-xs">
+                    <span className="block font-mono text-[10px] font-bold text-[#527867] uppercase">
+                      Hari Masuk
+                    </span>
+                    <span className="text-xl font-black text-[#0b3d2e] mt-1 block">
+                      {monthStats.total_days}
+                    </span>
+                    <span className="text-[9px] text-[#8ba398]">30 hari terakhir</span>
+                  </div>
+
+                  <div className="rounded-2xl border border-[#d8e3de] bg-white p-3 text-center shadow-xs">
+                    <span className="block font-mono text-[10px] font-bold text-[#527867] uppercase">
+                      Total Jam
+                    </span>
+                    <span className="text-xl font-black text-[#0b3d2e] mt-1 block">
+                      {monthStats.total_hours}
+                    </span>
+                    <span className="text-[9px] text-[#8ba398]">Jam akumulasi</span>
+                  </div>
+
+                  <div className="rounded-2xl border border-[#d8e3de] bg-white p-3 text-center shadow-xs">
+                    <span className="block font-mono text-[10px] font-bold text-[#527867] uppercase">
+                      Shift Tuntas
+                    </span>
+                    <span className="text-xl font-black text-[#0b3d2e] mt-1 block">
+                      {monthStats.completed_shifts}
+                    </span>
+                    <span className="text-[9px] text-[#8ba398]">In & out lengkap</span>
+                  </div>
+                </div>
+
+                {/* Log List */}
+                <div className="rounded-3xl border border-[#d8e3de] bg-white p-5 space-y-3 shadow-sm">
+                  <div className="flex items-center justify-between border-b border-[#edf3f0] pb-2.5">
+                    <div className="flex items-center gap-2">
+                      <Clock size={16} className="text-[#167052]" />
+                      <h3 className="text-sm font-black text-[#0b3d2e]">Riwayat Kehadiran</h3>
+                    </div>
+                    <span className="font-mono text-[10px] text-[#527867]">
+                      {monthStats.records?.length ?? 0} data tercatat
+                    </span>
+                  </div>
+
+                  {monthStats.records && monthStats.records.length > 0 ? (
+                    <div className="divide-y divide-[#edf3f0] max-h-[360px] overflow-y-auto">
+                      {monthStats.records.map((rec: any) => {
+                        const inDate = rec.check_in_at ? new Date(rec.check_in_at) : null;
+                        const outDate = rec.check_out_at ? new Date(rec.check_out_at) : null;
+                        const hours = rec.duration_minutes
+                          ? (rec.duration_minutes / 60).toFixed(1)
+                          : "0.0";
+
+                        return (
+                          <div key={rec.id} className="py-3 flex items-center justify-between text-xs">
+                            <div className="space-y-0.5">
+                              <span className="font-bold text-[#0b3d2e] block">
+                                {inDate
+                                  ? inDate.toLocaleDateString("id-ID", {
+                                      weekday: "short",
+                                      day: "numeric",
+                                      month: "short",
+                                    })
+                                  : "-"}
+                              </span>
+                              <div className="text-[11px] text-[#527867] flex items-center gap-2">
+                                <span>
+                                  {inDate
+                                    ? inDate.toLocaleTimeString("id-ID", {
+                                        hour: "2-digit",
+                                        minute: "2-digit",
+                                      })
+                                    : "--:--"}
+                                </span>
+                                <span>➔</span>
+                                <span>
+                                  {outDate
+                                    ? outDate.toLocaleTimeString("id-ID", {
+                                        hour: "2-digit",
+                                        minute: "2-digit",
+                                      })
+                                    : "Aktif"}
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className="text-right">
+                              <span className="font-mono font-black text-[#0b3d2e] block">
+                                {hours} Jam
+                              </span>
+                              <span
+                                className={`inline-block rounded-full px-2 py-0.5 font-mono text-[9px] font-bold ${
+                                  rec.check_out_at
+                                    ? "bg-[#edf8f3] text-[#167052]"
+                                    : "bg-amber-100 text-amber-800"
+                                }`}
+                              >
+                                {rec.check_out_at ? "Tuntas" : "Berjalan"}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="text-center py-8 text-xs text-[#8ba398] space-y-1">
+                      <Clock size={24} className="mx-auto text-[#c2d4cb]" />
+                      <p>Belum ada riwayat absensi 30 hari terakhir.</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* -------------------------------------------------------------
+                TAB 4: IZIN / SAKIT / CUTI MANDIRI
+                ------------------------------------------------------------- */}
+            {activeTab === "izin" && (
+              <div className="space-y-4">
+                {/* Notice Alert */}
+                {leaveNotice && (
+                  <div
+                    className={`flex items-start gap-2.5 rounded-2xl border p-4 text-xs font-bold shadow-xs ${
+                      leaveNotice.tone === "success"
+                        ? "border-emerald-300 bg-[#edf8f3] text-[#0b3d2e]"
+                        : "border-rose-300 bg-rose-50 text-rose-800"
+                    }`}
+                  >
+                    {leaveNotice.tone === "success" ? (
+                      <CheckCircle2 size={16} className="shrink-0 mt-0.5 text-[#16a34a]" />
+                    ) : (
+                      <ShieldAlert size={16} className="shrink-0 mt-0.5 text-rose-600" />
+                    )}
+                    <span>{leaveNotice.text}</span>
+                  </div>
+                )}
+
+                {/* Toggle New Request Form */}
+                {!showLeaveForm ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowLeaveForm(true)}
+                    className="w-full flex items-center justify-center gap-2 rounded-2xl bg-[#0b3d2e] text-[#c8f53a] py-3.5 text-xs font-mono font-black shadow-md hover:bg-[#144f3d] active:scale-98 transition-all"
+                  >
+                    <Send size={15} />
+                    + Buat Pengajuan Izin / Sakit Baru
+                  </button>
+                ) : (
+                  <form
+                    onSubmit={handleSubmitLeave}
+                    className="rounded-3xl border border-[#d8e3de] bg-white p-5 space-y-4 shadow-sm"
+                  >
+                    <div className="flex items-center justify-between border-b border-[#edf3f0] pb-2.5">
+                      <h3 className="text-sm font-black text-[#0b3d2e]">Form Pengajuan Izin</h3>
+                      <button
+                        type="button"
+                        onClick={() => setShowLeaveForm(false)}
+                        className="text-xs font-mono font-bold text-[#8ba398] hover:text-[#0b3d2e]"
+                      >
+                        Batal
+                      </button>
+                    </div>
+
+                    {/* Jenis Izin */}
+                    <div className="space-y-1">
+                      <label className="block text-[11px] font-bold text-[#0b3d2e]">
+                        Jenis Pengajuan:
+                      </label>
+                      <div className="grid grid-cols-2 gap-2">
+                        {[
+                          { id: "sick", label: "🤒 Sakit" },
+                          { id: "permission", label: "📝 Izin" },
+                          { id: "leave", label: "🏖️ Cuti" },
+                          { id: "overtime", label: "⚡ Lembur" },
+                        ].map((t) => (
+                          <button
+                            key={t.id}
+                            type="button"
+                            onClick={() => setLeaveType(t.id as any)}
+                            className={`p-2.5 rounded-xl border text-xs font-bold text-center transition-all ${
+                              leaveType === t.id
+                                ? "border-emerald-500 bg-[#edf8f3] text-[#0b3d2e]"
+                                : "border-[#d8e3de] bg-[#fbfdfc] text-[#527867]"
+                            }`}
+                          >
+                            {t.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Waktu Mulai & Selesai */}
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <div className="space-y-1">
+                        <label className="block text-[11px] font-bold text-[#0b3d2e]">
+                          Waktu Mulai:
+                        </label>
+                        <input
+                          type="datetime-local"
+                          required
+                          value={startsAt}
+                          onChange={(e) => setStartsAt(e.target.value)}
+                          className="w-full rounded-xl border border-[#d8e3de] bg-[#fbfdfc] p-2 text-xs text-[#0b3d2e] focus:border-emerald-500 focus:outline-none"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="block text-[11px] font-bold text-[#0b3d2e]">
+                          Waktu Selesai:
+                        </label>
+                        <input
+                          type="datetime-local"
+                          required
+                          value={endsAt}
+                          onChange={(e) => setEndsAt(e.target.value)}
+                          className="w-full rounded-xl border border-[#d8e3de] bg-[#fbfdfc] p-2 text-xs text-[#0b3d2e] focus:border-emerald-500 focus:outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Alasan */}
+                    <div className="space-y-1">
+                      <label className="block text-[11px] font-bold text-[#0b3d2e]">
+                        Alasan / Keterangan:
+                      </label>
+                      <textarea
+                        required
+                        rows={3}
+                        value={leaveReason}
+                        onChange={(e) => setLeaveReason(e.target.value)}
+                        placeholder="Contoh: Mengalami demam dan disarankan istirahat oleh dokter..."
+                        className="w-full rounded-xl border border-[#d8e3de] bg-[#fbfdfc] p-2.5 text-xs text-[#0b3d2e] focus:border-emerald-500 focus:outline-none"
+                      />
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={submittingLeave}
+                      className="w-full flex items-center justify-center gap-2 rounded-2xl bg-[#0b3d2e] text-[#c8f53a] py-3 text-xs font-mono font-black shadow-md hover:bg-[#144f3d] active:scale-98 disabled:opacity-40 transition-all"
+                    >
+                      <Send size={14} />
+                      {submittingLeave ? "Mengirim Pengajuan..." : "Kirim Pengajuan ke Owner ➔"}
+                    </button>
+                  </form>
+                )}
+
+                {/* History of Leave Requests */}
+                <div className="rounded-3xl border border-[#d8e3de] bg-white p-5 space-y-3 shadow-sm">
+                  <div className="flex items-center justify-between border-b border-[#edf3f0] pb-2.5">
+                    <div className="flex items-center gap-2">
+                      <CalendarDays size={16} className="text-[#167052]" />
+                      <h3 className="text-sm font-black text-[#0b3d2e]">Riwayat Pengajuan Izin</h3>
+                    </div>
+                    <span className="font-mono text-[10px] text-[#527867]">
+                      {leaveRequests.length} diajukan
+                    </span>
+                  </div>
+
+                  {leaveRequests.length > 0 ? (
+                    <div className="divide-y divide-[#edf3f0]">
+                      {leaveRequests.map((req) => {
+                        const typeMap: Record<string, string> = {
+                          sick: "Sakit",
+                          permission: "Izin",
+                          leave: "Cuti",
+                          overtime: "Lembur",
+                        };
+                        const statusBadge =
+                          req.status === "approved"
+                            ? "bg-[#edf8f3] text-[#167052] border-emerald-200"
+                            : req.status === "rejected"
+                            ? "bg-rose-50 text-rose-800 border-rose-200"
+                            : "bg-amber-50 text-amber-800 border-amber-200";
+
+                        const statusLabel =
+                          req.status === "approved"
+                            ? "Disetujui"
+                            : req.status === "rejected"
+                            ? "Ditolak"
+                            : "Menunggu";
+
+                        return (
+                          <div key={req.id} className="py-3 space-y-1 text-xs">
+                            <div className="flex items-center justify-between">
+                              <span className="font-bold text-[#0b3d2e]">
+                                {typeMap[req.leave_type] || req.leave_type}
+                              </span>
+                              <span
+                                className={`rounded-full px-2.5 py-0.5 font-mono text-[9px] font-bold border ${statusBadge}`}
+                              >
+                                {statusLabel}
+                              </span>
+                            </div>
+                            <p className="text-[#527867] text-[11px] leading-relaxed">
+                              {req.reason}
+                            </p>
+                            <span className="text-[10px] font-mono text-[#8ba398] block">
+                              Mulai: {new Date(req.starts_at).toLocaleDateString("id-ID")} · Selesai:{" "}
+                              {new Date(req.ends_at).toLocaleDateString("id-ID")}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="text-center py-8 text-xs text-[#8ba398] space-y-1">
+                      <CalendarDays size={24} className="mx-auto text-[#c2d4cb]" />
+                      <p>Belum ada riwayat pengajuan izin.</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* -------------------------------------------------------------
+                TAB 5: SLIP GAJI DIGITAL
+                ------------------------------------------------------------- */}
+            {activeTab === "slip_gaji" && (
+              <div className="space-y-4">
+                <div className="rounded-3xl border border-[#d8e3de] bg-white p-5 space-y-4 shadow-sm">
+                  <div className="flex items-center justify-between border-b border-[#edf3f0] pb-3">
+                    <div className="flex items-center gap-2">
+                      <Wallet size={18} className="text-[#167052]" />
+                      <h3 className="text-sm font-black text-[#0b3d2e]">Slip Gaji Resmi</h3>
+                    </div>
+                    <span className="font-mono text-[10px] text-[#527867]">
+                      Disetujui Owner Mochi Cafe
+                    </span>
+                  </div>
+
+                  {paystubs && paystubs.length > 0 ? (
+                    <div className="space-y-4">
+                      {paystubs.map((stub: any) => (
+                        <div
+                          key={stub.id}
+                          className="rounded-2xl border border-emerald-200 bg-[#fbfdfc] p-4 space-y-3"
+                        >
+                          <div className="flex items-center justify-between border-b border-[#edf3f0] pb-2">
+                            <div>
+                              <span className="font-mono text-[10px] font-bold text-[#167052] uppercase block">
+                                Periode Penggajian
+                              </span>
+                              <span className="text-xs font-black text-[#0b3d2e]">
+                                {new Date(stub.period_start).toLocaleDateString("id-ID", {
+                                  day: "numeric",
+                                  month: "short",
+                                })}{" "}
+                                -{" "}
+                                {new Date(stub.period_end).toLocaleDateString("id-ID", {
+                                  day: "numeric",
+                                  month: "short",
+                                  year: "numeric",
+                                })}
+                              </span>
+                            </div>
+                            <span
+                              className={`rounded-full px-2.5 py-0.5 font-mono text-[9px] font-bold ${
+                                stub.period_status === "paid"
+                                  ? "bg-[#edf8f3] text-[#167052] border border-emerald-300"
+                                  : "bg-blue-50 text-blue-800 border border-blue-200"
+                              }`}
+                            >
+                              {stub.period_status === "paid" ? "✓ LUNAS" : "DISETUJUI"}
+                            </span>
+                          </div>
+
+                          {/* Paystub Breakdown Table */}
+                          <div className="space-y-1.5 text-xs">
+                            <div className="flex justify-between text-[#527867]">
+                              <span>Gaji Pokok</span>
+                              <span className="font-mono font-bold text-[#0b3d2e]">
+                                {formatRupiah(stub.base_pay || 0)}
+                              </span>
+                            </div>
+                            {stub.overtime_pay > 0 && (
+                              <div className="flex justify-between text-[#527867]">
+                                <span>Uang Lembur</span>
+                                <span className="font-mono font-bold text-[#0b3d2e]">
+                                  + {formatRupiah(stub.overtime_pay)}
+                                </span>
+                              </div>
+                            )}
+                            {stub.incentive_pay > 0 && (
+                              <div className="flex justify-between text-[#527867]">
+                                <span>Insentif / Bonus</span>
+                                <span className="font-mono font-bold text-[#0b3d2e]">
+                                  + {formatRupiah(stub.incentive_pay)}
+                                </span>
+                              </div>
+                            )}
+                            {stub.commission_pay > 0 && (
+                              <div className="flex justify-between text-[#527867]">
+                                <span>Komisi</span>
+                                <span className="font-mono font-bold text-[#0b3d2e]">
+                                  + {formatRupiah(stub.commission_pay)}
+                                </span>
+                              </div>
+                            )}
+                            {stub.deduction > 0 && (
+                              <div className="flex justify-between text-rose-600">
+                                <span>Potongan / Kasbon</span>
+                                <span className="font-mono font-bold">
+                                  - {formatRupiah(stub.deduction)}
+                                </span>
+                              </div>
+                            )}
+
+                            {/* Total Take Home Pay */}
+                            <div className="pt-2 border-t border-[#d8e3de] flex justify-between items-center text-sm font-black">
+                              <span className="text-[#0b3d2e]">Total Bersih (THP)</span>
+                              <span className="text-[#167052] font-mono text-base">
+                                {formatRupiah(stub.total_pay || 0)}
+                              </span>
+                            </div>
+                          </div>
+
+                          {stub.note && (
+                            <p className="text-[11px] text-[#527867] bg-[#edf8f3] p-2 rounded-xl border border-emerald-100 italic">
+                              Catatan: {stub.note}
+                            </p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-8 text-xs text-[#8ba398] space-y-1">
+                      <Wallet size={24} className="mx-auto text-[#c2d4cb]" />
+                      <p>Belum ada slip gaji yang disetujui untuk periode ini.</p>
+                      <p className="text-[11px]">
+                        Slip digital akan muncul otomatis setelah diverifikasi oleh Owner.
+                      </p>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -663,10 +1422,91 @@ export default function PersonalAttendanceClient({
         )}
       </main>
 
+      {/* ===================================================================
+          BOTTOM TAB NAVIGATION (5 MODERN MOBILE BUTTONS)
+          =================================================================== */}
+      {isAuthenticated && (
+        <nav className="fixed bottom-0 left-0 right-0 z-40 bg-[#0b3d2e] border-t border-[#07281e] text-white shadow-2xl py-2 px-3">
+          <div className="mx-auto max-w-md grid grid-cols-5 gap-1">
+            {/* Tab 1: Presensi */}
+            <button
+              type="button"
+              onClick={() => setActiveTab("presensi")}
+              className={`flex flex-col items-center justify-center py-1 rounded-xl transition-all ${
+                activeTab === "presensi"
+                  ? "text-[#c8f53a] font-black bg-white/10"
+                  : "text-emerald-200/70 hover:text-white"
+              }`}
+            >
+              <UserCheck size={18} />
+              <span className="text-[9.5px] mt-1 font-mono tracking-tight">Presensi</span>
+            </button>
+
+            {/* Tab 2: SOP Kafe */}
+            <button
+              type="button"
+              onClick={() => setActiveTab("sop")}
+              className={`flex flex-col items-center justify-center py-1 rounded-xl transition-all ${
+                activeTab === "sop"
+                  ? "text-[#c8f53a] font-black bg-white/10"
+                  : "text-emerald-200/70 hover:text-white"
+              }`}
+            >
+              <ClipboardCheck size={18} />
+              <span className="text-[9.5px] mt-1 font-mono tracking-tight">SOP Kafe</span>
+            </button>
+
+            {/* Tab 3: Jam Kerja */}
+            <button
+              type="button"
+              onClick={() => setActiveTab("jam_kerja")}
+              className={`flex flex-col items-center justify-center py-1 rounded-xl transition-all ${
+                activeTab === "jam_kerja"
+                  ? "text-[#c8f53a] font-black bg-white/10"
+                  : "text-emerald-200/70 hover:text-white"
+              }`}
+            >
+              <Clock size={18} />
+              <span className="text-[9.5px] mt-1 font-mono tracking-tight">Jam Kerja</span>
+            </button>
+
+            {/* Tab 4: Izin & Sakit */}
+            <button
+              type="button"
+              onClick={() => setActiveTab("izin")}
+              className={`flex flex-col items-center justify-center py-1 rounded-xl transition-all ${
+                activeTab === "izin"
+                  ? "text-[#c8f53a] font-black bg-white/10"
+                  : "text-emerald-200/70 hover:text-white"
+              }`}
+            >
+              <CalendarDays size={18} />
+              <span className="text-[9.5px] mt-1 font-mono tracking-tight">Izin / Sakit</span>
+            </button>
+
+            {/* Tab 5: Slip Gaji */}
+            <button
+              type="button"
+              onClick={() => setActiveTab("slip_gaji")}
+              className={`flex flex-col items-center justify-center py-1 rounded-xl transition-all ${
+                activeTab === "slip_gaji"
+                  ? "text-[#c8f53a] font-black bg-white/10"
+                  : "text-emerald-200/70 hover:text-white"
+              }`}
+            >
+              <Wallet size={18} />
+              <span className="text-[9.5px] mt-1 font-mono tracking-tight">Slip Gaji</span>
+            </button>
+          </div>
+        </nav>
+      )}
+
       {/* Footer */}
-      <footer className="py-4 text-center text-[11px] font-mono text-[#637970]">
-        <span>KAEL System · Presensi Karyawan Mochi Cafe</span>
-      </footer>
+      {!isAuthenticated && (
+        <footer className="py-4 text-center text-[11px] font-mono text-[#637970]">
+          <span>KAEL System · Presensi Karyawan Mochi Cafe</span>
+        </footer>
+      )}
     </div>
   );
 }

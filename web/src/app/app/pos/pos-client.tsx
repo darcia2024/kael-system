@@ -50,6 +50,11 @@ import {
   ArrowDownCircle,
   ArrowUpCircle,
   Info,
+  Unlock,
+  Menu,
+  LayoutDashboard,
+  ChevronRight,
+  Home,
   type LucideIcon,
 } from "lucide-react";
 import type { 
@@ -119,6 +124,7 @@ import {
 import {
   INIT,
   POTONG,
+  BUKA_LACI,
   gabung,
   teks,
   barisKosong,
@@ -207,6 +213,7 @@ export default function PosClient({
   const [activeCategory, setActiveCategory] = useState<string>("all");
   const [menuSearchQuery, setMenuSearchQuery] = useState("");
   const [showMobileCart, setShowMobileCart] = useState(false);
+  const [showMobileNavDrawer, setShowMobileNavDrawer] = useState(false);
   // Cart State
   const [cart, setCart] = useState<Record<string, { item: MenuItem; qty: number; note: string; customPrice?: number }>>({});
   const [discountNominal, setDiscountNominal] = useState<number>(0);
@@ -317,6 +324,17 @@ export default function PosClient({
     cashGiven?: number;
     customerName?: string | null;
     items: { name: string; qty: number; price: number; note?: string }[];
+    pelangganData?: {
+      items: { name: string; qty: number; price: number; note?: string }[];
+      subtotal: number;
+      discount: number;
+      tax: number;
+      serviceCharge: number;
+      deliveryFee: number;
+      total: number;
+      cashGiven?: number;
+      cashChange?: number;
+    };
   } | null>(null);
   const [printerState, setPrinterState] = useState<"idle" | "printing" | "connected" | "error">("idle");
 
@@ -748,6 +766,7 @@ export default function PosClient({
   const handlePrintCombinedTableBill = (
     table: TableSummary,
     bagian: "dapur" | "kasir" | "pelanggan" | "semua" = "semua",
+    forceOpenCashDrawer?: boolean,
   ) => {
     const combinedItems: {
       name_snapshot: string;
@@ -782,6 +801,9 @@ export default function PosClient({
         customer_name: firstOrder?.delivery_name || `Tamu Meja ${table.tableNo}`,
       },
       bagian,
+      undefined,
+      undefined,
+      forceOpenCashDrawer ?? false,
     );
   };
 
@@ -917,6 +939,7 @@ export default function PosClient({
        * terjadi.
        */
       res.data.orderIds[0],
+      metode === "cash",
     );
 
     router.refresh();
@@ -1115,6 +1138,21 @@ export default function PosClient({
       return;
     }
 
+    const serverCombined = res.data.combinedTableData;
+    const combinedPelangganData = serverCombined
+      ? {
+          items: serverCombined.items,
+          subtotal: serverCombined.subtotal,
+          discount: serverCombined.discount,
+          tax: serverCombined.tax,
+          serviceCharge: serverCombined.serviceCharge,
+          deliveryFee: serverCombined.deliveryFee,
+          total: serverCombined.total,
+          cashGiven: paymentMethod === "cash" ? cashGivenInput : undefined,
+          cashChange: paymentMethod === "cash" ? res.data.change : undefined,
+        }
+      : undefined;
+
     const completed = {
       orderId: res.data.orderId,
       orderNo: res.data.orderNo,
@@ -1145,6 +1183,7 @@ export default function PosClient({
         price: c.item.price,
         note: c.note,
       })),
+      pelangganData: combinedPelangganData,
     };
 
     setShowPaymentModal(false);
@@ -1187,7 +1226,13 @@ export default function PosClient({
           delivery_fee: completed.deliveryFee,
           cash_given: completed.cashGiven ?? null,
           cash_change: completed.paymentMethod === "cash" ? completed.change : null,
-        });
+          pelangganData: completed.pelangganData,
+        },
+        "semua",
+        undefined,
+        undefined,
+        completed.paymentMethod === "cash",
+        );
       }, 250);
     }
   };
@@ -1388,7 +1433,7 @@ export default function PosClient({
       const device = await ambilPrinter(bluetooth);
 
       const openCashDrawer = Boolean(options.openCashDrawer);
-      const drawerPulse = openCashDrawer ? [0x1b, 0x70, 0x00, 0x19, 0xfa] : [];
+      const drawerPulse = openCashDrawer ? Array.from(BUKA_LACI) : [];
       const buzzerPulse = printerBuzzerEnabled ? [0x1b, 0x42, 0x03, 0x02, 0x1b, 0x70, 0x01, 0x19, 0xfa] : [];
 
       /**
@@ -1421,6 +1466,7 @@ export default function PosClient({
 
       const payload = gabung(
         INIT,
+        ...(openCashDrawer ? [BUKA_LACI] : []),
         ...(logo ? [rataTengah(), logo, barisKosong(1)] : []),
         rataKiri(),
         teks(rawText),
@@ -1527,6 +1573,33 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
     }
   };
 
+  /** Membuka laci kasir secara manual tanpa mencetak struk (Drawer Kick / No Sale). */
+  const handleOpenCashDrawerManual = async () => {
+    const bluetooth = (navigator as Navigator & { bluetooth?: any }).bluetooth;
+    if (!bluetooth) {
+      alert("Fitur Bluetooth belum didukung di browser ini. Harap gunakan browser Chrome atau Edge.");
+      return;
+    }
+    setPrinterState("printing");
+    try {
+      const device = await ambilPrinter(bluetooth);
+      // Kirim inisialisasi + universal pulse buka laci
+      const payload = gabung(INIT, BUKA_LACI, barisKosong(1));
+      await kirimKePrinter(device, payload);
+      setPrinterState("connected");
+      alert(
+        `Perintah buka laci dikirim ke ${device.name || "printer thermal"}.\n\n` +
+        `Catatan teknis jika laci kasir belum bergerak:\n` +
+        `1. Pastikan kabel RJ11 laci kasir tercolok di port "DK" printer.\n` +
+        `2. Pastikan anak kunci fisik laci dalam posisi STANDBY (vertikal/tegak lurus, bukan horizontal terkunci mati).\n` +
+        `3. Pastikan printer thermal terhubung ke daya adaptor listrik 24V.`
+      );
+    } catch (err) {
+      setPrinterState("error");
+      alert("Gagal membuka laci: " + alasanGagalCetak(err));
+    }
+  };
+
   const handlePrintBluetoothThermal = async () => {
     if (!completedOrder) return;
     const receiptText = generateEscPosReceiptText({
@@ -1556,7 +1629,7 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
       jobName: "Struk Kasir",
       orderId: completedOrder.orderId,
       orderNo: completedOrder.orderNo,
-      openCashDrawer: completedOrder.paymentMethod === "cash",
+      openCashDrawer: true,
       isCustomerReceipt: true,
     });
   };
@@ -1640,6 +1713,18 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
     /** Uang tunai yang diserahkan tamu, dan kembaliannya. */
     cash_given?: number | null;
     cash_change?: number | null;
+    /** Data tagihan gabungan meja khusus untuk rangkap pelanggan jika ini pesanan tambahan. */
+    pelangganData?: {
+      items: { name: string; qty: number; price: number; note?: string }[];
+      subtotal: number;
+      discount: number;
+      tax: number;
+      serviceCharge: number;
+      deliveryFee?: number;
+      total: number;
+      cashGiven?: number;
+      cashChange?: number;
+    };
   },
   /**
    * Rangkap mana yang dicetak.
@@ -1658,6 +1743,8 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
   bagiTagihan?: { bagianKe: number; dariBagian?: number; totalMeja: number },
   /** Nota yang jadi sumber QR member di struk pelanggan. */
   orderIdUntukQr?: string,
+  /** Paksa buka laci kasir secara eksplisit */
+  forceOpenCashDrawer?: boolean,
   ) => {
     const orderData = customOrder || (completedOrder ? {
       order_no: completedOrder.orderNo,
@@ -1749,6 +1836,7 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
       cashGiven: rincian.cashGiven,
       cashChange: rincian.cashChange,
       customerName: orderData.customer_name,
+      pelangganData: customOrder?.pelangganData || completedOrder?.pelangganData,
       bagian,
       bagiTagihan,
     });
@@ -1760,13 +1848,17 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
       semua: "Struk 3 Rangkap",
     } as const;
 
+    const isCashPayment =
+      orderData.payment_method === "cash" ||
+      orderData.payment_method === "tunai" ||
+      String(orderData.payment_method).toLowerCase().includes("tunai") ||
+      String(orderData.payment_method).toLowerCase().includes("cash");
+
     await sendRawEscPosToBluetooth(receiptText, {
       jobName: bagiTagihan ? `Bagi Tagihan ${bagiTagihan.bagianKe}` : namaRangkap[bagian],
       orderNo: orderData.order_no,
-      // Laci cukup membuka sekali, saat rangkap kasir tercetak.
-      openCashDrawer:
-        !bagiTagihan &&
-        orderData.payment_method === "cash" && (bagian === "kasir" || bagian === "semua"),
+      // Buka laci HANYA jika diminta eksplisit (misal terima pembayaran)
+      openCashDrawer: forceOpenCashDrawer ?? false,
       // Kode QR member cuma di lembar yang dibawa pulang pelanggan.
       isCustomerReceipt: bagian === "pelanggan" || bagian === "semua",
       orderId: orderIdUntukQr ?? completedOrder?.orderId,
@@ -2186,9 +2278,9 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
     <div className={`${themeClassName} pos-screen-lock flex h-[100dvh] max-h-[100dvh] w-full flex-col overflow-hidden select-none ${isMochiPos ? "bg-[#f0f5f2]" : "bg-[#edf3f0]"} font-sans text-[#21352d]`}>
       <header className={`z-30 shrink-0 border-b h-14 min-h-[56px] ${isMochiPos ? "bg-[#0b3d2e] border-emerald-800/60 text-white shadow-sm" : "bg-white border-[#d8e1dc]"}`}>
         <div className="flex h-14 items-center justify-between gap-2.5 px-3 sm:px-4">
-          <div className="flex min-w-0 items-center gap-3">
+          <div className="flex min-w-0 flex-1 items-center gap-2.5">
             {isMochiPos ? (
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white p-0.5 shadow-sm border border-emerald-400/40 overflow-hidden">
+              <div className="flex h-9 w-9 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-full bg-white p-0.5 shadow-sm border border-emerald-400/40 overflow-hidden">
                 <img
                   src="/logo-mochi.png"
                   alt={business?.name || "Mochi Cafe n Resto"}
@@ -2196,8 +2288,8 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
                 />
               </div>
             ) : (
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl shadow-xs bg-[#1d5d47] text-white">
-                <Receipt size={20} aria-hidden="true" />
+              <div className="flex h-9 w-9 sm:h-10 sm:w-10 shrink-0 items-center justify-center rounded-xl shadow-xs bg-[#1d5d47] text-white">
+                <Receipt size={18} aria-hidden="true" />
               </div>
             )}
             <div className="min-w-0">
@@ -2243,19 +2335,19 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
             </div>
           </div>
 
-          <div className="flex items-center gap-1.5 lg:hidden">
+          <div className="flex items-center gap-1.5 shrink-0 lg:hidden">
             {currentQrOrders.length > 0 && (
               <button
                 type="button"
                 aria-label={`${currentQrOrders.length} pesanan masuk`}
                 title="Pesanan masuk"
                 onClick={() => setShowQueue(true)}
-                className={`relative flex h-10 w-10 sm:h-11 sm:w-11 items-center justify-center rounded-xl border ${
+                className={`relative flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-xl border transition-colors ${
                   isMochiPos ? "border-amber-400/40 bg-amber-50 text-[#a15a18]" : "border-[#e0b46d] bg-[#fff7e8] text-[#a15a18]"
                 }`}
               >
-                <Utensils size={18} aria-hidden="true" />
-                <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#ea580c] px-1 text-[9px] font-extrabold text-white">
+                <Utensils size={17} aria-hidden="true" />
+                <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-[#ea580c] px-1 text-[8.5px] font-extrabold text-white">
                   {currentQrOrders.length}
                 </span>
               </button>
@@ -2265,7 +2357,7 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
               aria-label="Pengaturan Bel & Suara Kasir"
               title={soundEnabled ? "Bel Pesanan Aktif (Klik untuk atur/tes)" : "Bel Pesanan Mati"}
               onClick={() => setShowBellModal(true)}
-              className={`relative flex h-10 w-10 sm:h-11 sm:w-11 items-center justify-center rounded-xl border transition-colors ${
+              className={`relative flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-xl border transition-colors ${
                 soundEnabled
                   ? isMochiPos
                     ? "border-[#c8f53a] bg-[#c8f53a] text-[#073829] shadow-xs"
@@ -2275,11 +2367,11 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
                     : "border-[#ccd7d1] text-[#75837c] hover:bg-[#eef5f1]"
               }`}
             >
-              {soundEnabled ? <Bell size={17} className="animate-pulse" /> : <VolumeX size={17} />}
+              {soundEnabled ? <Bell size={16} className="animate-pulse" /> : <VolumeX size={16} />}
               {soundEnabled && (
-                <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
+                <span className="absolute -top-1 -right-1 flex h-2 w-2">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#16a34a] opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-[#16a34a]"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-[#16a34a]"></span>
                 </span>
               )}
             </button>
@@ -2288,7 +2380,7 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
               aria-label="Scan QR Member"
               title={attachedCustomer ? `Member: ${attachedCustomer.name}` : "Scan QR Member"}
               onClick={() => setShowMemberScannerModal(true)}
-              className={`flex h-10 w-10 sm:h-11 sm:w-11 items-center justify-center rounded-xl border transition-colors relative ${
+              className={`flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-xl border transition-colors relative ${
                 attachedCustomer
                   ? "border-[#c8f53a] bg-[#c8f53a] text-[#073829] font-black shadow-xs"
                   : isMochiPos
@@ -2296,89 +2388,26 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
                     : "border-[#ccd7d1] text-[#29473b] hover:bg-[#eef5f1]"
               }`}
             >
-              <Camera size={17} aria-hidden="true" />
+              <Camera size={16} aria-hidden="true" />
               {attachedCustomer && (
-                <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-[#16a34a] border border-white text-[8px] text-white font-black">
+                <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-[#16a34a] border border-white text-[7.5px] text-white font-black">
                   ✓
                 </span>
               )}
             </button>
             <button
               type="button"
-              aria-label="Cetak QR Meja"
-              title="Cetak QR Meja"
-              onClick={() => setShowTableQrModal(true)}
-              className={`flex h-10 w-10 sm:h-11 sm:w-11 items-center justify-center rounded-xl border transition-colors ${
+              aria-label="Menu Navigasi POS & Laporan"
+              title="Menu Navigasi Lengkap"
+              onClick={() => setShowMobileNavDrawer(true)}
+              className={`flex h-9 w-9 sm:h-10 sm:w-10 items-center justify-center rounded-xl border transition-colors shrink-0 ${
                 isMochiPos
-                  ? "border-white/20 bg-white/10 text-white/80 hover:bg-white/20"
-                  : "border-[#ccd7d1] text-[#29473b] hover:bg-[#eef5f1]"
-              }`}
-            >
-              <QrCode size={17} aria-hidden="true" />
-            </button>
-            <button
-              type="button"
-              aria-label={activeShift ? "Tutup shift" : "Buka shift"}
-              title={activeShift ? "Shift aktif" : "Kelola shift"}
-              onClick={() => setShowShiftModal(true)}
-              className={`flex h-10 w-10 sm:h-11 sm:w-11 items-center justify-center rounded-xl border transition-colors ${
-                isMochiPos
-                  ? (activeShift
-                      ? "border-emerald-500/40 bg-emerald-950/40 text-[#c8f53a]"
-                      : "border-white/20 bg-white/10 text-white/80 hover:bg-white/20")
-                  : (activeShift
-                      ? "border-[#bdd0c6] bg-[#e8f4ee] text-[#176047]"
-                      : "border-[#e7c0bb] bg-[#fff0ed] text-[#a83d33]")
-              }`}
-            >
-              <Clock size={17} aria-hidden="true" />
-            </button>
-            {activeShift && (
-              <button
-                type="button"
-                onClick={() => {
-                  setCashMovementType("cash_out");
-                  setShowCashMovementModal(true);
-                }}
-                className={`flex items-center gap-1.5 rounded-xl px-2.5 sm:px-3 h-10 sm:h-11 text-xs font-black transition-all shadow-xs shrink-0 ${
-                  isMochiPos
-                    ? "bg-amber-400 text-[#073829] hover:bg-amber-300 font-extrabold active:scale-95"
-                    : "bg-amber-500 text-white hover:bg-amber-600 active:scale-95"
-                }`}
-                title="Catat uang keluar dari laci kasir (belanja dapur, es batu, galon, dll)"
-              >
-                <Banknote size={16} />
-                <span>Kas Keluar</span>
-              </button>
-            )}
-            <button
-              type="button"
-              aria-label="QR Pendaftaran Member"
-              title="QR Pendaftaran Member"
-              onClick={() => setShowMemberQrModal(true)}
-              className={`flex h-10 w-10 sm:h-11 sm:w-11 items-center justify-center rounded-xl border transition-colors ${
-                isMochiPos
-                  ? "border-[#c8f53a]/40 bg-[#c8f53a] text-[#073829] shadow-xs hover:bg-[#d9ff57]"
+                  ? "border-emerald-500/70 bg-[#124d3b] text-[#c8f53a] hover:bg-[#185e48]"
                   : "border-[#ccd7d1] bg-white text-[#1d5d47] hover:bg-[#eef5f1]"
               }`}
             >
-              <QrCode size={17} aria-hidden="true" />
+              <Menu size={17} aria-hidden="true" />
             </button>
-            {isInstallable && !isInstalled && (
-              <button
-                type="button"
-                aria-label="Install POS"
-                title="Install POS di tablet / HP"
-                onClick={triggerInstall}
-                className={`flex h-10 w-10 sm:h-11 sm:w-11 items-center justify-center rounded-xl border transition-all ${
-                  isMochiPos
-                    ? "bg-[#c8f53a] text-[#073829] border-[#c8f53a] shadow-xs"
-                    : "bg-[#1d5d47] text-white border-[#1d5d47] shadow-xs"
-                }`}
-              >
-                <MonitorSmartphone size={17} aria-hidden="true" />
-              </button>
-            )}
           </div>
 
           <div className="hidden lg:flex items-center gap-2">
@@ -2472,6 +2501,21 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
                 <span>Kas Keluar</span>
               </button>
             )}
+
+            <button
+              type="button"
+              onClick={handleOpenCashDrawerManual}
+              disabled={printerState === "printing"}
+              className={`inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-bold transition-all shadow-xs disabled:opacity-50 ${
+                isMochiPos
+                  ? "bg-white/10 text-emerald-100 hover:bg-white/20 border border-white/15"
+                  : "bg-white border border-[#ccd7d1] text-[#1d5d47] hover:bg-[#eef5f1]"
+              }`}
+              title="Buka laci kasir (drawer kick) tanpa cetak struk"
+            >
+              <Unlock size={15} />
+              <span>Buka Laci</span>
+            </button>
             {isInstallable && !isInstalled && (
               <button
                 type="button"
@@ -2522,6 +2566,32 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
           </div>
         </div>
       </header>
+
+      {/* Owner Mobile Quick-Bar (Always 1-Tap Accessible for Owner on Smartphone) */}
+      {userRole === "owner" && (
+        <div className="z-20 flex shrink-0 items-center justify-between gap-2 border-b px-3 py-1.5 bg-[#07281e] border-emerald-800/80 text-white lg:hidden shadow-xs">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="flex h-2 w-2 rounded-full bg-[#c8f53a] animate-pulse shrink-0" />
+            <span className="text-[11px] font-bold text-[#c8f53a] truncate">Mode Owner</span>
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <Link
+              href="/app/pos/reports"
+              className="inline-flex items-center gap-1 rounded-lg bg-emerald-900/90 border border-emerald-600/50 px-2.5 py-1 text-[11px] font-bold text-emerald-100 hover:bg-emerald-800 active:scale-95 transition-all shadow-xs"
+            >
+              <TrendingUp size={13} className="text-[#c8f53a]" />
+              <span>Laporan Penjualan</span>
+            </Link>
+            <Link
+              href="/app/pos/owner"
+              className="inline-flex items-center gap-1 rounded-lg bg-[#c8f53a] px-2.5 py-1 text-[11px] font-black text-[#073829] hover:bg-[#b8e828] active:scale-95 transition-all shadow-xs"
+            >
+              <LayoutDashboard size={13} />
+              <span>Dashboard</span>
+            </Link>
+          </div>
+        </div>
+      )}
 
       {/*
         PANGGILAN MEJA
@@ -2646,6 +2716,16 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
             <LayoutGrid size={20} aria-hidden="true" />
           </div>
           {userRole === "owner" && (
+            <Link href="/app/pos/owner" aria-label="Dashboard owner" title="Dashboard owner" className={`flex h-11 w-11 items-center justify-center rounded-xl transition-colors ${isMochiPos ? "text-emerald-300/80 hover:bg-white/10 hover:text-white" : "text-[#66766e] hover:bg-[#edf4f0] hover:text-[#1d5d47]"}`}>
+              <LayoutDashboard size={20} aria-hidden="true" />
+            </Link>
+          )}
+          {userRole === "owner" && (
+            <Link href="/app/pos/reports" aria-label="Laporan penjualan & shift" title="Laporan penjualan & shift" className={`flex h-11 w-11 items-center justify-center rounded-xl transition-colors ${isMochiPos ? "text-emerald-300/80 hover:bg-white/10 hover:text-white" : "text-[#66766e] hover:bg-[#edf4f0] hover:text-[#1d5d47]"}`}>
+              <TrendingUp size={20} aria-hidden="true" />
+            </Link>
+          )}
+          {userRole === "owner" && (
             <Link href="/app/pos/menu" aria-label="Kelola menu" title="Kelola menu" className={`flex h-11 w-11 items-center justify-center rounded-xl transition-colors ${isMochiPos ? "text-emerald-300/80 hover:bg-white/10 hover:text-white" : "text-[#66766e] hover:bg-[#edf4f0] hover:text-[#1d5d47]"}`}>
               <UtensilsCrossed size={20} aria-hidden="true" />
             </Link>
@@ -2656,11 +2736,9 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
           <Link href="/app/pos/kitchen" aria-label="Dapur" title="Dapur" className={`flex h-11 w-11 items-center justify-center rounded-xl transition-colors ${isMochiPos ? "text-emerald-300/80 hover:bg-white/10 hover:text-white" : "text-[#66766e] hover:bg-[#edf4f0] hover:text-[#1d5d47]"}`}>
             <ChefHat size={20} aria-hidden="true" />
           </Link>
-          {userRole === "owner" && (
-            <Link href="/app/pos/owner" aria-label="Dashboard owner" title="Dashboard owner" className={`flex h-11 w-11 items-center justify-center rounded-xl transition-colors ${isMochiPos ? "text-emerald-300/80 hover:bg-white/10 hover:text-white" : "text-[#66766e] hover:bg-[#edf4f0] hover:text-[#1d5d47]"}`}>
-              <TrendingUp size={20} aria-hidden="true" />
-            </Link>
-          )}
+          <Link href="/app/pos/riwayat" aria-label="Riwayat transaksi & refund" title="Riwayat transaksi & refund" className={`flex h-11 w-11 items-center justify-center rounded-xl transition-colors ${isMochiPos ? "text-emerald-300/80 hover:bg-white/10 hover:text-white" : "text-[#66766e] hover:bg-[#edf4f0] hover:text-[#1d5d47]"}`}>
+            <Receipt size={20} aria-hidden="true" />
+          </Link>
           <button
             type="button"
             onClick={() => setShowTableQrModal(true)}
@@ -2769,6 +2847,7 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
               onPrintCombinedTableBill={handlePrintCombinedTableBill}
               onPrintSplitBill={handlePrintSplitBill}
               onSettleTable={bayarDiAkhirToko ? setMejaDibayar : undefined}
+              onOpenCashDrawer={handleOpenCashDrawerManual}
               onRefresh={refreshAll}
             />
           ) : (
@@ -3659,6 +3738,30 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
                   </p>
                 </div>
               )}
+
+              {/* Rincian Pesanan Tambahan Meja: Dapur Terpisah, Kasir & Pelanggan Gabung */}
+              {completedOrder.pelangganData && (
+                <div className="mt-2 rounded-2xl border border-emerald-300 bg-[#edf8f3] p-3 text-left">
+                  <div className="flex items-center justify-between">
+                    <span className="font-black text-xs text-[#0b3d2e]">
+                      Meja {completedOrder.tableNo}: Pesanan Tambahan
+                    </span>
+                    <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-200 text-emerald-900">
+                      Otomatis Gabung
+                    </span>
+                  </div>
+                  <div className="mt-1.5 space-y-1 text-[11px] text-[#245242]">
+                    <div className="flex justify-between">
+                      <span>• Tiket Dapur (Menu Baru):</span>
+                      <span className="font-bold">{formatRupiah(completedOrder.total)}</span>
+                    </div>
+                    <div className="flex justify-between border-t border-emerald-200/80 pt-1 font-extrabold text-[#0b3d2e]">
+                      <span>• Struk Kasir & Pelanggan (Total Meja):</span>
+                      <span className="text-[#167052] font-black">{formatRupiah(completedOrder.pelangganData.total)}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Receipt Actions */}
@@ -3674,7 +3777,11 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
                 }`}
               >
                 <Printer size={15} />
-                <span>Cetak Semua · 3 Struk Terpisah 🖨️</span>
+                <span>
+                  {completedOrder.pelangganData
+                    ? "Cetak Semua (Dapur Baru · Kasir & Tamu Gabung) 🖨️"
+                    : "Cetak Semua · 3 Struk Terpisah 🖨️"}
+                </span>
               </button>
 
               {/*
@@ -3684,24 +3791,31 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
               */}
               <div className="grid grid-cols-3 gap-1.5">
                 {([
-                  { kunci: "dapur", label: "Dapur" },
-                  { kunci: "kasir", label: "Kasir" },
-                  { kunci: "pelanggan", label: "Pelanggan" },
+                  { kunci: "dapur", label: "Dapur", sub: completedOrder.pelangganData ? "Tiket Baru" : null },
+                  { kunci: "kasir", label: "Kasir", sub: completedOrder.pelangganData ? "Gabungan" : null },
+                  { kunci: "pelanggan", label: "Pelanggan", sub: completedOrder.pelangganData ? "Gabungan" : null },
                 ] as const).map((r) => (
                   <button
                     key={r.kunci}
                     type="button"
                     onClick={() => void cetakRangkap(r.kunci)}
                     disabled={printerState === "printing"}
-                    className={`flex flex-col items-center justify-center gap-1 rounded-xl py-2.5 text-[11px] font-bold disabled:opacity-60 transition-all ${
+                    className={`flex flex-col items-center justify-center gap-0.5 rounded-xl py-2 text-[11px] font-bold disabled:opacity-60 transition-all ${
                       isMochiPos
-                        ? "border border-emerald-800/30 bg-white text-[#0b3d2e] hover:bg-[#edf8f3]"
+                        ? (r.kunci === "pelanggan" || r.kunci === "kasir") && completedOrder.pelangganData
+                          ? "border-2 border-[#167052] bg-[#edf8f3] text-[#0b3d2e] hover:bg-[#e0f3ea]"
+                          : "border border-emerald-800/30 bg-white text-[#0b3d2e] hover:bg-[#edf8f3]"
                         : "border border-[#232331] bg-white text-[#232331]"
                     }`}
                     title={`Cetak rangkap ${r.label} saja`}
                   >
                     {r.kunci === "dapur" ? <ChefHat size={13} /> : <Printer size={13} />}
                     <span>{r.label}</span>
+                    {r.sub && (
+                      <span className="text-[9px] font-black text-[#167052] leading-none">
+                        ({r.sub})
+                      </span>
+                    )}
                   </button>
                 ))}
               </div>
@@ -4629,6 +4743,384 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
         </div>
       )}
 
+      {/* Drawer Menu Navigasi Lengkap untuk Mobile / Tablet */}
+      {showMobileNavDrawer && (
+        <div className="fixed inset-0 z-50 flex overflow-hidden">
+          {/* Backdrop */}
+          <div
+            className="fixed inset-0 bg-black/60 backdrop-blur-xs transition-opacity"
+            onClick={() => setShowMobileNavDrawer(false)}
+            aria-hidden="true"
+          />
+
+          {/* Drawer Panel */}
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Menu Navigasi POS & Laporan"
+            className="relative flex w-full max-w-[320px] flex-1 flex-col bg-[#07281e] text-emerald-100 shadow-2xl border-r border-emerald-800/80 animate-in slide-in-from-left duration-200"
+          >
+            {/* Drawer Header */}
+            <div className="flex items-center justify-between border-b border-emerald-800/60 p-4 bg-[#0b3d2e]">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white p-0.5 shadow-sm border border-emerald-400/40 overflow-hidden">
+                  <img
+                    src="/logo-mochi.png"
+                    alt={business?.name || "Mochi Cafe"}
+                    className="h-full w-full object-contain"
+                  />
+                </div>
+                <div className="min-w-0">
+                  <h2 className="text-sm font-black text-white truncate">
+                    {business?.name || "Mochi Cafe n Resto"}
+                  </h2>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-black ${
+                      userRole === "owner"
+                        ? "bg-[#c8f53a] text-[#073829]"
+                        : "bg-emerald-800 text-emerald-200"
+                    }`}>
+                      {userRole === "owner" ? "👑 Owner / Pemilik" : "👤 Staf Kasir"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowMobileNavDrawer(false)}
+                className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/10 hover:bg-white/20 text-white transition-colors"
+                aria-label="Tutup menu"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Drawer Body */}
+            <div className="flex-1 overflow-y-auto p-3 space-y-4">
+              {/* POS View Switcher: Katalog Menu vs Denah Meja */}
+              <div className="rounded-2xl bg-white/5 border border-white/10 p-2.5">
+                <p className="text-[10px] font-bold text-emerald-300 uppercase tracking-wider mb-2 px-1">
+                  Tampilan Layar Kasir
+                </p>
+                <div className="grid grid-cols-2 gap-1.5 bg-black/20 p-1 rounded-xl font-mono text-xs">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPosViewMode("catalog");
+                      setShowMobileNavDrawer(false);
+                    }}
+                    className={`py-1.5 px-2 rounded-lg font-black text-center transition-all ${
+                      posViewMode === "catalog"
+                        ? "bg-[#c8f53a] text-[#073829] shadow-xs"
+                        : "text-emerald-200 hover:text-white"
+                    }`}
+                  >
+                    🍲 Katalog Menu
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPosViewMode("floor_plan");
+                      setShowMobileNavDrawer(false);
+                    }}
+                    className={`py-1.5 px-2 rounded-lg font-black text-center transition-all ${
+                      posViewMode === "floor_plan"
+                        ? "bg-[#c8f53a] text-[#073829] shadow-xs"
+                        : "text-emerald-200 hover:text-white"
+                    }`}
+                  >
+                    🪑 Denah Meja {activeTablesCount > 0 ? `(${activeTablesCount})` : ""}
+                  </button>
+                </div>
+              </div>
+
+              {/* OWNER SECTION */}
+              {userRole === "owner" && (
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between px-1">
+                    <span className="text-[10px] font-extrabold text-[#c8f53a] uppercase tracking-wider">
+                      Menu Khusus Owner
+                    </span>
+                    <span className="text-[9px] bg-[#c8f53a]/20 text-[#c8f53a] px-1.5 py-0.5 rounded font-bold">
+                      Akses Pemilik
+                    </span>
+                  </div>
+
+                  <Link
+                    href="/app/pos/reports"
+                    onClick={() => setShowMobileNavDrawer(false)}
+                    className="flex items-center justify-between rounded-xl p-3 bg-emerald-900/80 border border-emerald-500/50 hover:bg-emerald-900 transition-all group"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#c8f53a] text-[#073829] shadow-xs shrink-0">
+                        <TrendingUp size={18} />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs font-black text-white group-hover:text-[#c8f53a] transition-colors truncate">
+                          Laporan Penjualan &amp; Shift
+                        </p>
+                        <p className="text-[10px] text-emerald-300 truncate">
+                          Omzet, HPP, Laba &amp; Rincian Struk
+                        </p>
+                      </div>
+                    </div>
+                    <ChevronRight size={16} className="text-emerald-400 group-hover:translate-x-0.5 transition-transform shrink-0" />
+                  </Link>
+
+                  <Link
+                    href="/app/pos/owner"
+                    onClick={() => setShowMobileNavDrawer(false)}
+                    className="flex items-center justify-between rounded-xl p-3 bg-emerald-900/40 border border-white/10 hover:bg-emerald-900/80 transition-all group"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/10 text-[#c8f53a] shrink-0">
+                        <LayoutDashboard size={18} />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs font-black text-white group-hover:text-[#c8f53a] transition-colors truncate">
+                          Dashboard Owner Utama
+                        </p>
+                        <p className="text-[10px] text-emerald-300 truncate">
+                          Grafik penjualan &amp; menu terlaris
+                        </p>
+                      </div>
+                    </div>
+                    <ChevronRight size={16} className="text-emerald-400 group-hover:translate-x-0.5 transition-transform shrink-0" />
+                  </Link>
+
+                  <Link
+                    href="/app/pos/menu"
+                    onClick={() => setShowMobileNavDrawer(false)}
+                    className="flex items-center justify-between rounded-xl p-3 bg-white/5 border border-white/10 hover:bg-white/10 transition-all group"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/10 text-emerald-200 shrink-0">
+                        <UtensilsCrossed size={18} />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs font-bold text-white group-hover:text-[#c8f53a] transition-colors truncate">
+                          Kelola Menu &amp; Stok
+                        </p>
+                        <p className="text-[10px] text-emerald-300 truncate">
+                          Atur harga, kategori &amp; diskon
+                        </p>
+                      </div>
+                    </div>
+                    <ChevronRight size={16} className="text-emerald-400 group-hover:translate-x-0.5 transition-transform shrink-0" />
+                  </Link>
+                </div>
+              )}
+
+              {/* OPERASIONAL KASIR */}
+              <div className="space-y-1.5">
+                <p className="text-[10px] font-bold text-emerald-300 uppercase tracking-wider px-1">
+                  Operasional Kasir
+                </p>
+
+                <Link
+                  href="/app/pos/riwayat"
+                  onClick={() => setShowMobileNavDrawer(false)}
+                  className="flex items-center justify-between rounded-xl p-3 bg-white/5 border border-white/10 hover:bg-white/10 transition-all group"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/10 text-emerald-200 shrink-0">
+                      <Receipt size={18} />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-white group-hover:text-[#c8f53a] transition-colors truncate">
+                        Riwayat Transaksi
+                      </p>
+                      <p className="text-[10px] text-emerald-300 truncate">
+                        Cetak ulang struk &amp; refund kasir
+                      </p>
+                    </div>
+                  </div>
+                  <ChevronRight size={16} className="text-emerald-400 group-hover:translate-x-0.5 transition-transform shrink-0" />
+                </Link>
+
+                <Link
+                  href="/app/pos/kitchen"
+                  onClick={() => setShowMobileNavDrawer(false)}
+                  className="flex items-center justify-between rounded-xl p-3 bg-white/5 border border-white/10 hover:bg-white/10 transition-all group"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/10 text-emerald-200 shrink-0">
+                      <ChefHat size={18} />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-white group-hover:text-[#c8f53a] transition-colors truncate">
+                        Layar Dapur (KDS)
+                      </p>
+                      <p className="text-[10px] text-emerald-300 truncate">
+                        Monitor antrean masak &amp; barista
+                      </p>
+                    </div>
+                  </div>
+                  <ChevronRight size={16} className="text-emerald-400 group-hover:translate-x-0.5 transition-transform shrink-0" />
+                </Link>
+
+                <Link
+                  href="/app/pos/station"
+                  onClick={() => setShowMobileNavDrawer(false)}
+                  className="flex items-center justify-between rounded-xl p-3 bg-white/5 border border-white/10 hover:bg-white/10 transition-all group"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/10 text-emerald-200 shrink-0">
+                      <MonitorSmartphone size={18} />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-white group-hover:text-[#c8f53a] transition-colors truncate">
+                        Kasir Tetap / Kios
+                      </p>
+                      <p className="text-[10px] text-emerald-300 truncate">
+                        Mode layar kasir counter
+                      </p>
+                    </div>
+                  </div>
+                  <ChevronRight size={16} className="text-emerald-400 group-hover:translate-x-0.5 transition-transform shrink-0" />
+                </Link>
+              </div>
+
+              {/* AKSI CEPAT KASIR */}
+              <div className="space-y-1.5">
+                <p className="text-[10px] font-bold text-emerald-300 uppercase tracking-wider px-1">
+                  Aksi Cepat Kasir
+                </p>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowMobileNavDrawer(false);
+                      setShowShiftModal(true);
+                    }}
+                    className="flex items-center gap-2 rounded-xl bg-white/5 border border-white/10 p-2.5 text-left hover:bg-white/10 transition-colors"
+                  >
+                    <Clock size={16} className="text-[#c8f53a] shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-[11px] font-bold text-white truncate">Kelola Shift</p>
+                      <p className="text-[9px] text-emerald-300 truncate">{activeShift ? "Tutup Shift" : "Buka Shift"}</p>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowMobileNavDrawer(false);
+                      setCashMovementType("cash_out");
+                      setShowCashMovementModal(true);
+                    }}
+                    className="flex items-center gap-2 rounded-xl bg-white/5 border border-white/10 p-2.5 text-left hover:bg-white/10 transition-colors"
+                  >
+                    <Banknote size={16} className="text-amber-400 shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-[11px] font-bold text-white truncate">Kas Keluar</p>
+                      <p className="text-[9px] text-emerald-300 truncate">Catat Belanja Ops</p>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowMobileNavDrawer(false);
+                      setShowTableQrModal(true);
+                    }}
+                    className="flex items-center gap-2 rounded-xl bg-white/5 border border-white/10 p-2.5 text-left hover:bg-white/10 transition-colors"
+                  >
+                    <QrCode size={16} className="text-emerald-200 shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-[11px] font-bold text-white truncate">QR Meja</p>
+                      <p className="text-[9px] text-emerald-300 truncate">Cetak Barcode</p>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowMobileNavDrawer(false);
+                      setShowBellModal(true);
+                    }}
+                    className="flex items-center gap-2 rounded-xl bg-white/5 border border-white/10 p-2.5 text-left hover:bg-white/10 transition-colors"
+                  >
+                    <Bell size={16} className="text-emerald-200 shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-[11px] font-bold text-white truncate">Bel Kasir</p>
+                      <p className="text-[9px] text-emerald-300 truncate">{soundEnabled ? "Aktif" : "Mati"}</p>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowMobileNavDrawer(false);
+                      setShowMemberScannerModal(true);
+                    }}
+                    className="flex items-center gap-2 rounded-xl bg-white/5 border border-white/10 p-2.5 text-left hover:bg-white/10 transition-colors"
+                  >
+                    <Camera size={16} className="text-[#c8f53a] shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-[11px] font-bold text-white truncate">Scan Member</p>
+                      <p className="text-[9px] text-emerald-300 truncate">Kamera Barcode</p>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowMobileNavDrawer(false);
+                      setShowMemberQrModal(true);
+                    }}
+                    className="flex items-center gap-2 rounded-xl bg-white/5 border border-white/10 p-2.5 text-left hover:bg-white/10 transition-colors"
+                  >
+                    <QrCode size={16} className="text-[#c8f53a] shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-[11px] font-bold text-white truncate">Daftar Member</p>
+                      <p className="text-[9px] text-emerald-300 truncate">QR &amp; Link Toko</p>
+                    </div>
+                  </button>
+                </div>
+              </div>
+
+              {/* PORTAL KAEL */}
+              <div className="pt-2 border-t border-emerald-800/60">
+                <Link
+                  href="/app"
+                  onClick={() => setShowMobileNavDrawer(false)}
+                  className="flex items-center justify-between rounded-xl p-3 bg-white/5 hover:bg-white/10 border border-white/5 transition-all group"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white/10 text-emerald-200 shrink-0">
+                      <Home size={16} />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-white group-hover:text-[#c8f53a] transition-colors truncate">
+                        Portal Utama KAEL
+                      </p>
+                      <p className="text-[10px] text-emerald-300 truncate">
+                        Kembali ke menu aplikasi
+                      </p>
+                    </div>
+                  </div>
+                  <ChevronRight size={16} className="text-emerald-400 group-hover:translate-x-0.5 transition-transform shrink-0" />
+                </Link>
+              </div>
+            </div>
+
+            {/* Drawer Footer */}
+            <div className="p-3 border-t border-emerald-800/60 bg-[#0b3d2e] flex items-center justify-between">
+              <span className="text-[11px] text-emerald-300">
+                KAEL POS v2.4
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowMobileNavDrawer(false)}
+                className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition-colors"
+              >
+                Tutup Menu
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -317,3 +317,24 @@ export async function recordAttendanceAction(data: { direction: "in" | "out"; si
   if (!entry) return fail(data.direction === "in" ? "Kamu masih tercatat masuk, selesaikan absensi pulang dulu." : "Belum ada absensi masuk yang bisa ditutup.");
   revalidatePath("/app/hr"); return ok(null);
 }
+
+export async function saveStaffSopAction(data: {
+  sopType: "opening" | "closing";
+  items: Array<{ id: string; label: string; checked: boolean }>;
+  notes?: string;
+}): Promise<OperationResult> {
+  const session = await requireStaff();
+  if (!session.businessId) return fail("Akun belum terhubung ke usaha.");
+  const locked = await moduleLock(session.businessId, "hr", "write");
+  if (locked) return fail(locked);
+  if (!["opening", "closing"].includes(data.sopType)) return fail("Jenis SOP tidak valid.");
+  if (!Array.isArray(data.items)) return fail("Data checklist SOP tidak valid.");
+
+  await db.saveStaffSopChecklist(session.businessId, session.userId, {
+    sop_type: data.sopType,
+    items: data.items,
+    notes: data.notes?.trim() || null,
+  });
+  return ok(null);
+}
+

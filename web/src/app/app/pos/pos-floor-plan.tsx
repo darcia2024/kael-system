@@ -18,6 +18,7 @@ import {
   Search,
   LayoutGrid,
   Receipt,
+  Unlock,
 } from "lucide-react";
 import type { MenuItem, Order, OrderItem, TableSessionSummary } from "@/lib/types";
 import { formatRupiah, formatBusinessDateTime } from "@/lib/formatters";
@@ -86,6 +87,7 @@ export default function PosFloorPlan({
   onPrintCombinedTableBill,
   onSettleTable,
   onPrintSplitBill,
+  onOpenCashDrawer,
   onRefresh,
 }: {
   orders: Antrean[];
@@ -113,6 +115,8 @@ export default function PosFloorPlan({
     totalBagian: number,
     bagianKe: number,
   ) => Promise<void> | void;
+  /** Buka laci kasir secara manual */
+  onOpenCashDrawer?: () => void;
   onRefresh?: () => void;
 }) {
   const [selectedTableNo, setSelectedTableNo] = useState<string | null>(null);
@@ -842,6 +846,18 @@ export default function PosFloorPlan({
                       </button>
                     ))}
                   </div>
+                )}
+
+                {onOpenCashDrawer && (
+                  <button
+                    type="button"
+                    onClick={onOpenCashDrawer}
+                    className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-amber-300 bg-amber-50 hover:bg-amber-100 py-2.5 text-xs font-black text-amber-950 transition-all shadow-xs"
+                    title="Kirim sinyal perintah pembuka laci kasir ke printer thermal"
+                  >
+                    <Unlock size={14} />
+                    <span>🔓 Buka Laci Kasir (Cash Drawer)</span>
+                  </button>
                 )}
 
                 {/*

@@ -74,6 +74,13 @@ export default async function PersonalAttendancePage({
       new Date(a.check_in_at).toDateString() === new Date().toDateString()
   );
 
+  const [monthlyAttendance, sopChecklists, leaveRequests, paystubs] = await Promise.all([
+    db.getStaffMonthlyAttendanceSummary(staff.business_id, staff.id),
+    db.getStaffSopChecklists(staff.business_id, staff.id),
+    db.getLeaveRequestsForUser(staff.business_id, staff.id),
+    db.getStaffPaystubs(staff.business_id, staff.id),
+  ]);
+
   return (
     <PersonalAttendanceClient
       staff={{ id: staff.id, name: staff.name }}
@@ -82,7 +89,12 @@ export default async function PersonalAttendancePage({
       policy={hr.policy as { attendance_require_selfie: boolean; attendance_require_location: boolean }}
       initialIsAuthenticated={initialIsAuthenticated}
       todayAttendance={todayAttendance}
+      monthlyAttendance={monthlyAttendance}
+      initialSopChecklists={sopChecklists as any[]}
+      initialLeaveRequests={leaveRequests as any[]}
+      initialPaystubs={paystubs as any[]}
       themeClassName={mochiThemeClass(business)}
     />
   );
 }
+

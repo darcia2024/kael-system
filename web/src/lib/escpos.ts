@@ -31,6 +31,27 @@ export const rataTengah = () => new Uint8Array([ESC, 0x61, 1]);
 /** Memotong kertas. */
 export const POTONG = new Uint8Array([GS, 0x56, 0x00]);
 
+/**
+ * Perintah buka laci kasir (Cash Drawer Kick Pulse).
+ *
+ * Mengirim pulsa ke Pin 2 (m=0) dan Pin 5 (m=1) konektor RJ11 port DK,
+ * format biner dan ASCII, serta DLE DC4 real-time.
+ * Ini memastikan kompatibilitas dengan semua merek laci kasir (Epson,
+ * Xprinter, Kassen, Panda, Iware, Matrix Point, Janz, dll).
+ */
+export const BUKA_LACI = new Uint8Array([
+  // ESC p 0 60ms 200ms (Pin 2 RJ11)
+  ESC, 0x70, 0x00, 0x1e, 0x64,
+  // ESC p 1 60ms 200ms (Pin 5 RJ11)
+  ESC, 0x70, 0x01, 0x1e, 0x64,
+  // ESC p '0' (ASCII)
+  ESC, 0x70, 0x30, 0x1e, 0x64,
+  // ESC p '1' (ASCII)
+  ESC, 0x70, 0x31, 0x1e, 0x64,
+  // DLE DC4 real-time kick
+  0x10, 0x14, 0x01, 0x00, 0x01,
+]);
+
 /** Teks biasa menjadi byte. */
 export function teks(isi: string): Uint8Array {
   return new TextEncoder().encode(isi);

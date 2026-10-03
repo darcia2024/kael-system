@@ -69,6 +69,7 @@ import type {
   Shift,
   ShiftReport,
   ShiftCashMovement,
+  ShiftFullDetail,
   Order,
   OrderItem,
   Refund,
@@ -4427,6 +4428,144 @@ export const db = {
     `) as unknown as ShiftCashMovement[];
   },
 
+  async getShiftFullDetail(businessId: string, shiftId: string): Promise<ShiftFullDetail | null> {
+    const shifts = await sql`
+      SELECT s.*,
+        COALESCE(NULLIF(TRIM(u.name), ''), 'Kasir') AS staff_name,
+        COALESCE(o.orders_count, 0)::int AS orders_count,
+        COALESCE(o.cash_sales, 0) - COALESCE(r.cash_refunds, 0) AS cash_sales,
+        COALESCE(o.total_sales, 0) - COALESCE(r.total_refunds, 0) AS total_sales,
+        COALESCE(cm.cash_out, 0)::bigint AS cash_out,
+        COALESCE(cm.cash_in, 0)::bigint AS cash_in
+      FROM shifts s
+      LEFT JOIN users u ON u.id = s.opened_by
+      LEFT JOIN (
+        SELECT shift_id,
+          COUNT(*)::int AS orders_count,
+          SUM(total) FILTER (WHERE payment_method = 'cash') AS cash_sales,
+          SUM(total) AS total_sales
+        FROM orders WHERE business_id = ${businessId} AND status = 'paid' AND shift_id = ${shiftId}
+        GROUP BY shift_id
+      ) o ON o.shift_id = s.id
+      LEFT JOIN (
+        SELECT rf.shift_id,
+          SUM(rf.amount) FILTER (WHERE rf.method = 'cash') AS cash_refunds,
+          SUM(rf.amount) AS total_refunds
+        FROM refunds rf JOIN orders ord ON ord.id = rf.order_id
+        WHERE ord.business_id = ${businessId} AND rf.shift_id = ${shiftId}
+        GROUP BY rf.shift_id
+      ) r ON r.shift_id = s.id
+      LEFT JOIN (
+        SELECT shift_id,
+          COALESCE(SUM(amount) FILTER (WHERE type = 'cash_out'), 0) AS cash_out,
+          COALESCE(SUM(amount) FILTER (WHERE type = 'cash_in'), 0) AS cash_in
+        FROM shift_cash_movements
+        WHERE business_id = ${businessId} AND shift_id = ${shiftId}
+        GROUP BY shift_id
+      ) cm ON cm.shift_id = s.id
+      WHERE s.id = ${shiftId} AND s.business_id = ${businessId}
+    `;
+
+    const shift = one<ShiftReport>(shifts);
+    if (!shift) return null;
+
+    const movements = await this.getShiftCashMovements(businessId, shiftId);
+
+    // Ambil pesanan-pesanan yang tercatat dalam shift ini
+    const rawOrders = (await sql`
+      SELECT o.*, COALESCE(r.refund_total, 0) AS refund_total
+      FROM orders o
+      LEFT JOIN (
+        SELECT order_id, SUM(amount) AS refund_total FROM refunds GROUP BY order_id
+      ) r ON r.order_id = o.id
+      WHERE o.business_id = ${businessId} AND o.shift_id = ${shiftId} AND o.status = 'paid'
+      ORDER BY o.created_at ASC
+    `) as unknown as Order[];
+
+    let ordersWithItems: Order[] = [];
+    if (rawOrders.length > 0) {
+      const orderIds = rawOrders.map((o) => o.id);
+      const allItems = (await sql`
+        SELECT * FROM order_items
+        WHERE order_id = ANY(${orderIds}) AND cancelled_at IS NULL
+        ORDER BY id ASC
+      `) as unknown as OrderItem[];
+
+      const itemsByOrder = new Map<string, OrderItem[]>();
+      for (const item of allItems) {
+        const list = itemsByOrder.get(item.order_id) || [];
+        list.push({
+          ...item,
+          price_snapshot: num(item.price_snapshot),
+          cost_snapshot: item.cost_snapshot != null ? num(item.cost_snapshot) : null,
+          qty: num(item.qty),
+          subtotal: num(item.subtotal),
+        });
+        itemsByOrder.set(item.order_id, list);
+      }
+
+      ordersWithItems = rawOrders.map((o) => ({
+        ...o,
+        subtotal: num(o.subtotal),
+        discount: num(o.discount),
+        tax: num(o.tax),
+        service_charge: num(o.service_charge),
+        delivery_fee: num(o.delivery_fee),
+        total: num(o.total),
+        refund_total: num(o.refund_total),
+        cash_given: o.cash_given != null ? num(o.cash_given) : null,
+        cash_change: o.cash_change != null ? num(o.cash_change) : null,
+        items: itemsByOrder.get(o.id) || [],
+      }));
+    }
+
+    let cashSales = 0;
+    let cashCount = 0;
+    let qrisSales = 0;
+    let qrisCount = 0;
+    let transferSales = 0;
+    let transferCount = 0;
+
+    for (const ord of ordersWithItems) {
+      const tot = Number(ord.total || 0);
+      if (ord.payment_method === "cash") {
+        cashSales += tot;
+        cashCount += 1;
+      } else if (ord.payment_method === "qris") {
+        qrisSales += tot;
+        qrisCount += 1;
+      } else if (ord.payment_method === "transfer") {
+        transferSales += tot;
+        transferCount += 1;
+      }
+    }
+
+    const totalCashOut = movements
+      .filter((m) => m.type === "cash_out")
+      .reduce((sum, m) => sum + Number(m.amount || 0), 0);
+    const totalCashIn = movements
+      .filter((m) => m.type === "cash_in")
+      .reduce((sum, m) => sum + Number(m.amount || 0), 0);
+
+    return {
+      shift,
+      movements,
+      orders: ordersWithItems,
+      stats: {
+        totalSales: Number(shift.total_sales || 0),
+        totalOrders: ordersWithItems.length,
+        cashSales,
+        cashCount,
+        qrisSales,
+        qrisCount,
+        transferSales,
+        transferCount,
+        totalCashOut,
+        totalCashIn,
+      },
+    };
+  },
+
   async deleteShiftCashMovement(
     businessId: string,
     shiftId: string,
@@ -4732,6 +4871,23 @@ export const db = {
     const key = normalizeTableKey(tableNo);
     if (!key) return null;
 
+    // Tutup sesi lama yang menggantung (>12 jam) dan sudah lunas agar meja bisa dibuka kembali
+    await sql`
+      UPDATE table_sessions s
+      SET status = 'closed', closed_at = NOW(), note = COALESCE(note || ' (Otomatis ditutup: sesi kemarin sudah lunas)', 'Otomatis ditutup: sesi kemarin sudah lunas')
+      WHERE s.business_id = ${businessId}
+        AND s.table_key = ${key}
+        AND s.status = 'open'
+        AND s.opened_at < NOW() - INTERVAL '12 hours'
+        AND NOT EXISTS (
+          SELECT 1 FROM orders o
+          WHERE o.table_session_id = s.id
+            AND o.business_id = ${businessId}
+            AND o.status <> 'cancelled'
+            AND o.payment_status = 'pending'
+        )
+    `;
+
     const inserted = one<TableSession>(await sql`
       INSERT INTO table_sessions ${sql({
         business_id: businessId,
@@ -4934,10 +5090,46 @@ export const db = {
   },
 
   /**
+   * Mengambil semua pesanan dalam satu sesi kunjungan meja beserta rincian itemnya.
+   * Dipakai untuk menghitung tagihan gabungan meja secara akurat langsung dari database.
+   */
+  async getTableSessionOrders(businessId: string, sessionId: string) {
+    const orders = (await sql`
+      SELECT * FROM orders
+      WHERE table_session_id = ${sessionId}
+        AND business_id = ${businessId}
+        AND status <> 'cancelled'
+      ORDER BY created_at
+    `) as unknown as Order[];
+    return Promise.all(
+      orders.map(async (o) => ({
+        ...o,
+        items: await this.getOrderItems(o.id),
+      })),
+    );
+  },
+
+  /**
    * Denah meja kasir. Yang menentukan sebuah meja terisi adalah ADA SESI
    * TERBUKA, bukan ada pesanan yang belum selesai dimasak.
    */
   async getTableSessionSummaries(businessId: string): Promise<TableSessionSummary[]> {
+    // Bersihkan sesi meja dari hari sebelumnya (>12 jam) yang semua tagihannya sudah lunas
+    await sql`
+      UPDATE table_sessions s
+      SET status = 'closed', closed_at = NOW(), note = COALESCE(note || ' (Otomatis ditutup: sesi kemarin sudah lunas)', 'Otomatis ditutup: sesi kemarin sudah lunas')
+      WHERE s.business_id = ${businessId}
+        AND s.status = 'open'
+        AND s.opened_at < NOW() - INTERVAL '12 hours'
+        AND NOT EXISTS (
+          SELECT 1 FROM orders o
+          WHERE o.table_session_id = s.id
+            AND o.business_id = ${businessId}
+            AND o.status <> 'cancelled'
+            AND o.payment_status = 'pending'
+        )
+    `;
+
     return (await sql`
       SELECT s.*,
         COALESCE(a.order_count, 0)::int AS order_count,
@@ -8644,6 +8836,125 @@ export const db = {
 
   async getLeaveRequestsForUser(businessId: string, userId: string) {
     return sql`SELECT * FROM leave_requests WHERE business_id = ${businessId} AND user_id = ${userId} ORDER BY created_at DESC LIMIT 50`;
+  },
+
+  async getStaffMonthlyAttendanceSummary(businessId: string, userId: string) {
+    const records = await sql<any[]>`
+      SELECT 
+        id, 
+        check_in_at, 
+        check_out_at, 
+        check_in_selfie_url, 
+        check_out_selfie_url, 
+        method,
+        COALESCE(ROUND(EXTRACT(EPOCH FROM (COALESCE(check_out_at, NOW()) - check_in_at)) / 60)::int, 0) AS duration_minutes
+      FROM attendance_records 
+      WHERE business_id = ${businessId} 
+        AND user_id = ${userId} 
+        AND check_in_at >= NOW() - INTERVAL '30 days'
+      ORDER BY check_in_at DESC 
+      LIMIT 60
+    `;
+
+    const summaryRow = one<{
+      total_days: number;
+      total_hours: number;
+      completed_shifts: number;
+    }>(
+      await sql`
+        SELECT 
+          COUNT(DISTINCT DATE(check_in_at))::int AS total_days,
+          COALESCE(ROUND(SUM(EXTRACT(EPOCH FROM (COALESCE(check_out_at, NOW()) - check_in_at)) / 3600)::numeric, 1), 0)::float AS total_hours,
+          COUNT(id) FILTER (WHERE check_out_at IS NOT NULL)::int AS completed_shifts
+        FROM attendance_records
+        WHERE business_id = ${businessId}
+          AND user_id = ${userId}
+          AND check_in_at >= NOW() - INTERVAL '30 days'
+      `,
+    );
+
+    return {
+      total_days: summaryRow?.total_days ?? 0,
+      total_hours: summaryRow?.total_hours ?? 0,
+      completed_shifts: summaryRow?.completed_shifts ?? 0,
+      records: records as any[],
+    };
+  },
+
+  async getStaffSopChecklists(businessId: string, userId: string, dateStr?: string) {
+    if (dateStr) {
+      return sql<any[]>`
+        SELECT * FROM staff_sop_checklists 
+        WHERE business_id = ${businessId} 
+          AND user_id = ${userId} 
+          AND date = ${dateStr}::date
+      `;
+    }
+    return sql<any[]>`
+      SELECT * FROM staff_sop_checklists 
+      WHERE business_id = ${businessId} 
+        AND user_id = ${userId} 
+        AND date = CURRENT_DATE
+    `;
+  },
+
+  async saveStaffSopChecklist(
+    businessId: string,
+    userId: string,
+    data: {
+      sop_type: "opening" | "closing";
+      items: any[];
+      notes?: string | null;
+    },
+  ) {
+    const isAllChecked =
+      Array.isArray(data.items) &&
+      data.items.length > 0 &&
+      data.items.every((it: any) => Boolean(it.checked));
+    const completedAt = isAllChecked ? new Date().toISOString() : null;
+    const jsonItems = JSON.stringify(data.items);
+
+    return one(
+      await sql`
+        INSERT INTO staff_sop_checklists (
+          business_id, user_id, sop_type, date, items, completed_at, notes, updated_at
+        ) VALUES (
+          ${businessId}, ${userId}, ${data.sop_type}, CURRENT_DATE, ${jsonItems}::jsonb, ${completedAt}, ${data.notes ?? null}, NOW()
+        )
+        ON CONFLICT (business_id, user_id, sop_type, date)
+        DO UPDATE SET
+          items = EXCLUDED.items,
+          completed_at = EXCLUDED.completed_at,
+          notes = EXCLUDED.notes,
+          updated_at = NOW()
+        RETURNING *
+      `,
+    );
+  },
+
+  async getStaffPaystubs(businessId: string, userId: string) {
+    return sql<any[]>`
+      SELECT 
+        l.id,
+        p.id AS period_id,
+        p.period_start,
+        p.period_end,
+        p.status AS period_status,
+        l.base_pay::int,
+        l.overtime_pay::int,
+        l.incentive_pay::int,
+        l.commission_pay::int,
+        l.deduction::int,
+        (l.base_pay + l.overtime_pay + l.incentive_pay + l.commission_pay - l.deduction)::int AS total_pay,
+        l.note
+      FROM payroll_lines l
+      JOIN payroll_periods p ON p.id = l.payroll_period_id
+      WHERE p.business_id = ${businessId}
+        AND l.user_id = ${userId}
+        AND p.status IN ('approved', 'paid')
+      ORDER BY p.period_end DESC
+      LIMIT 24
+    `;
   },
 
   async createAttendanceRecord(

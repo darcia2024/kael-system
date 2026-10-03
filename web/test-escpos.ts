@@ -7,7 +7,7 @@
  *
  *     npx tsx test-escpos.ts
  */
-import { raster, qrKeRaster, gabung, teks, barisKosong, INIT, POTONG } from "./src/lib/escpos";
+import { raster, qrKeRaster, gabung, teks, barisKosong, INIT, POTONG, BUKA_LACI } from "./src/lib/escpos";
 
 let lulus = 0;
 let gagal = 0;
@@ -93,6 +93,14 @@ console.log("\n5. Perakitan struk utuh");
 
   const total = INIT.length + teks("MOCHI CAFE\n").length + qr.length + 3 + POTONG.length;
   cek("tidak ada byte yang hilang saat digabung", struk.length === total, `${struk.length} vs ${total}`);
+}
+
+console.log("\n6. Perintah Buka Laci Kasir (BUKA_LACI)");
+{
+  cek("BUKA_LACI tidak kosong", BUKA_LACI.length > 0);
+  cek("memuat ESC p 0 (Pin 2 RJ11)", BUKA_LACI[0] === 0x1b && BUKA_LACI[1] === 0x70 && BUKA_LACI[2] === 0x00);
+  cek("memuat ESC p 1 (Pin 5 RJ11)", BUKA_LACI[5] === 0x1b && BUKA_LACI[6] === 0x70 && BUKA_LACI[7] === 0x01);
+  cek("memuat DLE DC4 real-time kick", BUKA_LACI[20] === 0x10 && BUKA_LACI[21] === 0x14);
 }
 
 console.log(`\n=== ${lulus} LULUS, ${gagal} GAGAL ===\n`);

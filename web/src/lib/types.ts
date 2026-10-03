@@ -750,6 +750,24 @@ export interface ShiftReport extends Shift {
   cash_in: number;
 }
 
+export interface ShiftFullDetail {
+  shift: ShiftReport;
+  movements: ShiftCashMovement[];
+  orders: Order[];
+  stats: {
+    totalSales: number;
+    totalOrders: number;
+    cashSales: number;
+    cashCount: number;
+    qrisSales: number;
+    qrisCount: number;
+    transferSales: number;
+    transferCount: number;
+    totalCashOut: number;
+    totalCashIn: number;
+  };
+}
+
 export interface Order {
   id: string;
   business_id: string;
@@ -1059,6 +1077,64 @@ export interface DeletableTestData {
   shifts: DeletableShift[];
 }
 
+export interface StaffSopItem {
+  id: string;
+  label: string;
+  checked: boolean;
+}
+
+export interface StaffSopChecklist {
+  id?: string;
+  sop_type: "opening" | "closing";
+  date: string;
+  items: StaffSopItem[];
+  completed_at: string | null;
+  notes?: string | null;
+}
+
+export interface StaffAttendanceRecord {
+  id: string;
+  check_in_at: string;
+  check_out_at: string | null;
+  check_in_selfie_url?: string | null;
+  check_out_selfie_url?: string | null;
+  method?: string;
+  duration_minutes?: number;
+}
+
+export interface StaffAttendanceMonthlySummary {
+  total_days: number;
+  total_hours: number;
+  completed_shifts: number;
+  records: StaffAttendanceRecord[];
+}
+
+export interface StaffPaystub {
+  id: string;
+  period_id: string;
+  period_start: string;
+  period_end: string;
+  period_status: "approved" | "paid";
+  base_pay: number;
+  overtime_pay: number;
+  incentive_pay: number;
+  commission_pay: number;
+  deduction: number;
+  total_pay: number;
+  note: string | null;
+}
+
+export interface StaffLeaveRequest {
+  id: string;
+  leave_type: "leave" | "sick" | "permission" | "overtime";
+  starts_at: string;
+  ends_at: string;
+  reason: string;
+  status: "pending" | "approved" | "rejected";
+  created_at: string;
+}
+
 // -----------------------------------------------------------------------------
 // INITIAL SEED DATA
 // -----------------------------------------------------------------------------
+
