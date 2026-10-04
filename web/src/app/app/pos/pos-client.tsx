@@ -768,27 +768,65 @@ export default function PosClient({
     bagian: "dapur" | "kasir" | "pelanggan" | "semua" = "semua",
     forceOpenCashDrawer?: boolean,
   ) => {
-    const combinedItems: {
-      name_snapshot: string;
-      qty: number;
-      unit_price_snapshot?: number;
-      subtotal?: number;
-      note?: string | null;
-    }[] = [];
+    const itemMap = new Map<
+      string,
+      {
+        name_snapshot: string;
+        qty: number;
+        unit_price_snapshot: number;
+        subtotal: number;
+        notes: string[];
+      }
+    >();
+
+    let combinedSubtotal = 0;
+    let combinedDiscount = 0;
+    let combinedTax = 0;
+    let combinedServiceCharge = 0;
+    let combinedDeliveryFee = 0;
 
     table.orders.forEach((ord) => {
+      combinedSubtotal += Number(ord.subtotal) || 0;
+      combinedDiscount += Number(ord.discount) || 0;
+      combinedTax += Number(ord.tax) || 0;
+      combinedServiceCharge += Number(ord.service_charge) || 0;
+      combinedDeliveryFee += Number(ord.delivery_fee) || 0;
+
       ord.items.forEach((item) => {
-        combinedItems.push({
-          name_snapshot: item.name_snapshot,
-          qty: item.qty,
-          unit_price_snapshot: Number(item.price_snapshot),
-          subtotal: Number(item.subtotal),
-          note: item.note ? `[#${ord.order_no}] ${item.note}` : `[#${ord.order_no}]`,
-        });
+        const price =
+          Number(item.price_snapshot) ||
+          (item.qty > 0 ? Math.round(Number(item.subtotal) / item.qty) : 0);
+        const key = `${item.name_snapshot}:::${price}`;
+        const existing = itemMap.get(key);
+        if (existing) {
+          existing.qty += item.qty;
+          existing.subtotal += Number(item.subtotal);
+          if (item.note) existing.notes.push(item.note);
+        } else {
+          itemMap.set(key, {
+            name_snapshot: item.name_snapshot,
+            qty: item.qty,
+            unit_price_snapshot: price,
+            subtotal: Number(item.subtotal),
+            notes: item.note ? [item.note] : [],
+          });
+        }
       });
     });
 
+    const combinedItems = Array.from(itemMap.values()).map((entry) => ({
+      name_snapshot: entry.name_snapshot,
+      qty: entry.qty,
+      unit_price_snapshot: entry.unit_price_snapshot,
+      subtotal: entry.subtotal,
+      note: entry.notes.length > 0 ? entry.notes.join("; ") : undefined,
+    }));
+
     const firstOrder = table.orders[0];
+    const totalBill =
+      table.totalBill ||
+      combinedSubtotal - combinedDiscount + combinedTax + combinedServiceCharge + combinedDeliveryFee;
+
     void handlePrintThreePlyBluetooth(
       {
         order_no: `MEJA-${table.tableNo}`,
@@ -796,9 +834,28 @@ export default function PosClient({
         service_type: "dine_in",
         created_at: firstOrder?.created_at || new Date().toISOString(),
         items: combinedItems,
-        total: table.totalBill,
+        subtotal: combinedSubtotal > 0 ? combinedSubtotal : totalBill,
+        discount: combinedDiscount,
+        tax: combinedTax,
+        service_charge: combinedServiceCharge,
+        delivery_fee: combinedDeliveryFee,
+        total: totalBill,
         payment_method: table.hasUnpaid ? "Belum Lunas" : "Lunas",
-        customer_name: firstOrder?.delivery_name || `Tamu Meja ${table.tableNo}`,
+        customer_name: firstOrder?.customer_name || firstOrder?.delivery_name || `Tamu Meja ${table.tableNo}`,
+        pelangganData: {
+          items: combinedItems.map((i) => ({
+            name: i.name_snapshot,
+            qty: i.qty,
+            price: i.unit_price_snapshot,
+            note: i.note,
+          })),
+          subtotal: combinedSubtotal > 0 ? combinedSubtotal : totalBill,
+          discount: combinedDiscount,
+          tax: combinedTax,
+          serviceCharge: combinedServiceCharge,
+          deliveryFee: combinedDeliveryFee,
+          total: totalBill,
+        },
       },
       bagian,
       undefined,
@@ -1836,7 +1893,7 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
       cashGiven: rincian.cashGiven,
       cashChange: rincian.cashChange,
       customerName: orderData.customer_name,
-      pelangganData: customOrder?.pelangganData || completedOrder?.pelangganData,
+      pelangganData: customOrder ? customOrder.pelangganData : completedOrder?.pelangganData,
       bagian,
       bagiTagihan,
     });
