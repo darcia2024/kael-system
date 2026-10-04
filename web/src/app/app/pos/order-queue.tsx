@@ -31,6 +31,7 @@ import {
 } from "@/lib/pos-engine";
 import { formatRupiah } from "@/lib/formatters";
 import type { Order, OrderItem, MenuItem } from "@/lib/types";
+import { normalizeTableKey } from "@/lib/table-key";
 import PosReplaceRefundModal from "./pos-replace-refund-modal";
 import PosTerimaTunaiModal from "./pos-terima-tunai";
 
@@ -298,6 +299,21 @@ export default function OrderQueue({
   const menunggu = activeOrders.filter((o) => o.payment_status === "pending");
   const diproses = activeOrders.filter((o) => o.payment_status === "paid");
 
+  // Kelompokkan pesanan meja aktif untuk mendeteksi pesanan awal & tambahan meja
+  const tableOrdersMap = useMemo(() => {
+    const map = new Map<string, Antrean[]>();
+    activeOrders.forEach((ord) => {
+      if (ord.service_type === "dine_in" && ord.table_no) {
+        const key = normalizeTableKey(ord.table_no);
+        if (!key) return;
+        const list = map.get(key) || [];
+        list.push(ord);
+        map.set(key, list);
+      }
+    });
+    return map;
+  }, [activeOrders]);
+
   return (
     <div className={`fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 backdrop-blur-xs ${
       isMochi ? "bg-[#07281e]/60" : "bg-[#232331]/60"
@@ -381,6 +397,12 @@ export default function OrderQueue({
             const menungguBayar = o.payment_status === "pending";
             const busy = sibuk === o.id;
 
+            const tableKey = o.service_type === "dine_in" && o.table_no ? normalizeTableKey(o.table_no) : null;
+            const tableOrders = tableKey ? (tableOrdersMap.get(tableKey) || []) : [o];
+            const isTableAddon = tableOrders.length > 1;
+            const tableTotal = tableOrders.reduce((sum, ord) => sum + Number(ord.total), 0);
+            const isInitialOrder = tableOrders[0]?.id === o.id;
+
             return (
               <div
                 key={o.id}
@@ -418,6 +440,21 @@ export default function OrderQueue({
                     </p>
                   </div>
                 </div>
+
+                {isTableAddon && (
+                  <div className="rounded-xl border border-emerald-300 bg-[#edf8f3] p-2.5 text-xs text-[#0b3d2e] space-y-1">
+                    <div className="flex items-center justify-between font-black">
+                      <span>🏷️ Meja {o.table_no}: {isInitialOrder ? "Pesanan Awal" : "Pesanan Tambahan"}</span>
+                      <span className="text-[10px] bg-emerald-200 text-emerald-900 px-2 py-0.5 rounded-full font-bold">
+                        {tableOrders.length} Pesanan Terkait
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between font-extrabold text-[11px] text-[#167052] border-t border-emerald-200/80 pt-1 mt-0.5">
+                      <span>Total Gabungan Meja {o.table_no}:</span>
+                      <span className="font-black text-sm">{formatRupiah(tableTotal)}</span>
+                    </div>
+                  </div>
+                )}
 
                 <ul className="font-mono text-[11px] space-y-1">
                   {o.items.map((i) => (
@@ -702,7 +739,7 @@ export default function OrderQueue({
                       title="Cetak 3 rangkap sekaligus (Dapur + Kasir + Pelanggan)"
                     >
                       <Printer size={13} />
-                      <span>Cetak 3 Rangkap 🖨️</span>
+                      <span>{isTableAddon ? "Cetak 3 Rangkap (Kasir & Tamu Gabung) 🖨️" : "Cetak 3 Rangkap 🖨️"}</span>
                     </button>
                   )}
                   {/*
@@ -762,9 +799,9 @@ export default function OrderQueue({
                 {(onPrintThreePly || onPrintKitchenTicket) && (
                   <div className="grid grid-cols-3 gap-1.5 pt-1.5">
                     {([
-                      { kunci: "pelanggan", label: "Pelanggan" },
-                      { kunci: "kasir", label: "Kasir" },
-                      { kunci: "dapur", label: "Dapur" },
+                      { kunci: "pelanggan", label: isTableAddon ? "Pelanggan (Gabung)" : "Pelanggan" },
+                      { kunci: "kasir", label: isTableAddon ? "Kasir (Gabung)" : "Kasir" },
+                      { kunci: "dapur", label: isTableAddon ? "Dapur (Tiket Ini)" : "Dapur" },
                     ] as const).map((r) => (
                       <button
                         key={r.kunci}

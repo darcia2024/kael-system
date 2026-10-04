@@ -91,6 +91,7 @@ import {
   resolveTableCallAction,
   redeemRewardAction,
   getOrderInvoiceAction,
+  getCombinedTableBillAction,
 } from "@/lib/actions";
 import { 
   calculateCartTotals, 
@@ -1867,6 +1868,94 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
           cashChange: completedOrder?.change,
         };
 
+    let resolvedPelangganData = customOrder ? customOrder.pelangganData : completedOrder?.pelangganData;
+
+    // Jika pesanan meja makan di tempat dicetak tanpa pelangganData eksplisit (misal saat ditekan dari antrean pesanan):
+    // Otomatis cari seluruh pesanan meja terkait agar struk kasir & tamu langsung gabung utuh!
+    if (
+      !resolvedPelangganData &&
+      orderData.service_type === "dine_in" &&
+      orderData.table_no &&
+      (bagian === "kasir" || bagian === "pelanggan" || bagian === "semua")
+    ) {
+      try {
+        const combinedRes = await getCombinedTableBillAction({
+          tableNo: orderData.table_no,
+          orderId: orderIdUntukQr || (customOrder as any)?.id || (customOrder as any)?.order_id,
+          sessionId: (customOrder as any)?.table_session_id,
+        });
+        if (combinedRes.ok && combinedRes.data && combinedRes.data.ordersCount > 1) {
+          resolvedPelangganData = {
+            items: combinedRes.data.items,
+            subtotal: combinedRes.data.subtotal,
+            discount: combinedRes.data.discount,
+            tax: combinedRes.data.tax,
+            serviceCharge: combinedRes.data.serviceCharge,
+            deliveryFee: combinedRes.data.deliveryFee,
+            total: combinedRes.data.total,
+            cashGiven: rincian.cashGiven,
+            cashChange: rincian.cashChange,
+          };
+        }
+      } catch (err) {
+        console.error("[POS] Gagal mengambil tagihan gabungan meja:", err);
+      }
+
+      // Fallback lokal jika sesi meja belum tersinkron di database
+      if (!resolvedPelangganData) {
+        const normalizedKey = normalizeTableKey(orderData.table_no);
+        const siblingOrders = currentQrOrders.filter(
+          (o) => normalizeTableKey(o.table_no) === normalizedKey && o.service_type === "dine_in"
+        );
+        if (siblingOrders.length > 1) {
+          const itemMap = new Map<string, { name: string; qty: number; price: number; note?: string }>();
+          let cSubtotal = 0;
+          let cDiscount = 0;
+          let cTax = 0;
+          let cService = 0;
+          let cDelivery = 0;
+          let cTotal = 0;
+
+          siblingOrders.forEach((ord) => {
+            cSubtotal += Number(ord.subtotal) || 0;
+            cDiscount += Number(ord.discount) || 0;
+            cTax += Number(ord.tax) || 0;
+            cService += Number(ord.service_charge) || 0;
+            cDelivery += Number(ord.delivery_fee) || 0;
+            cTotal += Number(ord.total) || 0;
+
+            ord.items.forEach((it) => {
+              const price = Number(it.price_snapshot) || Math.round(Number(it.subtotal) / Math.max(1, it.qty)) || 0;
+              const mapKey = `${it.name_snapshot}__${price}__${it.note || ""}`;
+              const existing = itemMap.get(mapKey);
+              if (existing) {
+                existing.qty += it.qty;
+              } else {
+                itemMap.set(mapKey, {
+                  name: it.name_snapshot,
+                  qty: it.qty,
+                  price,
+                  note: it.note || undefined,
+                });
+              }
+            });
+          });
+
+          resolvedPelangganData = {
+            items: Array.from(itemMap.values()),
+            subtotal: cSubtotal,
+            discount: cDiscount,
+            tax: cTax,
+            serviceCharge: cService,
+            deliveryFee: cDelivery,
+            total: cTotal,
+            cashGiven: rincian.cashGiven,
+            cashChange: rincian.cashChange,
+          };
+        }
+      }
+    }
+
     const receiptText = generateThreePlyReceiptText({
       businessName: business?.name || "Mochi Cafe n Resto",
       businessAddress: business?.address || "",
@@ -1893,7 +1982,7 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
       cashGiven: rincian.cashGiven,
       cashChange: rincian.cashChange,
       customerName: orderData.customer_name,
-      pelangganData: customOrder ? customOrder.pelangganData : completedOrder?.pelangganData,
+      pelangganData: resolvedPelangganData,
       bagian,
       bagiTagihan,
     });

@@ -5110,6 +5110,139 @@ export const db = {
   },
 
   /**
+   * Mengambil tagihan gabungan meja secara otomatis (seluruh pesanan dalam sesi aktif atau pesanan terkait).
+   */
+  async getCombinedTableBill(
+    businessId: string,
+    options: {
+      tableNo: string;
+      orderId?: string | null;
+      sessionId?: string | null;
+    }
+  ) {
+    const tableNo = options.tableNo?.trim();
+    if (!tableNo) return null;
+
+    let sessionOrders: (Order & { items: OrderItem[] })[] = [];
+
+    // 1. Lewat sessionId eksplisit
+    if (options.sessionId) {
+      sessionOrders = await this.getTableSessionOrders(businessId, options.sessionId);
+    }
+
+    // 2. Lewat orderId
+    if (sessionOrders.length <= 1 && options.orderId) {
+      const ordData = await this.getOrderById(options.orderId);
+      if (ordData?.order?.table_session_id) {
+        sessionOrders = await this.getTableSessionOrders(businessId, ordData.order.table_session_id);
+      }
+    }
+
+    // 3. Lewat sesi meja yang sedang aktif
+    if (sessionOrders.length <= 1) {
+      const activeSession = await this.getOpenTableSession(businessId, tableNo);
+      if (activeSession) {
+        sessionOrders = await this.getTableSessionOrders(businessId, activeSession.id);
+      }
+    }
+
+    // 4. Lewat sesi meja terakhir dalam 12 jam terakhir
+    if (sessionOrders.length <= 1) {
+      const key = normalizeTableKey(tableNo);
+      const recentSessions = (await sql`
+        SELECT * FROM table_sessions
+        WHERE business_id = ${businessId}
+          AND table_key = ${key}
+          AND opened_at > NOW() - INTERVAL '12 hours'
+        ORDER BY opened_at DESC
+        LIMIT 1
+      `) as unknown as TableSession[];
+
+      if (recentSessions.length > 0 && recentSessions[0]) {
+        sessionOrders = await this.getTableSessionOrders(businessId, recentSessions[0].id);
+      }
+    }
+
+    // 5. Jika tidak ada sesi meja, fallback cari order dine_in meja ini dalam 6 jam terakhir
+    if (sessionOrders.length <= 1) {
+      const recentOrders = (await sql`
+        SELECT * FROM orders
+        WHERE business_id = ${businessId}
+          AND table_no = ${tableNo}
+          AND service_type = 'dine_in'
+          AND status <> 'cancelled'
+          AND created_at > NOW() - INTERVAL '6 hours'
+        ORDER BY created_at ASC
+      `) as unknown as Order[];
+
+      if (recentOrders.length > 1) {
+        sessionOrders = await Promise.all(
+          recentOrders.map(async (o) => ({
+            ...o,
+            items: await this.getOrderItems(o.id),
+          }))
+        );
+      }
+    }
+
+    if (sessionOrders.length <= 1) {
+      return null;
+    }
+
+    const itemMap = new Map<string, { name: string; qty: number; price: number; note?: string }>();
+    let cSubtotal = 0;
+    let cDiscount = 0;
+    let cTax = 0;
+    let cService = 0;
+    let cDelivery = 0;
+    let cTotal = 0;
+    const orderNos: string[] = [];
+    let customerName: string | null = null;
+
+    for (const ord of sessionOrders) {
+      orderNos.push(ord.order_no);
+      if (ord.customer_name && !customerName) customerName = ord.customer_name;
+      if (ord.delivery_name && !customerName) customerName = ord.delivery_name;
+
+      cSubtotal += Number(ord.subtotal) || 0;
+      cDiscount += Number(ord.discount) || 0;
+      cTax += Number(ord.tax) || 0;
+      cService += Number(ord.service_charge) || 0;
+      cDelivery += Number(ord.delivery_fee) || 0;
+      cTotal += Number(ord.total) || 0;
+
+      for (const it of ord.items) {
+        const price = Number(it.price_snapshot) || Math.round(Number(it.subtotal) / Math.max(1, it.qty)) || 0;
+        const mapKey = `${it.name_snapshot}__${price}__${it.note || ""}`;
+        const existing = itemMap.get(mapKey);
+        if (existing) {
+          existing.qty += it.qty;
+        } else {
+          itemMap.set(mapKey, {
+            name: it.name_snapshot,
+            qty: it.qty,
+            price,
+            note: it.note || undefined,
+          });
+        }
+      }
+    }
+
+    return {
+      items: Array.from(itemMap.values()),
+      subtotal: cSubtotal,
+      discount: cDiscount,
+      tax: cTax,
+      serviceCharge: cService,
+      deliveryFee: cDelivery,
+      total: cTotal,
+      ordersCount: sessionOrders.length,
+      orderNos,
+      customerName,
+    };
+  },
+
+  /**
    * Denah meja kasir. Yang menentukan sebuah meja terisi adalah ADA SESI
    * TERBUKA, bukan ada pesanan yang belum selesai dimasak.
    */

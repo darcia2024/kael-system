@@ -2147,6 +2147,32 @@ export async function createOrderAction(input: {
   });
 }
 
+/**
+ * Mengambil tagihan gabungan meja untuk struk kasir & pelanggan (misal dari antrean pesanan).
+ */
+export async function getCombinedTableBillAction(input: {
+  tableNo: string;
+  orderId?: string | null;
+  sessionId?: string | null;
+}): Promise<
+  ActionResult<{
+    items: { name: string; qty: number; price: number; note?: string }[];
+    subtotal: number;
+    discount: number;
+    tax: number;
+    serviceCharge: number;
+    deliveryFee: number;
+    total: number;
+    ordersCount: number;
+    orderNos: string[];
+    customerName: string | null;
+  } | null>
+> {
+  const { businessId } = await requirePermission("pos");
+  const res = await db.getCombinedTableBill(businessId, input);
+  return done(res);
+}
+
 /** Pesanan dari QR meja. Terbuka, karena pelanggan tidak punya akun. */
 // ===========================================================================
 // Panggilan meja
