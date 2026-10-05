@@ -1252,7 +1252,20 @@ export default function PosClient({
     setCompletedOrder(completed);
     refreshAll();
 
-    // Otomatis cetak 3 rangkap jika preferensi auto-print aktif
+    /**
+     * Otomatis cetak jika preferensi auto-print aktif.
+     *
+     * Pesanan makan di tempat yang dibayar di akhir BELUM punya tagihan final:
+     * yang perlu tahu sekarang cuma dapur. Dulu tiap pesanan — termasuk tiap
+     * tambahan di meja yang sama — mencetak tiga rangkap, dan sejak lembar kasir
+     * dan pelanggan memuat tagihan gabungan meja, lembarnya makin panjang tiap
+     * kali tamunya menambah. Satu meja yang memesan empat kali menghabiskan
+     * belasan lembar, padahal tamunya cuma butuh satu struk: saat membayar.
+     *
+     * Sekarang: tiap pesanan cuma tiket dapur. Struk pelanggan keluar SEKALI,
+     * berisi seluruh pesanan meja, saat meja dibayar (handleSettleTable).
+     */
+    const belumDibayar = bayarDiAkhirToko && completed.serviceType === "dine_in";
     if (autoPrintThreePly) {
       setTimeout(() => {
         void handlePrintThreePlyBluetooth({
@@ -1286,10 +1299,11 @@ export default function PosClient({
           cash_change: completed.paymentMethod === "cash" ? completed.change : null,
           pelangganData: completed.pelangganData,
         },
-        "semua",
+        belumDibayar ? "dapur" : "semua",
         undefined,
         undefined,
-        completed.paymentMethod === "cash",
+        // Laci cuma dibuka kalau uangnya memang diterima sekarang.
+        !belumDibayar && completed.paymentMethod === "cash",
         );
       }, 250);
     }
@@ -1454,6 +1468,13 @@ export default function PosClient({
       orderNo?: string;
       openCashDrawer?: boolean;
       isCustomerReceipt?: boolean;
+      /**
+       * Tiket dapur tidak butuh logo. Logo 192 titik itu sekitar 2,5 cm kertas,
+       * dan dapur mencetak satu tiket untuk SETIAP pesanan tambahan — di meja
+       * yang memesan empat kali, logonya saja sudah 10 cm gulungan yang cuma
+       * dilihat koki.
+       */
+      tanpaLogo?: boolean;
     }
   ) => {
     setPrinterState("printing");
@@ -1502,7 +1523,8 @@ export default function PosClient({
        * Gagal memuat berarti logonya dilewati — hiasan tidak boleh menggagalkan
        * struk yang sedang ditunggu pembeli.
        */
-      const logo = business?.logo_url ? await logoKeRaster(business.logo_url, 192) : null;
+      const logo =
+        business?.logo_url && !options.tanpaLogo ? await logoKeRaster(business.logo_url, 192) : null;
 
       /**
        * KODE QR, di kaki struk.
@@ -1715,6 +1737,7 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
       orderNo: completedOrder.orderNo,
       openCashDrawer: false,
       isCustomerReceipt: false,
+      tanpaLogo: true,
     });
   };
 
@@ -1746,6 +1769,7 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
       orderNo: order.order_no,
       openCashDrawer: false,
       isCustomerReceipt: false,
+      tanpaLogo: true,
     });
   };
 
@@ -2008,6 +2032,7 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
       // Kode QR member cuma di lembar yang dibawa pulang pelanggan.
       isCustomerReceipt: bagian === "pelanggan" || bagian === "semua",
       orderId: orderIdUntukQr ?? completedOrder?.orderId,
+      tanpaLogo: bagian === "dapur",
     });
   };
 

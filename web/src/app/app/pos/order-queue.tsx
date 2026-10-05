@@ -348,7 +348,7 @@ export default function OrderQueue({
             <label className={`flex items-center justify-between gap-2 px-3 py-1.5 rounded-xl border cursor-pointer font-mono text-[10.5px] font-bold transition-colors ${
               isMochi ? "bg-[#edf8f3] border-[#d8e3de] text-[#0b3d2e]" : "bg-slate-50 border-slate-200 text-slate-700"
             }`}>
-              <span>🖨️ Cetak otomatis 3 rangkap saat pesanan diterima</span>
+              <span>🖨️ Cetak otomatis: tiket dapur saat diterima, struk saat lunas</span>
               <input
                 type="checkbox"
                 checked={autoPrintThreePly ?? true}
@@ -572,8 +572,10 @@ export default function OrderQueue({
                               disabled={busy}
                               onClick={async () => {
                                 await jalankan(o.id, () => setFulfillmentAction(o.id, "accepted"));
+                                // Belum dibayar: cuma dapur yang perlu kertas sekarang.
+                                // Struk pelanggan keluar sekali, saat mejanya dibayar.
                                 if (autoPrintThreePly && onPrintThreePly) {
-                                  onPrintThreePly(o);
+                                  onPrintThreePly(o, o.payment_status === "pending" ? "dapur" : "semua");
                                 }
                               }}
                               className={`w-full flex items-center justify-center gap-1.5 rounded-xl py-2 px-3 text-xs font-black transition-all ${
