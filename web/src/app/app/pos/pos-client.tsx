@@ -88,6 +88,8 @@ import {
   getPendingQrOrdersAction,
   getTableCallsAction,
   settleTableSessionAction,
+  bayarTerpisahMejaAction,
+  getShiftDetailAction,
   resolveTableCallAction,
   redeemRewardAction,
   getOrderInvoiceAction,
@@ -97,7 +99,6 @@ import {
   calculateCartTotals, 
   calculateCashChange, 
   generateEscPosReceiptText,
-  generateKitchenTicketText,
   generateThreePlyReceiptText,
   SERVICE_TYPES,
   serviceTypeLabel,
@@ -110,7 +111,7 @@ import QrisPayment from "./qris-payment";
 import OrderQueue from "./order-queue";
 import PosFloorPlan, { TableSummary } from "./pos-floor-plan";
 import { normalizeTableKey } from "@/lib/table-key";
-import type { ItemBagiTagihan } from "./pos-split-bill-modal";
+import type { HasilBayarDiLayar } from "./pos-bayar-terpisah-modal";
 import PosSettleTableModal, { type MetodeBayar } from "./pos-settle-table-modal";
 import PosInvoiceQrModal from "./pos-invoice-qr-modal";
 import { calculateEarnedPoints } from "@/lib/loyalty-engine";
@@ -134,6 +135,8 @@ import {
   logoKeRaster,
   qrKeRaster,
 } from "@/lib/escpos";
+import { tiketDapurEscPos, tiketDapurTeks, type DataTiketDapur } from "@/lib/tiket-dapur";
+import { rekapShiftTeks } from "@/lib/rekap-shift";
 import TableQrModal from "./table-qr-modal";
 import PosMemberScannerModal from "./pos-member-scanner-modal";
 import PosBellSettingsModal from "./pos-bell-settings-modal";
@@ -866,45 +869,6 @@ export default function PosClient({
   };
 
   /**
-   * Cetak satu bagian tagihan meja untuk tamu rombongan.
-   *
-   * Yang dibagi CUMA cetakannya. Notanya tetap satu transaksi utuh seperti
-   * aslinya — memecah pencatatan uangnya jadi beberapa pembayaran itu urusan
-   * tersendiri, dan mengubahnya diam-diam bakal bikin laporan penjualan,
-   * rekap shift, dan HPP tidak lagi cocok satu sama lain.
-   */
-  const handlePrintSplitBill = async (
-    table: TableSummary,
-    items: ItemBagiTagihan[],
-    totalBagian: number,
-    bagianKe: number,
-  ) => {
-    const firstOrder = table.orders[0];
-    await handlePrintThreePlyBluetooth(
-      {
-        order_no: `MEJA-${table.tableNo}`,
-        table_no: table.tableNo,
-        service_type: "dine_in",
-        created_at: firstOrder?.created_at || new Date().toISOString(),
-        items: items.map((i) => ({
-          name_snapshot: i.nama,
-          qty: i.qty,
-          unit_price_snapshot: i.harga,
-          subtotal: i.subtotal,
-          note: i.catatan,
-        })),
-        total: totalBagian,
-        payment_method: table.hasUnpaid ? "Belum Lunas" : "Lunas",
-        customer_name: null,
-      },
-      // Bagian tagihan cuma masuk akal sebagai lembar pelanggan: dapur tidak
-      // memasak ulang, dan arsip kasir tetap memakai nota utuhnya.
-      "pelanggan",
-      { bagianKe, totalMeja: table.totalBill },
-    );
-  };
-
-  /**
    * Tamu selesai makan dan membayar seluruh tagihan mejanya.
    *
    * Struknya dicetak SESUDAH uangnya tercatat masuk, bukan sebelum. Struk yang
@@ -927,15 +891,30 @@ export default function PosClient({
     if (!res.ok) throw new Error(res.error);
 
     setMejaDibayar(null);
+    const namaMember = attachedCustomer?.name ?? null;
     setAttachedCustomer(null);
 
+    await cetakStrukLunasMeja(table, res.data, metode, namaMember);
+    router.refresh();
+  };
+
+  /**
+   * Struk pelanggan untuk pelunasan meja: seluruh menu dari nota yang barusan
+   * dilunasi, digabung jadi satu lembar.
+   */
+  const cetakStrukLunasMeja = async (
+    table: TableSummary,
+    data: { orderIds: string[]; orderNos: string[]; total: number; cashGiven: number | null; change: number | null },
+    metode: MetodeBayar,
+    namaMember: string | null,
+  ) => {
     /**
      * Nota yang BARUSAN dilunasi, menurut server — bukan semua nota di meja.
      * Kalau sebagian nota meja sudah dibayar lebih dulu, mencetak semuanya
      * berarti struk memuat menu yang tidak termasuk dalam uang yang baru saja
      * diterima, dan barisnya tidak akan pernah cocok dengan totalnya.
      */
-    const dilunasi = table.orders.filter((o) => res.data.orderIds.includes(o.id));
+    const dilunasi = table.orders.filter((o) => data.orderIds.includes(o.id));
     const sumber = dilunasi.length ? dilunasi : table.orders;
     const jumlah = (f: (o: (typeof sumber)[number]) => number) =>
       sumber.reduce((s, o) => s + (Number(f(o)) || 0), 0);
@@ -952,28 +931,32 @@ export default function PosClient({
     const pajakMeja = jumlah((o) => o.tax);
     const serviceMeja = jumlah((o) => o.service_charge);
     const rincianCocok =
-      Math.abs(subtotalMeja - diskonMeja + pajakMeja + serviceMeja - res.data.total) <= 1;
+      Math.abs(subtotalMeja - diskonMeja + pajakMeja + serviceMeja - data.total) <= 1;
 
     // Struk pelanggan langsung keluar; rangkap lain tinggal ditekan dari popup.
     await handlePrintThreePlyBluetooth(
       {
-        order_no: res.data.orderNos.join(" + "),
+        tanpaGabung: true,
+        order_no: data.orderNos.join(" + "),
         table_no: table.tableNo,
         service_type: "dine_in",
         created_at: new Date().toISOString(),
         items: sumber.flatMap((ord) =>
-          ord.items.map((i) => ({
-            name_snapshot: i.name_snapshot,
-            qty: i.qty,
-            unit_price_snapshot: Number(i.price_snapshot),
-            subtotal: Number(i.subtotal),
-            note: i.note,
-          })),
+          ord.items
+            // Menu yang dibatalkan tidak ditagih, jadi tidak tercetak.
+            .filter((i) => !i.cancelled_at)
+            .map((i) => ({
+              name_snapshot: i.name_snapshot,
+              qty: i.qty,
+              unit_price_snapshot: Number(i.price_snapshot),
+              subtotal: Number(i.subtotal),
+              note: i.note,
+            })),
         ),
-        total: res.data.total,
+        total: data.total,
         payment_method: metode,
-        customer_name: attachedCustomer?.name ?? null,
-        subtotal: rincianCocok ? subtotalMeja : res.data.total,
+        customer_name: namaMember,
+        subtotal: rincianCocok ? subtotalMeja : data.total,
         discount: rincianCocok ? diskonMeja : 0,
         tax: rincianCocok ? pajakMeja : 0,
         service_charge: rincianCocok ? serviceMeja : 0,
@@ -982,8 +965,8 @@ export default function PosClient({
          * melihat kembaliannya di layar sebelum menekan tombol; struknya harus
          * memuat angka yang sama, dan yang menyimpan angka resminya server.
          */
-        cash_given: res.data.cashGiven,
-        cash_change: res.data.change,
+        cash_given: data.cashGiven,
+        cash_change: data.change,
       },
       "pelanggan",
       undefined,
@@ -996,11 +979,94 @@ export default function PosClient({
        * pencarian kasir, dan cuma terungkap lewat transaksi yang benar-benar
        * terjadi.
        */
-      res.data.orderIds[0],
+      data.orderIds[0],
       metode === "cash",
     );
+  };
 
+  /**
+   * Satu tamu membayar menunya sendiri (Bayar Terpisah di denah meja).
+   *
+   * Struknya dicetak sesudah server mencatat pembayarannya, dari angka server.
+   * Daftar pesanan diambil ulang SEBELUM layar bayar terpisah dilepas, supaya
+   * menu yang barusan lunas tidak bisa tercentang lagi untuk tamu berikutnya.
+   */
+  const handleBayarTerpisah = async (
+    table: TableSummary,
+    input: {
+      pilihan: { itemId: string; qty: number }[];
+      metode: MetodeBayar;
+      tunai: number | null;
+      totalDiharapkan: number;
+    },
+  ): Promise<HasilBayarDiLayar> => {
+    if (!table.sessionId) throw new Error("Meja ini tidak punya kunjungan aktif.");
+
+    const res = await bayarTerpisahMejaAction(table.sessionId, {
+      pilihan: input.pilihan,
+      method: input.metode,
+      cashGiven: input.tunai,
+      totalDiharapkan: input.totalDiharapkan,
+    });
+    if (!res.ok) throw new Error(res.error);
+
+    const hasil = res.data;
+    let pesan: string;
+    let sisaTagihan = 0;
+    let lunasSemua = false;
+
+    if (hasil.jenis === "lunasMeja") {
+      await cetakStrukLunasMeja(table, hasil, input.metode, null);
+      lunasSemua = true;
+      pesan = `Sisa meja lunas · ${formatRupiah(hasil.total)}`;
+      if (hasil.change !== null) pesan += ` · kembalian ${formatRupiah(hasil.change)}`;
+    } else {
+      await handlePrintThreePlyBluetooth(
+        {
+          id: hasil.orderId,
+          tanpaGabung: true,
+          order_no: hasil.orderNo,
+          table_no: table.tableNo,
+          service_type: "dine_in",
+          created_at: new Date().toISOString(),
+          items: hasil.items.map((i) => ({
+            name_snapshot: i.nama,
+            qty: i.qty,
+            unit_price_snapshot: i.harga,
+            subtotal: i.harga * i.qty,
+            note: i.catatan,
+          })),
+          total: hasil.rincian.total,
+          payment_method: hasil.metode,
+          customer_name: null,
+          subtotal: hasil.rincian.subtotal,
+          discount: hasil.rincian.discount,
+          tax: hasil.rincian.tax,
+          service_charge: hasil.rincian.serviceCharge,
+          cash_given: hasil.cashGiven,
+          cash_change: hasil.change,
+          bayarTerpisah: { ke: hasil.pembayaranKe, sisaMeja: hasil.sisaTagihan },
+        },
+        "pelanggan",
+        undefined,
+        hasil.orderId,
+        hasil.metode === "cash",
+      );
+      sisaTagihan = hasil.sisaTagihan;
+      lunasSemua = hasil.sisaTagihan <= 0;
+      pesan = `#${hasil.orderNo} lunas ${formatRupiah(hasil.rincian.total)}`;
+      if (hasil.change !== null) pesan += ` · kembalian ${formatRupiah(hasil.change)}`;
+      pesan += ` · sisa meja ${formatRupiah(hasil.sisaTagihan)}`;
+    }
+
+    const segar = await getPendingQrOrdersAction();
+    if (segar.ok && segar.data.orders) {
+      segar.data.orders.forEach((o) => knownOrderIds.current.add(o.id));
+      setCurrentQrOrders(segar.data.orders);
+    }
     router.refresh();
+
+    return { pesan, sisaTagihan, lunasSemua };
   };
 
   // Handle Klaim Reward Loyalty di POS
@@ -1264,11 +1330,19 @@ export default function PosClient({
      *
      * Sekarang: tiap pesanan cuma tiket dapur. Struk pelanggan keluar SEKALI,
      * berisi seluruh pesanan meja, saat meja dibayar (handleSettleTable).
+     *
+     * Pesanan yang langsung lunas mencetak tiket dapur dan struk pelanggan.
+     * Arsip kasir tidak lagi dicetak per transaksi: pembukuannya diganti satu
+     * lembar rekap saat tutup shift (lib/rekap-shift.ts), yang sudah memisahkan
+     * tunai, QRIS, dan transfer — pekerjaan yang dulu dilakukan dengan menyortir
+     * tumpukan arsip kasir dengan tangan.
      */
     const belumDibayar = bayarDiAkhirToko && completed.serviceType === "dine_in";
     if (autoPrintThreePly) {
       setTimeout(() => {
-        void handlePrintThreePlyBluetooth({
+        const pesanan = {
+          id: completed.orderId,
+          tambahan: !!completed.pelangganData,
           order_no: completed.orderNo,
           table_no: completed.tableNo,
           service_type: completed.serviceType,
@@ -1298,13 +1372,20 @@ export default function PosClient({
           cash_given: completed.cashGiven ?? null,
           cash_change: completed.paymentMethod === "cash" ? completed.change : null,
           pelangganData: completed.pelangganData,
-        },
-        belumDibayar ? "dapur" : "semua",
-        undefined,
-        undefined,
-        // Laci cuma dibuka kalau uangnya memang diterima sekarang.
-        !belumDibayar && completed.paymentMethod === "cash",
-        );
+        };
+        void (async () => {
+          await handlePrintThreePlyBluetooth(pesanan, "dapur");
+          if (belumDibayar) return;
+          await handlePrintThreePlyBluetooth(
+            pesanan,
+            "pelanggan",
+            undefined,
+            // Dikirim eksplisit: completedOrder di closure ini masih yang lama.
+            completed.orderId,
+            // Laci cuma dibuka kalau uangnya memang diterima sekarang.
+            completed.paymentMethod === "cash",
+          );
+        })();
       }, 250);
     }
   };
@@ -1374,11 +1455,15 @@ export default function PosClient({
       }
     }
 
-    const res = await closeShiftAction(activeShift.id, shiftClosingCashInput, "Tutup Shift");
+    const shiftDitutup = activeShift.id;
+    const res = await closeShiftAction(shiftDitutup, shiftClosingCashInput, "Tutup Shift");
     if (!res.ok) {
       alert(res.error);
       return;
     }
+
+    // Lembar pembukuan shift ini — pengganti arsip kasir per transaksi.
+    void cetakRekapShift(shiftDitutup);
 
     setShowShiftModal(false);
     setActiveShiftSummary(null);
@@ -1391,6 +1476,28 @@ export default function PosClient({
       `Shift selesai ditutup!\n` +
       `Selisih Laci: ${formatRupiah(variance)} (${variance === 0 ? "PAS ✓" : variance > 0 ? "LEBIH" : "KURANG"})`
     );
+  };
+
+  /**
+   * Cetak rekap shift (lib/rekap-shift.ts): tunai, QRIS, transfer, laci, dan
+   * pengeluaran dalam satu lembar. Dicetak otomatis saat shift ditutup, dan
+   * bisa dicetak kapan saja selama shift berjalan sebagai rekap sementara.
+   * Gagal cetak tidak menggagalkan apa pun: rekapnya tetap ada di Laporan.
+   */
+  const cetakRekapShift = async (shiftId: string) => {
+    try {
+      const detail = await getShiftDetailAction(shiftId);
+      if (!detail.ok) return;
+      await sendRawEscPosToBluetooth(
+        rekapShiftTeks(detail.data, {
+          namaToko: business?.name || "KAEL",
+          timezone: business?.timezone || "Asia/Jakarta",
+        }),
+        { jobName: "Rekap Shift", openCashDrawer: false, isCustomerReceipt: false, tanpaLogo: true },
+      );
+    } catch (err) {
+      console.warn("[POS] Rekap shift gagal dicetak:", err);
+    }
   };
 
   const handleRecordCashMovement = async (e: React.FormEvent) => {
@@ -1475,6 +1582,12 @@ export default function PosClient({
        * dilihat koki.
        */
       tanpaLogo?: boolean;
+      /**
+       * Isi ESC/POS yang sudah jadi, menggantikan rawText di kiriman Bluetooth.
+       * rawText tetap dipakai untuk cetak lewat peramban saat Bluetooth tidak
+       * ada. Dipakai tiket dapur, yang butuh huruf besar dan tebal.
+       */
+      isiEscPos?: Uint8Array;
     }
   ) => {
     setPrinterState("printing");
@@ -1549,7 +1662,7 @@ export default function PosClient({
         ...(openCashDrawer ? [BUKA_LACI] : []),
         ...(logo ? [rataTengah(), logo, barisKosong(1)] : []),
         rataKiri(),
-        teks(rawText),
+        options.isiEscPos ?? teks(rawText),
         ...(qr
           ? [
               barisKosong(1),
@@ -1714,66 +1827,89 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
     });
   };
 
+  /**
+   * Satu-satunya jalan mencetak tiket dapur, dari mana pun asalnya: transaksi
+   * kasir, antrean pesanan, atau rangkap dapur. Bentuknya ada di
+   * lib/tiket-dapur.ts.
+   */
+  const cetakTiketDapur = (data: DataTiketDapur) =>
+    sendRawEscPosToBluetooth(tiketDapurTeks(data), {
+      jobName: "Tiket Dapur",
+      orderNo: data.orderNo,
+      openCashDrawer: false,
+      isCustomerReceipt: false,
+      tanpaLogo: true,
+      isiEscPos: tiketDapurEscPos(data),
+    });
+
+  /**
+   * Pesanan ini tambahan, bukan pesanan pertama mejanya?
+   *
+   * Dinilai dari pesanan lain di kunjungan meja yang sama yang masuk lebih
+   * dulu. Pesanan yang belum punya kunjungan tidak pernah dianggap tambahan.
+   */
+  const apakahTambahan = (order: { id?: string; table_session_id?: string | null; created_at: string }) =>
+    !!order.table_session_id &&
+    currentQrOrders.some(
+      (o) =>
+        o.id !== order.id &&
+        o.table_session_id === order.table_session_id &&
+        o.status !== "cancelled" &&
+        new Date(o.created_at).getTime() < new Date(order.created_at).getTime(),
+    );
+
   const handlePrintKitchenTicketBluetooth = async () => {
     if (!completedOrder) return;
-    const ticketText = generateKitchenTicketText({
-      businessName: business?.name || "KAEL POS",
+    await cetakTiketDapur({
       orderNo: completedOrder.orderNo,
       tableNo: completedOrder.tableNo,
       serviceType: completedOrder.serviceType,
       createdAt: completedOrder.createdAt,
       timezone: business?.timezone || "Asia/Jakarta",
-      items: completedOrder.items.map((i) => ({
-        name: i.name,
-        qty: i.qty,
-        note: i.note,
-      })),
+      items: completedOrder.items.map((i) => ({ name: i.name, qty: i.qty, note: i.note })),
       cashierName: completedOrder.cashierName,
-    });
-
-    await sendRawEscPosToBluetooth(ticketText, {
-      jobName: "Tiket Dapur",
-      orderId: completedOrder.orderId,
-      orderNo: completedOrder.orderNo,
-      openCashDrawer: false,
-      isCustomerReceipt: false,
-      tanpaLogo: true,
+      tambahan: !!completedOrder.pelangganData,
     });
   };
 
   const handlePrintKitchenTicketFromQueue = async (order: {
+    id?: string;
     order_no: string;
     table_no?: string | null;
+    table_session_id?: string | null;
     service_type: string;
     created_at: string;
+    customer_name?: string | null;
     items: { name_snapshot: string; qty: number; note?: string | null }[];
   }) => {
     const activeCashier = activeCashiers.find((staff) => staff.id === selectedStaffId)?.name || activeCashiers[0]?.name || "Kasir";
-    const ticketText = generateKitchenTicketText({
-      businessName: business?.name || "KAEL POS",
+    await cetakTiketDapur({
       orderNo: order.order_no,
       tableNo: order.table_no,
       serviceType: (order.service_type || "dine_in") as "dine_in" | "takeaway" | "delivery",
       createdAt: order.created_at,
       timezone: business?.timezone || "Asia/Jakarta",
-      items: order.items.map((i) => ({
-        name: i.name_snapshot,
-        qty: i.qty,
-        note: i.note || undefined,
-      })),
+      items: order.items.map((i) => ({ name: i.name_snapshot, qty: i.qty, note: i.note || undefined })),
       cashierName: activeCashier,
-    });
-
-    await sendRawEscPosToBluetooth(ticketText, {
-      jobName: "Tiket Dapur",
-      orderNo: order.order_no,
-      openCashDrawer: false,
-      isCustomerReceipt: false,
-      tanpaLogo: true,
+      customerName: order.customer_name,
+      tambahan: apakahTambahan(order),
     });
   };
 
   const handlePrintThreePlyBluetooth = async (customOrder?: {
+    id?: string;
+    table_session_id?: string | null;
+    /** Pesanan tambahan dari meja yang sama. Kosong berarti dinilai sendiri. */
+    tambahan?: boolean;
+    /** Struk satu tamu dari Bayar Terpisah: nomor pembayarannya dan sisa meja. */
+    bayarTerpisah?: { ke: number; sisaMeja: number };
+    /**
+     * Isinya sudah persis yang dibayar — jangan diganti tagihan gabungan meja.
+     * Dipakai struk pelunasan meja dan bayar terpisah: sesudah sebagian tamu
+     * membayar sendiri, "seluruh meja" memuat menu yang uangnya bukan dari
+     * pembayaran ini.
+     */
+    tanpaGabung?: boolean;
     order_no: string;
     table_no?: string | null;
     service_type: string;
@@ -1848,6 +1984,42 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
     if (!orderData) return;
 
     const activeCashier = activeCashiers.find((staff) => staff.id === selectedStaffId)?.name || activeCashiers[0]?.name || (completedOrder?.cashierName || "Kasir");
+
+    /**
+     * "Semua" berarti tiga LEMBAR, bukan satu gulungan bergaris sobek: tiket
+     * dapur dengan bentuknya sendiri, lalu arsip kasir, lalu struk pelanggan.
+     * Laci cuma dibuka bersama lembar terakhir.
+     */
+    if (bagian === "semua") {
+      for (const b of ["dapur", "kasir", "pelanggan"] as const) {
+        await handlePrintThreePlyBluetooth(
+          customOrder,
+          b,
+          bagiTagihan,
+          orderIdUntukQr,
+          b === "pelanggan" ? forceOpenCashDrawer : false,
+        );
+      }
+      return;
+    }
+
+    if (bagian === "dapur") {
+      await cetakTiketDapur({
+        orderNo: orderData.order_no,
+        tableNo: orderData.table_no,
+        serviceType: (orderData.service_type || "dine_in") as "dine_in" | "takeaway" | "delivery",
+        createdAt: orderData.created_at,
+        timezone: business?.timezone || "Asia/Jakarta",
+        items: orderData.items.map((i) => ({ name: i.name_snapshot, qty: i.qty, note: i.note })),
+        cashierName: activeCashier,
+        customerName: orderData.customer_name,
+        tambahan:
+          customOrder?.tambahan ??
+          (customOrder ? apakahTambahan(customOrder) : !!completedOrder?.pelangganData),
+      });
+      return;
+    }
+
     const numTotal = Number(orderData.total) || 0;
 
     /**
@@ -1898,6 +2070,7 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
     // Otomatis cari seluruh pesanan meja terkait agar struk kasir & tamu langsung gabung utuh!
     if (
       !resolvedPelangganData &&
+      !customOrder?.tanpaGabung &&
       orderData.service_type === "dine_in" &&
       orderData.table_no &&
       (bagian === "kasir" || bagian === "pelanggan" || bagian === "semua")
@@ -2009,6 +2182,7 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
       pelangganData: resolvedPelangganData,
       bagian,
       bagiTagihan,
+      bayarTerpisah: customOrder?.bayarTerpisah,
     });
 
     const namaRangkap = {
@@ -2030,9 +2204,10 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
       // Buka laci HANYA jika diminta eksplisit (misal terima pembayaran)
       openCashDrawer: forceOpenCashDrawer ?? false,
       // Kode QR member cuma di lembar yang dibawa pulang pelanggan.
-      isCustomerReceipt: bagian === "pelanggan" || bagian === "semua",
+      isCustomerReceipt: bagian === "pelanggan",
       orderId: orderIdUntukQr ?? completedOrder?.orderId,
-      tanpaLogo: bagian === "dapur",
+      // Logo cuma untuk lembar yang dibawa pulang tamu; arsip kasir tidak butuh.
+      tanpaLogo: bagian === "kasir",
     });
   };
 
@@ -3016,7 +3191,9 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
               isMochi={isMochiPos}
               onAddItemsToTable={handleAddItemsToTable}
               onPrintCombinedTableBill={handlePrintCombinedTableBill}
-              onPrintSplitBill={handlePrintSplitBill}
+              onBayarTerpisah={bayarDiAkhirToko ? handleBayarTerpisah : undefined}
+              tarifPajak={configuredTaxRate}
+              tarifService={configuredServiceRate}
               onSettleTable={bayarDiAkhirToko ? setMejaDibayar : undefined}
               onOpenCashDrawer={handleOpenCashDrawerManual}
               onRefresh={refreshAll}
@@ -3817,8 +3994,11 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
       {mejaDibayar && (
         <PosSettleTableModal
           namaMeja={mejaDibayar.displayName}
-          total={mejaDibayar.totalBill}
-          jumlahNota={mejaDibayar.orders.length}
+          // Yang belum lunas saja: sebagian tamu bisa sudah bayar terpisah.
+          total={mejaDibayar.sisaTagihan}
+          jumlahNota={
+            mejaDibayar.orders.filter((o) => o.payment_status === "pending" && o.status !== "cancelled").length
+          }
           namaMember={attachedCustomer?.name ?? null}
           isMochi={isMochiPos}
           onClose={() => setMejaDibayar(null)}
@@ -4401,6 +4581,14 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
                     className="rounded-xl border border-[#dedee8] bg-white px-3 py-2 font-bold text-[#7b7b8e]"
                   >
                     Batal
+                  </button>
+                  {/* Rekap sebelum tutup, buat owner yang mau cek di tengah hari. */}
+                  <button
+                    type="button"
+                    onClick={() => activeShift && void cetakRekapShift(activeShift.id)}
+                    className="rounded-xl border border-[#dedee8] bg-white px-3 py-2 font-bold text-[#0b3d2e]"
+                  >
+                    Cetak Rekap Sementara
                   </button>
                   <button
                     type="submit"

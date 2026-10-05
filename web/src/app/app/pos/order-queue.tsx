@@ -163,7 +163,7 @@ export default function OrderQueue({
     cash_change?: number | null;
   },
   /** Rangkap mana yang dicetak. Kosong berarti ketiganya. */
-  bagian?: "dapur" | "kasir" | "pelanggan" | "semua") => void;
+  bagian?: "dapur" | "kasir" | "pelanggan" | "semua") => void | Promise<void>;
   autoPrintThreePly?: boolean;
   onToggleAutoPrintThreePly?: (val: boolean) => void;
   menuItems?: MenuItem[];
@@ -183,6 +183,22 @@ export default function OrderQueue({
   const [showAdjustModal, setShowAdjustModal] = useState(false);
   // Pesanan tunai yang sedang ditanyakan uangnya sebelum dicatat lunas.
   const [terimaTunai, setTerimaTunai] = useState<Antrean | null>(null);
+
+  /**
+   * Cetak sesudah pembayaran dikonfirmasi: struk pelanggan, ditambah tiket
+   * dapur kalau dapur belum pernah menerimanya — pesanan yang dibayar sebelum
+   * diteruskan ke dapur. Pesanan yang sudah diterima dapur tidak dicetakkan
+   * tiket kedua. Arsip kasir tidak dicetak per transaksi; pembukuannya lewat
+   * rekap tutup shift.
+   */
+  const cetakSesudahBayar = async (
+    o: Antrean,
+    uang?: { cash_given: number | null; cash_change: number | null },
+  ) => {
+    if (!autoPrintThreePly || !onPrintThreePly) return;
+    if (o.fulfillment_status === "pending") await onPrintThreePly(o, "dapur");
+    await onPrintThreePly({ ...o, ...uang }, "pelanggan");
+  };
 
 
   useEffect(() => {
@@ -222,9 +238,10 @@ export default function OrderQueue({
     setSibuk(null);
     if (!res.ok) {
       setGalat(res.error ?? "Gagal memproses pesanan.");
-      return;
+      return false;
     }
     router.refresh();
+    return true;
   };
 
   // Selesaikan pesanan & langsung bersihkan dari antrean (optimistic)
@@ -520,9 +537,8 @@ export default function OrderQueue({
                             type="button"
                             disabled={busy}
                             onClick={async () => {
-                              await jalankan(o.id, () => confirmPaymentAction(o.id));
-                              if (autoPrintThreePly && onPrintThreePly) {
-                                onPrintThreePly(o);
+                              if (await jalankan(o.id, () => confirmPaymentAction(o.id))) {
+                                await cetakSesudahBayar(o);
                               }
                             }}
                             className={`w-full flex items-center justify-center gap-2 rounded-xl py-2.5 px-3 text-xs font-black transition-all shadow-sm ${
@@ -575,7 +591,7 @@ export default function OrderQueue({
                                 // Belum dibayar: cuma dapur yang perlu kertas sekarang.
                                 // Struk pelanggan keluar sekali, saat mejanya dibayar.
                                 if (autoPrintThreePly && onPrintThreePly) {
-                                  onPrintThreePly(o, o.payment_status === "pending" ? "dapur" : "semua");
+                                  onPrintThreePly(o, "dapur");
                                 }
                               }}
                               className={`w-full flex items-center justify-center gap-1.5 rounded-xl py-2 px-3 text-xs font-black transition-all ${
@@ -625,9 +641,8 @@ export default function OrderQueue({
                                 setTerimaTunai(o);
                                 return;
                               }
-                              await jalankan(o.id, () => confirmPaymentAction(o.id));
-                              if (autoPrintThreePly && onPrintThreePly) {
-                                onPrintThreePly(o);
+                              if (await jalankan(o.id, () => confirmPaymentAction(o.id))) {
+                                await cetakSesudahBayar(o);
                               }
                             }}
                             className={`flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl px-3 py-2 font-mono text-xs font-black disabled:opacity-50 transition-all ${
@@ -868,13 +883,10 @@ export default function OrderQueue({
             router.refresh();
             // Angka dari server, bukan dari layar: yang tercetak harus sama
             // dengan yang tersimpan.
-            if (autoPrintThreePly && onPrintThreePly) {
-              onPrintThreePly({
-                ...o,
-                cash_given: res.data.tunaiDiterima,
-                cash_change: res.data.kembalian,
-              });
-            }
+            await cetakSesudahBayar(o, {
+              cash_given: res.data.tunaiDiterima,
+              cash_change: res.data.kembalian,
+            });
           }}
         />
       )}

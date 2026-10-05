@@ -405,6 +405,12 @@ export function generateThreePlyReceiptText(params: {
     totalMeja: number;
   };
   /**
+   * Struk satu tamu dari Bayar Terpisah. Berbeda dari bagiTagihan: ini
+   * pembayaran sungguhan yang sudah tercatat, dan yang dicetak di bawahnya
+   * adalah SISA meja yang belum dibayar, bukan total seluruh meja.
+   */
+  bayarTerpisah?: { ke: number; sisaMeja: number };
+  /**
    * Data khusus untuk Lembar Pelanggan jika berbeda dari Dapur & Kasir.
    * Contoh: Pesanan tambahan di meja.
    * - Dapur & Kasir mencetak item tiket baru saja (Kentang + Kopi).
@@ -572,6 +578,11 @@ export function generateThreePlyReceiptText(params: {
     lines.push(center("*** BAGI TAGIHAN ***"));
     lines.push(center(dariBagian ? `BAGIAN ${bagianKe} DARI ${dariBagian}` : `BAGIAN KE-${bagianKe}`));
   }
+  if (params.bayarTerpisah) {
+    lines.push(divider);
+    lines.push(center("*** BAYAR TERPISAH ***"));
+    lines.push(center(`PEMBAYARAN KE-${params.bayarTerpisah.ke}`));
+  }
 
   lines.push(divider);
 
@@ -618,6 +629,16 @@ export function generateThreePlyReceiptText(params: {
   if (params.paymentMethod === "cash" && pCashGiven) {
     lines.push(row("Uang diterima", `Rp ${pCashGiven.toLocaleString("id-ID")}`));
     lines.push(row("Kembalian", `Rp ${(pCashChange || 0).toLocaleString("id-ID")}`));
+  }
+
+  // Tamu dan kasir sama-sama tahu masih berapa yang belum dibayar di meja itu.
+  if (params.bayarTerpisah) {
+    lines.push(divider);
+    lines.push(
+      params.bayarTerpisah.sisaMeja > 0
+        ? row("Sisa tagihan meja", `Rp ${params.bayarTerpisah.sisaMeja.toLocaleString("id-ID")}`)
+        : center("TAGIHAN MEJA SUDAH LUNAS"),
+    );
   }
 
   lines.push(doubleDivider);

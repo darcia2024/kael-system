@@ -28,6 +28,22 @@ export const INIT = new Uint8Array([ESC, 0x40]);
 export const rataKiri = () => new Uint8Array([ESC, 0x61, 0]);
 export const rataTengah = () => new Uint8Array([ESC, 0x61, 1]);
 
+/** Huruf tebal (ESC E n). */
+export const tebal = (aktif: boolean) => new Uint8Array([ESC, 0x45, aktif ? 1 : 0]);
+
+/**
+ * Ukuran huruf, 1 atau 2 kali lebar dan tinggi (GS ! n).
+ *
+ * Lebar ganda memotong satu baris 58 mm dari 32 jadi 16 huruf — cukup untuk
+ * "MEJA 03", terlalu sempit untuk nama menu. Nama menu memakai tinggi ganda
+ * saja, supaya tetap muat 32 huruf tapi terbaca dari jarak satu lengan.
+ */
+export const ukuranHuruf = (lebar: 1 | 2, tinggi: 1 | 2) =>
+  new Uint8Array([GS, 0x21, ((lebar - 1) << 4) | (tinggi - 1)]);
+
+/** Putih di atas hitam (GS B n). Printer yang tidak mengenalnya mencetak biasa. */
+export const terbalik = (aktif: boolean) => new Uint8Array([GS, 0x42, aktif ? 1 : 0]);
+
 /** Memotong kertas. */
 export const POTONG = new Uint8Array([GS, 0x56, 0x00]);
 

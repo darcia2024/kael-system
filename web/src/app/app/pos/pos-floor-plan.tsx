@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ComponentProps } from "react";
 import {
   Utensils,
   Plus,
@@ -30,7 +30,7 @@ import {
 } from "@/lib/actions";
 import { normalizeTableKey, tableDisplayName } from "@/lib/table-key";
 import PosReplaceRefundModal from "./pos-replace-refund-modal";
-import PosSplitBillModal, { type ItemBagiTagihan } from "./pos-split-bill-modal";
+import PosBayarTerpisahModal, { type HasilBayarDiLayar } from "./pos-bayar-terpisah-modal";
 import PosCancelItemModal from "./pos-cancel-item-modal";
 import PosAdjustPriceModal from "./pos-adjust-price-modal";
 
@@ -45,10 +45,21 @@ export interface TableSummary {
   guestCount: number | null;
   orders: Antrean[];
   totalBill: number;
+  /**
+   * Yang BELUM dibayar. Berbeda dari totalBill begitu sebagian tamu sudah
+   * membayar duluan (bayar terpisah, atau QRIS dari HP): menagih totalBill ke
+   * tamu terakhir berarti menagih ulang yang sudah lunas.
+   */
+  sisaTagihan: number;
   itemCount: number;
   earliestOrderTime: string | null;
   hasUnpaid: boolean;
 }
+
+const sisaBelumLunas = (daftar: Antrean[]) =>
+  daftar
+    .filter((o) => o.payment_status === "pending" && o.status !== "cancelled")
+    .reduce((n, o) => n + Number(o.total), 0);
 
 /**
  * Jumlah meja yang tampil di denah.
@@ -86,7 +97,9 @@ export default function PosFloorPlan({
   onAddItemsToTable,
   onPrintCombinedTableBill,
   onSettleTable,
-  onPrintSplitBill,
+  onBayarTerpisah,
+  tarifPajak = 0,
+  tarifService = 0,
   onOpenCashDrawer,
   onRefresh,
 }: {
@@ -108,13 +121,17 @@ export default function PosFloorPlan({
    * Kosong berarti toko ini menerima uangnya di depan, bukan di akhir.
    */
   onSettleTable?: (table: TableSummary) => void;
-  /** Mencetak SEBAGIAN tagihan meja, untuk tamu rombongan yang minta struk sendiri-sendiri. */
-  onPrintSplitBill?: (
+  /**
+   * Satu tamu membayar menunya sendiri (lihat pos-bayar-terpisah-modal.tsx).
+   * Kosong berarti toko ini menerima uangnya di depan.
+   */
+  onBayarTerpisah?: (
     table: TableSummary,
-    items: ItemBagiTagihan[],
-    totalBagian: number,
-    bagianKe: number,
-  ) => Promise<void> | void;
+    input: Parameters<ComponentProps<typeof PosBayarTerpisahModal>["onBayar"]>[0],
+  ) => Promise<HasilBayarDiLayar>;
+  /** Tarif toko, dipakai menghitung tagihan bayar terpisah persis seperti server. */
+  tarifPajak?: number;
+  tarifService?: number;
   /** Buka laci kasir secara manual */
   onOpenCashDrawer?: () => void;
   onRefresh?: () => void;
@@ -233,6 +250,7 @@ export default function PosFloorPlan({
         guestCount: session?.guest_count ?? null,
         orders: tableOrders,
         totalBill,
+        sisaTagihan: sisaBelumLunas(tableOrders),
         itemCount,
         // Jam mulai kunjungan, bukan jam pesanan pertama: lama tamu duduk
         // tidak sama dengan lama makanannya dipesan.
@@ -266,6 +284,7 @@ export default function PosFloorPlan({
           guestCount: session?.guest_count ?? null,
           orders: tableOrders,
           totalBill: tableOrders.reduce((sum, o) => sum + Number(o.total), 0),
+          sisaTagihan: sisaBelumLunas(tableOrders),
           itemCount: tableOrders.reduce(
             (sum, o) => sum + o.items.reduce((iSum, i) => iSum + i.qty, 0),
             0
@@ -293,6 +312,7 @@ export default function PosFloorPlan({
         guestCount: s.guest_count,
         orders: [],
         totalBill: 0,
+        sisaTagihan: 0,
         itemCount: 0,
         earliestOrderTime: s.opened_at,
         hasUnpaid: false,
@@ -340,7 +360,7 @@ export default function PosFloorPlan({
 
     if (table.hasUnpaid) {
       alert(
-        `${table.displayName} masih punya tagihan yang belum dibayar sebesar ${formatRupiah(table.totalBill)}.\n\n` +
+        `${table.displayName} masih punya tagihan yang belum dibayar sebesar ${formatRupiah(table.sisaTagihan)}.\n\n` +
           `Selesaikan pembayarannya dulu, atau batalkan pesanannya kalau memang tidak jadi.`,
       );
       return;
@@ -787,7 +807,7 @@ export default function PosFloorPlan({
                     className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#c8f53a] py-3 text-sm font-black text-[#073829] shadow-md transition-all hover:bg-[#d9ff57] active:scale-[0.99]"
                   >
                     <CreditCard size={16} />
-                    <span>Terima Pembayaran · {formatRupiah(activeSelectedTable.totalBill)}</span>
+                    <span>Terima Pembayaran · {formatRupiah(activeSelectedTable.sisaTagihan)}</span>
                   </button>
                 )}
 
@@ -865,14 +885,14 @@ export default function PosFloorPlan({
                   cuma punya satu lembar untuk seluruh meja, dan enam orang
                   menghitung patungannya manual di atas meja.
                 */}
-                {onPrintSplitBill && activeSelectedTable.itemCount > 1 && (
+                {onBayarTerpisah && activeSelectedTable.hasUnpaid && activeSelectedTable.sessionId && (
                   <button
                     type="button"
                     onClick={() => setShowSplitBill(true)}
                     className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-emerald-800/30 bg-white py-2.5 text-xs font-black text-[#0b3d2e] transition-all hover:bg-[#edf8f3]"
                   >
                     <Receipt size={14} />
-                    <span>🧾 Bagi Tagihan · Struk per Menu</span>
+                    <span>Bayar Terpisah per Tamu</span>
                   </button>
                 )}
 
@@ -976,26 +996,15 @@ export default function PosFloorPlan({
         />
       )}
 
-      {showSplitBill && activeSelectedTable && onPrintSplitBill && (
-        <PosSplitBillModal
+      {showSplitBill && activeSelectedTable && onBayarTerpisah && (
+        <PosBayarTerpisahModal
           namaMeja={activeSelectedTable.displayName}
-          totalMeja={activeSelectedTable.totalBill}
+          orders={activeSelectedTable.orders}
+          tarifPajak={tarifPajak}
+          tarifService={tarifService}
           isMochi={isMochi}
           onClose={() => setShowSplitBill(false)}
-          items={activeSelectedTable.orders.flatMap((ord) =>
-            ord.items.map((it) => ({
-              id: it.id,
-              nama: it.name_snapshot,
-              qty: it.qty,
-              harga: Number(it.price_snapshot),
-              subtotal: Number(it.subtotal),
-              catatan: it.note,
-              orderNo: ord.order_no,
-            })),
-          )}
-          onCetak={(itemTerpilih, totalBagian, bagianKe) =>
-            onPrintSplitBill(activeSelectedTable, itemTerpilih, totalBagian, bagianKe)
-          }
+          onBayar={(input) => onBayarTerpisah(activeSelectedTable, input)}
         />
       )}
     </div>

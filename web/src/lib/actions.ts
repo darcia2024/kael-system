@@ -2573,6 +2573,95 @@ export async function settleTableSessionAction(
   });
 }
 
+export type HasilBayarTerpisahMeja =
+  | {
+      jenis: "terpisah";
+      orderId: string;
+      orderNo: string;
+      items: { nama: string; qty: number; harga: number; catatan: string | null }[];
+      rincian: { subtotal: number; discount: number; tax: number; serviceCharge: number; total: number };
+      metode: "cash" | "qris" | "transfer";
+      cashGiven: number | null;
+      change: number | null;
+      sisaTagihan: number;
+      pembayaranKe: number;
+    }
+  | {
+      /** Tamu ini membayar seluruh sisa meja: dilunasi sebagai satu pembayaran meja. */
+      jenis: "lunasMeja";
+      orderIds: string[];
+      orderNos: string[];
+      total: number;
+      cashGiven: number | null;
+      change: number | null;
+    };
+
+/**
+ * Satu tamu membayar menu miliknya sendiri dari tagihan meja.
+ * Aturan uangnya di db.bayarTerpisahMeja dan lib/bayar-terpisah.ts.
+ */
+export async function bayarTerpisahMejaAction(
+  sessionId: string,
+  input: {
+    pilihan: { itemId: string; qty: number }[];
+    method: "cash" | "qris" | "transfer";
+    cashGiven?: number | null;
+    totalDiharapkan: number;
+  },
+): Promise<ActionResult<HasilBayarTerpisahMeja>> {
+  const akses = await denganAkses(() => requirePermission("pos"));
+  if (!akses.ok) return fail(akses.error);
+  const { businessId, userId } = akses.sesi;
+
+  const locked = await moduleLock(businessId, "pos", "write");
+  if (locked) return fail(locked);
+
+  if (!["cash", "qris", "transfer"].includes(input.method)) return fail("Cara bayar tidak dikenal.");
+  if (!Array.isArray(input.pilihan) || input.pilihan.length > 200) return fail("Pilihan menu tidak valid.");
+
+  const hasil = await db.bayarTerpisahMeja(sessionId, businessId, userId, {
+    pilihan: input.pilihan.map((p) => ({ itemId: String(p.itemId), qty: Number(p.qty) })),
+    method: input.method,
+    cashGiven: input.cashGiven,
+    totalDiharapkan: Number(input.totalDiharapkan),
+  });
+  if (!hasil.ok) return fail(hasil.error ?? "Pembayaran gagal diproses.");
+
+  if (hasil.semuaSisa) {
+    const lunas = await settleTableSessionAction(sessionId, input.method, input.cashGiven ?? null, null);
+    if (!lunas.ok) return fail(lunas.error);
+    return done({ jenis: "lunasMeja", ...lunas.data });
+  }
+
+  const data = hasil.data!;
+  await db.syncPaidOrder(data.orderId, businessId, userId);
+
+  await db.recordAuditEvent({
+    businessId,
+    actorUserId: userId,
+    action: "pos.table_split_paid",
+    entityType: "table_session",
+    entityId: sessionId,
+    metadata: {
+      orderNo: data.orderNo,
+      total: data.rincian.total,
+      method: input.method,
+      cashGiven: data.cashGiven,
+      change: data.change,
+      sisaTagihan: data.sisaTagihan,
+      // Nota asal yang seluruh menunya pindah ke nota ini (ditutup bernilai nol).
+      notaDigabung: data.notaDigabung,
+    },
+  });
+
+  revalidatePath("/app/pos");
+  revalidatePath("/app/pos/reports");
+  revalidatePath("/app/pos/station");
+  revalidatePath("/app/finance/reports");
+
+  return done({ jenis: "terpisah", metode: input.method, ...data });
+}
+
 /** Uangnya tidak pernah masuk. Pesanan ditutup, bukan dibiarkan menggantung. */
 export async function retryOrderSyncAction(): Promise<ActionResult<null>> {
   const { businessId, userId } = await requireOwner();

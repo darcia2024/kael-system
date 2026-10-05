@@ -28,6 +28,7 @@ import {
 } from "./loyalty-engine";
 import { generateLoyaltyCode } from "./loyalty-code";
 import { normalizeTableKey } from "./table-key";
+import { hitungBayarTerpisah, type PilihanBayarTerpisah, type RincianUang } from "./bayar-terpisah";
 import {
   generateDailyOrderNo,
   calculateCartTotals,
@@ -5047,6 +5048,319 @@ export const db = {
           total,
           cashGiven,
           change,
+        },
+      };
+    });
+  },
+
+  /**
+   * Satu tamu membayar menu miliknya sendiri dari tagihan meja.
+   *
+   * Dulu "bagi tagihan" cuma membagi CETAKANNYA: uangnya tetap tercatat satu
+   * pembayaran untuk seluruh meja, dengan satu cara bayar. Rombongan yang
+   * sebagian bayar tunai dan sebagian QRIS tidak bisa dicatat dengan benar —
+   * laci tidak pernah cocok, dan laporan per cara bayar salah.
+   *
+   * Sekarang tiap tamu jadi pembayaran sungguhan: menu yang dia bayar dipindah
+   * ke notanya sendiri, dan nota itu dilunasi dengan cara bayar, tunai
+   * diterima, dan kembaliannya sendiri. Karena hasilnya nota lunas biasa,
+   * laporan, rekonsiliasi laci, HPP, poin, dan stok membacanya tanpa perlu
+   * tahu apa-apa soal bayar terpisah.
+   *
+   * Nota penampungnya:
+   * - Kalau ada nota asal yang SELURUH menunya dipilih, nota itu yang dipakai
+   *   — nomornya sudah dikenal dapur dan tamunya.
+   * - Kalau tidak ada, dibuat nota baru dengan tanggal pesanan paling awal
+   *   dari menu yang dipindah, supaya penjualannya tetap jatuh di hari yang
+   *   sama dengan pesanannya.
+   *
+   * Pilihan yang mencakup seluruh sisa meja bukan bayar terpisah: dikembalikan
+   * sebagai `semuaSisa`, dan pemanggil melunasinya lewat settleTableSession
+   * supaya nomor nota tidak berubah tanpa alasan.
+   */
+  async bayarTerpisahMeja(
+    sessionId: string,
+    businessId: string,
+    userId: string,
+    opsi: {
+      pilihan: PilihanBayarTerpisah[];
+      method: "cash" | "qris" | "transfer";
+      /** Uang yang disodorkan tamu. Wajib untuk tunai. */
+      cashGiven?: number | null;
+      /**
+       * Total yang dilihat kasir di layar. Kalau tagihan meja berubah sejak
+       * layarnya dibuka, pembayarannya ditolak, bukan ditagih angka lain.
+       */
+      totalDiharapkan: number;
+    },
+  ): Promise<{
+    ok: boolean;
+    error?: string;
+    semuaSisa?: boolean;
+    data?: {
+      orderId: string;
+      orderNo: string;
+      items: { nama: string; qty: number; harga: number; catatan: string | null }[];
+      rincian: RincianUang;
+      cashGiven: number | null;
+      change: number | null;
+      /** Yang masih belum dibayar di meja ini sesudah pembayaran ini. */
+      sisaTagihan: number;
+      /** Nota lunas ke berapa di kunjungan ini. */
+      pembayaranKe: number;
+      /** Nota asal yang seluruh menunya pindah ke nota ini, lalu ditutup bernilai nol. */
+      notaDigabung: string[];
+    };
+  }> {
+    return sql.begin(async (tx) => {
+      const session = one<TableSession>(await tx`
+        SELECT * FROM table_sessions
+        WHERE id = ${sessionId} AND business_id = ${businessId} FOR UPDATE
+      `);
+      if (!session) return { ok: false, error: "Sesi meja tidak ditemukan." };
+      if (session.status !== "open") return { ok: false, error: "Meja ini sudah ditutup." };
+
+      // Baris toko dikunci juga: nomor nota harian dibuat di sini, sama seperti createOrder.
+      const biz = one<{ pos_tax_rate: string; pos_service_charge_rate: string; timezone: string | null }>(await tx`
+        SELECT pos_tax_rate, pos_service_charge_rate, timezone FROM businesses
+        WHERE id = ${businessId} FOR UPDATE
+      `);
+
+      const notaRows = (await tx`
+        SELECT * FROM orders
+        WHERE table_session_id = ${sessionId}
+          AND business_id = ${businessId}
+          AND status <> 'cancelled'
+          AND payment_status = 'pending'
+        ORDER BY created_at
+        FOR UPDATE
+      `) as unknown as Order[];
+      if (!notaRows.length) {
+        return { ok: false, error: "Tidak ada tagihan yang menunggu dibayar di meja ini." };
+      }
+
+      const itemRows = (await tx`
+        SELECT * FROM order_items
+        WHERE order_id IN ${tx(notaRows.map((o) => o.id))} AND cancelled_at IS NULL
+        ORDER BY id
+        FOR UPDATE
+      `) as unknown as OrderItem[];
+
+      const hitung = hitungBayarTerpisah(
+        notaRows.map((o) => ({
+          id: o.id,
+          discount: num(o.discount),
+          deliveryFee: num(o.delivery_fee),
+          items: itemRows
+            .filter((i) => i.order_id === o.id)
+            .map((i) => ({ id: i.id, price: num(i.price_snapshot), qty: num(i.qty) })),
+        })),
+        opsi.pilihan,
+        num(biz?.pos_tax_rate),
+        num(biz?.pos_service_charge_rate),
+      );
+      if (!hitung.ok) return { ok: false, error: hitung.error };
+      if (hitung.semuaTerpilih) return { ok: true, semuaSisa: true };
+
+      const total = hitung.bagian.total;
+      if (Math.round(Number(opsi.totalDiharapkan)) !== total) {
+        return {
+          ok: false,
+          error:
+            "Tagihan meja berubah sejak layar ini dibuka — ada menu yang dibatalkan, diubah harganya, atau sudah dibayar. Tutup lalu buka lagi Bayar Terpisah.",
+        };
+      }
+
+      // Tunai wajib shift terbuka, alasannya sama dengan settleTableSession.
+      const shift = one<Shift>(await tx`
+        SELECT * FROM shifts WHERE business_id = ${businessId} AND closed_at IS NULL
+        ORDER BY opened_at DESC LIMIT 1 FOR UPDATE
+      `);
+      let cashGiven: number | null = null;
+      let change: number | null = null;
+      if (opsi.method === "cash") {
+        if (!shift) return { ok: false, error: "Buka shift kasir dulu sebelum menerima pembayaran tunai." };
+        cashGiven = Math.round(Number(opsi.cashGiven ?? 0));
+        if (!Number.isFinite(cashGiven) || cashGiven < total) {
+          return { ok: false, error: "Uang tunai yang diterima kurang dari total bagian ini." };
+        }
+        change = cashGiven - total;
+      }
+
+      const dipilih = new Map(opsi.pilihan.map((p) => [p.itemId, p.qty]));
+      const sumber = notaRows.filter((o) => hitung.sisa.has(o.id));
+
+      /**
+       * Dapur memegang nota penampungnya dari tahap yang paling awal di antara
+       * nota asalnya. Menu yang belum keluar dari dapur tidak boleh hilang dari
+       * layar dapur hanya karena tamunya membayar duluan.
+       */
+      const tahapDapur = ["pending", "accepted", "preparing", "ready", "completed"];
+      const tahapAwal = sumber
+        .map((o) => o.fulfillment_status)
+        .filter((s) => tahapDapur.includes(s))
+        .sort((a, b) => tahapDapur.indexOf(a) - tahapDapur.indexOf(b))[0] ?? "completed";
+      const tahapNota = tahapAwal === "pending" ? "accepted" : tahapAwal;
+
+      const alasanDiskon = hitung.bagian.discount > 0
+        ? [...new Set(sumber.map((o) => o.discount_reason).filter(Boolean))].join("; ") || null
+        : null;
+
+      // Nota penampung: nota asal yang seluruh menunya dipilih, atau nota baru.
+      let penampung = sumber.find((o) => hitung.sisa.get(o.id)?.kosong) ?? null;
+      if (!penampung) {
+        const tz = biz?.timezone || "Asia/Jakarta";
+        const seq = await tx`
+          SELECT COUNT(*)::int AS n FROM orders
+          WHERE business_id = ${businessId}
+            AND (created_at AT TIME ZONE ${tz})::date = (NOW() AT TIME ZONE ${tz})::date
+        `;
+        const pertama = sumber[0];
+        penampung = one<Order>(await tx`
+          INSERT INTO orders ${tx({
+            business_id: businessId,
+            order_no: generateDailyOrderNo(num(seq[0]?.n) + 1),
+            channel: "cashier",
+            service_type: "dine_in",
+            table_no: pertama.table_no,
+            table_session_id: sessionId,
+            status: "open",
+            payment_status: "pending",
+            fulfillment_status: tahapNota,
+            subtotal: 0,
+            total: 0,
+            payment_method: opsi.method,
+            customer_name: pertama.customer_name ?? null,
+            created_by: pertama.created_by,
+            created_at: pertama.created_at,
+            is_test: sumber.some((o) => o.is_test),
+          })}
+          RETURNING *
+        `)!;
+      }
+
+      // Pindahkan menu yang dipilih ke nota penampung.
+      for (const item of itemRows) {
+        const ambil = dipilih.get(item.id);
+        if (!ambil || item.order_id === penampung.id) continue;
+        if (ambil === num(item.qty)) {
+          await tx`UPDATE order_items SET order_id = ${penampung.id} WHERE id = ${item.id}`;
+          // Riwayat ubah harga / ganti menu ikut ke nota barunya.
+          await tx`UPDATE order_item_changes SET order_id = ${penampung.id} WHERE order_item_id = ${item.id}`;
+        } else {
+          const tinggal = num(item.qty) - ambil;
+          await tx`
+            UPDATE order_items SET qty = ${tinggal}, subtotal = ${num(item.price_snapshot) * tinggal}
+            WHERE id = ${item.id}
+          `;
+          await tx`
+            INSERT INTO order_items ${tx({
+              order_id: penampung.id,
+              menu_item_id: item.menu_item_id,
+              name_snapshot: item.name_snapshot,
+              price_snapshot: num(item.price_snapshot),
+              cost_snapshot: item.cost_snapshot ?? null,
+              qty: ambil,
+              subtotal: num(item.price_snapshot) * ambil,
+              note: item.note ?? null,
+            })}
+          `;
+        }
+      }
+
+      // Lunasi nota penampung.
+      const lunas = one<Order>(await tx`
+        UPDATE orders SET
+          subtotal = ${hitung.bagian.subtotal},
+          discount = ${hitung.bagian.discount},
+          discount_reason = ${alasanDiskon},
+          tax = ${hitung.bagian.tax},
+          service_charge = ${hitung.bagian.serviceCharge},
+          total = ${total},
+          status = 'paid',
+          payment_status = 'paid',
+          payment_method = ${opsi.method},
+          cash_given = ${cashGiven},
+          cash_change = ${change},
+          paid_confirmed_by = ${userId},
+          paid_confirmed_at = NOW(),
+          shift_id = COALESCE(${shift?.id ?? null}, shift_id),
+          fulfillment_status = ${tahapNota}
+        WHERE id = ${penampung.id}
+        RETURNING *
+      `)!;
+
+      // Nota asal lainnya: hitung ulang sisanya, atau bereskan yang sudah kosong.
+      const notaDigabung: string[] = [];
+      for (const o of sumber) {
+        if (o.id === penampung.id) continue;
+        const s = hitung.sisa.get(o.id)!;
+        if (!s.kosong) {
+          await tx`
+            UPDATE orders SET
+              subtotal = ${s.subtotal},
+              discount = ${s.discount},
+              discount_reason = ${s.discount > 0 ? o.discount_reason : null},
+              tax = ${s.tax},
+              service_charge = ${s.serviceCharge},
+              total = ${s.total}
+            WHERE id = ${o.id}
+          `;
+          continue;
+        }
+
+        /**
+         * Seluruh menunya sudah pindah ke nota penampung. Rujukan lain ke nota
+         * ini ikut pindah, lalu notanya ditutup sebagai batal bernilai nol —
+         * sama seperti nota yang seluruh menunya dibatalkan (cancelOrderItem).
+         *
+         * Sengaja TIDAK dihapus: nomor nota harian dibuat dengan menghitung
+         * nota hari itu, jadi nota yang hilang membuat nomor berikutnya bisa
+         * kembar dengan nota yang sudah ada. Jejaknya juga tetap: audit
+         * pembayaran ini mencatat nota mana saja yang digabung.
+         */
+        await tx`UPDATE member_feedback SET order_id = ${penampung.id} WHERE order_id = ${o.id}`;
+        await tx`UPDATE invoice_links SET order_id = ${penampung.id} WHERE order_id = ${o.id}`;
+        await tx`
+          UPDATE orders SET
+            status = 'cancelled',
+            payment_status = 'cancelled',
+            fulfillment_status = 'cancelled',
+            subtotal = 0, discount = 0, discount_reason = NULL, tax = 0, service_charge = 0, total = 0
+          WHERE id = ${o.id}
+        `;
+        notaDigabung.push(o.order_no);
+      }
+
+      const [ringkas] = await tx`
+        SELECT
+          COALESCE(SUM(total) FILTER (WHERE status <> 'cancelled' AND payment_status = 'pending'), 0) AS sisa,
+          COUNT(*) FILTER (WHERE payment_status = 'paid')::int AS lunas
+        FROM orders WHERE table_session_id = ${sessionId}
+      `;
+      const isi = (await tx`
+        SELECT name_snapshot, qty, price_snapshot, note FROM order_items
+        WHERE order_id = ${lunas.id} AND cancelled_at IS NULL
+        ORDER BY id
+      `) as unknown as { name_snapshot: string; qty: number; price_snapshot: string; note: string | null }[];
+
+      return {
+        ok: true,
+        data: {
+          orderId: lunas.id,
+          orderNo: lunas.order_no,
+          items: isi.map((i) => ({
+            nama: i.name_snapshot,
+            qty: num(i.qty),
+            harga: num(i.price_snapshot),
+            catatan: i.note,
+          })),
+          rincian: hitung.bagian,
+          cashGiven,
+          change,
+          sisaTagihan: num(ringkas?.sisa),
+          pembayaranKe: num(ringkas?.lunas),
+          notaDigabung,
         },
       };
     });

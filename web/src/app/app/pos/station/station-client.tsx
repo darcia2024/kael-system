@@ -6,7 +6,9 @@ import { BellRing, ChefHat, Check, Clock3, Volume2, VolumeX, RefreshCw, MonitorS
 
 import { claimOrderAction, confirmPaymentAction, getOrderStationSnapshotAction, setFulfillmentAction } from "@/lib/actions";
 import { formatRupiah } from "@/lib/formatters";
-import { serviceTypeLabel, generateKitchenTicketText } from "@/lib/pos-engine";
+import { serviceTypeLabel } from "@/lib/pos-engine";
+import { barisKosong, gabung, INIT, POTONG } from "@/lib/escpos";
+import { tiketDapurEscPos, tiketDapurTeks, type DataTiketDapur } from "@/lib/tiket-dapur";
 import type { Order, OrderItem } from "@/lib/types";
 import { ambilPrinter, kirimKePrinter, alasanGagalCetak } from "@/lib/thermal-printer";
 import PosTerimaTunaiModal from "../pos-terima-tunai";
@@ -87,19 +89,29 @@ export default function OrderStationClient({
   }, []);
 
   const printKitchenTicket = async (order: StationOrder) => {
-    const ticketText = generateKitchenTicketText({
-      businessName,
+    // Bentuk tiket yang sama dengan layar kasir (lib/tiket-dapur.ts).
+    const dataTiket: DataTiketDapur = {
       orderNo: order.order_no,
       tableNo: order.table_no,
       serviceType: (order.service_type || "dine_in") as "dine_in" | "takeaway" | "delivery",
       createdAt: order.created_at,
       timezone,
+      customerName: order.customer_name,
       items: order.items.map((i) => ({
         name: i.name_snapshot,
         qty: i.qty,
         note: i.note || undefined,
       })),
-    });
+      tambahan:
+        !!order.table_session_id &&
+        orders.some(
+          (o) =>
+            o.id !== order.id &&
+            o.table_session_id === order.table_session_id &&
+            new Date(o.created_at).getTime() < new Date(order.created_at).getTime(),
+        ),
+    };
+    const ticketText = tiketDapurTeks(dataTiket);
 
     const bluetooth = (navigator as Navigator & { bluetooth?: any }).bluetooth;
     if (!bluetooth) {
@@ -129,12 +141,7 @@ export default function OrderStationClient({
       // langsung dipakai, jadi tiket dapur tidak membuka dialog Bluetooth lagi.
       const device = await ambilPrinter(bluetooth);
 
-      const encoded = new TextEncoder().encode(ticketText);
-      const finish = [0x0a, 0x0a, 0x0a, 0x1d, 0x56, 0x00];
-      const payload = new Uint8Array(encoded.length + 2 + finish.length);
-      payload.set([0x1b, 0x40], 0);
-      payload.set(encoded, 2);
-      payload.set(finish, encoded.length + 2);
+      const payload = gabung(INIT, tiketDapurEscPos(dataTiket), barisKosong(3), POTONG);
 
       // Menyambung, menulis, dan mengulang sekali kalau printernya sempat
       // memutus di tengah jalan. Sambungannya dibiarkan terbuka setelahnya.
