@@ -6,6 +6,7 @@ import { BellRing, ChefHat, Check, Clock3, Volume2, VolumeX, RefreshCw, MonitorS
 
 import { claimOrderAction, confirmPaymentAction, getOrderStationSnapshotAction, setFulfillmentAction } from "@/lib/actions";
 import { formatRupiah } from "@/lib/formatters";
+import { usePolling } from "@/lib/use-polling";
 import { serviceTypeLabel } from "@/lib/pos-engine";
 import { barisKosong, gabung, INIT, POTONG } from "@/lib/escpos";
 import { tiketDapurEscPos, tiketDapurTeks, type DataTiketDapur } from "@/lib/tiket-dapur";
@@ -71,9 +72,10 @@ export default function OrderStationClient({
   const title = mode === "cashier" ? "Pos Kasir Tetap" : "Layar Dapur";
   const isMochiStation = isMochi || businessName.toLowerCase().includes("mochi") || themeClassName.includes("mochi-ui");
 
-  const refresh = async (notify = true) => {
+  /** Mengembalikan true kalau ada pesanan baru, supaya polling kembali rapat. */
+  const refresh = async (notify = true): Promise<boolean> => {
     const result = await getOrderStationSnapshotAction();
-    if (!result.ok) { setMessage(result.error ?? "Antrean tidak bisa diperbarui."); return; }
+    if (!result.ok) { setMessage(result.error ?? "Antrean tidak bisa diperbarui."); return false; }
     const incoming = result.data.orders.filter((order) => !knownIds.current.has(order.id));
     result.data.orders.forEach((order) => knownIds.current.add(order.id));
     setOrders(result.data.orders);
@@ -81,12 +83,11 @@ export default function OrderStationClient({
       setMessage(`${incoming.length} pesanan baru masuk.`);
       if (soundEnabledRef.current) playIncomingOrderTone();
     }
+    return incoming.length > 0;
   };
 
-  useEffect(() => {
-    const timer = window.setInterval(() => void refresh(), 10000);
-    return () => window.clearInterval(timer);
-  }, []);
+  // Berhenti saat tab tersembunyi, merenggang 10 -> 20 detik kalau sepi.
+  usePolling(() => refresh(), { baseMs: 10000, maxMs: 20000 });
 
   const printKitchenTicket = async (order: StationOrder) => {
     // Bentuk tiket yang sama dengan layar kasir (lib/tiket-dapur.ts).

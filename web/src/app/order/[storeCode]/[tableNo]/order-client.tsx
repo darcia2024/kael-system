@@ -40,6 +40,7 @@ import {
 import QrCode from "@/components/qr-code";
 import { buildDynamicQris } from "@/lib/qris-engine";
 import { formatRupiah } from "@/lib/formatters";
+import { usePolling } from "@/lib/use-polling";
 import { BusinessMark } from "@/components/business-mark";
 import { isMochiBusiness } from "@/lib/mochi-brand";
 
@@ -294,16 +295,14 @@ export default function CustomerQrOrderPage({
   }, [storageKey]);
 
   // ---------------------------------------------------------------------------
-  // 2. Polling status pesanan secara berkala (tiap 3 detik) jika QRIS belum lunas
+  // 2. Polling status pesanan secara berkala (tiap 5 detik, berhenti di tab tersembunyi) jika QRIS belum lunas
   // ---------------------------------------------------------------------------
-  useEffect(() => {
-    if (!pesananSelesai?.id || paymentStatus === "paid") return;
-
-    let isMounted = true;
-    const interval = setInterval(async () => {
+  usePolling(
+    async () => {
+      if (!pesananSelesai?.id) return;
       try {
         const res = await getQrOrderStatusAction(pesananSelesai.id);
-        if (res.ok && isMounted) {
+        if (res.ok) {
           if (res.data.paymentStatus) {
             setPaymentStatus(res.data.paymentStatus);
           }
@@ -314,13 +313,11 @@ export default function CustomerQrOrderPage({
       } catch (err) {
         console.warn("Polling status error:", err);
       }
-    }, 3000);
-
-    return () => {
-      isMounted = false;
-      clearInterval(interval);
-    };
-  }, [pesananSelesai?.id, paymentStatus]);
+    },
+    // Tamu menunggu konfirmasi bayar: 5 detik tetap terasa langsung, dan
+    // berhenti selama tab tersembunyi.
+    { baseMs: 5000, enabled: Boolean(pesananSelesai?.id) && paymentStatus !== "paid" },
+  );
 
   // ---------------------------------------------------------------------------
   // 3. Kunci halaman agar tidak bisa di-zoom out atau zoom in di HP (skala 1.0)

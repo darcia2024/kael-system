@@ -142,6 +142,7 @@ import PosMemberScannerModal from "./pos-member-scanner-modal";
 import PosBellSettingsModal from "./pos-bell-settings-modal";
 import { MemberQrModal } from "@/components/member-qr-modal";
 import { usePwaInstall } from "@/components/pwa-register";
+import { usePolling } from "@/lib/use-polling";
 import { alertNewIncomingOrder, alertTableCall, buildPrinterBuzzerPayload } from "@/lib/pos-audio";
 
 function getPosCategoryIcon(categoryName: string): LucideIcon {
@@ -536,9 +537,10 @@ export default function PosClient({
     try { localStorage.setItem("kael_pos_wa_staff", val); } catch {}
   };
 
-  // Background live polling every 7 seconds for QR orders
-  useEffect(() => {
-    const pollInterval = window.setInterval(async () => {
+  // Background live polling for QR orders and table calls. Pauses while the
+  // tab is hidden and backs off 7s -> 20s while nothing new arrives.
+  usePolling(async () => {
+      let adaYangBaru = false;
       try {
         const res = await getPendingQrOrdersAction();
         if (res.ok && res.data.orders) {
@@ -546,6 +548,7 @@ export default function PosClient({
           const incoming = freshOrders.filter((o) => !knownOrderIds.current.has(o.id));
           
           if (incoming.length > 0) {
+            adaYangBaru = true;
             const latest = incoming[0];
             setIncomingToast({
               orderNo: latest.order_no,
@@ -590,6 +593,7 @@ export default function PosClient({
             `${c.id}:${c.jumlah_ping}`;
           const baruMasuk = daftar.filter((c) => !knownCallIds.current.has(tandaPanggilan(c)));
 
+          if (baruMasuk.length > 0) adaYangBaru = true;
           if (baruMasuk.length > 0 && soundEnabled) {
             void alertTableCall({
               tableNo: baruMasuk[0].table_no,
@@ -611,10 +615,8 @@ export default function PosClient({
       } catch {
         // network polling failure ignored
       }
-    }, 7000);
-
-    return () => window.clearInterval(pollInterval);
-  }, [soundEnabled, voiceEnabled]);
+      return adaYangBaru;
+  }, { baseMs: 7000, maxMs: 20000 });
 
   /** Sudah berapa lama mejanya menunggu, dibaca sekilas tanpa menghitung jam. */
   const menitMenunggu = (iso: string) => {
