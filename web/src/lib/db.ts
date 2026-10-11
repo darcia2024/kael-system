@@ -5428,11 +5428,48 @@ export const db = {
         )
       ORDER BY o.created_at
     `) as unknown as Order[];
+    if (orders.length === 0) return [];
+
+    /**
+     * Menu yang direfund per item juga tidak perlu ada di struk.
+     *
+     * Baris menunya dibuang dan nilainya dikurangkan dari subtotal dan total
+     * nota itu, supaya daftar di kertas tetap menjumlah ke angka yang tercetak.
+     * Hanya refund yang menutup SELURUH baris itu yang diperlakukan begitu;
+     * refund sebagian (nominal lebih kecil dari harga barisnya) tidak bisa
+     * dipetakan ke menu mana pun, jadi barisnya dibiarkan.
+     *
+     * Fungsi ini hanya dipakai untuk mencetak tagihan gabungan, bukan untuk
+     * menagih, jadi mengurangi angkanya di sini tidak mengubah uang siapa pun.
+     */
+    const refundPerItem = (await sql`
+      SELECT order_id, order_item_id, SUM(amount) AS jumlah
+      FROM refunds
+      WHERE order_id IN ${sql(orders.map((o) => o.id))} AND order_item_id IS NOT NULL
+      GROUP BY order_id, order_item_id
+    `) as unknown as { order_id: string; order_item_id: string; jumlah: string }[];
+    const jumlahRefund = new Map(refundPerItem.map((r) => [r.order_item_id, Number(r.jumlah)]));
+
     return Promise.all(
-      orders.map(async (o) => ({
-        ...o,
-        items: await this.getOrderItems(o.id),
-      })),
+      orders.map(async (o) => {
+        const semuaItem = await this.getOrderItems(o.id);
+        let potong = 0;
+        const items = semuaItem.filter((it) => {
+          const direfund = jumlahRefund.get(it.id) ?? 0;
+          if (direfund > 0 && direfund >= Number(it.subtotal)) {
+            potong += direfund;
+            return false;
+          }
+          return true;
+        });
+        if (potong === 0) return { ...o, items };
+        return {
+          ...o,
+          items,
+          subtotal: Math.max(0, Number(o.subtotal) - potong),
+          total: Math.max(0, Number(o.total) - potong),
+        };
+      }),
     );
   },
 
