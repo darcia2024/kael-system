@@ -34,6 +34,7 @@ import type { Order, OrderItem, MenuItem } from "@/lib/types";
 import { normalizeTableKey } from "@/lib/table-key";
 import PosReplaceRefundModal from "./pos-replace-refund-modal";
 import PosTerimaTunaiModal from "./pos-terima-tunai";
+import PosKonfirmasiLunasModal from "./pos-konfirmasi-lunas";
 
 type Antrean = Order & { items: OrderItem[] };
 
@@ -183,6 +184,9 @@ export default function OrderQueue({
   const [showAdjustModal, setShowAdjustModal] = useState(false);
   // Pesanan tunai yang sedang ditanyakan uangnya sebelum dicatat lunas.
   const [terimaTunai, setTerimaTunai] = useState<Antrean | null>(null);
+  // Transfer/QRIS: ditanyakan sekali lagi sebelum dicatat lunas, karena status
+  // lunas tidak bisa dibatalkan dari layar kasir.
+  const [konfirmasiLunas, setKonfirmasiLunas] = useState<Antrean | null>(null);
 
   /**
    * Cetak sesudah pembayaran dikonfirmasi: struk pelanggan, ditambah tiket
@@ -536,11 +540,7 @@ export default function OrderQueue({
                           <button
                             type="button"
                             disabled={busy}
-                            onClick={async () => {
-                              if (await jalankan(o.id, () => confirmPaymentAction(o.id))) {
-                                await cetakSesudahBayar(o);
-                              }
-                            }}
+                            onClick={() => setKonfirmasiLunas(o)}
                             className={`w-full flex items-center justify-center gap-2 rounded-xl py-2.5 px-3 text-xs font-black transition-all shadow-sm ${
                               isMochi
                                 ? "bg-[#c8f53a] hover:bg-[#d9ff57] text-[#073829]"
@@ -636,14 +636,12 @@ export default function OrderQueue({
                             type="button"
                             disabled={busy}
                             onClick={async () => {
-                              // Tunai: tanyakan dulu uangnya. Transfer: langsung dicatat.
+                              // Tunai: tanyakan dulu uangnya. Transfer/QRIS: minta konfirmasi.
                               if (o.payment_method === "cash") {
                                 setTerimaTunai(o);
                                 return;
                               }
-                              if (await jalankan(o.id, () => confirmPaymentAction(o.id))) {
-                                await cetakSesudahBayar(o);
-                              }
+                              setKonfirmasiLunas(o);
                             }}
                             className={`flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl px-3 py-2 font-mono text-xs font-black disabled:opacity-50 transition-all ${
                               isMochi
@@ -864,6 +862,23 @@ export default function OrderQueue({
           isMochi={isMochi}
           onSuccess={() => {
             router.refresh();
+          }}
+        />
+      )}
+
+      {konfirmasiLunas && (
+        <PosKonfirmasiLunasModal
+          orderNo={konfirmasiLunas.order_no}
+          keterangan={serviceTypeLabel(konfirmasiLunas.service_type, konfirmasiLunas.table_no)}
+          total={Number(konfirmasiLunas.total)}
+          metode={konfirmasiLunas.payment_method}
+          isMochi={isMochi}
+          onClose={() => setKonfirmasiLunas(null)}
+          onKonfirmasi={async () => {
+            const o = konfirmasiLunas;
+            const ok = await jalankan(o.id, () => confirmPaymentAction(o.id));
+            setKonfirmasiLunas(null);
+            if (ok) await cetakSesudahBayar(o);
           }}
         />
       )}

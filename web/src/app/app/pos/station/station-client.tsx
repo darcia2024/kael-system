@@ -13,6 +13,7 @@ import { tiketDapurEscPos, tiketDapurTeks, type DataTiketDapur } from "@/lib/tik
 import type { Order, OrderItem } from "@/lib/types";
 import { ambilPrinter, kirimKePrinter, alasanGagalCetak } from "@/lib/thermal-printer";
 import PosTerimaTunaiModal from "../pos-terima-tunai";
+import PosKonfirmasiLunasModal from "../pos-konfirmasi-lunas";
 
 type StationOrder = Order & { items: OrderItem[] };
 type Stage = "cashier" | "kitchen";
@@ -189,13 +190,32 @@ export default function OrderStationClient({
    * langsung dicatat seperti sebelumnya.
    */
   const [terimaTunai, setTerimaTunai] = useState<StationOrder | null>(null);
+  // Non-tunai: ditanyakan sekali lagi, karena status lunas tidak bisa dibatalkan.
+  const [konfirmasiLunas, setKonfirmasiLunas] = useState<StationOrder | null>(null);
   const konfirmasiBayar = (order: StationOrder) => {
     if (order.payment_method === "cash") {
       setTerimaTunai(order);
       return;
     }
-    run(() => confirmPaymentAction(order.id));
+    setKonfirmasiLunas(order);
   };
+
+  const modalLunas = konfirmasiLunas ? (
+    <PosKonfirmasiLunasModal
+      orderNo={konfirmasiLunas.order_no}
+      keterangan={serviceTypeLabel(konfirmasiLunas.service_type, konfirmasiLunas.table_no)}
+      total={Number(konfirmasiLunas.total)}
+      metode={konfirmasiLunas.payment_method}
+      isMochi={isMochiStation}
+      onClose={() => setKonfirmasiLunas(null)}
+      onKonfirmasi={async () => {
+        const res = await confirmPaymentAction(konfirmasiLunas.id);
+        setKonfirmasiLunas(null);
+        if (!res.ok) setMessage(res.error ?? "Aksi belum berhasil.");
+        await refresh(false);
+      }}
+    />
+  ) : null;
 
   const modalTunai = terimaTunai ? (
     <PosTerimaTunaiModal
@@ -572,7 +592,7 @@ export default function OrderStationClient({
             </div>
           )}
         </section>
-        {modalTunai}
+        {modalTunai}{modalLunas}
       </main>
     );
   }
@@ -610,7 +630,7 @@ export default function OrderStationClient({
           </article>;
         })}</div>}
       </section>
-      {modalTunai}
+      {modalTunai}{modalLunas}
     </main>
   );
 }
