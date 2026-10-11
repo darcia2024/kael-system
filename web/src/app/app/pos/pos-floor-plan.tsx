@@ -56,6 +56,10 @@ export interface TableSummary {
   hasUnpaid: boolean;
 }
 
+/** Nilai nota setelah refund. Nota yang dikembalikan penuh bernilai nol. */
+const nilaiBersih = (o: Antrean) => Math.max(0, Number(o.total) - Number(o.refund_total ?? 0));
+const direfundPenuh = (o: Antrean) => Number(o.total) > 0 && Number(o.refund_total ?? 0) >= Number(o.total);
+
 const sisaBelumLunas = (daftar: Antrean[]) =>
   daftar
     .filter((o) => o.payment_status === "pending" && o.status !== "cancelled")
@@ -236,7 +240,7 @@ export default function PosFloorPlan({
         else status = "dining";
       }
 
-      const totalBill = tableOrders.reduce((sum, o) => sum + Number(o.total), 0);
+      const totalBill = tableOrders.reduce((sum, o) => sum + nilaiBersih(o), 0);
       const itemCount = tableOrders.reduce(
         (sum, o) => sum + o.items.reduce((iSum, i) => iSum + i.qty, 0),
         0
@@ -283,7 +287,7 @@ export default function PosFloorPlan({
           sessionId: session?.id ?? null,
           guestCount: session?.guest_count ?? null,
           orders: tableOrders,
-          totalBill: tableOrders.reduce((sum, o) => sum + Number(o.total), 0),
+          totalBill: tableOrders.reduce((sum, o) => sum + nilaiBersih(o), 0),
           sisaTagihan: sisaBelumLunas(tableOrders),
           itemCount: tableOrders.reduce(
             (sum, o) => sum + o.items.reduce((iSum, i) => iSum + i.qty, 0),
@@ -667,12 +671,18 @@ export default function PosFloorPlan({
                           </span>
                         </div>
                         <div className="text-right">
-                          <span className="font-black text-sm text-[#0b3d2e] block">
+                          <span
+                            className={`font-black text-sm block ${
+                              direfundPenuh(order) ? "text-[#9aa8a1] line-through" : "text-[#0b3d2e]"
+                            }`}
+                          >
                             {formatRupiah(Number(order.total))}
                           </span>
                           <span className="text-[10px] text-[#718078]">
                             {order.payment_method.toUpperCase()} ·{" "}
-                            {PAYMENT_STATUS_LABEL[order.payment_status] || order.payment_status}
+                            {direfundPenuh(order)
+                              ? "DIKEMBALIKAN PENUH"
+                              : PAYMENT_STATUS_LABEL[order.payment_status] || order.payment_status}
                           </span>
                         </div>
                       </div>

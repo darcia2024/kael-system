@@ -7240,14 +7240,24 @@ export const db = {
    */
   async getPendingQrOrders(businessId: string) {
     await this.expireStalePendingOrders(businessId);
+    /**
+     * Total refund tiap nota ikut dibawa.
+     *
+     * Refund tidak mengubah status nota, jadi nota yang sudah dikembalikan
+     * penuh tetap muncul di denah. Tanpa angka ini layar tidak punya cara
+     * tahu, dan "Total Tagihan Meja" ikut menjumlahkan uang yang sudah
+     * dikembalikan ke tamu.
+     */
     const orders = (await sql`
-      SELECT * FROM orders
-      WHERE business_id = ${businessId}
+      SELECT o.*,
+        COALESCE((SELECT SUM(r.amount) FROM refunds r WHERE r.order_id = o.id), 0) AS refund_total
+      FROM orders o
+      WHERE o.business_id = ${businessId}
         AND (
-          payment_status = 'pending'
-          OR (payment_status = 'paid' AND fulfillment_status IN ('accepted', 'preparing', 'ready'))
+          o.payment_status = 'pending'
+          OR (o.payment_status = 'paid' AND o.fulfillment_status IN ('accepted', 'preparing', 'ready'))
         )
-      ORDER BY created_at
+      ORDER BY o.created_at
     `) as unknown as Order[];
     return Promise.all(
       orders.map(async (o) => ({

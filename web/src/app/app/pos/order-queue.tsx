@@ -421,7 +421,11 @@ export default function OrderQueue({
             const tableKey = o.service_type === "dine_in" && o.table_no ? normalizeTableKey(o.table_no) : null;
             const tableOrders = tableKey ? (tableOrdersMap.get(tableKey) || []) : [o];
             const isTableAddon = tableOrders.length > 1;
-            const tableTotal = tableOrders.reduce((sum, ord) => sum + Number(ord.total), 0);
+            // Setelah refund: nota yang sudah dikembalikan tidak ikut tagihan meja.
+            const tableTotal = tableOrders.reduce(
+              (sum, ord) => sum + Math.max(0, Number(ord.total) - Number(ord.refund_total ?? 0)),
+              0,
+            );
             const isInitialOrder = tableOrders[0]?.id === o.id;
 
             return (
