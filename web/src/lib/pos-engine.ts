@@ -426,6 +426,11 @@ export function generateThreePlyReceiptText(params: {
     total: number;
     cashGiven?: number;
     cashChange?: number;
+    /**
+     * Uang per cara bayar untuk tagihan gabungan. Kosong = satu cara bayar,
+     * yaitu `paymentMethod` nota yang dicetak.
+     */
+    pembayaran?: { metode: string; jumlah: number }[];
   };
 }): string {
   const bagian = params.bagian ?? "semua";
@@ -438,6 +443,22 @@ export function generateThreePlyReceiptText(params: {
   const row = (left: string, right: string) => {
     const space = Math.max(1, W - left.length - right.length);
     return left + " ".repeat(space) + right;
+  };
+
+  /**
+   * Baris CARA BAYAR. Satu cara bayar: satu baris seperti biasa. Tagihan
+   * gabungan yang dibayar lewat beberapa jalur dirinci per jalur, supaya
+   * tiap tumpukan bisa dicocokkan ke sumbernya masing-masing.
+   */
+  const labelBayar = (metode: string) => (metode === "belum_lunas" ? "BELUM LUNAS" : labelCaraBayar(metode));
+  const barisCaraBayar = (pembayaran: { metode: string; jumlah: number }[] | undefined, metodeNota: string) => {
+    const pertama = pembayaran?.[0];
+    if (!pembayaran || !pertama) return [row("CARA BAYAR", labelCaraBayar(metodeNota))];
+    if (pembayaran.length === 1) return [row("CARA BAYAR", labelBayar(pertama.metode))];
+    return [
+      "CARA BAYAR",
+      ...pembayaran.map((p) => row(`  ${labelBayar(p.metode)}`, `Rp ${p.jumlah.toLocaleString("id-ID")}`)),
+    ];
   };
   const divider = "-".repeat(W);
   const doubleDivider = "=".repeat(W);
@@ -522,7 +543,7 @@ export function generateThreePlyReceiptText(params: {
   lines.push(divider);
   lines.push(row("TOTAL", `Rp ${kTotal.toLocaleString("id-ID")}`));
   lines.push(divider);
-  lines.push(row("CARA BAYAR", labelCaraBayar(params.paymentMethod)));
+  lines.push(...barisCaraBayar(kData?.pembayaran, params.paymentMethod));
   if (params.paymentMethod === "cash" && kCashGiven) {
     lines.push(row("  Uang diterima", `Rp ${kCashGiven.toLocaleString("id-ID")}`));
     lines.push(row("  Kembalian", `Rp ${(kCashChange || 0).toLocaleString("id-ID")}`));
@@ -624,7 +645,7 @@ export function generateThreePlyReceiptText(params: {
    * gagal. Struk tanpa keterangan cara bayar tidak bisa dimasukkan ke tumpukan
    * mana pun, dan berakhir sebagai selisih yang tidak ada yang bisa jelaskan.
    */
-  lines.push(row("CARA BAYAR", labelCaraBayar(params.paymentMethod)));
+  lines.push(...barisCaraBayar(pData?.pembayaran, params.paymentMethod));
 
   if (params.paymentMethod === "cash" && pCashGiven) {
     lines.push(row("Uang diterima", `Rp ${pCashGiven.toLocaleString("id-ID")}`));

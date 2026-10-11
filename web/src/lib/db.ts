@@ -5474,6 +5474,29 @@ export const db = {
   },
 
   /**
+   * Rincian uang per cara bayar dari nota-nota satu meja.
+   *
+   * Tagihan gabungan dibaca sebagai satu angka, tapi uangnya tidak datang
+   * lewat satu jalur: nota pertama bisa transfer, nota berikutnya tunai.
+   * Struk yang menulis satu cara bayar untuk semuanya — biasanya cara bayar
+   * nota yang kebetulan jadi dasar cetak — membuat arsip tidak bisa dicocokkan
+   * ke laci maupun mutasi rekening. Nota yang belum dibayar dipisah sendiri
+   * supaya tidak ikut tertulis sebagai uang yang sudah masuk.
+   */
+  ringkasPembayaran(
+    orders: { payment_status: string; payment_method: string | null; total: number | string }[],
+  ) {
+    const jumlah = new Map<string, number>();
+    for (const o of orders) {
+      const nilai = Number(o.total) || 0;
+      if (nilai <= 0) continue;
+      const kunci = o.payment_status === "paid" ? o.payment_method || "-" : "belum_lunas";
+      jumlah.set(kunci, (jumlah.get(kunci) ?? 0) + nilai);
+    }
+    return Array.from(jumlah, ([metode, nilai]) => ({ metode, jumlah: nilai }));
+  },
+
+  /**
    * Mengambil tagihan gabungan meja secara otomatis (seluruh pesanan dalam sesi aktif atau pesanan terkait).
    */
   async getCombinedTableBill(
@@ -5607,6 +5630,7 @@ export const db = {
       ordersCount: sessionOrders.length,
       orderNos,
       customerName,
+      pembayaran: this.ringkasPembayaran(sessionOrders),
     };
   },
 

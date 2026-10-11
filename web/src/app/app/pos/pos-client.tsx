@@ -339,6 +339,7 @@ export default function PosClient({
       total: number;
       cashGiven?: number;
       cashChange?: number;
+      pembayaran?: { metode: string; jumlah: number }[];
     };
   } | null>(null);
   const [printerState, setPrinterState] = useState<"idle" | "printing" | "connected" | "error">("idle");
@@ -1276,6 +1277,7 @@ export default function PosClient({
           total: serverCombined.total,
           cashGiven: paymentMethod === "cash" ? cashGivenInput : undefined,
           cashChange: paymentMethod === "cash" ? res.data.change : undefined,
+          pembayaran: serverCombined.pembayaran,
         }
       : undefined;
 
@@ -1944,6 +1946,7 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
       total: number;
       cashGiven?: number;
       cashChange?: number;
+      pembayaran?: { metode: string; jumlah: number }[];
     };
   },
   /**
@@ -2094,6 +2097,7 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
             total: combinedRes.data.total,
             cashGiven: rincian.cashGiven,
             cashChange: rincian.cashChange,
+            pembayaran: combinedRes.data.pembayaran,
           };
         }
       } catch (err) {

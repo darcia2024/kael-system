@@ -1899,6 +1899,7 @@ export async function createOrderAction(input: {
       deliveryFee: number;
       total: number;
       ordersCount: number;
+      pembayaran: { metode: string; jumlah: number }[];
     } | null;
   }>
 > {
@@ -2077,6 +2078,7 @@ export async function createOrderAction(input: {
     deliveryFee: number;
     total: number;
     ordersCount: number;
+    pembayaran: { metode: string; jumlah: number }[];
   } | null = null;
 
   if (tableSession) {
@@ -2125,6 +2127,7 @@ export async function createOrderAction(input: {
           deliveryFee: cDelivery,
           total: cTotal,
           ordersCount: sessionOrders.length,
+          pembayaran: db.ringkasPembayaran(sessionOrders),
         };
       }
     } catch (err) {
@@ -2166,6 +2169,7 @@ export async function getCombinedTableBillAction(input: {
     ordersCount: number;
     orderNos: string[];
     customerName: string | null;
+    pembayaran: { metode: string; jumlah: number }[];
   } | null>
 > {
   const { businessId } = await requirePermission("pos");
