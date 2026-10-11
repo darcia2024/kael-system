@@ -5408,12 +5408,25 @@ export const db = {
    * Dipakai untuk menghitung tagihan gabungan meja secara akurat langsung dari database.
    */
   async getTableSessionOrders(businessId: string, sessionId: string) {
+    /**
+     * Nota yang sudah direfund PENUH tidak ikut tagihan gabungan.
+     *
+     * Refund tidak mengubah status nota — barisnya tetap `paid` dan hanya
+     * bertambah satu baris di `refunds`. Tanpa penyaringan ini, nota yang
+     * salah dilunasi lalu direfund tetap dijumlahkan, jadi copy kasir mencatat
+     * Rp84.000 lebih besar dari yang dibayar tamu dan arsipnya tidak cocok
+     * dengan laci saat tutup shift.
+     */
     const orders = (await sql`
-      SELECT * FROM orders
-      WHERE table_session_id = ${sessionId}
-        AND business_id = ${businessId}
-        AND status <> 'cancelled'
-      ORDER BY created_at
+      SELECT o.* FROM orders o
+      WHERE o.table_session_id = ${sessionId}
+        AND o.business_id = ${businessId}
+        AND o.status <> 'cancelled'
+        AND NOT (
+          o.total > 0
+          AND COALESCE((SELECT SUM(r.amount) FROM refunds r WHERE r.order_id = o.id), 0) >= o.total
+        )
+      ORDER BY o.created_at
     `) as unknown as Order[];
     return Promise.all(
       orders.map(async (o) => ({
@@ -5480,13 +5493,17 @@ export const db = {
     // 5. Jika tidak ada sesi meja, fallback cari order dine_in meja ini dalam 6 jam terakhir
     if (sessionOrders.length <= 1) {
       const recentOrders = (await sql`
-        SELECT * FROM orders
-        WHERE business_id = ${businessId}
-          AND table_no = ${tableNo}
-          AND service_type = 'dine_in'
-          AND status <> 'cancelled'
-          AND created_at > NOW() - INTERVAL '6 hours'
-        ORDER BY created_at ASC
+        SELECT o.* FROM orders o
+        WHERE o.business_id = ${businessId}
+          AND o.table_no = ${tableNo}
+          AND o.service_type = 'dine_in'
+          AND o.status <> 'cancelled'
+          AND o.created_at > NOW() - INTERVAL '6 hours'
+          AND NOT (
+            o.total > 0
+            AND COALESCE((SELECT SUM(r.amount) FROM refunds r WHERE r.order_id = o.id), 0) >= o.total
+          )
+        ORDER BY o.created_at ASC
       `) as unknown as Order[];
 
       if (recentOrders.length > 1) {
