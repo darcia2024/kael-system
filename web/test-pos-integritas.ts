@@ -593,6 +593,137 @@ async function main() {
   cek("tagihan dari dua hari lalu masih terhitung", denganLama.mejaCount === sesudahTagih.mejaCount + 1);
   cek("tagihan lama ditandai supaya owner tahu", denganLama.adaDariHariLain === true);
 
+  /**
+   * Rincian per meja: daftar ini yang dibaca owner di HP untuk menjawab
+   * "Meja 22 itu pesan apa saja", jadi isinya yang harus benar — bukan cuma
+   * angka totalnya.
+   */
+  const norm = (s: string) => s.toLowerCase().replace(/^meja\s*/, "").padStart(2, "0");
+  const m22 = denganLama.perMeja.find((m) => norm(m.tableNo) === "22");
+  const m20 = denganLama.perMeja.find((m) => norm(m.tableNo) === "20");
+  cek("rincian Meja 22 memuat ketiga notanya", m22?.nota.length === 3, `dapat ${m22?.nota.length}`);
+  cek(
+    "isi menu tiap nota ikut terbaca",
+    !!m22 && m22.nota.every((n) => n.items.some((i) => i.nama === menuA.name)),
+    "owner melihat nota kosong tanpa tahu pesanannya",
+  );
+  cek(
+    "nama pencatatnya ikut terbaca",
+    !!m22 && m22.nota.every((n) => n.kasir === owner.name),
+    `dapat ${m22?.nota[0]?.kasir}`,
+  );
+  cek(
+    "meja yang paling lama menunggu ada di urutan atas",
+    denganLama.perMeja.findIndex((m) => norm(m.tableNo) === "20") <
+      denganLama.perMeja.findIndex((m) => norm(m.tableNo) === "22"),
+    "yang paling perlu ditanyakan tenggelam di bawah",
+  );
+  cek("penanda hari lain menempel ke mejanya, bukan semua meja", m20?.adaDariHariLain === true && m22?.adaDariHariLain === false);
+  cek(
+    "daftar bungkus/antar terpisah dan memuat nota takeaway",
+    denganLama.nonMeja.length >= 1 && denganLama.nonMeja.some((n) => n.layanan === "takeaway"),
+  );
+
+  // Menu yang dibatalkan tamu tidak boleh ikut tampil: yang dilihat owner
+  // adalah apa yang benar-benar ditagih.
+  const { order: dua } = await db.createOrder(
+    businessId,
+    {
+      channel: "cashier",
+      service_type: "dine_in",
+      table_no: "Meja 21",
+      status: "open",
+      payment_status: "pending",
+      fulfillment_status: "pending",
+      payment_method: "cash",
+      created_by: owner.id,
+    },
+    [
+      { menu_item_id: menuA.id, name: menuA.name, price: Number(menuA.price), qty: 1 },
+      { menu_item_id: menuB.id, name: menuB.name, price: Number(menuB.price), qty: 1 },
+    ],
+  );
+  dibuat.push(dua.id);
+  const baris2 = await db.getOrderItems(dua.id);
+  const yangBatal = baris2.find((i) => i.menu_item_id === menuB.id)!;
+  await db.cancelOrderItem(dua.id, yangBatal.id, businessId, owner.id, {
+    reason: "Tamu batal pesan",
+    disposition: "belum_dibuat",
+  });
+  const setelahBatalItem = await db.getUnpaidTables(businessId);
+  const m21 = setelahBatalItem.perMeja.find((m) => norm(m.tableNo) === "21");
+  cek(
+    "menu yang dibatalkan tidak ikut tampil di rincian",
+    m21?.nota[0]?.items.length === 1 && m21.nota[0].items[0].nama === menuA.name,
+    `tampil ${m21?.nota[0]?.items.length} menu`,
+  );
+
+  // -------------------------------------------------------------------------
+  console.log("\n15. Satu keranjang, satu nota: permintaan ulang tidak membuat nota kedua");
+  // -------------------------------------------------------------------------
+  /**
+   * Di Mochi pernah tercatat dua nota identik di Meja 14 — menu sama, Rp80.000
+   * sama — berselang 0,4 detik. Itu satu tombol yang tertekan dua kali, dan
+   * tamunya bisa ditagih dua kali lipat. Pengaman layar kasir menahan dobel-tap;
+   * yang diuji di sini pengaman server, yang menutup kasus jaringan putus
+   * SESUDAH nota tercatat tapi SEBELUM jawabannya sampai.
+   */
+  const kunciUji = `uji-kunci-${Date.now()}`;
+  const dataKeranjang = {
+    channel: "cashier" as const,
+    service_type: "dine_in" as const,
+    table_no: "Meja 19",
+    status: "open" as const,
+    payment_status: "pending" as const,
+    fulfillment_status: "pending" as const,
+    payment_method: "cash" as const,
+    created_by: owner.id,
+    idempotency_key: kunciUji,
+  };
+  const barisKeranjang = [
+    { menu_item_id: menuA.id, name: menuA.name, price: Number(menuA.price), qty: 1 },
+  ];
+
+  const pertama = await db.createOrder(businessId, dataKeranjang, barisKeranjang);
+  dibuat.push(pertama.order.id);
+
+  const ditemukan = await db.getOrderByIdempotencyKey(businessId, kunciUji);
+  cek("nota bisa ditemukan lagi lewat kuncinya", ditemukan?.id === pertama.order.id);
+
+  let kodeGalat = "";
+  try {
+    const kedua = await db.createOrder(businessId, dataKeranjang, barisKeranjang);
+    dibuat.push(kedua.order.id);
+  } catch (e) {
+    kodeGalat = (e as { code?: string }).code ?? "";
+  }
+  cek(
+    "permintaan kedua dengan kunci yang sama DITOLAK oleh basis data",
+    kodeGalat === "23505",
+    `kode galat: ${kodeGalat || "tidak ada galat — nota kedua terbentuk"}`,
+  );
+
+  const jumlahBerkunci = await sql`
+    SELECT COUNT(*)::int n FROM orders
+    WHERE business_id = ${businessId} AND idempotency_key = ${kunciUji}`;
+  cek("tetap hanya satu nota untuk satu kunci", Number(jumlahBerkunci[0].n) === 1, `dapat ${jumlahBerkunci[0].n}`);
+
+  // Pesanan tanpa kunci (QR meja, jalur lama) tidak boleh ikut terhalang.
+  const tanpaKunci1 = await db.createOrder(
+    businessId, { ...dataKeranjang, idempotency_key: null }, barisKeranjang);
+  const tanpaKunci2 = await db.createOrder(
+    businessId, { ...dataKeranjang, idempotency_key: null }, barisKeranjang);
+  dibuat.push(tanpaKunci1.order.id, tanpaKunci2.order.id);
+  cek("nota tanpa kunci tetap boleh banyak", tanpaKunci1.order.id !== tanpaKunci2.order.id);
+
+  // Kunci satu toko tidak boleh mengembalikan nota milik toko lain.
+  const tokoLain = "ab25ae3d-5df7-4143-a429-79d1982ef87f";
+  cek(
+    "kunci tidak bocor ke toko lain",
+    (await db.getOrderByIdempotencyKey(tokoLain, kunciUji)) === null,
+    "nota satu toko bisa dibaca toko lain",
+  );
+
   // -------------------------------------------------------------------------
   console.log("\nMembersihkan data uji...");
   // -------------------------------------------------------------------------

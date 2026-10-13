@@ -1217,8 +1217,49 @@ export default function PosClient({
     setShowPaymentModal(true);
   };
 
+  /**
+   * SATU KERANJANG, SATU NOTA.
+   *
+   * Di Mochi pernah tercatat dua nota identik di Meja 14 — menu sama, Rp80.000
+   * sama — berselang 0,4 detik. Itu satu tombol yang tertekan dua kali sebelum
+   * layarnya sempat berubah, dan tamunya bisa ditagih dua kali lipat.
+   *
+   * Dua pengaman, karena masing-masing menutup kasus yang tidak bisa ditutup
+   * yang lain:
+   *
+   *   pengunci   menolak tekanan kedua selama yang pertama belum selesai.
+   *              Memakai ref, bukan state: dua tekanan dalam satu frame sama-
+   *              sama melihat state lama, tapi ref langsung terbaca.
+   *
+   *   kunci      dikirim ke server dan dikenali di sana. Ini yang menutup kasus
+   *              jaringan putus SESUDAH nota tercatat tapi SEBELUM jawabannya
+   *              sampai — kasir menekan lagi, dan pengunci layar tidak bisa
+   *              tahu notanya sudah ada.
+   */
+  const sedangMenyimpan = useRef(false);
+  const [menyimpan, setMenyimpan] = useState(false);
+  const kunciKeranjang = useRef<string | null>(null);
+
+  // Keranjang berubah = pesanan lain. Kunci lama dibuang supaya pesanan
+  // berikutnya tidak dijawab dengan nota keranjang sebelumnya.
+  useEffect(() => {
+    kunciKeranjang.current = null;
+  }, [cart, serviceType, selectedTableNo]);
+
   const handleProcessPayment = async (e?: React.FormEvent) => {
     e?.preventDefault();
+    if (sedangMenyimpan.current) return;
+    sedangMenyimpan.current = true;
+    setMenyimpan(true);
+    try {
+      await prosesPembayaranInti();
+    } finally {
+      sedangMenyimpan.current = false;
+      setMenyimpan(false);
+    }
+  };
+
+  const prosesPembayaranInti = async () => {
     if (cartList.length === 0) return;
 
     if (!bayarDiAkhir && paymentMethod === "cash" && !cashChangeCalc.isSufficient) {
@@ -1233,10 +1274,15 @@ export default function PosClient({
       custom_price: c.customPrice,
     }));
 
+    // Dibuat saat pertama dikirim, dan dipakai ulang kalau kasir menekan lagi
+    // tanpa mengubah keranjang — itu justru kasus yang dilindungi.
+    kunciKeranjang.current ??= crypto.randomUUID();
+
     const res = await createOrderAction({
       service_type: serviceType,
       table_no: selectedTableNo || null,
       payment_method: paymentMethod,
+      idempotency_key: kunciKeranjang.current,
       delivery:
         serviceType === "delivery"
           ? {
@@ -2595,7 +2641,7 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
 
         <button
           type="button"
-          disabled={cartList.length === 0 || perluNomorMeja}
+          disabled={cartList.length === 0 || perluNomorMeja || menyimpan}
           onClick={handleOpenPayment}
           className={`flex h-12 w-full items-center justify-center gap-2 rounded-xl px-4 text-sm font-black transition-all active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-40 shadow-md ${
             isMochiPos
@@ -2610,7 +2656,9 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
             uangnya diterima sekarang — padahal tamunya baru mulai makan.
           */}
           <span>
-            {bayarDiAkhir
+            {menyimpan
+              ? "Menyimpan pesanan..."
+              : bayarDiAkhir
               ? `Simpan Pesanan · Bayar Nanti (${cartList.reduce((sum, line) => sum + line.qty, 0)})`
               : `Lanjut Pembayaran (${cartList.reduce((sum, line) => sum + line.qty, 0)})`}
           </span>
@@ -3973,7 +4021,7 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
               <div className="pt-2">
                 <button
                   type="submit"
-                  disabled={isPending}
+                  disabled={isPending || menyimpan}
                   className={`w-full flex items-center justify-center gap-2 rounded-2xl py-3.5 text-sm font-black disabled:opacity-50 transition-all ${
                     isMochiPos
                       ? "bg-[#c8f53a] hover:bg-[#d9ff57] text-[#073829] shadow-md active:scale-[0.99]"
@@ -3982,7 +4030,7 @@ Buka versi cetak di dialog browser sebagai gantinya?`,
                 >
                   <Check size={16} />
                   <span>
-                    {isPending
+                    {isPending || menyimpan
                       ? "Memproses..."
                       : paymentMethod === "qris" || paymentMethod === "transfer"
                         ? "Uang Sudah Masuk · Selesaikan Transaksi ✓"

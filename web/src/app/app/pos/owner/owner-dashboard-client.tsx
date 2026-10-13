@@ -50,6 +50,8 @@ import type {
 import { FEEDBACK_REASONS } from "@/lib/types";
 import { formatBusinessDateTime, formatRupiah } from "@/lib/formatters";
 import { PAYMENT_STATUS_LABEL, jamStruk, serviceTypeLabel } from "@/lib/pos-engine";
+import type { RingkasanTagihan } from "@/lib/types";
+import TagihanMejaPanel from "./tagihan-meja-panel";
 import { retryOrderSyncAction, deleteFeedbackAction } from "@/lib/actions";
 import ClearTestDataModal from "../clear-test-data-modal";
 import { Trash2, MoreHorizontal } from "lucide-react";
@@ -143,14 +145,7 @@ export default function OwnerDashboardClient({
   recentFeedback: FeedbackRow[];
   loyaltySummary: MemberGrowthSummary;
   /** Tagihan belum dibayar, dihitung per meja. Satuannya sama dengan denah kasir. */
-  unpaid: {
-    mejaCount: number;
-    notaMejaCount: number;
-    nonMejaCount: number;
-    totalRupiah: number;
-    adaDariHariLain: boolean;
-    perMeja: { tableNo: string; notaCount: number; total: number; sejak: string }[];
-  };
+  unpaid: RingkasanTagihan;
   /** ISO waktu server merakit data ini. Menentukan umur yang ditampilkan. */
   dibuatPada: string;
   themeClassName?: string;
@@ -1066,6 +1061,18 @@ export default function OwnerDashboardClient({
             </>
           )}
         </section>
+
+        {/*
+          Kartu di atas menjawab BERAPA meja yang belum bayar; panel ini
+          menjawab MEJA MANA, pesan apa, dan sudah berapa lama — supaya owner
+          tidak perlu menelepon kasir atau membuka denah meja di mesin kasir.
+        */}
+        <TagihanMejaPanel
+          unpaid={unpaid}
+          timezone={business?.timezone || "Asia/Jakarta"}
+          sekarangMs={sekarangMs}
+          isMochi={isMochi}
+        />
 
         {/* Irama Penjualan & Cara Bayar */}
         <section className="grid gap-3 sm:gap-4 lg:grid-cols-[1.45fr_0.9fr]">

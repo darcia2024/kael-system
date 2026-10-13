@@ -1138,3 +1138,51 @@ export interface StaffLeaveRequest {
 // INITIAL SEED DATA
 // -----------------------------------------------------------------------------
 
+/**
+ * Satu nota yang belum dibayar, dengan isinya.
+ *
+ * Isi menunya ikut dibawa supaya owner bisa menjawab "Meja 11 itu pesan apa
+ * saja" langsung dari dashboard, tanpa menelepon kasir.
+ */
+export interface NotaBelumLunas {
+  orderNo: string;
+  total: number;
+  dibuatPada: string;
+  /** Status dapur apa adanya: pending, accepted, preparing, ready, completed. */
+  dapur: string;
+  layanan: string;
+  /** Yang mencatat pesanannya. Kosong kalau akunnya sudah dihapus. */
+  kasir: string | null;
+  /** Nama member, atau nama yang diketik untuk antar. Kosong kalau tidak ada. */
+  pelanggan: string | null;
+  items: { nama: string; qty: number; subtotal: number; catatan: string | null }[];
+}
+
+/** Satu meja dengan seluruh tagihannya yang belum dibayar. */
+export interface TagihanMeja {
+  tableNo: string;
+  notaCount: number;
+  total: number;
+  /** Waktu nota pertama dicatat. Dasar hitung "sudah berapa lama menunggu". */
+  sejak: string;
+  /** Ada nota di meja ini yang dicatat sebelum hari ini. */
+  adaDariHariLain: boolean;
+  nota: NotaBelumLunas[];
+}
+
+/**
+ * Tagihan belum dibayar, dihitung per MEJA — satuan yang sama dengan denah
+ * kasir. Satu meja yang memesan tiga kali adalah tiga nota tapi satu pembayaran.
+ */
+export interface RingkasanTagihan {
+  mejaCount: number;
+  notaMejaCount: number;
+  nonMejaCount: number;
+  totalRupiah: number;
+  adaDariHariLain: boolean;
+  /** Urut dari yang paling lama menunggu. */
+  perMeja: TagihanMeja[];
+  /** Bungkus dan antar yang belum dibayar. */
+  nonMeja: NotaBelumLunas[];
+}
+

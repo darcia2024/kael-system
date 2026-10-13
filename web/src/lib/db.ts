@@ -80,6 +80,9 @@ import type {
   DeletableOrder,
   DeletableFeedback,
   DeletableShift,
+  NotaBelumLunas,
+  RingkasanTagihan,
+  TagihanMeja,
 } from "./types";
 
 export * from "./types";
@@ -4691,6 +4694,22 @@ export const db = {
    *
    * Nama dan harga item ikut disalin ke order_items dengan alasan yang sama.
    */
+  /**
+   * Nota yang sudah dibuat dengan kunci ini, kalau ada.
+   *
+   * Dipakai untuk menjawab permintaan ULANG tanpa membuat nota baru: kasir
+   * yang menekan dua kali, atau yang menekan lagi karena layarnya menggantung
+   * saat jaringan putus tepat setelah server mencatat. Disaring ke business_id
+   * — kunci toko lain tidak boleh pernah mengembalikan nota yang bukan miliknya.
+   */
+  async getOrderByIdempotencyKey(businessId: string, kunci: string): Promise<Order | null> {
+    return one<Order>(await sql`
+      SELECT * FROM orders
+      WHERE business_id = ${businessId} AND idempotency_key = ${kunci}
+      LIMIT 1
+    `);
+  },
+
   async createOrder(
     businessId: string,
     orderData: {
@@ -4718,6 +4737,11 @@ export const db = {
       customer_name?: string | null;
       shift_id?: string | null;
       table_session_id?: string | null;
+      /**
+       * Kunci per-keranjang dari layar kasir. Permintaan ulang dengan kunci yang
+       * sama TIDAK boleh menjadi nota kedua — lihat getOrderByIdempotencyKey.
+       */
+      idempotency_key?: string | null;
       created_by: string;
     },
     itemsData: {
@@ -4811,6 +4835,7 @@ export const db = {
           customer_name: orderData.customer_name?.trim() || null,
           shift_id: orderData.shift_id ?? null,
           table_session_id: orderData.table_session_id ?? null,
+          idempotency_key: orderData.idempotency_key ?? null,
           created_by: orderData.created_by,
         })} RETURNING *
       `,
@@ -5848,41 +5873,75 @@ export const db = {
    * tetap uang yang belum masuk, dan justru itu yang paling mudah terlupa:
    * begitu lewat tengah malam, hitungan "hari ini" tidak melihatnya lagi.
    */
-  async getUnpaidTables(businessId: string): Promise<{
-    mejaCount: number;
-    notaMejaCount: number;
-    nonMejaCount: number;
-    totalRupiah: number;
-    adaDariHariLain: boolean;
-    perMeja: {
-      tableNo: string;
-      notaCount: number;
-      total: number;
-      sejak: string;
-    }[];
-  }> {
+  async getUnpaidTables(businessId: string): Promise<RingkasanTagihan> {
     const tz = (await this.getBusiness(businessId))?.timezone || "Asia/Jakarta";
     const rows = (await sql`
-      SELECT order_no, table_no, total, created_at,
-        ((created_at AT TIME ZONE ${tz})::date = (NOW() AT TIME ZONE ${tz})::date) AS hari_ini
-      FROM orders
-      WHERE business_id = ${businessId}
-        AND payment_status = 'pending'
-        AND status <> 'cancelled'
-      ORDER BY created_at ASC
+      SELECT o.id, o.order_no, o.table_no, o.total, o.created_at, o.service_type,
+        o.fulfillment_status, o.customer_name, o.delivery_name,
+        c.name AS member_name, u.name AS kasir,
+        ((o.created_at AT TIME ZONE ${tz})::date = (NOW() AT TIME ZONE ${tz})::date) AS hari_ini
+      FROM orders o
+      LEFT JOIN customers c ON c.id = o.customer_id
+      LEFT JOIN users u ON u.id = o.created_by
+      WHERE o.business_id = ${businessId}
+        AND o.payment_status = 'pending'
+        AND o.status <> 'cancelled'
+      ORDER BY o.created_at ASC
     `) as unknown as {
+      id: string;
       order_no: string;
       table_no: string | null;
       total: string;
       created_at: string;
+      service_type: string;
+      fulfillment_status: string;
+      customer_name: string | null;
+      delivery_name: string | null;
+      member_name: string | null;
+      kasir: string | null;
       hari_ini: boolean;
     }[];
 
-    const perKunci = new Map<
-      string,
-      { tableNo: string; notaCount: number; total: number; sejak: string }
-    >();
-    let nonMejaCount = 0;
+    /**
+     * Isi SEMUA nota diambil dalam satu query, bukan satu per nota.
+     *
+     * Dashboard ini menyegarkan diri tiap 30 detik di HP owner. Dengan dua
+     * puluh nota menggantung, satu query per nota berarti dua puluh query
+     * tiap setengah menit hanya untuk menggambar satu daftar.
+     *
+     * Menu yang dibatalkan tamu tidak ikut: yang owner lihat adalah apa yang
+     * benar-benar ditagih.
+     */
+    const itemRows = rows.length
+      ? ((await sql`
+          SELECT order_id, name_snapshot, qty, subtotal, note
+          FROM order_items
+          WHERE order_id IN ${sql(rows.map((r) => r.id))}
+            AND cancelled_at IS NULL
+          ORDER BY id
+        `) as unknown as {
+          order_id: string;
+          name_snapshot: string;
+          qty: number;
+          subtotal: string;
+          note: string | null;
+        }[])
+      : [];
+
+    const itemPerNota = new Map<string, NotaBelumLunas["items"]>();
+    for (const it of itemRows) {
+      const daftar = itemPerNota.get(it.order_id) ?? [];
+      daftar.push({
+        nama: it.name_snapshot,
+        qty: it.qty,
+        subtotal: Number(it.subtotal),
+        catatan: it.note,
+      });
+      itemPerNota.set(it.order_id, daftar);
+    }
+
+    const perKunci = new Map<string, TagihanMeja>();
+    const nonMeja: NotaBelumLunas[] = [];
     let totalRupiah = 0;
     let adaDariHariLain = false;
 
@@ -5890,34 +5949,53 @@ export const db = {
       totalRupiah += Number(r.total);
       if (!r.hari_ini) adaDariHariLain = true;
 
+      const nota: NotaBelumLunas = {
+        orderNo: r.order_no,
+        total: Number(r.total),
+        dibuatPada: r.created_at,
+        dapur: r.fulfillment_status,
+        layanan: r.service_type,
+        kasir: r.kasir,
+        pelanggan: r.member_name ?? r.delivery_name ?? r.customer_name,
+        items: itemPerNota.get(r.id) ?? [],
+      };
+
       const kunci = r.table_no ? normalizeTableKey(r.table_no) : "";
       if (!kunci) {
         // Bungkus/antar yang belum dibayar: bukan meja, tapi tetap utang.
-        nonMejaCount += 1;
+        nonMeja.push(nota);
         continue;
       }
+
       const ada = perKunci.get(kunci);
       if (ada) {
         ada.notaCount += 1;
-        ada.total += Number(r.total);
+        ada.total += nota.total;
+        ada.nota.push(nota);
+        if (!r.hari_ini) ada.adaDariHariLain = true;
       } else {
         perKunci.set(kunci, {
           tableNo: r.table_no as string,
           notaCount: 1,
-          total: Number(r.total),
+          total: nota.total,
           sejak: r.created_at,
+          adaDariHariLain: !r.hari_ini,
+          nota: [nota],
         });
       }
     }
 
+    // Map mempertahankan urutan masuk, dan queri sudah mengurutkan dari yang
+    // paling lama — jadi meja yang paling lama menunggu otomatis di atas.
     const perMeja = [...perKunci.values()];
     return {
       mejaCount: perMeja.length,
       notaMejaCount: perMeja.reduce((n, m) => n + m.notaCount, 0),
-      nonMejaCount,
+      nonMejaCount: nonMeja.length,
       totalRupiah,
       adaDariHariLain,
       perMeja,
+      nonMeja,
     };
   },
 

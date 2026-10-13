@@ -18,6 +18,7 @@ import type {
   MenuItem,
   Category,
   DeletableTestData,
+  Order,
   ShiftCashMovement,
   ShiftFullDetail,
 } from "./types";
@@ -1878,6 +1879,12 @@ export async function createOrderAction(input: {
   discount_reason?: string | null;
   cash_given?: number | null;
   customer_id?: string | null;
+  /**
+   * Kunci satu-kali per keranjang dari layar kasir. Permintaan yang sama yang
+   * datang dua kali — dobel-tap, atau ditekan ulang karena jaringan putus
+   * sesudah server mencatat — dijawab dengan nota yang sudah ada.
+   */
+  idempotency_key?: string | null;
   items: { menu_item_id: string; qty: number; note?: string; custom_price?: number }[];
 }): Promise<
   ActionResult<{
@@ -2021,13 +2028,47 @@ export async function createOrderAction(input: {
       ? await db.openTableSession(businessId, input.table_no, userId)
       : null;
 
-  const { order } = await db.createOrder(
+  /**
+   * PERMINTAAN ULANG DIJAWAB DENGAN NOTA YANG SUDAH ADA.
+   *
+   * Kejadian nyatanya: dua nota identik di Meja 14 — menu sama, Rp80.000 sama —
+   * dicatat berselang 0,4 detik. Itu satu tombol yang tertekan dua kali, dan
+   * tamunya bisa ditagih dua kali lipat. Layar kasir sekarang menahan dobel-tap,
+   * tapi ada satu kasus yang cuma bisa ditutup di sini: jaringan putus SESUDAH
+   * nota tercatat dan SEBELUM jawabannya sampai. Kasir melihat layar
+   * menggantung dan menekan lagi — dan dari sisi server itu terlihat seperti
+   * pesanan baru kecuali ada kunci yang mengenalinya.
+   */
+  const kunci = input.idempotency_key?.trim().slice(0, 64) || null;
+
+  const jawabDariNotaAda = (ada: Order) =>
+    done({
+      orderId: ada.id,
+      orderNo: ada.order_no,
+      total: Number(ada.total),
+      change: Number(ada.cash_change ?? 0),
+      subtotal: Number(ada.subtotal),
+      discount: Number(ada.discount),
+      tax: Number(ada.tax),
+      serviceCharge: Number(ada.service_charge),
+      deliveryFee: Number(ada.delivery_fee),
+    });
+
+  if (kunci) {
+    const sudahAda = await db.getOrderByIdempotencyKey(businessId, kunci);
+    if (sudahAda) return jawabDariNotaAda(sudahAda);
+  }
+
+  let order: Order;
+  try {
+    ({ order } = await db.createOrder(
     businessId,
     {
       channel: "cashier",
       service_type: input.service_type,
       table_no: input.table_no ?? null,
       table_session_id: tableSession?.id ?? null,
+      idempotency_key: kunci,
       /**
        * Tunai lunas seketika: uangnya ada di tangan kasir saat itu juga.
        *
@@ -2063,7 +2104,21 @@ export async function createOrderAction(input: {
       created_by: userId,
     },
     items,
-  );
+    ));
+  } catch (error) {
+    /**
+     * Dua permintaan dengan kunci yang sama yang tiba BERSAMAAN keduanya lolos
+     * pemeriksaan di atas, karena belum ada nota yang tercatat. Yang kalah
+     * ditolak oleh indeks unik — dan itu bukan galat bagi kasir, melainkan
+     * kabar bahwa notanya sudah ada.
+     */
+    const kodeGalat = (error as { code?: string }).code;
+    if (kunci && kodeGalat === "23505") {
+      const pemenang = await db.getOrderByIdempotencyKey(businessId, kunci);
+      if (pemenang) return jawabDariNotaAda(pemenang);
+    }
+    throw error;
+  }
 
   if (order.status === "paid") {
     await db.syncPaidOrder(order.id, businessId, userId);
