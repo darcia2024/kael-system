@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -49,7 +49,7 @@ import type {
 } from "@/lib/types";
 import { FEEDBACK_REASONS } from "@/lib/types";
 import { formatBusinessDateTime, formatRupiah } from "@/lib/formatters";
-import { PAYMENT_STATUS_LABEL, serviceTypeLabel } from "@/lib/pos-engine";
+import { PAYMENT_STATUS_LABEL, jamStruk, serviceTypeLabel } from "@/lib/pos-engine";
 import { retryOrderSyncAction, deleteFeedbackAction } from "@/lib/actions";
 import ClearTestDataModal from "../clear-test-data-modal";
 import { Trash2, MoreHorizontal } from "lucide-react";
@@ -132,6 +132,8 @@ export default function OwnerDashboardClient({
   feedbackSummary,
   recentFeedback,
   loyaltySummary,
+  unpaid,
+  dibuatPada,
   themeClassName = "",
 }: {
   business: Business | null;
@@ -140,6 +142,17 @@ export default function OwnerDashboardClient({
   feedbackSummary: FeedbackSummary;
   recentFeedback: FeedbackRow[];
   loyaltySummary: MemberGrowthSummary;
+  /** Tagihan belum dibayar, dihitung per meja. Satuannya sama dengan denah kasir. */
+  unpaid: {
+    mejaCount: number;
+    notaMejaCount: number;
+    nonMejaCount: number;
+    totalRupiah: number;
+    adaDariHariLain: boolean;
+    perMeja: { tableNo: string; notaCount: number; total: number; sejak: string }[];
+  };
+  /** ISO waktu server merakit data ini. Menentukan umur yang ditampilkan. */
+  dibuatPada: string;
   themeClassName?: string;
 }) {
   const isMochi = isMochiBusiness(business);
@@ -220,18 +233,97 @@ export default function OwnerDashboardClient({
     1
   );
 
-  useEffect(() => {
-    const timer = window.setInterval(() => router.refresh(), 60_000);
-    return () => window.clearInterval(timer);
+  /**
+   * UMUR DATA, DAN KAPAN HARUS MENYEGARKAN DIRI
+   *
+   * Dashboard ini dulu cuma menyegarkan diri tiap 60 detik lewat setInterval.
+   * Di HP itu tidak cukup, dan alasannya bukan sinyal: peramban HP membekukan
+   * timer halaman yang sedang di latar belakang atau layarnya terkunci. Owner
+   * membuka lagi aplikasinya dan melihat angka dari saat terakhir ia melihatnya
+   * — bisa setengah jam lalu — sampai timer berikutnya kebetulan jalan.
+   *
+   * Karena itu penyegaran juga dipicu SAAT aplikasi kembali terlihat, saat
+   * halaman dipulihkan dari cache peramban (pageshow), dan saat sinyal
+   * kembali. Jedanya minimal 5 detik supaya ketiga peristiwa yang datang
+   * hampir bersamaan itu tidak jadi tiga permintaan ke server.
+   */
+  const refreshTerakhir = useRef(0);
+  const segarkan = useCallback(() => {
+    const sekarang = Date.now();
+    if (sekarang - refreshTerakhir.current < 5_000) return;
+    refreshTerakhir.current = sekarang;
+    router.refresh();
   }, [router]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      // Tab yang tersembunyi tidak perlu bertanya ke server tiap setengah menit.
+      if (document.visibilityState === "visible") segarkan();
+    }, 30_000);
+
+    const saatTerlihat = () => {
+      if (document.visibilityState === "visible") segarkan();
+    };
+    document.addEventListener("visibilitychange", saatTerlihat);
+    window.addEventListener("pageshow", segarkan);
+    window.addEventListener("online", segarkan);
+    window.addEventListener("focus", segarkan);
+
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", saatTerlihat);
+      window.removeEventListener("pageshow", segarkan);
+      window.removeEventListener("online", segarkan);
+      window.removeEventListener("focus", segarkan);
+    };
+  }, [segarkan]);
+
+  /**
+   * Umur data dihitung dari jam SERVER, bukan jam saat layar terakhir digambar.
+   *
+   * Kalau penyegaran gagal diam-diam — sinyal putus, atau service worker
+   * menyajikan halaman lama dari cache — layarnya tetap tampil seperti biasa
+   * dan owner tidak punya cara tahu angkanya sudah tua. Jam ini ikut menua
+   * bersama datanya, jadi kebohongan yang tidak terlihat jadi terlihat.
+   */
+  const [sekarangMs, setSekarangMs] = useState(() => Date.now());
+  useEffect(() => {
+    const t = window.setInterval(() => setSekarangMs(Date.now()), 15_000);
+    return () => window.clearInterval(t);
+  }, []);
+  const umurMenit = Math.max(0, Math.floor((sekarangMs - new Date(dibuatPada).getTime()) / 60_000));
+  const dataLama = umurMenit >= 3;
 
   const refresh = () => {
     setRefreshing(true);
+    // Penekanan tombol selalu dituruti; jeda 5 detik hanya untuk pemicu otomatis.
+    refreshTerakhir.current = Date.now();
     router.refresh();
     window.setTimeout(() => setRefreshing(false), 500);
   };
 
   const queueTotal = dashboard.queue.awaitingPayment + dashboard.queue.preparing + dashboard.queue.ready;
+
+  /**
+   * Kartu "belum dibayar" memakai satuan MEJA, dan nota disebut sebagai rincian.
+   *
+   * Dulu kartunya menampilkan jumlah nota. Meja yang memesan tiga kali dihitung
+   * tiga, jadi owner melihat "6" sementara kasir melihat "4 meja" — dan
+   * keduanya benar, hanya satuannya yang beda. Sekarang angka besarnya yang
+   * dipakai kasir, dan selisih nota ada di keterangannya.
+   */
+  const jumlahTagihan = unpaid.mejaCount + unpaid.nonMejaCount;
+  const rincianTagihan = (() => {
+    if (jumlahTagihan === 0) return "semua sudah lunas";
+    const bagian: string[] = [];
+    if (unpaid.mejaCount > 0) bagian.push(`${unpaid.mejaCount} meja`);
+    if (unpaid.nonMejaCount > 0) bagian.push(`${unpaid.nonMejaCount} bungkus/antar`);
+    const notaSemua = unpaid.notaMejaCount + unpaid.nonMejaCount;
+    if (notaSemua > jumlahTagihan) bagian.push(`${notaSemua} nota`);
+    bagian.push(formatRupiah(unpaid.totalRupiah));
+    if (unpaid.adaDariHariLain) bagian.push("ada dari hari sebelumnya");
+    return bagian.join(" · ");
+  })();
   const paymentRows = useMemo(
     () => [
       {
@@ -268,6 +360,35 @@ export default function OwnerDashboardClient({
         isMochi ? "bg-[#f0f5f2] text-[#1a382d]" : "bg-[#f7f6fc] text-[#232331]"
       } pb-12`}
     >
+      {/*
+        UMUR DATA
+
+        Satu baris tipis saat datanya segar, dan baru jadi peringatan ketika
+        sudah tua. Tujuannya satu: owner yang melihat angka yang tidak cocok
+        dengan kasir bisa langsung tahu apakah yang tua datanya atau
+        hitungannya — tanpa harus menebak, dan tanpa harus menutup lalu
+        membuka lagi aplikasinya.
+      */}
+      {dataLama ? (
+        <div className="mx-auto mt-3 flex max-w-7xl items-center justify-between gap-3 rounded-2xl border border-amber-300 bg-amber-50 px-4 py-2.5 text-xs font-bold text-amber-900">
+          <span>
+            Data ini dari {umurMenit} menit lalu ({jamStruk(dibuatPada, business?.timezone || "Asia/Jakarta")}),
+            jadi angkanya bisa sudah berubah.
+          </span>
+          <button
+            type="button"
+            onClick={refresh}
+            className="shrink-0 rounded-lg border border-amber-400 bg-white px-2.5 py-1 font-black text-amber-900"
+          >
+            Muat ulang
+          </button>
+        </div>
+      ) : (
+        <p className="mx-auto max-w-7xl px-4 pt-2 text-right font-mono text-[10.5px] text-[#7b8a82]">
+          Data per {jamStruk(dibuatPada, business?.timezone || "Asia/Jakarta")}
+        </p>
+      )}
+
       {pendingSync.length > 0 && (
         <section
           className={`mx-auto max-w-7xl mt-3 rounded-2xl border p-4 text-sm ${
@@ -877,16 +998,16 @@ export default function OwnerDashboardClient({
 
               {/* Pesanan perlu dicek */}
               <Kpi
-                label="Pesanan perlu dicek"
-                value={String(dashboard.queue.awaitingPayment)}
-                hint="menunggu pembayaran"
+                label="Belum dibayar"
+                value={String(jumlahTagihan)}
+                hint={rincianTagihan}
                 icon={Timer}
                 tone={
-                  dashboard.queue.awaitingPayment
+                  jumlahTagihan
                     ? "text-amber-700 bg-amber-100"
                     : "text-[#167052] bg-[#edf8f3]"
                 }
-                valueTone={dashboard.queue.awaitingPayment ? "text-amber-700" : undefined}
+                valueTone={jumlahTagihan ? "text-amber-700" : undefined}
                 isMochi={true}
               />
 
@@ -921,12 +1042,12 @@ export default function OwnerDashboardClient({
                 tone="text-[#15803d] bg-[#dcfce7]"
               />
               <Kpi
-                label="Pesanan perlu dicek"
-                value={String(dashboard.queue.awaitingPayment)}
-                hint="menunggu pembayaran"
+                label="Belum dibayar"
+                value={String(jumlahTagihan)}
+                hint={rincianTagihan}
                 icon={Timer}
                 tone={
-                  dashboard.queue.awaitingPayment
+                  jumlahTagihan
                     ? "text-[#a16207] bg-[#fef3c7]"
                     : "text-[#15803d] bg-[#dcfce7]"
                 }

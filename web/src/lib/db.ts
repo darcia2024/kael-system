@@ -5829,6 +5829,99 @@ export const db = {
   },
 
   // =========================================================================
+  // Tagihan yang belum dibayar
+  // =========================================================================
+
+  /**
+   * Tagihan yang belum dibayar, DIHITUNG PER MEJA — bukan per nota.
+   *
+   * Satu meja yang memesan tiga kali sepanjang dua jam menghasilkan tiga nota,
+   * tapi tamunya cuma membayar sekali. Kasir melihat "2 meja" di denah, dan
+   * owner yang melihat "3" di dashboard mengira ada selisih — padahal dua-
+   * duanya benar, hanya satuannya yang beda. Di toko yang mejanya ramai, "4"
+   * di kasir dan "6" di HP owner persis begitu asalnya.
+   *
+   * Pengelompokan memakai normalizeTableKey yang SAMA dengan denah kasir,
+   * jadi "Meja 5", "meja 05", dan "5" tidak pernah terhitung tiga meja.
+   *
+   * TIDAK disaring ke hari ini. Tagihan kemarin yang belum pernah dibayar
+   * tetap uang yang belum masuk, dan justru itu yang paling mudah terlupa:
+   * begitu lewat tengah malam, hitungan "hari ini" tidak melihatnya lagi.
+   */
+  async getUnpaidTables(businessId: string): Promise<{
+    mejaCount: number;
+    notaMejaCount: number;
+    nonMejaCount: number;
+    totalRupiah: number;
+    adaDariHariLain: boolean;
+    perMeja: {
+      tableNo: string;
+      notaCount: number;
+      total: number;
+      sejak: string;
+    }[];
+  }> {
+    const tz = (await this.getBusiness(businessId))?.timezone || "Asia/Jakarta";
+    const rows = (await sql`
+      SELECT order_no, table_no, total, created_at,
+        ((created_at AT TIME ZONE ${tz})::date = (NOW() AT TIME ZONE ${tz})::date) AS hari_ini
+      FROM orders
+      WHERE business_id = ${businessId}
+        AND payment_status = 'pending'
+        AND status <> 'cancelled'
+      ORDER BY created_at ASC
+    `) as unknown as {
+      order_no: string;
+      table_no: string | null;
+      total: string;
+      created_at: string;
+      hari_ini: boolean;
+    }[];
+
+    const perKunci = new Map<
+      string,
+      { tableNo: string; notaCount: number; total: number; sejak: string }
+    >();
+    let nonMejaCount = 0;
+    let totalRupiah = 0;
+    let adaDariHariLain = false;
+
+    for (const r of rows) {
+      totalRupiah += Number(r.total);
+      if (!r.hari_ini) adaDariHariLain = true;
+
+      const kunci = r.table_no ? normalizeTableKey(r.table_no) : "";
+      if (!kunci) {
+        // Bungkus/antar yang belum dibayar: bukan meja, tapi tetap utang.
+        nonMejaCount += 1;
+        continue;
+      }
+      const ada = perKunci.get(kunci);
+      if (ada) {
+        ada.notaCount += 1;
+        ada.total += Number(r.total);
+      } else {
+        perKunci.set(kunci, {
+          tableNo: r.table_no as string,
+          notaCount: 1,
+          total: Number(r.total),
+          sejak: r.created_at,
+        });
+      }
+    }
+
+    const perMeja = [...perKunci.values()];
+    return {
+      mejaCount: perMeja.length,
+      notaMejaCount: perMeja.reduce((n, m) => n + m.notaCount, 0),
+      nonMejaCount,
+      totalRupiah,
+      adaDariHariLain,
+      perMeja,
+    };
+  },
+
+  // =========================================================================
   // Kunjungan menu digital
   // =========================================================================
 

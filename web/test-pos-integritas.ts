@@ -502,6 +502,98 @@ async function main() {
   await sql`DELETE FROM table_calls WHERE business_id = ${businessId}`;
 
   // -------------------------------------------------------------------------
+  console.log("\n14. Tagihan belum dibayar dihitung per MEJA, bukan per nota");
+  // -------------------------------------------------------------------------
+  /**
+   * Satu meja yang memesan tiga kali menghasilkan tiga nota tapi cuma satu
+   * pembayaran. Dashboard owner dulu menghitung nota, jadi ia menampilkan "6"
+   * sementara denah kasir menampilkan "4 meja" — dua angka yang sama-sama
+   * benar dengan satuan yang berbeda, dan owner mengira datanya tidak sinkron.
+   *
+   * Diukur sebagai SELISIH dari keadaan awal, bukan angka mutlak: tenant demo
+   * boleh saja sudah punya tagihan menggantung dari uji lain.
+   */
+  const awalTagih = await db.getUnpaidTables(businessId);
+
+  const buatTagihan = async (
+    tableNo: string | null,
+    layanan: "dine_in" | "takeaway",
+  ) => {
+    const { order } = await db.createOrder(
+      businessId,
+      {
+        channel: "cashier",
+        service_type: layanan,
+        table_no: tableNo,
+        status: "open",
+        payment_status: "pending",
+        fulfillment_status: "pending",
+        payment_method: "cash",
+        created_by: owner.id,
+      },
+      [{ menu_item_id: menuA.id, name: menuA.name, price: Number(menuA.price), qty: 1 }],
+    );
+    dibuat.push(order.id);
+    return order;
+  };
+
+  // Meja 22 memesan tiga kali, dengan tiga cara menulis nomor yang sama.
+  await buatTagihan("Meja 22", "dine_in");
+  await buatTagihan("meja 22", "dine_in");
+  await buatTagihan("22", "dine_in");
+  // Meja 23 memesan sekali.
+  await buatTagihan("Meja 23", "dine_in");
+  // Bungkus yang belum dibayar: bukan meja, tapi tetap uang yang belum masuk.
+  await buatTagihan(null, "takeaway");
+
+  const sesudahTagih = await db.getUnpaidTables(businessId);
+  cek(
+    "empat nota di dua meja terhitung DUA meja",
+    sesudahTagih.mejaCount - awalTagih.mejaCount === 2,
+    `bertambah ${sesudahTagih.mejaCount - awalTagih.mejaCount} meja`,
+  );
+  cek(
+    "tiga cara menulis nomor yang sama tidak terhitung tiga meja",
+    sesudahTagih.perMeja.filter((m) => m.tableNo.replace(/\D/g, "") === "22").length === 1,
+    "denah kasir dan dashboard owner akan menampilkan angka berbeda",
+  );
+  cek(
+    "notanya tetap terhitung terpisah sebagai rincian",
+    sesudahTagih.notaMejaCount - awalTagih.notaMejaCount === 4,
+    `bertambah ${sesudahTagih.notaMejaCount - awalTagih.notaMejaCount} nota`,
+  );
+  cek(
+    "bungkus belum bayar dihitung terpisah dari meja",
+    sesudahTagih.nonMejaCount - awalTagih.nonMejaCount === 1,
+  );
+  cek(
+    "nominal yang belum masuk menjumlahkan semua nota",
+    sesudahTagih.totalRupiah - awalTagih.totalRupiah === Number(menuA.price) * 5,
+    `bertambah ${sesudahTagih.totalRupiah - awalTagih.totalRupiah}`,
+  );
+
+  // Nota yang dibatalkan bukan utang.
+  const dibatalkan = await buatTagihan("Meja 24", "dine_in");
+  await sql`UPDATE orders SET status = 'cancelled' WHERE id = ${dibatalkan.id}`;
+  const setelahBatal = await db.getUnpaidTables(businessId);
+  cek(
+    "nota yang dibatalkan tidak terhitung sebagai utang",
+    setelahBatal.mejaCount === sesudahTagih.mejaCount,
+    "owner ditagih meja yang sebenarnya sudah dibatalkan",
+  );
+
+  /**
+   * Tagihan kemarin yang belum pernah dibayar tetap terlihat. Hitungan "hari
+   * ini" yang lama berhenti melihatnya begitu lewat tengah malam — uang yang
+   * belum masuk justru hilang dari layar tepat saat paling mudah terlupa.
+   */
+  const lama = await buatTagihan("Meja 20", "dine_in");
+  await sql`UPDATE orders SET created_at = NOW() - INTERVAL '2 days' WHERE id = ${lama.id}`;
+  const denganLama = await db.getUnpaidTables(businessId);
+  cek("tagihan dari dua hari lalu masih terhitung", denganLama.mejaCount === sesudahTagih.mejaCount + 1);
+  cek("tagihan lama ditandai supaya owner tahu", denganLama.adaDariHariLain === true);
+
+  // -------------------------------------------------------------------------
   console.log("\nMembersihkan data uji...");
   // -------------------------------------------------------------------------
   await sql`DELETE FROM order_item_changes WHERE order_id = ANY(${dibuat})`;
